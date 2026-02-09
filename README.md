@@ -1,8 +1,8 @@
-# Travel Planner (tplanner)
+# tplanner
 
 An offline-first, timeline-based web application for planning travel itineraries and managing schedules. Inspired by university timetable layouts, it offers a clear, horizontal visualization of your schedule with robust conflict detection and easy event management.
 
-## 🚀 Features
+## Features
 
 - **Interactive Timeline**:
   - Horizontal scrollable view covering a dynamic range (default view: 2 months).
@@ -24,14 +24,14 @@ An offline-first, timeline-based web application for planning travel itineraries
   - **Local Storage**: Automatically saves all your data to a local `data.json` file via the included backend server.
   - **Import/Export**: Easily export your schedule to a JSON file or import existing data.
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 - **Frontend**: [React 18](https://reactjs.org/), [Vite](https://vitejs.dev/)
 - **Styling**: [Tailwind CSS](https://tailwindcss.com/), [Lucide React](https://lucide.dev/) (Icons)
 - **Backend**: [Express.js](https://expressjs.com/) (Lightweight local server for file I/O)
 - **Utilities**: [date-fns](https://date-fns.org/)
 
-## 📦 Installation
+## Installation
 
 Prerequisites: [Node.js](https://nodejs.org/) (v14+ recommended).
 
@@ -46,7 +46,7 @@ Prerequisites: [Node.js](https://nodejs.org/) (v14+ recommended).
     npm install
     ```
 
-## 🚦 Usage
+## Usage
 
 To start the application, run the development command. This will simultaneously launch the **Frontend** (Vite) and the **Backend** (Express server).
 
@@ -59,7 +59,23 @@ npm run dev
 
 > **Note**: The backend server is required for saving your changes to `data.json`.
 
-## 📂 Project Structure
+## 📦 Packaging (Windows)
+
+To build the application into a standalone executable (`.exe`):
+
+1.  Ensure dependencies are installed: `npm install`
+2.  Run the packaging script:
+    ```bash
+    npm run package
+    ```
+
+This will:
+-   Build the React frontend.
+-   Package the Node.js server and static files into `tplanner-win.exe`.
+
+The generated `tplanner-win.exe` file can be moved to any location. When run, it will automatically launch the server and open your default browser. **Note**: It effectively creates a `data.json` file in the same directory for data persistence.
+
+## Project Structure
 
 ```text
 tplanner/
@@ -68,19 +84,13 @@ tplanner/
 │   ├── utils/            # Helper functions (date calculations, etc.)
 │   ├── App.jsx           # Main application logic
 │   └── main.jsx          # Entry point
-├── server.js             # Local Express server for persistence
+├── server.cjs            # Local Express server for persistence (CommonJS)
+├── package-app.js        # Packaging build script
+├── tplanner-win.exe      # Standalone executable
 ├── data.json             # Data store for events (auto-generated)
 ├── package.json          # Project dependencies and scripts
 └── README.md             # Project documentation
 ```
-
-## 🤝 Contributing
-
-1.  Fork the project
-2.  Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3.  Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4.  Push to the branch (`git push origin feature/AmazingFeature`)
-5.  Open a Pull Request
 
 ## 📄 License
 

@@ -1,0 +1,38 @@
+{
+    "app": {
+        "title": "旅行计划"
+    },
+    "nav": {
+        "prev": "前两个月",
+        "today": "今天",
+        "next": "后两个月"
+    },
+    "actions": {
+        "export": "导出",
+        "import": "导入",
+        "addEvent": "添加事件",
+        "save": "保存",
+        "cancel": "取消",
+        "delete": "删除",
+        "edit": "编辑"
+    },
+    "event": {
+        "title": "标题",
+        "start": "开始时间",
+        "end": "结束时间",
+        "note": "备注",
+        "color": "颜色",
+        "details": "事件详情"
+    },
+    "clash": {
+        "detected": "检测到日程冲突",
+        "message": "您的日程中有 {{count}} 处重叠。",
+        "message_plural": "您的日程中有 {{count}} 处重叠。",
+        "jump": "跳转至"
+    },
+    "messages": {
+        "importSuccess": "数据导入成功！",
+        "importError": "数据格式无效。",
+        "parseError": "文件解析失败。"
+    }
+}

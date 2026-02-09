@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
+import { useTranslation } from 'react-i18next';
 import { MAX_LENGTH_TITLE, MASSEY_COLORS } from '../utils/constants';
 
 /**
@@ -10,6 +11,7 @@ import { MAX_LENGTH_TITLE, MASSEY_COLORS } from '../utils/constants';
  * @param {Date} [props.defaultDate]
  */
 export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, initialEvent }) {
+    const { t } = useTranslation();
     const [title, setTitle] = useState('');
     const [start, setStart] = useState('');
     const [end, setEnd] = useState('');
@@ -70,11 +72,11 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
     return (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
             <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
-                <h2 className="text-xl font-bold mb-4">{initialEvent ? 'Edit Event' : 'Add New Event'}</h2>
+                <h2 className="text-xl font-bold mb-4">{initialEvent ? t('actions.edit') : t('actions.addEvent')}</h2>
 
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700">Title</label>
+                        <label className="block text-sm font-medium text-gray-700">{t('event.title')}</label>
                         <input
                             type="text"
                             required
@@ -87,7 +89,7 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
 
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700">Start</label>
+                            <label className="block text-sm font-medium text-gray-700">{t('event.start')}</label>
                             <input
                                 type="datetime-local"
                                 required
@@ -97,7 +99,7 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700">End</label>
+                            <label className="block text-sm font-medium text-gray-700">{t('event.end')}</label>
                             <input
                                 type="datetime-local"
                                 required
@@ -109,7 +111,7 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-gray-700">Note</label>
+                        <label className="block text-sm font-medium text-gray-700">{t('event.note')}</label>
                         <textarea
                             value={note}
                             onChange={e => setNote(e.target.value)}
@@ -118,7 +120,7 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Color</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">{t('event.color')}</label>
                         <div className="flex gap-2">
                             {MASSEY_COLORS.map((c, i) => (
                                 <button
@@ -137,13 +139,13 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                             onClick={onClose}
                             className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
                         >
-                            Cancel
+                            {t('actions.cancel')}
                         </button>
                         <button
                             type="submit"
                             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
                         >
-                            Save
+                            {t('actions.save')}
                         </button>
                     </div>
                 </form>

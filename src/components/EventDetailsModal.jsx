@@ -1,6 +1,8 @@
 import { format } from 'date-fns';
+import { useTranslation } from 'react-i18next';
 import { MASSEY_COLORS } from '../utils/constants';
 import { X } from 'lucide-react';
+import { getDateLocale } from '../utils/dateLocale';
 
 /**
  * @param {Object} props
@@ -9,6 +11,9 @@ import { X } from 'lucide-react';
  * @param {Function} [props.onDelete]
  */
 export default function EventDetailsModal({ event, onClose, onDelete, onEdit }) {
+    const { t, i18n } = useTranslation();
+    const locale = getDateLocale(i18n.language);
+
     if (!event) return null;
 
     const colorClass = MASSEY_COLORS[event.colorId] || MASSEY_COLORS[0];
@@ -33,9 +38,9 @@ export default function EventDetailsModal({ event, onClose, onDelete, onEdit }) 
                         <div>
                             <p className="text-sm font-medium text-gray-500">Time</p>
                             <p className="text-gray-700">
-                                {format(event.start, 'EEEE, d MMMM yyyy')}
+                                {format(event.start, 'EEEE, d MMMM yyyy', { locale })}
                                 {format(event.start, 'yyyy-MM-dd') !== format(event.end, 'yyyy-MM-dd') && (
-                                    <> - {format(event.end, 'EEEE, d MMMM yyyy')}</>
+                                    <> - {format(event.end, 'EEEE, d MMMM yyyy', { locale })}</>
                                 )}
                                 <br />
                                 {format(event.start, 'HH:mm')} - {format(event.end, 'HH:mm')}
@@ -44,7 +49,7 @@ export default function EventDetailsModal({ event, onClose, onDelete, onEdit }) 
 
                         {event.note && (
                             <div>
-                                <p className="text-sm font-medium text-gray-500">Note</p>
+                                <p className="text-sm font-medium text-gray-500">{t('event.note')}</p>
                                 <p className="text-gray-700 whitespace-pre-wrap">{event.note}</p>
                             </div>
                         )}
@@ -61,7 +66,7 @@ export default function EventDetailsModal({ event, onClose, onDelete, onEdit }) 
                                 }}
                                 className="px-4 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-md hover:bg-red-50"
                             >
-                                Delete
+                                {t('actions.delete')}
                             </button>
                         )}
                         {onEdit && (
@@ -72,7 +77,7 @@ export default function EventDetailsModal({ event, onClose, onDelete, onEdit }) 
                                 }}
                                 className="px-4 py-2 text-sm font-medium text-blue-600 border border-blue-200 rounded-md hover:bg-blue-50"
                             >
-                                Edit
+                                {t('actions.edit')}
                             </button>
                         )}
                         <button

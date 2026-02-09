@@ -1,0 +1,38 @@
+{
+    "app": {
+        "title": "tPlanne"
+    },
+    "nav": {
+        "prev": "Prev 2M",
+        "today": "Today",
+        "next": "Next 2M"
+    },
+    "actions": {
+        "export": "Export",
+        "import": "Import",
+        "addEvent": "Add Event",
+        "save": "Save",
+        "cancel": "Cancel",
+        "delete": "Delete",
+        "edit": "Edit"
+    },
+    "event": {
+        "title": "Title",
+        "start": "Start",
+        "end": "End",
+        "note": "Note",
+        "color": "Color",
+        "details": "Event Details"
+    },
+    "clash": {
+        "detected": "Schedule Conflict Detected",
+        "message": "You have {{count}} overlap in your schedule.",
+        "message_plural": "You have {{count}} overlaps in your schedule.",
+        "jump": "Jump to"
+    },
+    "messages": {
+        "importSuccess": "Data imported successfully!",
+        "importError": "Invalid data format.",
+        "parseError": "Failed to parse file."
+    }
+}

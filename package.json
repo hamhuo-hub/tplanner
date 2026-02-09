@@ -4,10 +4,22 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"vite\" \"node server.js\"",
+    "dev": "concurrently \"vite\" \"node server.cjs\"",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "package": "node package-app.js"
+  },
+  "bin": "server.cjs",
+  "pkg": {
+    "scripts": "dist/**/*.js",
+    "assets": [
+      "dist/**/*",
+      "server.cjs"
+    ],
+    "targets": [
+      "node18-win-x64"
+    ]
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.1.18",
@@ -17,9 +29,12 @@
     "cors": "^2.8.6",
     "date-fns": "^4.1.0",
     "express": "^5.2.1",
+    "i18next": "^25.8.4",
+    "i18next-browser-languagedetector": "^8.2.0",
     "lucide-react": "^0.563.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-i18next": "^16.5.4",
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
@@ -33,6 +48,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
+    "pkg": "^5.8.1",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.18",
     "typescript": "~5.9.3",

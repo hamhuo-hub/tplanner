@@ -8,7 +8,20 @@ import EventBlock from './EventBlock';
  * @param {Function} props.onEventClick
  * @param {Function} props.onAddEvent
  */
+import { useTranslation } from 'react-i18next';
+import { getDateLocale } from '../utils/dateLocale';
+
+/**
+ * @param {Object} props
+ * @param {Date} props.date
+ * @param {import('../utils/constants').Event[]} props.events
+ * @param {Function} props.onEventClick
+ * @param {Function} props.onAddEvent
+ */
 export default function EventRow({ date, events, onEventClick, onAddEvent, highlight }) {
+    const { i18n } = useTranslation();
+    const locale = getDateLocale(i18n.language);
+
     const dayStart = startOfDay(date);
     const dayEnd = endOfDay(date);
 
@@ -129,9 +142,9 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
         >
             {/* Date Column */}
             <div className="w-24 flex-shrink-0 p-2 border-r border-gray-200 flex flex-col justify-center items-center text-center sticky left-0 z-20 bg-inherit shadow-[4px_0_24px_-12px_rgba(0,0,0,0.1)]">
-                <span className="text-xs text-gray-500 font-medium">{format(date, 'EEE')}</span>
+                <span className="text-xs text-gray-500 font-medium">{format(date, 'EEE', { locale })}</span>
                 <span className={`text-lg font-bold ${isWeekend ? 'text-gray-600' : 'text-blue-600'}`}>
-                    {format(date, 'd MMM')}
+                    {format(date, 'd MMM', { locale })}
                 </span>
             </div>
 

@@ -52,3 +52,4 @@ data.json
 /node_modules
 /public
 src/assets/react.svg
+*.exe

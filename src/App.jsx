@@ -1,14 +1,16 @@
 import { useState, useMemo, useEffect } from 'react'
 import { format } from 'date-fns'
+import { useTranslation } from 'react-i18next'
 import Timeline from './components/Timeline'
 import AddEventModal from './components/AddEventModal'
 import EventDetailsModal from './components/EventDetailsModal'
 import ClashBanner from './components/ClashBanner'
 import { calculateTimelineRange, checkForClashes } from './utils/dateUtils'
 import { EVENTS_STORAGE_KEY } from './utils/constants'
-import { Plus } from 'lucide-react'
+import { Plus, Languages } from 'lucide-react'
 
 function App() {
+    const { t, i18n } = useTranslation();
     const [events, setEvents] = useState([]);
     const [highlight, setHighlight] = useState(null); // { type: 'clash' | 'today', start: Date, end: Date }
 
@@ -122,22 +124,36 @@ function App() {
         setIsAddModalOpen(true);
     };
 
+    const toggleLanguage = () => {
+        const newLang = i18n.language === 'en' ? 'zh' : 'en';
+        i18n.changeLanguage(newLang);
+    };
+
     return (
         <div className="h-screen flex flex-col bg-gray-100 overflow-hidden">
             <header className="bg-white shadow-sm px-6 py-4 flex justify-between items-center z-50">
-                <h1 className="text-xl font-bold text-gray-800">Travel Planner</h1>
+                <h1 className="text-xl font-bold text-gray-800">{t('app.title')}</h1>
                 <div className="flex items-center gap-2">
                     <div className="flex bg-gray-100 rounded-md p-1 mr-4">
                         <button onClick={handlePrevPage} className="px-3 py-1 text-sm font-medium text-gray-600 hover:bg-white hover:shadow-sm rounded transition-all">
-                            &lt; Prev 2M
+                            &lt; {t('nav.prev')}
                         </button>
                         <button onClick={handleToday} className="px-3 py-1 text-sm font-medium text-gray-600 hover:bg-white hover:shadow-sm rounded transition-all">
-                            Today
+                            {t('nav.today')}
                         </button>
                         <button onClick={handleNextPage} className="px-3 py-1 text-sm font-medium text-gray-600 hover:bg-white hover:shadow-sm rounded transition-all">
-                            Next 2M &gt;
+                            {t('nav.next')} &gt;
                         </button>
                     </div>
+
+                    <button
+                        onClick={toggleLanguage}
+                        className="flex items-center gap-2 text-gray-600 hover:text-gray-900 font-medium px-3 py-2 text-sm"
+                        title="Switch Language"
+                    >
+                        <Languages className="w-4 h-4" />
+                        {i18n.language === 'en' ? '中文' : 'English'}
+                    </button>
 
                     <button
                         onClick={() => {
@@ -153,10 +169,10 @@ function App() {
                         }}
                         className="text-gray-600 hover:text-gray-900 font-medium px-3 py-2 text-sm"
                     >
-                        Export
+                        {t('actions.export')}
                     </button>
                     <label className="text-gray-600 hover:text-gray-900 font-medium px-3 py-2 text-sm cursor-pointer">
-                        Import
+                        {t('actions.import')}
                         <input
                             type="file"
                             accept=".json"
@@ -181,13 +197,13 @@ function App() {
                                                 const sorted = [...hydrated].sort((a, b) => a.start - b.start);
                                                 setReferenceDate(sorted[0].start);
                                             }
-                                            alert('Data imported successfully!');
+                                            alert(t('messages.importSuccess'));
                                         } else {
-                                            alert('Invalid data format.');
+                                            alert(t('messages.importError'));
                                         }
                                     } catch (err) {
                                         console.error(err);
-                                        alert('Failed to parse file.');
+                                        alert(t('messages.parseError'));
                                     }
                                 };
                                 reader.readAsText(file);
@@ -199,7 +215,7 @@ function App() {
                         className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md shadow-sm transition-colors"
                     >
                         <Plus className="w-4 h-4" />
-                        Add Event
+                        {t('actions.addEvent')}
                     </button>
                 </div>
             </header>

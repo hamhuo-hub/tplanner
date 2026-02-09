@@ -1,11 +1,14 @@
 import { AlertTriangle } from 'lucide-react';
 import { format } from 'date-fns';
 
+import { useTranslation } from 'react-i18next';
+
 /**
  * @param {Object} props
  * @param {import('../utils/constants').Clash[]} props.clashes
  */
 export default function ClashBanner({ clashes, events, onHighlight }) {
+    const { t } = useTranslation();
     if (!clashes || clashes.length === 0) return null;
 
     // Helper to get event title
@@ -34,7 +37,7 @@ export default function ClashBanner({ clashes, events, onHighlight }) {
             <div className="flex items-start">
                 <AlertTriangle className="w-6 h-6 mr-3 mt-1 flex-shrink-0" />
                 <div>
-                    <p className="font-bold">Schedule Conflict Detected</p>
+                    <p className="font-bold">{t('clash.detected')}</p>
                     <ul className="mt-2 text-sm list-disc list-inside space-y-1">
                         {uniqueClashes.map(clash => (
                             <li key={clash.id}>
@@ -59,7 +62,7 @@ export default function ClashBanner({ clashes, events, onHighlight }) {
                                     }}
                                     className="hover:underline text-left"
                                 >
-                                    <span className="font-medium">{clash.eventA}</span> conflicts with <span className="font-medium">{clash.eventB}</span>
+                                    <span className="font-medium">{clash.eventA}</span> - <span className="font-medium">{clash.eventB}</span>
                                     <span className="ml-2 text-xs text-red-800 bg-red-200 px-1 rounded">
                                         {format(clash.start, 'HH:mm')} - {format(clash.end, 'HH:mm')}
                                     </span>
