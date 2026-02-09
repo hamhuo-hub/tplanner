@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+@keyframes breath {
+    0% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+        border-color: rgba(239, 68, 68, 0.4);
+    }
+
+    50% {
+        box-shadow: 0 0 20px 0 rgba(239, 68, 68, 0.7);
+        border-color: rgba(239, 68, 68, 1);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+        border-color: rgba(239, 68, 68, 0.4);
+    }
+}
+
+.highlight-clash {
+    animation: breath 2s infinite;
+    border: 2px solid rgb(239, 68, 68) !important;
+    z-index: 50;
+}
