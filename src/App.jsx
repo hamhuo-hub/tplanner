@@ -191,9 +191,10 @@ function App() {
         // Find last event date
         let maxDate = new Date(today);
         if (events.length > 0) {
-            const lastEvent = events.reduce((max, e) => e.end > max ? e.end : max, new Date(0));
-            if (lastEvent > maxDate) {
-                maxDate = lastEvent;
+            const lastEventDate = events.reduce((max, e) => e.end > max ? e.end : max, new Date(0));
+            if (lastEventDate > maxDate) {
+                // Clone the date to avoid mutating the event object!
+                maxDate = new Date(lastEventDate);
             }
         }
 
