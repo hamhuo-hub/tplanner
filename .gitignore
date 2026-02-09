@@ -53,3 +53,7 @@ data.json
 /public
 src/assets/react.svg
 *.exe
+/dist
+/dist
+/dist
+/staging

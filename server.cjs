@@ -7,10 +7,10 @@ const { exec } = require('child_process');
 const app = express();
 const PORT = 3001;
 
-// Determine if running inside pkg (executable) or dev (node)
-const isPkg = typeof process.pkg !== 'undefined';
-// For data.json: use process.cwd() or path.dirname(process.execPath) if in pkg
-const runDir = isPkg ? path.dirname(process.execPath) : __dirname;
+// Determine if running in packaged mode (passed via args)
+const isPackaged = process.argv.includes('--packaged');
+// For data.json: always use process.cwd() for portable behavior
+const runDir = process.cwd();
 const DATA_FILE = path.join(runDir, 'data.json');
 
 app.use(cors());
@@ -75,7 +75,7 @@ app.listen(PORT, () => {
     console.log(`Server running on ${url}`);
 
     // Auto-open browser if in production/pkg
-    if (isPkg) {
+    if (isPackaged) {
         const startCmd = process.platform === 'win32' ? 'start' : 'open';
         exec(`${startCmd} ${url}`);
     }
