@@ -45,6 +45,9 @@ export const checkForClashes = (events) => {
             const eventA = events[i];
             const eventB = events[j];
 
+            // Ignore 'status' events for clashes
+            if (eventA.type === 'status' || eventB.type === 'status') continue;
+
             // Check for overlap
             if (areIntervalsOverlapping(
                 { start: eventA.start, end: eventA.end },

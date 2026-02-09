@@ -16,6 +16,14 @@ const DATA_FILE = path.join(runDir, 'data.json');
 app.use(cors());
 app.use(express.json());
 
+// Middleware to prevent caching
+app.use((req, res, next) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    next();
+});
+
 // Serve static files from 'dist' directory
 // In dev, we might not have dist or we run vite separately.
 // This is mainly for the packaged app or production preview.
@@ -71,4 +79,18 @@ app.listen(PORT, () => {
         const startCmd = process.platform === 'win32' ? 'start' : 'open';
         exec(`${startCmd} ${url}`);
     }
+
+    // Keep alive debug
+    setInterval(() => {
+        // console.log('Server heartbeat');
+    }, 10000);
+});
+
+process.on('exit', (code) => {
+    console.log(`About to exit with code: ${code}`);
+});
+
+process.on('SIGINT', () => {
+    console.log('Received SIGINT. Press Control-D to exit.');
+    process.exit();
 });

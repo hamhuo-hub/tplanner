@@ -9,6 +9,7 @@ import { getDateLocale } from '../utils/dateLocale';
  * @param {import('../utils/constants').Event | null} props.event
  * @param {Function} props.onClose
  * @param {Function} [props.onDelete]
+ * @param {Function} [props.onEdit]
  */
 export default function EventDetailsModal({ event, onClose, onDelete, onEdit }) {
     const { t, i18n } = useTranslation();
@@ -19,43 +20,49 @@ export default function EventDetailsModal({ event, onClose, onDelete, onEdit }) 
     const colorClass = MASSEY_COLORS[event.colorId] || MASSEY_COLORS[0];
 
     return (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
-                {/* Header with color */}
-                <div className={`h-24 ${colorClass} relative flex justify-end p-2`}>
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+            <div
+                className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200"
+                onClick={(e) => e.stopPropagation()}
+            >
+                {/* Header with color - reduced height to half of original (h-12) */}
+                <div className={`h-12 ${colorClass} relative flex justify-end p-2`}>
                     <button
                         onClick={onClose}
                         className="text-white/80 hover:text-white bg-black/10 hover:bg-black/20 rounded-full p-1"
+                        title={t('actions.close')}
                     >
                         <X className="w-5 h-5" />
                     </button>
                 </div>
 
-                <div className="p-6">
-                    <h2 className="text-2xl font-bold text-gray-800 mb-2">{event.title}</h2>
+                <div className="p-6 relative">
+                    <h2 className="text-xl font-bold text-gray-800 mb-4 pr-8">{event.title}</h2>
 
                     <div className="space-y-4">
                         <div>
-                            <p className="text-sm font-medium text-gray-500">Time</p>
-                            <p className="text-gray-700">
+                            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Time</p>
+                            <p className="text-gray-700 text-sm">
                                 {format(event.start, 'EEEE, d MMMM yyyy', { locale })}
-                                {format(event.start, 'yyyy-MM-dd') !== format(event.end, 'yyyy-MM-dd') && (
-                                    <> - {format(event.end, 'EEEE, d MMMM yyyy', { locale })}</>
-                                )}
                                 <br />
-                                {format(event.start, 'HH:mm')} - {format(event.end, 'HH:mm')}
+                                <span className="font-medium">
+                                    {format(event.start, 'HH:mm')} - {format(event.end, 'HH:mm')}
+                                </span>
                             </p>
                         </div>
 
                         {event.note && (
                             <div>
-                                <p className="text-sm font-medium text-gray-500">{t('event.note')}</p>
-                                <p className="text-gray-700 whitespace-pre-wrap">{event.note}</p>
+                                <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">{t('event.note')}</p>
+                                {/* Max height 300px as requested */}
+                                <div className="text-gray-700 text-sm whitespace-pre-wrap max-h-[300px] overflow-y-auto border border-gray-100 rounded p-2 bg-gray-50">
+                                    {event.note}
+                                </div>
                             </div>
                         )}
                     </div>
 
-                    <div className="mt-8 flex justify-end gap-3">
+                    <div className="mt-6 flex justify-end gap-3 border-t border-gray-100 pt-4">
                         {onDelete && (
                             <button
                                 onClick={() => {
@@ -64,7 +71,7 @@ export default function EventDetailsModal({ event, onClose, onDelete, onEdit }) 
                                         onClose();
                                     }
                                 }}
-                                className="px-4 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-md hover:bg-red-50"
+                                className="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded hover:bg-red-50 transition-colors"
                             >
                                 {t('actions.delete')}
                             </button>
@@ -75,17 +82,11 @@ export default function EventDetailsModal({ event, onClose, onDelete, onEdit }) 
                                     onEdit(event);
                                     onClose();
                                 }}
-                                className="px-4 py-2 text-sm font-medium text-blue-600 border border-blue-200 rounded-md hover:bg-blue-50"
+                                className="px-3 py-1.5 text-xs font-medium text-blue-600 border border-blue-200 rounded hover:bg-blue-50 transition-colors"
                             >
                                 {t('actions.edit')}
                             </button>
                         )}
-                        <button
-                            onClick={onClose}
-                            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 shadow-sm"
-                        >
-                            Close
-                        </button>
                     </div>
                 </div>
             </div>

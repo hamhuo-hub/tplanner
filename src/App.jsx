@@ -5,9 +5,8 @@ import Timeline from './components/Timeline'
 import AddEventModal from './components/AddEventModal'
 import EventDetailsModal from './components/EventDetailsModal'
 import ClashBanner from './components/ClashBanner'
-import { calculateTimelineRange, checkForClashes } from './utils/dateUtils'
-import { EVENTS_STORAGE_KEY } from './utils/constants'
-import { Plus, Languages } from 'lucide-react'
+import { checkForClashes } from './utils/dateUtils'
+import { Plus, Languages, Printer } from 'lucide-react'
 
 function App() {
     const { t, i18n } = useTranslation();
@@ -18,10 +17,12 @@ function App() {
     const [selectedEvent, setSelectedEvent] = useState(null);
     const [modalDefaultDate, setModalDefaultDate] = useState(null);
     const [editingEvent, setEditingEvent] = useState(null);
+    const [isLoaded, setIsLoaded] = useState(false);
 
     // Fetch initial data
     useEffect(() => {
-        fetch('http://localhost:3001/api/events')
+        // Add timestamp to prevent caching
+        fetch(`http://localhost:3001/api/events?t=${new Date().getTime()}`)
             .then(res => res.json())
             .then(data => {
                 const hydrated = data.map(e => ({
@@ -30,13 +31,14 @@ function App() {
                     end: new Date(e.end)
                 }));
                 setEvents(hydrated);
+                setIsLoaded(true);
             })
             .catch(err => console.error('Failed to fetch events', err));
     }, []);
 
     // Save data on change (debounced)
     useEffect(() => {
-        if (events.length === 0) return; // Don't save empty if initial load hasn't happened
+        if (!isLoaded) return; // Don't save if not yet loaded (prevents overwriting with empty array on init)
 
         const timer = setTimeout(() => {
             fetch('http://localhost:3001/api/events', {
@@ -47,44 +49,96 @@ function App() {
         }, 1000);
 
         return () => clearTimeout(timer);
-    }, [events]);
+    }, [events, isLoaded]);
 
-    const [referenceDate, setReferenceDate] = useState(null);
+    const [viewRange, setViewRange] = useState({ start: null, end: null });
 
-    const { startDate, endDate } = useMemo(() => calculateTimelineRange(events, referenceDate), [events, referenceDate]);
+    // Initialize view range on load or when events change significantly?
+    // Actually, we want to start at Today or Earliest Event.
+    useEffect(() => {
+        if (!viewRange.start) {
+            // Initial load or Reset
+            // Default: Today - 7 days to Today + 30 days
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            const start = new Date(today);
+            start.setDate(today.getDate() - 7);
+            const end = new Date(today);
+            end.setDate(today.getDate() + 30);
+
+            setViewRange({ start, end });
+        }
+    }, [viewRange.start]);
+
+    // Derived clash calculation - checks ALL events, not just view?
+    // Yes, clashes exist regardless of view.
     const clashes = useMemo(() => checkForClashes(events), [events]);
 
-    // Pagination handlers
-    const handlePrevPage = () => {
-        const newDate = new Date(startDate);
-        newDate.setMonth(newDate.getMonth() - 2);
-        setReferenceDate(newDate);
+    const handleLoadMorePrev = () => {
+        if (!viewRange.start) return;
+        setViewRange(prev => {
+            const newStart = new Date(prev.start);
+            newStart.setDate(newStart.getDate() - 14);
+            return { ...prev, start: newStart };
+        });
     };
 
-    const handleNextPage = () => {
-        const newDate = new Date(startDate);
-        newDate.setMonth(newDate.getMonth() + 2);
-        setReferenceDate(newDate);
+    const handleLoadMoreNext = () => {
+        if (!viewRange.end) return;
+        setViewRange(prev => {
+            const newEnd = new Date(prev.end);
+            newEnd.setDate(newEnd.getDate() + 14);
+            return { ...prev, end: newEnd };
+        });
     };
 
     const handleToday = () => {
-        const now = new Date();
-        setReferenceDate(now);
-        // Wait for render
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const start = new Date(today);
+        start.setDate(today.getDate() - 7);
+        const end = new Date(today);
+        end.setDate(today.getDate() + 30);
+
+        setViewRange({ start, end });
+
+        // Scroll to today after render
         setTimeout(() => {
-            const dateStr = format(now, 'yyyy-MM-dd');
+            const dateStr = format(today, 'yyyy-MM-dd');
             const element = document.getElementById(`row-${dateStr}`);
             if (element) {
                 element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                // Highlight Today
-                const startOfDay = new Date(now); startOfDay.setHours(0, 0, 0, 0);
-                const endOfDay = new Date(now); endOfDay.setHours(23, 59, 59, 999);
+                // Highlight
+                const startOfDay = new Date(today);
+                const endOfDay = new Date(today); endOfDay.setHours(23, 59, 59, 999);
                 setHighlight({
                     type: 'today',
                     start: startOfDay,
                     end: endOfDay
                 });
                 setTimeout(() => setHighlight(null), 3000);
+            }
+        }, 100);
+    };
+
+    // Jump to specific date (for conflicts)
+    const handleJumpToDate = (date) => {
+        const target = new Date(date);
+        target.setHours(0, 0, 0, 0);
+
+        const start = new Date(target);
+        start.setDate(target.getDate() - 7);
+        const end = new Date(target);
+        end.setDate(target.getDate() + 30);
+
+        setViewRange({ start, end });
+
+        setTimeout(() => {
+            const dateStr = format(target, 'yyyy-MM-dd');
+            const element = document.getElementById(`row-${dateStr}`);
+            if (element) {
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
         }, 100);
     };
@@ -129,20 +183,43 @@ function App() {
         i18n.changeLanguage(newLang);
     };
 
+    const handlePrint = () => {
+        // 1. Find the date range to print (Today -> Last Event)
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Find last event date
+        let maxDate = new Date(today);
+        if (events.length > 0) {
+            const lastEvent = events.reduce((max, e) => e.end > max ? e.end : max, new Date(0));
+            if (lastEvent > maxDate) {
+                maxDate = lastEvent;
+            }
+        }
+
+        // Add a buffer to maxDate (e.g., end of that week)
+        maxDate.setDate(maxDate.getDate() + 7);
+
+        // 2. Set View Range
+        const printStart = new Date(today);
+        printStart.setDate(printStart.getDate() - 1); // Start slightly before today for context
+
+        setViewRange({ start: printStart, end: maxDate });
+
+        // 3. Print after render
+        setTimeout(() => {
+            window.print();
+        }, 500);
+    };
+
     return (
-        <div className="h-screen flex flex-col bg-gray-100 overflow-hidden">
+        <div className="app-container h-screen flex flex-col bg-gray-100 overflow-hidden">
             <header className="bg-white shadow-sm px-6 py-4 flex justify-between items-center z-50">
                 <h1 className="text-xl font-bold text-gray-800">{t('app.title')}</h1>
                 <div className="flex items-center gap-2">
                     <div className="flex bg-gray-100 rounded-md p-1 mr-4">
-                        <button onClick={handlePrevPage} className="px-3 py-1 text-sm font-medium text-gray-600 hover:bg-white hover:shadow-sm rounded transition-all">
-                            &lt; {t('nav.prev')}
-                        </button>
                         <button onClick={handleToday} className="px-3 py-1 text-sm font-medium text-gray-600 hover:bg-white hover:shadow-sm rounded transition-all">
                             {t('nav.today')}
-                        </button>
-                        <button onClick={handleNextPage} className="px-3 py-1 text-sm font-medium text-gray-600 hover:bg-white hover:shadow-sm rounded transition-all">
-                            {t('nav.next')} &gt;
                         </button>
                     </div>
 
@@ -153,6 +230,15 @@ function App() {
                     >
                         <Languages className="w-4 h-4" />
                         {i18n.language === 'en' ? '中文' : 'English'}
+                    </button>
+
+                    <button
+                        onClick={handlePrint}
+                        className="flex items-center gap-2 text-gray-600 hover:text-gray-900 font-medium px-3 py-2 text-sm"
+                        title="Print Calendar"
+                    >
+                        <Printer className="w-4 h-4" />
+                        {t('actions.print') || 'Print'}
                     </button>
 
                     <button
@@ -192,11 +278,13 @@ function App() {
                                                 end: new Date(ev.end)
                                             }));
                                             setEvents(hydrated);
-                                            // Reset view to start of first event
-                                            if (hydrated.length > 0) {
-                                                const sorted = [...hydrated].sort((a, b) => a.start - b.start);
-                                                setReferenceDate(sorted[0].start);
-                                            }
+                                            // Reset view
+                                            const today = new Date();
+                                            today.setHours(0, 0, 0, 0);
+                                            setViewRange({
+                                                start: new Date(today.setDate(today.getDate() - 7)),
+                                                end: new Date(today.setDate(today.getDate() + 30))
+                                            });
                                             alert(t('messages.importSuccess'));
                                         } else {
                                             alert(t('messages.importError'));
@@ -226,17 +314,23 @@ function App() {
                     events={events}
                     onHighlight={(h) => {
                         setHighlight(h);
-                        // Clear highlight after animation
+                        // Jump to it if it's a clash
+                        if (h.type === 'clash') {
+                            handleJumpToDate(h.start);
+                        }
+
                         setTimeout(() => setHighlight(null), 3000);
                     }}
                 />
                 <Timeline
-                    startDate={startDate}
-                    endDate={endDate}
+                    startDate={viewRange.start || new Date()}
+                    endDate={viewRange.end || new Date()}
                     events={events}
                     onEventClick={setSelectedEvent}
                     onAddEvent={handleTimelineClick}
                     highlight={highlight}
+                    onLoadPrev={handleLoadMorePrev}
+                    onLoadNext={handleLoadMoreNext}
                 />
             </main>
 
@@ -253,6 +347,7 @@ function App() {
                 onClose={() => setSelectedEvent(null)}
                 onDelete={handleDeleteEvent}
                 onEdit={handleEditEvent}
+                onSave={handleSaveEvent}
             />
         </div>
     )

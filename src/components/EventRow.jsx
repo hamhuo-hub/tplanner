@@ -1,15 +1,8 @@
 import { format, areIntervalsOverlapping, startOfDay, endOfDay, max, min, addMinutes } from 'date-fns';
 import EventBlock from './EventBlock';
-
-/**
- * @param {Object} props
- * @param {Date} props.date
- * @param {import('../utils/constants').Event[]} props.events
- * @param {Function} props.onEventClick
- * @param {Function} props.onAddEvent
- */
 import { useTranslation } from 'react-i18next';
 import { getDateLocale } from '../utils/dateLocale';
+import { MASSEY_COLORS } from '../utils/constants';
 
 /**
  * @param {Object} props
@@ -25,14 +18,20 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
     const dayStart = startOfDay(date);
     const dayEnd = endOfDay(date);
 
-    // 1. Filter events overlapping with this day
-    const dayEvents = events.filter(e =>
+    // Filter events for this day
+    const dayEventsRaw = events.filter(e =>
         areIntervalsOverlapping(
             { start: e.start, end: e.end },
             { start: dayStart, end: dayEnd }
         )
-    ).map(e => {
-        // 2. Clamp start/end to this day for rendering
+    );
+
+    // Split into Status and Regular Events
+    const statusEvents = dayEventsRaw.filter(e => e.type === 'status');
+    const regularEvents = dayEventsRaw.filter(e => e.type !== 'status'); // Show everything else as regular events
+
+    // --- Process Regular Events (Existing Logic) ---
+    const processedRegularEvents = regularEvents.map(e => {
         const clampedStart = max([e.start, dayStart]);
         const clampedEnd = min([e.end, dayEnd]);
         return {
@@ -44,29 +43,13 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
         };
     }).sort((a, b) => a.start - b.start);
 
-    // 3. Simple layout algorithm for overlaps
-    // Assign "tracks" to events. overlapping events get different tracks.
-    // Group overlapping events
-    const processedEvents = [];
-    if (dayEvents.length > 0) {
-        // Simple approach: check overlaps with already placed events in this row
-        // If event A overlaps event B, they share height.
-        // We will assign a 'group' index and 'totalGroups' for each event to style top/height.
-
-        // This is a complex packing problem, but "average occupy" implies splitting height.
-        // Let's sweep: for each event, find all other events that overlap it IN THIS DAY.
-        // Determine the maximum number of concurrent events at any point in this event's duration.
-        // Then assign a slot index.
-
-        // Simpler greedy approach for "average occupy" (like Outlook):
-        // 1. Calculate concurrency for every minute? Too expensive.
-        // 2. Cluster events that overlap.
-
+    const finalRegularEvents = [];
+    if (processedRegularEvents.length > 0) {
         const clusters = [];
         let currentCluster = [];
         let clusterEnd = null;
 
-        dayEvents.forEach(event => {
+        processedRegularEvents.forEach(event => {
             if (!clusterEnd || event.start < clusterEnd) {
                 currentCluster.push(event);
                 clusterEnd = clusterEnd ? max([clusterEnd, event.end]) : event.end;
@@ -78,29 +61,12 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
         });
         if (currentCluster.length > 0) clusters.push(currentCluster);
 
-        // For each cluster, simply divide vertical space?
-        // User said "Average occupy". If 3 events overlap, 33% height each.
-        // But if A overlaps B, and B overlaps C, but A doesn't overlap C? 
-        // Then A and C could share a line.
-        // "Average occupy" sounds like if ANY overlap in a group, split the height.
-
         clusters.forEach(cluster => {
-            // Stacked Card Style
-            // overlapping events are stacked vertically with offset
-            const count = cluster.length;
+            const isConflicting = cluster.length > 1;
             cluster.forEach((ev, idx) => {
-                // Calculate dynamic top offset and height
-                // To keep it contained but "stacked", we can use indices
-                // Max offset shouldn't blow up the row. 
-                // Let's cap offset at 40%?
-
-                // Simple overlapping:
-                // height: 80% (fixed large height)
-                // top: idx * 15 % (offset)
-                // zIndex: 10 + idx (stack order)
-
-                processedEvents.push({
+                finalRegularEvents.push({
                     ...ev,
+                    isConflicting,
                     style: {
                         top: `${idx * 15}%`,
                         height: '80%',
@@ -111,6 +77,41 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
         });
     }
 
+    // --- Process Status Events (Stacking Logic) ---
+    const processedStatusEvents = statusEvents.map(e => {
+        const clampedStart = max([e.start, dayStart]);
+        const clampedEnd = min([e.end, dayEnd]);
+        return {
+            ...e,
+            start: clampedStart,
+            end: clampedEnd
+        };
+    }).sort((a, b) => a.start - b.start);
+
+    const statusRows = [];
+    const finalStatusEvents = processedStatusEvents.map(ev => {
+        // Find first row where this event fits
+        let rowIndex = 0;
+        while (true) {
+            const row = statusRows[rowIndex] || [];
+            const collision = row.find(existing => areIntervalsOverlapping(
+                { start: existing.start, end: existing.end },
+                { start: ev.start, end: ev.end }
+            ));
+            if (!collision) {
+                if (!statusRows[rowIndex]) statusRows[rowIndex] = [];
+                statusRows[rowIndex].push(ev);
+                break;
+            }
+            rowIndex++;
+        }
+        return {
+            ...ev,
+            rowIndex
+        };
+    });
+
+
     const isWeekend = date.getDay() === 0 || date.getDay() === 6;
 
     const handleGridClick = (e) => {
@@ -119,15 +120,12 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
         const width = rect.width;
         const ratio = x / width;
         const totalMinutes = 24 * 60;
-        // Snap to nearest 10 minutes
         const rawMinutes = totalMinutes * ratio;
         const clickMinutes = Math.round(rawMinutes / 10) * 10;
 
         const clickDate = new Date(dayStart);
-        clickDate.setHours(0, 0, 0, 0); // Reset to starts
+        clickDate.setHours(0, 0, 0, 0);
         clickDate.setMinutes(clickMinutes);
-
-        // Default 1 hour duration
         const end = addMinutes(clickDate, 60);
 
         if (onAddEvent) {
@@ -148,85 +146,118 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                 </span>
             </div>
 
-            {/* Time Grid - Increased height to h-24 */}
+            {/* Main Grid Container */}
             <div
-                className="flex-grow relative h-24 min-w-[1200px] cursor-crosshair group"
+                className="flex-grow relative h-32 min-w-[1200px] cursor-crosshair group flex flex-col"
                 onClick={handleGridClick}
             >
-                {/* Hour markers */}
-                {Array.from({ length: 24 }).map((_, i) => (
-                    <div
-                        key={i}
-                        className="absolute top-0 bottom-0 border-l border-gray-100 group-hover:border-gray-200 transition-colors"
-                        style={{ left: `${(i / 24) * 100}%` }}
-                    />
-                ))}
+                {/* Status Zone (Top ~15%) */}
+                {statusEvents.length > 0 && (
+                    <div className="absolute top-0 left-0 right-0 h-[15%] z-30 pointer-events-none">
+                        {finalStatusEvents.map(ev => {
+                            const totalMinutes = 24 * 60;
+                            const startMinutes = (ev.start.getHours() * 60) + ev.start.getMinutes();
+                            const endMinutes = (ev.end.getHours() * 60) + ev.end.getMinutes();
+                            const endMinutesFinal = (ev.end.getTime() === dayEnd.getTime() + 1) ? totalMinutes : endMinutes;
 
-                {/* Highlight Overlay */}
-                {highlight && areIntervalsOverlapping(
-                    { start: highlight.start, end: highlight.end },
-                    { start: dayStart, end: dayEnd }
-                ) && (() => {
-                    // Calculate positioning for highlight
-                    // If type is 'today', highlight whole day? Or detailed?
-                    // User said "Today also add glowing border". 
-                    // If highlight.type === 'today', maybe we highlight the whole row border?
-                    // But if highlight.type === 'clash', we want specific time.
+                            const left = (startMinutes / totalMinutes) * 100;
+                            const width = ((endMinutesFinal - startMinutes) / totalMinutes) * 100;
 
-                    if (highlight.type === 'today') {
-                        // For 'today', we might want to highlight the row container instead?
-                        // But we can do it here too as an overlay or border.
-                        // Let's return null here and handle 'today' via row className if preferred.
-                        // Actually user said "Specific time highlighting (Conflict & Today)".
-                        // For Today, usually "Current Time" line or just the whole day.
-                        // User said "Today also add breathing border".
-                        return (
-                            <div className="absolute inset-0 border-4 border-blue-400 animate-pulse z-10 pointer-events-none rounded-sm shadow-[0_0_15px_rgba(96,165,250,0.7)]" />
-                        );
-                    }
+                            return (
+                                <div
+                                    key={ev.id}
+                                    className={`absolute rounded px-1 text-[10px] whitespace-nowrap overflow-hidden text-white pointer-events-auto cursor-pointer shadow-sm hover:brightness-110 ${ev.colorId !== undefined ? MASSEY_COLORS[ev.colorId] : 'bg-gray-500'}`}
+                                    style={{
+                                        left: `${left}%`,
+                                        width: `${width}%`,
+                                        top: `${ev.rowIndex * 18}px`,
+                                        height: '16px',
+                                        lineHeight: '16px'
+                                    }}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        // Find original to pass all props
+                                        const original = events.find(original => original.id === ev.id);
+                                        onEventClick(original || ev);
+                                    }}
+                                >
+                                    {ev.title}
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
 
-                    // For clashes, specific time range clamped to this day
-                    const hStart = max([highlight.start, dayStart]);
-                    const hEnd = min([highlight.end, dayEnd]);
-
-                    if (hEnd <= hStart) return null;
-
-                    const totalMinutes = 24 * 60;
-                    const startMinutes = (hStart.getHours() * 60) + hStart.getMinutes();
-                    const endMinutes = (hEnd.getHours() * 60) + hEnd.getMinutes();
-                    // Handle day crossing end (24:00)
-                    const endMinutesFinal = (hEnd.getTime() === dayEnd.getTime() + 1) ? totalMinutes : endMinutes;
-
-                    const left = (startMinutes / totalMinutes) * 100;
-                    const width = ((endMinutesFinal - startMinutes) / totalMinutes) * 100;
-
-                    return (
+                {/* Regular Event Zone (Bottom ~85%) */}
+                <div className="relative flex-grow h-full">
+                    {/* Hour markers */}
+                    {Array.from({ length: 24 }).map((_, i) => (
                         <div
-                            className="absolute bg-red-500/20 border-2 border-red-500 z-10 pointer-events-none highlight-clash"
+                            key={i}
+                            className="absolute top-0 bottom-0 border-l border-gray-100 group-hover:border-gray-200 transition-colors"
+                            style={{ left: `${(i / 24) * 100}%` }}
+                        />
+                    ))}
+
+                    {/* Highlight Overlay - Clashes */}
+                    {highlight && areIntervalsOverlapping(
+                        { start: highlight.start, end: highlight.end },
+                        { start: dayStart, end: dayEnd }
+                    ) && highlight.type !== 'today' && (() => {
+                        const hStart = max([highlight.start, dayStart]);
+                        const hEnd = min([highlight.end, dayEnd]);
+
+                        if (hEnd <= hStart) return null;
+
+                        const totalMinutes = 24 * 60;
+                        const startMinutes = (hStart.getHours() * 60) + hStart.getMinutes();
+                        const endMinutes = (hEnd.getHours() * 60) + hEnd.getMinutes();
+                        const endMinutesFinal = (hEnd.getTime() === dayEnd.getTime() + 1) ? totalMinutes : endMinutes;
+
+                        const left = (startMinutes / totalMinutes) * 100;
+                        const width = ((endMinutesFinal - startMinutes) / totalMinutes) * 100;
+
+                        return (
+                            <div
+                                className="absolute bg-red-500/20 border-2 border-red-500 z-10 pointer-events-none highlight-clash"
+                                style={{
+                                    left: `${left}%`,
+                                    width: `${width}%`,
+                                    top: '15%',
+                                    bottom: 0,
+                                    boxShadow: '0 0 15px rgba(239, 68, 68, 0.6)'
+                                }}
+                            />
+                        );
+                    })()}
+
+                    {/* Today Highlight Border */}
+                    {highlight && highlight.type === 'today' && areIntervalsOverlapping(
+                        { start: highlight.start, end: highlight.end },
+                        { start: dayStart, end: dayEnd }
+                    ) && (
+                            <div className="absolute inset-0 border-4 border-blue-400 animate-pulse z-10 pointer-events-none rounded-sm shadow-[0_0_15px_rgba(96,165,250,0.7)]" />
+                        )}
+
+
+                    {/* Regular Events */}
+                    {finalRegularEvents.map(event => (
+                        <EventBlock
+                            key={event.id}
+                            event={event}
+                            isConflicting={event.isConflicting}
+                            onClick={(e) => {
+                                const original = events.find(ev => ev.id === event.id);
+                                onEventClick(original || event);
+                            }}
                             style={{
-                                left: `${left}%`,
-                                width: `${width}%`,
-                                top: 0,
-                                bottom: 0,
-                                boxShadow: '0 0 15px rgba(239, 68, 68, 0.6)'
+                                ...event.style,
+                                top: `calc(15% + ${event.style.top})`,
+                                height: '70%',
                             }}
                         />
-                    );
-                })()}
-
-                {/* Events */}
-                {processedEvents.map(event => (
-                    <EventBlock
-                        key={event.id}
-                        event={event}
-                        onClick={(e) => {
-                            // Find original event to pass to handler, to avoid passing clamped times
-                            const original = events.find(ev => ev.id === event.id);
-                            onEventClick(original || event);
-                        }}
-                        style={event.style} // Pass calculated position
-                    />
-                ))}
+                    ))}
+                </div>
             </div>
         </div>
     );

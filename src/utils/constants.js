@@ -6,7 +6,13 @@
  * @property {Date} end
  * @property {number} colorId - 0-6
  * @property {string} [note]
+ * @property {'event'|'status'} [type] - Default 'event'
  */
+
+export const EVENT_TYPES = {
+    EVENT: 'event',
+    STATUS: 'status',
+};
 
 /**
  * @typedef {Object} Clash

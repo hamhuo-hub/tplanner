@@ -43,22 +43,13 @@ export default function ClashBanner({ clashes, events, onHighlight }) {
                             <li key={clash.id}>
                                 <button
                                     onClick={() => {
-                                        // Scroll to the start date of the clash
-                                        // We need the date string yyyy-MM-dd
-                                        const clashDate = new Date(events.find(e => e.id === clash.eventId)?.start);
-                                        const dateStr = clashDate.toISOString().split('T')[0];
-                                        const element = document.getElementById(`row-${dateStr}`);
-                                        if (element) {
-                                            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                            // Trigger highlight
-                                            onHighlight({
-                                                type: 'clash',
-                                                start: new Date(clash.start),
-                                                end: new Date(clash.end)
-                                            });
-                                        } else {
-                                            alert('Conflict is outside current view. Please navigate to it.');
-                                        }
+                                        // Delegate jump logic to parent (App.jsx)
+                                        // App.jsx will handle view expansion and scrolling
+                                        onHighlight({
+                                            type: 'clash',
+                                            start: new Date(clash.start),
+                                            end: new Date(clash.end)
+                                        });
                                     }}
                                     className="hover:underline text-left"
                                 >

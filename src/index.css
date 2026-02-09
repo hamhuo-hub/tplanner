@@ -22,3 +22,69 @@
     border: 2px solid rgb(239, 68, 68) !important;
     z-index: 50;
 }
+
+@media print {
+    /* Hide UI Chrome */
+    header,
+    button,
+    .clash-banner,
+    .MuiIconButton-root,
+    /* Hide Material UI buttons */
+    .MuiButtonBase-root
+
+    /* Hide generic MUI buttons if needed, strict */
+        {
+        display: none !important;
+    }
+
+    /* Target specific header elements if classes aren't enough */
+    body>div>header {
+        display: none !important;
+    }
+
+
+    /* Ensure body expands */
+    html,
+    body,
+    #root,
+    .app-container,
+    main {
+        height: auto !important;
+        min-height: 0 !important;
+        overflow: visible !important;
+        background: white !important;
+        display: block !important;
+        /* Reset flex */
+    }
+
+    /* Timeline Container Reset */
+    .timeline-root {
+        height: auto !important;
+        overflow: visible !important;
+        border: none !important;
+        box-shadow: none !important;
+        display: block !important;
+    }
+
+    .timeline-scroll-area {
+        height: auto !important;
+        overflow: visible !important;
+        display: block !important;
+    }
+
+    /* Reset Styles for Print */
+    .bg-gray-100 {
+        background-color: white !important;
+    }
+
+    /* Make sure events are colored (browsers might strip background colors) */
+    * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    /* Ensure rows don't break awkwardly inside (though hard to prevent in massive rows) */
+    .border-b {
+        break-inside: avoid;
+    }
+}

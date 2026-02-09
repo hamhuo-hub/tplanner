@@ -1,155 +1,288 @@
 import { useState, useEffect } from 'react';
-import { format } from 'date-fns';
 import { useTranslation } from 'react-i18next';
-import { MAX_LENGTH_TITLE, MASSEY_COLORS } from '../utils/constants';
+import { MAX_LENGTH_TITLE, MASSEY_COLORS, EVENT_TYPES } from '../utils/constants';
 
-/**
- * @param {Object} props
- * @param {boolean} props.isOpen
- * @param {Function} props.onClose
- * @param {Function} props.onSave - (event) => void
- * @param {Date} [props.defaultDate]
- */
+import {
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    TextField,
+    Button,
+    ToggleButton,
+    ToggleButtonGroup,
+    Stack,
+    Box,
+    Typography,
+    IconButton
+} from '@mui/material';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { TimePicker } from '@mui/x-date-pickers/TimePicker';
+import { styled } from '@mui/material/styles';
+import { Maximize2, X } from 'lucide-react';
+
+const ColorButton = styled('button')(({ theme, colorSelected }) => ({
+    width: 32,
+    height: 32,
+    borderRadius: '50%',
+    border: colorSelected ? '2px solid #666' : '2px solid transparent',
+    padding: 0,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    '&:hover': {
+        transform: 'scale(1.1)',
+    },
+}));
+
 export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, initialEvent }) {
     const { t } = useTranslation();
+
     const [title, setTitle] = useState('');
-    const [start, setStart] = useState('');
-    const [end, setEnd] = useState('');
+    const [type, setType] = useState(EVENT_TYPES.EVENT);
+    const [startDate, setStartDate] = useState(null);
+    const [endDate, setEndDate] = useState(null);
     const [note, setNote] = useState('');
     const [colorId, setColorId] = useState(0);
+
+    const [isLargeNoteOpen, setIsLargeNoteOpen] = useState(false);
 
     useEffect(() => {
         if (isOpen) {
             if (initialEvent) {
                 // Edit Mode
                 setTitle(initialEvent.title);
-                setStart(format(initialEvent.start, "yyyy-MM-dd'T'HH:mm"));
-                setEnd(format(initialEvent.end, "yyyy-MM-dd'T'HH:mm"));
+                setType(initialEvent.type || EVENT_TYPES.EVENT);
+                setStartDate(initialEvent.start);
+                setEndDate(initialEvent.end);
                 setNote(initialEvent.note || '');
                 setColorId(initialEvent.colorId);
             } else {
                 // Create Mode
                 const now = defaultDate || new Date();
-                // Round up for nice defaults
+                // If defaultDate provided (grid click), use it.
+                // If direct "Add" button, set to next hour.
+                let start = new Date(now);
                 if (!defaultDate) {
-                    now.setMinutes(0, 0, 0);
-                    now.setHours(now.getHours() + 1);
-                } else {
-                    // If defaultDate given (click on grid), it might be exact.
-                    // But usually grid click passes a start time.
+                    start.setMinutes(0, 0, 0);
+                    start.setHours(start.getHours() + 1);
                 }
 
-                const startTime = format(now, "yyyy-MM-dd'T'HH:mm");
-                // Default 1 hour duration
-                const endTime = format(new Date(now.getTime() + 60 * 60 * 1000), "yyyy-MM-dd'T'HH:mm");
+                const end = new Date(start.getTime() + 60 * 60 * 1000);
 
-                setStart(startTime);
-                setEnd(endTime);
                 setTitle('');
+                setType(EVENT_TYPES.EVENT);
+                setStartDate(start);
+                setEndDate(end);
                 setNote('');
                 setColorId(0);
             }
         }
     }, [isOpen, defaultDate, initialEvent]);
 
-    if (!isOpen) return null;
+    const handleSave = () => {
+        if (!title || !startDate || !endDate) return;
 
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        if (!title || !start || !end) return;
+        // Combine Date and Time
+        // The pickers might return Date objects.
+        // We just need to make sure they are valid.
 
         onSave({
-            id: crypto.randomUUID(),
+            id: initialEvent ? initialEvent.id : crypto.randomUUID(),
             title,
-            start: new Date(start),
-            end: new Date(end),
+            type,
+            start: startDate,
+            end: endDate,
             note,
             colorId
         });
         onClose();
     };
 
+    const handleTypeChange = (event, newType) => {
+        if (newType !== null) {
+            setType(newType);
+        }
+    };
+
     return (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
-            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
-                <h2 className="text-xl font-bold mb-4">{initialEvent ? t('actions.edit') : t('actions.addEvent')}</h2>
+        <>
+            <Dialog open={isOpen} onClose={onClose} maxWidth="sm" fullWidth>
+                <DialogTitle>
+                    {initialEvent ? t('actions.edit') : t('actions.addEvent')}
+                </DialogTitle>
+                <DialogContent>
+                    <Stack spacing={3} sx={{ mt: 1 }}>
+                        {/* Type Toggle */}
+                        <ToggleButtonGroup
+                            value={type}
+                            exclusive
+                            onChange={handleTypeChange}
+                            aria-label="event type"
+                            fullWidth
+                        >
+                            <ToggleButton value={EVENT_TYPES.EVENT}>
+                                {t('event.typeEvent', 'Event')}
+                            </ToggleButton>
+                            <ToggleButton value={EVENT_TYPES.STATUS}>
+                                {t('event.typeStatus', 'Status')}
+                            </ToggleButton>
+                        </ToggleButtonGroup>
 
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">{t('event.title')}</label>
-                        <input
-                            type="text"
-                            required
+                        {/* Title */}
+                        <TextField
+                            autoFocus
+                            label={t('event.title')}
+                            fullWidth
                             value={title}
-                            onChange={e => setTitle(e.target.value)}
-                            maxLength={MAX_LENGTH_TITLE}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2"
+                            onChange={(e) => setTitle(e.target.value)}
+                            inputProps={{ maxLength: MAX_LENGTH_TITLE }}
+                            required
                         />
-                    </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">{t('event.start')}</label>
-                            <input
-                                type="datetime-local"
-                                required
-                                value={start}
-                                onChange={e => setStart(e.target.value)}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2"
+                        {/* Date & Time Pickers */}
+                        <Stack direction="row" spacing={2}>
+                            <DatePicker
+                                label={t('event.startDate', 'Start Date')}
+                                value={startDate}
+                                onChange={(newValue) => setStartDate(newValue)}
+                                slotProps={{ textField: { fullWidth: true } }}
                             />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">{t('event.end')}</label>
-                            <input
-                                type="datetime-local"
-                                required
-                                value={end}
-                                onChange={e => setEnd(e.target.value)}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2"
+                            <TimePicker
+                                label={t('event.startTime', 'Start Time')}
+                                value={startDate}
+                                onChange={(newValue) => {
+                                    // Update time part of startDate
+                                    if (startDate && newValue) {
+                                        const newDate = new Date(startDate);
+                                        newDate.setHours(newValue.getHours());
+                                        newDate.setMinutes(newValue.getMinutes());
+                                        setStartDate(newDate);
+                                    } else {
+                                        setStartDate(newValue);
+                                    }
+                                }}
+                                ampm={false}
+                                slotProps={{ textField: { fullWidth: true } }}
                             />
-                        </div>
-                    </div>
+                        </Stack>
 
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">{t('event.note')}</label>
-                        <textarea
-                            value={note}
-                            onChange={e => setNote(e.target.value)}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2"
-                        />
-                    </div>
+                        <Stack direction="row" spacing={2}>
+                            <DatePicker
+                                label={t('event.endDate', 'End Date')}
+                                value={endDate}
+                                onChange={(newValue) => setEndDate(newValue)}
+                                slotProps={{ textField: { fullWidth: true } }}
+                            />
+                            <TimePicker
+                                label={t('event.endTime', 'End Time')}
+                                value={endDate}
+                                onChange={(newValue) => {
+                                    if (endDate && newValue) {
+                                        const newDate = new Date(endDate);
+                                        newDate.setHours(newValue.getHours());
+                                        newDate.setMinutes(newValue.getMinutes());
+                                        setEndDate(newDate);
+                                    } else {
+                                        setEndDate(newValue);
+                                    }
+                                }}
+                                ampm={false}
+                                slotProps={{ textField: { fullWidth: true } }}
+                            />
+                        </Stack>
 
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">{t('event.color')}</label>
-                        <div className="flex gap-2">
-                            {MASSEY_COLORS.map((c, i) => (
-                                <button
-                                    key={i}
-                                    type="button"
-                                    onClick={() => setColorId(i)}
-                                    className={`w-8 h-8 rounded-full ${c} ${colorId === i ? 'ring-2 ring-offset-2 ring-gray-400' : ''}`}
-                                />
-                            ))}
-                        </div>
-                    </div>
+                        {/* Note */}
+                        <Box position="relative">
+                            <TextField
+                                label={t('event.note')}
+                                multiline
+                                rows={3}
+                                fullWidth
+                                value={note}
+                                onChange={(e) => setNote(e.target.value)}
+                            />
+                            <IconButton
+                                onClick={() => setIsLargeNoteOpen(true)}
+                                size="small"
+                                sx={{ position: 'absolute', right: 8, top: 8, zIndex: 1, backgroundColor: 'rgba(255,255,255,0.8)' }}
+                                title="Expand Note Editor"
+                            >
+                                <Maximize2 size={16} />
+                            </IconButton>
+                        </Box>
 
-                    <div className="flex justify-end gap-2 mt-6">
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-                        >
-                            {t('actions.cancel')}
-                        </button>
-                        <button
-                            type="submit"
-                            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
-                        >
-                            {t('actions.save')}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+                        {/* Color Picker */}
+                        <Box>
+                            <Typography variant="body2" color="text.secondary" gutterBottom>
+                                {t('event.color')}
+                            </Typography>
+                            <Stack direction="row" spacing={1}>
+                                {MASSEY_COLORS.map((c, i) => (
+                                    // Render color circle
+                                    // Using DOM button with Tailwind class for color? 
+                                    // Or mapping tailwind class to hex?
+                                    // Our constant uses Tailwind classes `bg-blue-600`.
+                                    // We can just use a div with className.
+                                    <div
+                                        key={i}
+                                        className={`${c} rounded-full w-8 h-8 cursor-pointer border-2 ${colorId === i ? 'border-gray-600' : 'border-transparent'}`}
+                                        onClick={() => setColorId(i)}
+                                    />
+                                ))}
+                            </Stack>
+                        </Box>
+
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={onClose} color="inherit">
+                        {t('actions.cancel')}
+                    </Button>
+                    <Button onClick={handleSave} variant="contained" color="primary">
+                        {t('actions.save')}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Large Note Editor Dialog */}
+            <Dialog
+                open={isLargeNoteOpen}
+                onClose={() => setIsLargeNoteOpen(false)}
+                fullWidth
+                maxWidth="md"
+                PaperProps={{
+                    sx: { height: '80vh', display: 'flex', flexDirection: 'column' }
+                }}
+            >
+                <DialogTitle sx={{ borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    {t('event.note')}
+                    <IconButton onClick={() => setIsLargeNoteOpen(false)} edge="end">
+                        <X size={20} />
+                    </IconButton>
+                </DialogTitle>
+                <DialogContent sx={{ flexGrow: 1, p: 2, display: 'flex', flexDirection: 'column' }}>
+                    <TextField
+                        multiline
+                        fullWidth
+                        value={note}
+                        onChange={(e) => setNote(e.target.value)}
+                        variant="standard"
+                        InputProps={{ disableUnderline: true }}
+                        placeholder="Type your detailed notes here..."
+                        sx={{
+                            flexGrow: 1,
+                            mt: 2,
+                            '& .MuiInputBase-root': { height: '100%', alignItems: 'flex-start', overflow: 'auto' },
+                            '& .MuiInputBase-input': { height: '100% !important', overflow: 'auto !important' }
+                        }}
+                    />
+                </DialogContent>
+                <DialogActions sx={{ borderTop: '1px solid #eee', p: 2 }}>
+                    <Button onClick={() => setIsLargeNoteOpen(false)} variant="contained" color="primary">
+                        {t('actions.save')} & {t('actions.close')}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+        </>
     );
 }
