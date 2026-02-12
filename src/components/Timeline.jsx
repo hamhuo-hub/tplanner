@@ -13,7 +13,7 @@ import { useRef, useEffect, useLayoutEffect, useState } from 'react';
  * @param {Function} onLoadPrev
  * @param {Function} onLoadNext
  */
-export default function Timeline({ startDate, endDate, events, onEventClick, onAddEvent, highlight, onLoadPrev, onLoadNext, onUpdateEvent }) {
+export default function Timeline({ startDate, endDate, events, onEventClick, onAddEvent, highlight, onLoadPrev, onLoadNext, onUpdateEvent, clashes }) {
     const scrollContainerRef = useRef(null);
     const [days, setDays] = useState([]);
 
@@ -348,6 +348,7 @@ export default function Timeline({ startDate, endDate, events, onEventClick, onA
                         key={day.toISOString()}
                         date={day}
                         events={events}
+                        clashes={clashes}
                         onEventClick={handleEventClickProxy} // Use Proxy
                         onAddEvent={handleAddEventProxy} // Use Proxy
                         highlight={highlight}

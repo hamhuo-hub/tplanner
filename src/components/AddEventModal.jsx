@@ -189,16 +189,16 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                                         onChange={(e, val) => setRecurrenceType(val)}
                                         size="small"
                                     >
-                                        <ToggleButton value="none">None</ToggleButton>
-                                        <ToggleButton value="daily">Daily</ToggleButton>
-                                        <ToggleButton value="weekly">Weekly</ToggleButton>
-                                        <ToggleButton value="monthly">Monthly</ToggleButton>
+                                        <ToggleButton value="none">{t('recurrence.none')}</ToggleButton>
+                                        <ToggleButton value="daily">{t('recurrence.daily')}</ToggleButton>
+                                        <ToggleButton value="weekly">{t('recurrence.weekly')}</ToggleButton>
+                                        <ToggleButton value="monthly">{t('recurrence.monthly')}</ToggleButton>
                                     </ToggleButtonGroup>
                                 </Stack>
                                 {recurrenceType !== 'none' && (
                                     <Stack direction="row" spacing={2} sx={{ mt: 2 }} alignItems="center">
                                         <TextField
-                                            label="Repeat Count"
+                                            label={t('recurrence.count')}
                                             type="number"
                                             size="small"
                                             value={recurrenceCount}
@@ -207,7 +207,7 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                                             sx={{ width: 100 }}
                                         />
                                         <Typography variant="caption" color="text.secondary">
-                                            (Max 50)
+                                            {t('recurrence.max')}
                                         </Typography>
                                     </Stack>
                                 )}
@@ -355,7 +355,8 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                                     // We can just use a div with className.
                                     <div
                                         key={i}
-                                        className={`${c} rounded-full w-8 h-8 cursor-pointer border-2 ${colorId === i ? 'border-gray-600' : 'border-transparent'}`}
+                                        className={`rounded-full w-8 h-8 cursor-pointer border-2 ${colorId === i ? 'border-gray-600' : 'border-transparent'}`}
+                                        style={{ backgroundColor: c }}
                                         onClick={() => setColorId(i)}
                                     />
                                 ))}
@@ -398,7 +399,7 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                         onChange={(e) => setNote(e.target.value)}
                         variant="standard"
                         InputProps={{ disableUnderline: true }}
-                        placeholder="Type your detailed notes here..."
+                        placeholder={t('event.notePlaceholder')}
                         sx={{
                             flexGrow: 1,
                             mt: 2,

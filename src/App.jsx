@@ -240,7 +240,7 @@ function App() {
                     <button
                         onClick={toggleLanguage}
                         className="flex items-center gap-2 text-gray-600 hover:text-gray-900 font-medium px-3 py-2 text-sm"
-                        title="Switch Language"
+                        title={t('app.switchLanguage')}
                     >
                         <Languages className="w-4 h-4" />
                         {i18n.language === 'en' ? '中文' : 'English'}
@@ -249,10 +249,10 @@ function App() {
                     <button
                         onClick={handlePrint}
                         className="flex items-center gap-2 text-gray-600 hover:text-gray-900 font-medium px-3 py-2 text-sm"
-                        title="Print Calendar"
+                        title={t('app.printCalendar')}
                     >
                         <Printer className="w-4 h-4" />
-                        {t('actions.print') || 'Print'}
+                        {t('actions.print')}
                     </button>
 
                     <button
@@ -340,6 +340,7 @@ function App() {
                     startDate={viewRange.start || new Date()}
                     endDate={viewRange.end || new Date()}
                     events={events}
+                    clashes={clashes}
                     onEventClick={setSelectedEvent}
                     onAddEvent={handleTimelineClick}
                     highlight={highlight}

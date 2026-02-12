@@ -48,6 +48,12 @@ export const checkForClashes = (events) => {
             // Ignore 'status' events for clashes
             if (eventA.type === 'status' || eventB.type === 'status') continue;
 
+            // NEW: Ignore clashes between different types (e.g. Event vs Task)
+            // Default to 'event' if type is undefined
+            const typeA = eventA.type || 'event';
+            const typeB = eventB.type || 'event';
+            if (typeA !== typeB) continue;
+
             // Check for overlap
             if (areIntervalsOverlapping(
                 { start: eventA.start, end: eventA.end },

@@ -27,7 +27,22 @@ fs.mkdirSync(STAGING_DIR);
 console.log('Copying files...');
 fs.cpSync(path.join(__dirname, 'dist'), path.join(STAGING_DIR, 'dist'), { recursive: true });
 fs.copyFileSync(path.join(__dirname, 'server.cjs'), path.join(STAGING_DIR, 'server.cjs'));
+// Copy node executable to staging
+console.log('Copying node executable...');
+try {
+    const nodeExePath = process.execPath;
+    const destNodePath = path.join(STAGING_DIR, 'node.exe');
+    console.log(`Copying ${nodeExePath} to ${destNodePath}`);
+    fs.copyFileSync(nodeExePath, destNodePath);
+} catch (e) {
+    console.error('Failed to copy node executable: ', e);
+    process.exit(1);
+}
 fs.copyFileSync(path.join(__dirname, 'package.json'), path.join(STAGING_DIR, 'package.json'));
+fs.copyFileSync(path.join(__dirname, 'launcher.vbs'), path.join(STAGING_DIR, 'launcher.vbs'));
+if (fs.existsSync(path.join(__dirname, 'landscape.png'))) {
+    fs.copyFileSync(path.join(__dirname, 'landscape.png'), path.join(STAGING_DIR, 'landscape.png'));
+}
 
 if (fs.existsSync(path.join(__dirname, 'package-lock.json'))) {
     fs.copyFileSync(path.join(__dirname, 'package-lock.json'), path.join(STAGING_DIR, 'package-lock.json'));
@@ -44,11 +59,14 @@ try {
 console.log('Packaging application with caxa...');
 try {
     // We use npx to run caxa. 
-    // caxa --input <dir> --output <exe> -- "{{caxa}}/node" <script>
-    // Note: we use "{{caxa}}/node" to find the node binary bundled with caxa.
+    // New Strategy: Use launcher.vbs to run node hidden.
+    // Cmd: "wscript" "{{caxa}}/launcher.vbs" "{{caxa}}/node.exe" "{{caxa}}/server.cjs" "--packaged"
+    // IMPORTANT: We are now explicitly bundling node.exe into the package!
 
-    // Use cmd /c to keep window open on error (for debugging) and ensure we use bundled server
-    execSync('npx --yes caxa --input staging --output tplanner-win.exe -- "cmd" "/c" "node \"{{caxa}}/server.cjs\" --packaged || pause"', { stdio: 'inherit' });
+    // Note: The double quotes around arguments are critical for paths with spaces.
+    // {{caxa}} is replaced by the temp directory.
+    const caxaCmd = 'npx --yes caxa --input staging --output tplanner-win.exe -- "wscript" "{{caxa}}/launcher.vbs" "{{caxa}}/node.exe" "{{caxa}}/server.cjs" "--packaged"';
+    execSync(caxaCmd, { stdio: 'inherit' });
 
     console.log('Packaging complete: tplanner-win.exe');
 } catch (e) {

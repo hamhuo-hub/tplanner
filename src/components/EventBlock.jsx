@@ -20,7 +20,7 @@ export default function EventBlock({ event, onClick, isConflicting, ...props }) 
     const leftPercent = (startMinutes / totalDayMinutes) * 100;
     const widthPercent = (durationMinutes / totalDayMinutes) * 100;
 
-    const colorClass = MASSEY_COLORS[event.colorId] || 'bg-blue-600';
+    const color = MASSEY_COLORS[event.colorId] || MASSEY_COLORS[0];
 
     return (
         <div
@@ -33,8 +33,9 @@ export default function EventBlock({ event, onClick, isConflicting, ...props }) 
                     props.onDragStart(e);
                 }
             }}
-            className={`event-block absolute rounded shadow-md border border-white/20 text-white text-xs overflow-hidden cursor-pointer hover:brightness-110 transition-all ${colorClass} ${isConflicting ? 'brightness-[0.75] saturate-150 border-white/40 ring-1 ring-black/10' : ''}`}
+            className={`event-block absolute rounded shadow-md border border-white/20 text-white text-xs overflow-hidden cursor-pointer hover:brightness-110 transition-all ${isConflicting ? 'brightness-[0.75] saturate-150 border-white/40 ring-1 ring-black/10' : ''}`}
             style={{
+                backgroundColor: color,
                 left: `${leftPercent}%`,
                 width: `${widthPercent}%`,
                 zIndex: 10,

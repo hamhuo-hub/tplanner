@@ -17,7 +17,7 @@ export default function EventDetailsModal({ event, onClose, onDelete, onEdit, on
 
     if (!event) return null;
 
-    const colorClass = MASSEY_COLORS[event.colorId] || MASSEY_COLORS[0];
+    const color = MASSEY_COLORS[event.colorId] || MASSEY_COLORS[0];
 
     return (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -26,7 +26,10 @@ export default function EventDetailsModal({ event, onClose, onDelete, onEdit, on
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Header with color - reduced height to half of original (h-12) */}
-                <div className={`h-12 ${colorClass} relative flex justify-end p-2`}>
+                <div
+                    className={`h-12 relative flex justify-end p-2`}
+                    style={{ backgroundColor: color }}
+                >
                     <button
                         onClick={onClose}
                         className="text-white/80 hover:text-white bg-black/10 hover:bg-black/20 rounded-full p-1"
@@ -41,7 +44,7 @@ export default function EventDetailsModal({ event, onClose, onDelete, onEdit, on
 
                     <div className="space-y-4">
                         <div>
-                            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Time</p>
+                            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">{t('event.timeLabel')}</p>
                             <p className="text-gray-700 text-sm">
                                 {format(event.start, 'EEEE, d MMMM yyyy', { locale })}
                                 <br />
@@ -99,7 +102,7 @@ export default function EventDetailsModal({ event, onClose, onDelete, onEdit, on
                         {onDelete && (
                             <button
                                 onClick={() => {
-                                    if (confirm('Are you sure you want to delete this event?')) {
+                                    if (confirm(t('messages.deleteConfirmation'))) {
                                         onDelete(event.id);
                                         onClose();
                                     }

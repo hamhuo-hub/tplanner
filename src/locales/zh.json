@@ -1,6 +1,8 @@
 {
     "app": {
-        "title": "tPlanner"
+        "title": "tPlanner",
+        "switchLanguage": "切换语言",
+        "printCalendar": "打印日历"
     },
     "nav": {
         "prev": "前两个月",
@@ -14,7 +16,16 @@
         "save": "保存",
         "cancel": "取消",
         "delete": "删除",
-        "edit": "编辑"
+        "edit": "编辑",
+        "print": "打印"
+    },
+    "recurrence": {
+        "none": "无",
+        "daily": "每天",
+        "weekly": "每周",
+        "monthly": "每月",
+        "count": "重复次数",
+        "max": "(最大 50)"
     },
     "event": {
         "title": "标题",
@@ -22,7 +33,9 @@
         "end": "结束时间",
         "note": "备注",
         "color": "颜色",
-        "details": "事件详情"
+        "details": "事件详情",
+        "timeLabel": "时间",
+        "notePlaceholder": "在此输入详细备注..."
     },
     "clash": {
         "detected": "检测到日程冲突",
@@ -33,6 +46,7 @@
     "messages": {
         "importSuccess": "数据导入成功！",
         "importError": "数据格式无效。",
-        "parseError": "文件解析失败。"
+        "parseError": "文件解析失败。",
+        "deleteConfirmation": "您确定要删除此事件吗？"
     }
 }

@@ -12,7 +12,7 @@ import { MASSEY_COLORS } from '../utils/constants';
  * @param {Function} props.onAddEvent
  * @param {Object} dragState
  */
-export default function EventRow({ date, events, onEventClick, onAddEvent, highlight, onDragStart, dragState }) {
+export default function EventRow({ date, events, onEventClick, onAddEvent, highlight, onDragStart, dragState, clashes }) {
     const { i18n } = useTranslation();
     const locale = getDateLocale(i18n.language);
 
@@ -63,8 +63,10 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
         if (currentCluster.length > 0) clusters.push(currentCluster);
 
         clusters.forEach(cluster => {
-            const isConflicting = cluster.length > 1;
+            // Checks global 'clashes' for this event ID.
+            // This ensures visuals match the global conflict logic (which already handles same-type check).
             cluster.forEach((ev, idx) => {
+                const isConflicting = clashes ? clashes.some(c => c.eventId === ev.id) : false;
                 finalRegularEvents.push({
                     ...ev,
                     isConflicting,
@@ -170,8 +172,9 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                             return (
                                 <div
                                     key={ev.id}
-                                    className={`absolute rounded px-1 text-[10px] whitespace-nowrap overflow-hidden text-white pointer-events-auto cursor-pointer shadow-sm hover:brightness-110 ${ev.colorId !== undefined ? MASSEY_COLORS[ev.colorId] : 'bg-gray-500'}`}
+                                    className={`absolute rounded px-1 text-[10px] whitespace-nowrap overflow-hidden text-white pointer-events-auto cursor-pointer shadow-sm hover:brightness-110`}
                                     style={{
+                                        backgroundColor: ev.colorId !== undefined ? MASSEY_COLORS[ev.colorId] : '#999999',
                                         left: `${left}%`,
                                         width: `${width}%`,
                                         top: `${ev.rowIndex * 18}px`,

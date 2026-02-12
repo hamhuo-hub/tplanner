@@ -24,13 +24,14 @@ export const EVENT_TYPES = {
  */
 
 export const MASSEY_COLORS = [
-    "bg-blue-600",   // 0: Standard Blue
-    "bg-purple-600", // 1: Lecture
-    "bg-green-600",  // 2: Lab
-    "bg-yellow-500", // 3: Workshop
-    "bg-red-500",    // 4: Important
-    "bg-gray-500",   // 5: Optional
-    "bg-indigo-500", // 6: Other
+    "#377EB8", // 0: Blue
+    "#FF7F00", // 1: Orange
+    "#E41A1C", // 2: Red
+    "#4DAF4A", // 3: Green
+    "#984EA3", // 4: Purple
+    "#A65628", // 5: Brown
+    "#F781BF", // 6: Pink
+    "#999999", // 7: Grey
 ];
 
 // Event Constraints
