@@ -25,7 +25,15 @@ export default function EventBlock({ event, onClick, isConflicting, ...props }) 
     return (
         <div
             onClick={(e) => { e.stopPropagation(); onClick(event); }}
-            className={`absolute rounded shadow-md border border-white/20 text-white text-xs overflow-hidden cursor-pointer hover:brightness-110 transition-all ${colorClass} ${isConflicting ? 'brightness-[0.75] saturate-150 border-white/40 ring-1 ring-black/10' : ''}`}
+            onMouseDown={(e) => {
+                // Only left click
+                if (e.button !== 0) return;
+                e.stopPropagation();
+                if (props.onDragStart) {
+                    props.onDragStart(e);
+                }
+            }}
+            className={`event-block absolute rounded shadow-md border border-white/20 text-white text-xs overflow-hidden cursor-pointer hover:brightness-110 transition-all ${colorClass} ${isConflicting ? 'brightness-[0.75] saturate-150 border-white/40 ring-1 ring-black/10' : ''}`}
             style={{
                 left: `${leftPercent}%`,
                 width: `${widthPercent}%`,

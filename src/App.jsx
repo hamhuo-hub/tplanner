@@ -144,15 +144,28 @@ function App() {
     };
 
     const handleSaveEvent = (eventData) => {
-        if (editingEvent) {
-            // Update existing
-            setEvents(prev => prev.map(e => e.id === editingEvent.id ? { ...eventData, id: editingEvent.id } : e));
-            setEditingEvent(null);
-        } else {
-            // Create new
-            setEvents(prev => [...prev, eventData]);
-        }
+        setEvents(prev => {
+            let newEvents = [...prev];
+            const updates = Array.isArray(eventData) ? eventData : [eventData];
+
+            updates.forEach(update => {
+                const index = newEvents.findIndex(e => e.id === update.id);
+                if (index >= 0) {
+                    newEvents[index] = update;
+                } else {
+                    newEvents.push(update);
+                }
+            });
+            return newEvents;
+        });
+
+        setEditingEvent(null);
         setIsAddModalOpen(false);
+
+        // Update selectedEvent if needed (only if single edit matches)
+        if (!Array.isArray(eventData) && selectedEvent && selectedEvent.id === eventData.id) {
+            setSelectedEvent(eventData);
+        }
     };
 
     const handleDeleteEvent = (id) => {
@@ -332,6 +345,7 @@ function App() {
                     highlight={highlight}
                     onLoadPrev={handleLoadMorePrev}
                     onLoadNext={handleLoadMoreNext}
+                    onUpdateEvent={handleSaveEvent}
                 />
             </main>
 

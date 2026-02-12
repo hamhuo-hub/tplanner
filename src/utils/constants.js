@@ -6,12 +6,14 @@
  * @property {Date} end
  * @property {number} colorId - 0-6
  * @property {string} [note]
- * @property {'event'|'status'} [type] - Default 'event'
+ * @property {'event'|'status'|'task'} [type] - Default 'event'
+ * @property {Array<{id: string, text: string, completed: boolean}>} [checklist] - For 'task' type
  */
 
 export const EVENT_TYPES = {
     EVENT: 'event',
     STATUS: 'status',
+    TASK: 'task',
 };
 
 /**

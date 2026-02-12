@@ -1,4 +1,4 @@
-import { format, areIntervalsOverlapping, startOfDay, endOfDay, max, min, addMinutes } from 'date-fns';
+import { format, areIntervalsOverlapping, startOfDay, endOfDay, max, min, addMinutes, isSameDay } from 'date-fns';
 import EventBlock from './EventBlock';
 import { useTranslation } from 'react-i18next';
 import { getDateLocale } from '../utils/dateLocale';
@@ -10,8 +10,9 @@ import { MASSEY_COLORS } from '../utils/constants';
  * @param {import('../utils/constants').Event[]} props.events
  * @param {Function} props.onEventClick
  * @param {Function} props.onAddEvent
+ * @param {Object} dragState
  */
-export default function EventRow({ date, events, onEventClick, onAddEvent, highlight }) {
+export default function EventRow({ date, events, onEventClick, onAddEvent, highlight, onDragStart, dragState }) {
     const { i18n } = useTranslation();
     const locale = getDateLocale(i18n.language);
 
@@ -115,6 +116,9 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
     const isWeekend = date.getDay() === 0 || date.getDay() === 6;
 
     const handleGridClick = (e) => {
+        // Prevent clicking on grid if we actually clicked an event (safety check)
+        if (e.target.closest('.event-block')) return;
+
         const rect = e.currentTarget.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const width = rect.width;
@@ -241,22 +245,82 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
 
 
                     {/* Regular Events */}
-                    {finalRegularEvents.map(event => (
-                        <EventBlock
-                            key={event.id}
-                            event={event}
-                            isConflicting={event.isConflicting}
-                            onClick={(e) => {
-                                const original = events.find(ev => ev.id === event.id);
-                                onEventClick(original || event);
-                            }}
-                            style={{
-                                ...event.style,
-                                top: `calc(15% + ${event.style.top})`,
-                                height: '70%',
-                            }}
-                        />
-                    ))}
+                    {finalRegularEvents.map(event => {
+                        // If this event is being dragged, hide it (it's being represented by the ghost or elsewhere)
+                        const isDragging = dragState?.event?.id === event.id;
+
+                        return (
+                            <EventBlock
+                                key={event.id}
+                                event={event}
+                                isConflicting={event.isConflicting}
+                                onClick={(e) => {
+                                    const original = events.find(ev => ev.id === event.id);
+                                    onEventClick(original || event);
+                                }}
+                                onDragStart={(e) => onDragStart(event, e.clientX, e.clientY, date)}
+                                style={{
+                                    ...event.style,
+                                    top: `calc(15% + ${event.style.top})`,
+                                    height: '70%',
+                                    opacity: isDragging ? 0 : 1, // Hide original when dragging
+                                    pointerEvents: isDragging ? 'none' : 'auto'
+                                }}
+                            />
+                        );
+                    })}
+
+                    {/* Ghost Event (Snap Preview) */}
+                    {dragState && dragState.snapStart && dragState.snapEnd && (
+                        (() => {
+                            const dayStart = startOfDay(date);
+                            const dayEnd = endOfDay(date);
+                            const snapStart = dragState.snapStart;
+                            const snapEnd = dragState.snapEnd;
+
+                            // Check overlap
+                            if (!areIntervalsOverlapping({ start: dayStart, end: dayEnd }, { start: snapStart, end: snapEnd })) {
+                                return null;
+                            }
+
+                            // Calculate position within this day
+                            const rangeStart = max([dayStart, snapStart]);
+                            const rangeEnd = min([dayEnd, snapEnd]);
+
+                            const totalDayMins = 24 * 60;
+                            const startMins = rangeStart.getHours() * 60 + rangeStart.getMinutes();
+
+                            // Handle cross-day end time (e.g. 00:00 of next day needs to be 1440 mins)
+                            let endMins = rangeEnd.getHours() * 60 + rangeEnd.getMinutes();
+                            if (endMins === 0 && rangeEnd > rangeStart) endMins = totalDayMins;
+
+                            const leftPercent = (startMins / totalDayMins) * 100;
+                            const widthPercent = ((endMins - startMins) / totalDayMins) * 100;
+
+                            return (
+                                <EventBlock
+                                    event={{
+                                        ...dragState.event,
+                                        start: snapStart,
+                                        end: snapEnd
+                                    }}
+                                    isConflicting={false}
+                                    onClick={() => { }}
+                                    style={{
+                                        left: `${leftPercent}%`,
+                                        width: `${widthPercent}%`,
+                                        top: '15%',
+                                        height: '70%',
+                                        zIndex: 50,
+                                        opacity: 0.8,
+                                        border: '2px dashed white',
+                                        boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                                        position: 'absolute'
+                                    }}
+                                />
+                            );
+                        })()
+                    )}
                 </div>
             </div>
         </div>

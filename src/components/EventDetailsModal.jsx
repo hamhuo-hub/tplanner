@@ -1,7 +1,7 @@
 import { format } from 'date-fns';
 import { useTranslation } from 'react-i18next';
 import { MASSEY_COLORS } from '../utils/constants';
-import { X } from 'lucide-react';
+import { X, CheckCircle, Circle } from 'lucide-react';
 import { getDateLocale } from '../utils/dateLocale';
 
 /**
@@ -11,7 +11,7 @@ import { getDateLocale } from '../utils/dateLocale';
  * @param {Function} [props.onDelete]
  * @param {Function} [props.onEdit]
  */
-export default function EventDetailsModal({ event, onClose, onDelete, onEdit }) {
+export default function EventDetailsModal({ event, onClose, onDelete, onEdit, onSave }) {
     const { t, i18n } = useTranslation();
     const locale = getDateLocale(i18n.language);
 
@@ -57,6 +57,39 @@ export default function EventDetailsModal({ event, onClose, onDelete, onEdit }) 
                                 {/* Max height 300px as requested */}
                                 <div className="text-gray-700 text-sm whitespace-pre-wrap max-h-[300px] overflow-y-auto border border-gray-100 rounded p-2 bg-gray-50">
                                     {event.note}
+                                </div>
+                            </div>
+                        )}
+
+                        {event.checklist && event.checklist.length > 0 && (
+                            <div>
+                                <div className="flex justify-between items-center mb-1">
+                                    <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">{t('event.checklist', 'Checklist')}</p>
+                                    <span className="text-xs text-gray-400">
+                                        {event.checklist.filter(i => i.completed).length}/{event.checklist.length}
+                                    </span>
+                                </div>
+                                <div className="space-y-1">
+                                    {event.checklist.map((item, idx) => (
+                                        <div
+                                            key={item.id || idx}
+                                            className="flex items-start gap-2 p-2 rounded hover:bg-gray-50 cursor-pointer group"
+                                            onClick={() => {
+                                                if (onSave) {
+                                                    const newChecklist = [...event.checklist];
+                                                    newChecklist[idx] = { ...item, completed: !item.completed };
+                                                    onSave({ ...event, checklist: newChecklist });
+                                                }
+                                            }}
+                                        >
+                                            <div className={`mt-0.5 ${item.completed ? 'text-green-500' : 'text-gray-300 group-hover:text-gray-400'}`}>
+                                                {item.completed ? <CheckCircle size={18} /> : <Circle size={18} />}
+                                            </div>
+                                            <span className={`text-sm ${item.completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}>
+                                                {item.text}
+                                            </span>
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
                         )}

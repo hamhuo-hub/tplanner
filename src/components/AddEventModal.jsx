@@ -19,7 +19,7 @@ import {
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import { styled } from '@mui/material/styles';
-import { Maximize2, X } from 'lucide-react';
+import { Maximize2, X, PlusCircle, MinusCircle } from 'lucide-react';
 
 const ColorButton = styled('button')(({ theme, colorSelected }) => ({
     width: 32,
@@ -42,7 +42,12 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
     const [startDate, setStartDate] = useState(null);
     const [endDate, setEndDate] = useState(null);
     const [note, setNote] = useState('');
+    const [checklist, setChecklist] = useState([]);
     const [colorId, setColorId] = useState(0);
+
+    // Recurrence State
+    const [recurrenceType, setRecurrenceType] = useState('none'); // 'none', 'daily', 'weekly', 'monthly'
+    const [recurrenceCount, setRecurrenceCount] = useState(1);
 
     const [isLargeNoteOpen, setIsLargeNoteOpen] = useState(false);
 
@@ -55,6 +60,7 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                 setStartDate(initialEvent.start);
                 setEndDate(initialEvent.end);
                 setNote(initialEvent.note || '');
+                setChecklist(initialEvent.checklist || []);
                 setColorId(initialEvent.colorId);
             } else {
                 // Create Mode
@@ -74,7 +80,12 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                 setStartDate(start);
                 setEndDate(end);
                 setNote('');
+                setChecklist([]);
                 setColorId(0);
+
+                // Reset Recurrence
+                setRecurrenceType('none');
+                setRecurrenceCount(1);
             }
         }
     }, [isOpen, defaultDate, initialEvent]);
@@ -82,19 +93,53 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
     const handleSave = () => {
         if (!title || !startDate || !endDate) return;
 
-        // Combine Date and Time
-        // The pickers might return Date objects.
-        // We just need to make sure they are valid.
+        const eventsToSave = [];
+        const groupId = crypto.randomUUID(); // Optional: link them
 
-        onSave({
-            id: initialEvent ? initialEvent.id : crypto.randomUUID(),
-            title,
-            type,
-            start: startDate,
-            end: endDate,
-            note,
-            colorId
-        });
+        if (initialEvent || recurrenceType === 'none') {
+            // Single Event
+            eventsToSave.push({
+                id: initialEvent ? initialEvent.id : crypto.randomUUID(),
+                title,
+                type,
+                start: startDate,
+                end: endDate,
+                note,
+                checklist: type === EVENT_TYPES.TASK ? checklist : undefined,
+                colorId
+            });
+        } else {
+            // Recurring Events
+            for (let i = 0; i < recurrenceCount; i++) {
+                const newStart = new Date(startDate);
+                const newEnd = new Date(endDate);
+
+                if (recurrenceType === 'daily') {
+                    newStart.setDate(startDate.getDate() + i);
+                    newEnd.setDate(endDate.getDate() + i);
+                } else if (recurrenceType === 'weekly') {
+                    newStart.setDate(startDate.getDate() + (i * 7));
+                    newEnd.setDate(endDate.getDate() + (i * 7));
+                } else if (recurrenceType === 'monthly') {
+                    newStart.setMonth(startDate.getMonth() + i);
+                    newEnd.setMonth(endDate.getMonth() + i);
+                }
+
+                eventsToSave.push({
+                    id: crypto.randomUUID(),
+                    title,
+                    type,
+                    start: newStart,
+                    end: newEnd,
+                    note,
+                    checklist: type === EVENT_TYPES.TASK ? [...checklist] : undefined, // Clone checklist
+                    colorId,
+                    groupId // Optional tag
+                });
+            }
+        }
+
+        onSave(eventsToSave);
         onClose();
     };
 
@@ -126,7 +171,48 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                             <ToggleButton value={EVENT_TYPES.STATUS}>
                                 {t('event.typeStatus', 'Status')}
                             </ToggleButton>
+                            <ToggleButton value={EVENT_TYPES.TASK}>
+                                {t('event.typeTask', 'Task')}
+                            </ToggleButton>
                         </ToggleButtonGroup>
+
+                        {/* Recurrence Options - Only for Create Mode */}
+                        {!initialEvent && (
+                            <Box sx={{ border: '1px solid #eee', p: 1, borderRadius: 1 }}>
+                                <Stack direction="row" alignItems="center" justifyContent="space-between">
+                                    <Typography variant="body2" color="text.secondary">
+                                        {t('event.recurrence', 'Repeat')}
+                                    </Typography>
+                                    <ToggleButtonGroup
+                                        value={recurrenceType}
+                                        exclusive
+                                        onChange={(e, val) => setRecurrenceType(val)}
+                                        size="small"
+                                    >
+                                        <ToggleButton value="none">None</ToggleButton>
+                                        <ToggleButton value="daily">Daily</ToggleButton>
+                                        <ToggleButton value="weekly">Weekly</ToggleButton>
+                                        <ToggleButton value="monthly">Monthly</ToggleButton>
+                                    </ToggleButtonGroup>
+                                </Stack>
+                                {recurrenceType !== 'none' && (
+                                    <Stack direction="row" spacing={2} sx={{ mt: 2 }} alignItems="center">
+                                        <TextField
+                                            label="Repeat Count"
+                                            type="number"
+                                            size="small"
+                                            value={recurrenceCount}
+                                            onChange={(e) => setRecurrenceCount(parseInt(e.target.value) || 1)}
+                                            inputProps={{ min: 1, max: 50 }}
+                                            sx={{ width: 100 }}
+                                        />
+                                        <Typography variant="caption" color="text.secondary">
+                                            (Max 50)
+                                        </Typography>
+                                    </Stack>
+                                )}
+                            </Box>
+                        )}
 
                         {/* Title */}
                         <TextField
@@ -210,6 +296,50 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                                 <Maximize2 size={16} />
                             </IconButton>
                         </Box>
+
+                        {/* Checklist - Only for Task Type */}
+                        {type === EVENT_TYPES.TASK && (
+                            <Box>
+                                <Typography variant="body2" color="text.secondary" gutterBottom>
+                                    {t('event.checklist', 'Checklist')}
+                                </Typography>
+                                <Stack spacing={1}>
+                                    {checklist.map((item, index) => (
+                                        <Stack key={index} direction="row" spacing={1} alignItems="center">
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                value={item.text}
+                                                onChange={(e) => {
+                                                    const newChecklist = [...checklist];
+                                                    newChecklist[index].text = e.target.value;
+                                                    setChecklist(newChecklist);
+                                                }}
+                                                placeholder={t('event.checklistItem', 'Item...')}
+                                            />
+                                            <IconButton
+                                                size="small"
+                                                color="error"
+                                                onClick={() => {
+                                                    const newChecklist = checklist.filter((_, i) => i !== index);
+                                                    setChecklist(newChecklist);
+                                                }}
+                                            >
+                                                <MinusCircle size={20} />
+                                            </IconButton>
+                                        </Stack>
+                                    ))}
+                                    <Button
+                                        startIcon={<PlusCircle size={16} />}
+                                        size="small"
+                                        onClick={() => setChecklist([...checklist, { id: crypto.randomUUID(), text: '', completed: false }])}
+                                        sx={{ alignSelf: 'flex-start' }}
+                                    >
+                                        {t('actions.addItem', 'Add Item')}
+                                    </Button>
+                                </Stack>
+                            </Box>
+                        )}
 
                         {/* Color Picker */}
                         <Box>
