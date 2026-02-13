@@ -17,6 +17,18 @@ try {
     process.exit(1);
 }
 
+console.log('Generating icon...');
+try {
+    const scriptsDir = path.join(__dirname, 'scripts');
+    if (fs.existsSync(path.join(scriptsDir, 'convert_icon.js'))) {
+        execSync('node scripts/convert_icon.js', { stdio: 'inherit' });
+    } else {
+        console.warn('scripts/convert_icon.js not found. Skipping icon generation.');
+    }
+} catch (e) {
+    console.warn('Icon generation failed. Proceeding with existing icon if any.');
+}
+
 console.log('Preparing staging environment...');
 if (fs.existsSync(STAGING_DIR)) {
     fs.rmSync(STAGING_DIR, { recursive: true, force: true });
@@ -42,6 +54,9 @@ fs.copyFileSync(path.join(__dirname, 'package.json'), path.join(STAGING_DIR, 'pa
 fs.copyFileSync(path.join(__dirname, 'launcher.vbs'), path.join(STAGING_DIR, 'launcher.vbs'));
 if (fs.existsSync(path.join(__dirname, 'landscape.png'))) {
     fs.copyFileSync(path.join(__dirname, 'landscape.png'), path.join(STAGING_DIR, 'landscape.png'));
+}
+if (fs.existsSync(path.join(__dirname, 'icon.ico'))) {
+    fs.copyFileSync(path.join(__dirname, 'icon.ico'), path.join(STAGING_DIR, 'icon.ico'));
 }
 
 if (fs.existsSync(path.join(__dirname, 'package-lock.json'))) {
@@ -69,6 +84,24 @@ try {
     execSync(caxaCmd, { stdio: 'inherit' });
 
     console.log('Packaging complete: tplanner-win.exe');
+
+    // Post-processing: Set icon for the executable
+    // caxa doesn't support setting the icon for the stub natively in all versions/configurations easily without external tools.
+    // We use rcedit to set the icon.
+    console.log('Setting executable icon...');
+    try {
+        // Ensure icon.ico exists
+        if (fs.existsSync('icon.ico')) {
+            execSync('npx --yes rcedit "tplanner-win.exe" --set-icon "icon.ico"', { stdio: 'inherit' });
+            console.log('Icon applied to tplanner-win.exe');
+        } else {
+            console.warn('icon.ico not found, skipping icon application.');
+        }
+    } catch (e) {
+        console.warn('Failed to set executable icon with rcedit:', e.message);
+        console.warn('The executable works but might not have the correct icon.');
+    }
+
 } catch (e) {
     console.error('Packaging failed.', e);
     process.exit(1);
