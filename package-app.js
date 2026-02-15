@@ -17,10 +17,17 @@ try {
     process.exit(1);
 }
 
-console.log('Generating icon...');
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const { rcedit } = require('rcedit');
+
+console.log('Checking for icon...');
 try {
     const scriptsDir = path.join(__dirname, 'scripts');
-    if (fs.existsSync(path.join(scriptsDir, 'convert_icon.js'))) {
+    if (fs.existsSync('icon.ico')) {
+        console.log('Using existing icon.ico');
+    } else if (fs.existsSync(path.join(scriptsDir, 'convert_icon.js'))) {
+        console.log('Generating icon...');
         execSync('node scripts/convert_icon.js', { stdio: 'inherit' });
     } else {
         console.warn('scripts/convert_icon.js not found. Skipping icon generation.');
@@ -92,7 +99,9 @@ try {
     try {
         // Ensure icon.ico exists
         if (fs.existsSync('icon.ico')) {
-            execSync('npx --yes rcedit "tplanner-win.exe" --set-icon "icon.ico"', { stdio: 'inherit' });
+            await rcedit('tplanner-win.exe', {
+                icon: 'icon.ico'
+            });
             console.log('Icon applied to tplanner-win.exe');
         } else {
             console.warn('icon.ico not found, skipping icon application.');
