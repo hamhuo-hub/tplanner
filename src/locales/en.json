@@ -17,7 +17,9 @@
         "cancel": "Cancel",
         "delete": "Delete",
         "edit": "Edit",
-        "print": "Print"
+        "print": "Print",
+        "showAll": "Show all ({{count}})",
+        "showLess": "Show less"
     },
     "recurrence": {
         "none": "None",
@@ -25,17 +27,34 @@
         "weekly": "Weekly",
         "monthly": "Monthly",
         "count": "Repeat Count",
-        "max": "(Max 50)"
+        "max": "(Max 50)",
+        "editScope": "Edit Scope",
+        "deleteScope": "Delete Scope",
+        "scopeSingle": "This event only",
+        "scopeFuture": "This and following events",
+        "scopeAll": "All events in series"
     },
     "event": {
         "title": "Title",
         "start": "Start",
         "end": "End",
+        "timezone": "Timezone",
         "note": "Note",
         "color": "Color",
         "details": "Event Details",
         "timeLabel": "Time",
         "notePlaceholder": "Type your detailed notes here..."
+    },
+    "timezones": {
+        "default": "Beijing Time (Default)",
+        "America_Los_Angeles": "Los Angeles (PT)",
+        "America_New_York": "New York (ET)",
+        "Europe_London": "London (GMT)",
+        "Europe_Paris": "Paris (CET)",
+        "Asia_Dubai": "Dubai (GST)",
+        "Asia_Tokyo": "Tokyo (JST)",
+        "Australia_Sydney": "Sydney (AET)",
+        "Pacific_Auckland": "Auckland (NZST)"
     },
     "clash": {
         "detected": "Schedule Conflict Detected",

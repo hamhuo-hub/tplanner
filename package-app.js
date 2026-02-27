@@ -17,9 +17,7 @@ try {
     process.exit(1);
 }
 
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const { rcedit } = require('rcedit');
+
 
 console.log('Checking for icon...');
 try {
@@ -70,6 +68,10 @@ if (fs.existsSync(path.join(__dirname, 'package-lock.json'))) {
     fs.copyFileSync(path.join(__dirname, 'package-lock.json'), path.join(STAGING_DIR, 'package-lock.json'));
 }
 
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const rcedit = require('rcedit');
+
 console.log('Installing production dependencies in staging...');
 try {
     execSync('npm install --omit=dev --no-bin-links', { cwd: STAGING_DIR, stdio: 'inherit' });
@@ -78,38 +80,34 @@ try {
     process.exit(1);
 }
 
+console.log('Applying icon to staging node.exe...');
+const stagingNodeExe = path.join(STAGING_DIR, 'node.exe');
+if (fs.existsSync(stagingNodeExe) && fs.existsSync(path.join(STAGING_DIR, 'icon.ico'))) {
+    try {
+        await rcedit(stagingNodeExe, {
+            icon: path.join(STAGING_DIR, 'icon.ico')
+        });
+        console.log('Icon successfully applied to node.exe in staging.');
+    } catch (e) {
+        console.error('Failed to apply icon via rcedit. Packaged app will have default icon.', e);
+    }
+} else {
+    console.warn('node.exe or icon.ico missing in staging. Skipping rcedit.');
+}
+
 console.log('Packaging application with caxa...');
 try {
-    // We use npx to run caxa. 
     // New Strategy: Use launcher.vbs to run node hidden.
     // Cmd: "wscript" "{{caxa}}/launcher.vbs" "{{caxa}}/node.exe" "{{caxa}}/server.cjs" "--packaged"
     // IMPORTANT: We are now explicitly bundling node.exe into the package!
 
     // Note: The double quotes around arguments are critical for paths with spaces.
     // {{caxa}} is replaced by the temp directory.
-    const caxaCmd = 'npx --yes caxa --input staging --output tplanner-win.exe -- "wscript" "{{caxa}}/launcher.vbs" "{{caxa}}/node.exe" "{{caxa}}/server.cjs" "--packaged"';
+    console.log('Packaging application...');
+    const caxaCmd = `npx --yes caxa --input staging --output tplanner-win.exe --no-include-node -- "wscript" "{{caxa}}/launcher.vbs" "{{caxa}}/node.exe" "{{caxa}}/server.cjs" "--packaged"`;
     execSync(caxaCmd, { stdio: 'inherit' });
 
     console.log('Packaging complete: tplanner-win.exe');
-
-    // Post-processing: Set icon for the executable
-    // caxa doesn't support setting the icon for the stub natively in all versions/configurations easily without external tools.
-    // We use rcedit to set the icon.
-    console.log('Setting executable icon...');
-    try {
-        // Ensure icon.ico exists
-        if (fs.existsSync('icon.ico')) {
-            await rcedit('tplanner-win.exe', {
-                icon: 'icon.ico'
-            });
-            console.log('Icon applied to tplanner-win.exe');
-        } else {
-            console.warn('icon.ico not found, skipping icon application.');
-        }
-    } catch (e) {
-        console.warn('Failed to set executable icon with rcedit:', e.message);
-        console.warn('The executable works but might not have the correct icon.');
-    }
 
 } catch (e) {
     console.error('Packaging failed.', e);

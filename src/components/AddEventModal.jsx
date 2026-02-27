@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
+import { toDate } from 'date-fns-tz';
 import { useTranslation } from 'react-i18next';
-import { MAX_LENGTH_TITLE, MASSEY_COLORS, EVENT_TYPES } from '../utils/constants';
+import { MAX_LENGTH_TITLE, MASSEY_COLORS, EVENT_TYPES, TIMEZONES } from '../utils/constants';
 
 import {
     Dialog,
@@ -34,13 +35,14 @@ const ColorButton = styled('button')(({ theme, colorSelected }) => ({
     },
 }));
 
-export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, initialEvent }) {
+export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, initialEvent, events = [] }) {
     const { t } = useTranslation();
 
     const [title, setTitle] = useState('');
     const [type, setType] = useState(EVENT_TYPES.EVENT);
     const [startDate, setStartDate] = useState(null);
     const [endDate, setEndDate] = useState(null);
+    const [eventTimezone, setEventTimezone] = useState(''); // Empty string means local time
     const [note, setNote] = useState('');
     const [checklist, setChecklist] = useState([]);
     const [colorId, setColorId] = useState(0);
@@ -48,6 +50,7 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
     // Recurrence State
     const [recurrenceType, setRecurrenceType] = useState('none'); // 'none', 'daily', 'weekly', 'monthly'
     const [recurrenceCount, setRecurrenceCount] = useState(1);
+    const [editScope, setEditScope] = useState('single');
 
     const [isLargeNoteOpen, setIsLargeNoteOpen] = useState(false);
 
@@ -59,9 +62,15 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                 setType(initialEvent.type || EVENT_TYPES.EVENT);
                 setStartDate(initialEvent.start);
                 setEndDate(initialEvent.end);
+                setEventTimezone(initialEvent.timezone || '');
                 setNote(initialEvent.note || '');
                 setChecklist(initialEvent.checklist || []);
                 setColorId(initialEvent.colorId);
+
+                // Edit recurrence
+                setRecurrenceType(initialEvent.recurrenceType || 'none');
+                setRecurrenceCount(initialEvent.recurrenceCount || 1);
+                setEditScope('single');
             } else {
                 // Create Mode
                 const now = defaultDate || new Date();
@@ -79,6 +88,11 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                 setType(EVENT_TYPES.EVENT);
                 setStartDate(start);
                 setEndDate(end);
+
+                // Get travel timezone from localStorage if creating a new event
+                const savedTravelTz = localStorage.getItem('tplanner_travel_timezone');
+                setEventTimezone(savedTravelTz || 'Asia/Shanghai');
+
                 setNote('');
                 setChecklist([]);
                 setColorId(0);
@@ -93,53 +107,93 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
     const handleSave = () => {
         if (!title || !startDate || !endDate) return;
 
-        const eventsToSave = [];
-        const groupId = crypto.randomUUID(); // Optional: link them
+        let finalStartDate = startDate;
+        let finalEndDate = endDate;
 
-        if (initialEvent || recurrenceType === 'none') {
+        // If a specific timezone is selected, we assume the user entered the time AS IF they were in that timezone.
+        // We need to construct a Date object that represents that absolute moment in time.
+        // Since the user typed "10:00" into the picker, the Date object currently thinks it's 10:00 local time.
+        if (eventTimezone) {
+            try {
+                // Extract the YYYY-MM-DD HH:mm representation of what the user entered
+                const startStr = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}T${String(startDate.getHours()).padStart(2, '0')}:${String(startDate.getMinutes()).padStart(2, '0')}:00`;
+                const endStr = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}T${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}:00`;
+
+                // Parse it relative to the selected timezone using date-fns-tz
+                finalStartDate = toDate(startStr, { timeZone: eventTimezone });
+                finalEndDate = toDate(endStr, { timeZone: eventTimezone });
+            } catch (e) {
+                console.error("Failed to parse date with timezone", e);
+                // Fallback to local
+            }
+        }
+
+        const eventsToSave = [];
+        const groupId = (initialEvent && editScope !== 'single') ? initialEvent.groupId : crypto.randomUUID();
+
+        if ((editScope === 'single' && initialEvent) || recurrenceType === 'none') {
             // Single Event
             eventsToSave.push({
                 id: initialEvent ? initialEvent.id : crypto.randomUUID(),
                 title,
                 type,
-                start: startDate,
-                end: endDate,
+                start: finalStartDate,
+                end: finalEndDate,
+                timezone: eventTimezone,
                 note,
                 checklist: type === EVENT_TYPES.TASK ? checklist : undefined,
-                colorId
+                colorId,
+                groupId: (initialEvent && editScope === 'single') ? initialEvent.groupId : groupId,
+                recurrenceType: (initialEvent && editScope === 'single') ? initialEvent.recurrenceType : recurrenceType,
+                recurrenceCount: (initialEvent && editScope === 'single') ? initialEvent.recurrenceCount : recurrenceCount
             });
         } else {
             // Recurring Events
             for (let i = 0; i < recurrenceCount; i++) {
-                const newStart = new Date(startDate);
-                const newEnd = new Date(endDate);
+                const newStart = new Date(finalStartDate);
+                const newEnd = new Date(finalEndDate);
 
                 if (recurrenceType === 'daily') {
-                    newStart.setDate(startDate.getDate() + i);
-                    newEnd.setDate(endDate.getDate() + i);
+                    newStart.setDate(finalStartDate.getDate() + i);
+                    newEnd.setDate(finalEndDate.getDate() + i);
                 } else if (recurrenceType === 'weekly') {
-                    newStart.setDate(startDate.getDate() + (i * 7));
-                    newEnd.setDate(endDate.getDate() + (i * 7));
+                    newStart.setDate(finalStartDate.getDate() + (i * 7));
+                    newEnd.setDate(finalEndDate.getDate() + (i * 7));
                 } else if (recurrenceType === 'monthly') {
-                    newStart.setMonth(startDate.getMonth() + i);
-                    newEnd.setMonth(endDate.getMonth() + i);
+                    newStart.setMonth(finalStartDate.getMonth() + i);
+                    newEnd.setMonth(finalEndDate.getMonth() + i);
+                }
+
+                // Determine ID: Use existing ID for the first item if editing
+                let eventId;
+                if (initialEvent && i === 0) {
+                    eventId = initialEvent.id;
+                } else {
+                    eventId = crypto.randomUUID();
                 }
 
                 eventsToSave.push({
-                    id: crypto.randomUUID(),
+                    id: eventId,
                     title,
                     type,
                     start: newStart,
                     end: newEnd,
+                    timezone: eventTimezone,
                     note,
                     checklist: type === EVENT_TYPES.TASK ? [...checklist] : undefined, // Clone checklist
                     colorId,
-                    groupId // Optional tag
+                    groupId,
+                    recurrenceType,
+                    recurrenceCount
                 });
             }
         }
 
-        onSave(eventsToSave);
+        onSave(eventsToSave, {
+            scope: editScope,
+            originalGroupId: initialEvent?.groupId,
+            originalStartDate: initialEvent?.start
+        });
         onClose();
     };
 
@@ -176,42 +230,57 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                             </ToggleButton>
                         </ToggleButtonGroup>
 
-                        {/* Recurrence Options - Only for Create Mode */}
-                        {!initialEvent && (
-                            <Box sx={{ border: '1px solid #eee', p: 1, borderRadius: 1 }}>
-                                <Stack direction="row" alignItems="center" justifyContent="space-between">
-                                    <Typography variant="body2" color="text.secondary">
-                                        {t('event.recurrence', 'Repeat')}
-                                    </Typography>
-                                    <ToggleButtonGroup
-                                        value={recurrenceType}
-                                        exclusive
-                                        onChange={(e, val) => setRecurrenceType(val)}
+                        {/* Recurrence Options - Available in both Create and Edit Mode */}
+                        <Box sx={{ border: '1px solid #eee', p: 1, borderRadius: 1 }}>
+                            <Stack direction="row" alignItems="center" justifyContent="space-between">
+                                <Typography variant="body2" color="text.secondary">
+                                    {t('event.recurrence', 'Repeat')}
+                                </Typography>
+                                <ToggleButtonGroup
+                                    value={recurrenceType}
+                                    exclusive
+                                    onChange={(e, val) => setRecurrenceType(val)}
+                                    size="small"
+                                >
+                                    <ToggleButton value="none">{t('recurrence.none')}</ToggleButton>
+                                    <ToggleButton value="daily">{t('recurrence.daily')}</ToggleButton>
+                                    <ToggleButton value="weekly">{t('recurrence.weekly')}</ToggleButton>
+                                    <ToggleButton value="monthly">{t('recurrence.monthly')}</ToggleButton>
+                                </ToggleButtonGroup>
+                            </Stack>
+                            {recurrenceType !== 'none' && (
+                                <Stack direction="row" spacing={2} sx={{ mt: 2 }} alignItems="center">
+                                    <TextField
+                                        label={t('recurrence.count')}
+                                        type="number"
                                         size="small"
-                                    >
-                                        <ToggleButton value="none">{t('recurrence.none')}</ToggleButton>
-                                        <ToggleButton value="daily">{t('recurrence.daily')}</ToggleButton>
-                                        <ToggleButton value="weekly">{t('recurrence.weekly')}</ToggleButton>
-                                        <ToggleButton value="monthly">{t('recurrence.monthly')}</ToggleButton>
-                                    </ToggleButtonGroup>
+                                        value={recurrenceCount}
+                                        onChange={(e) => setRecurrenceCount(parseInt(e.target.value) || 1)}
+                                        inputProps={{ min: 1, max: 50 }}
+                                        sx={{ width: 100 }}
+                                    />
+                                    <Typography variant="caption" color="text.secondary">
+                                        {t('recurrence.max')}
+                                    </Typography>
                                 </Stack>
-                                {recurrenceType !== 'none' && (
-                                    <Stack direction="row" spacing={2} sx={{ mt: 2 }} alignItems="center">
-                                        <TextField
-                                            label={t('recurrence.count')}
-                                            type="number"
-                                            size="small"
-                                            value={recurrenceCount}
-                                            onChange={(e) => setRecurrenceCount(parseInt(e.target.value) || 1)}
-                                            inputProps={{ min: 1, max: 50 }}
-                                            sx={{ width: 100 }}
-                                        />
-                                        <Typography variant="caption" color="text.secondary">
-                                            {t('recurrence.max')}
-                                        </Typography>
-                                    </Stack>
-                                )}
-                            </Box>
+                            )}
+                        </Box>
+
+                        {/* Edit Scope - Only when editing a recurring event */}
+                        {initialEvent && initialEvent.groupId && (
+                            <TextField
+                                select
+                                label={t('recurrence.editScope', 'Apply changes to')}
+                                value={editScope}
+                                onChange={(e) => setEditScope(e.target.value)}
+                                SelectProps={{ native: true }}
+                                size="small"
+                                fullWidth
+                            >
+                                <option value="single">{t('recurrence.scopeSingle')}</option>
+                                <option value="future">{t('recurrence.scopeFuture')}</option>
+                                <option value="all">{t('recurrence.scopeAll')}</option>
+                            </TextField>
                         )}
 
                         {/* Title */}
@@ -226,55 +295,72 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                         />
 
                         {/* Date & Time Pickers */}
-                        <Stack direction="row" spacing={2}>
-                            <DatePicker
-                                label={t('event.startDate', 'Start Date')}
-                                value={startDate}
-                                onChange={(newValue) => setStartDate(newValue)}
-                                slotProps={{ textField: { fullWidth: true } }}
-                            />
-                            <TimePicker
-                                label={t('event.startTime', 'Start Time')}
-                                value={startDate}
-                                onChange={(newValue) => {
-                                    // Update time part of startDate
-                                    if (startDate && newValue) {
-                                        const newDate = new Date(startDate);
-                                        newDate.setHours(newValue.getHours());
-                                        newDate.setMinutes(newValue.getMinutes());
-                                        setStartDate(newDate);
-                                    } else {
-                                        setStartDate(newValue);
-                                    }
+                        <Stack spacing={2}>
+                            <Stack direction="row" spacing={2} alignItems="center">
+                                <DatePicker
+                                    label={t('event.startDate', 'Start Date')}
+                                    value={startDate}
+                                    onChange={(newValue) => setStartDate(newValue)}
+                                    slotProps={{ textField: { fullWidth: true } }}
+                                />
+                                <TimePicker
+                                    label={t('event.startTime', 'Start Time')}
+                                    value={startDate}
+                                    onChange={(newValue) => {
+                                        if (startDate && newValue) {
+                                            const newDate = new Date(startDate);
+                                            newDate.setHours(newValue.getHours());
+                                            newDate.setMinutes(newValue.getMinutes());
+                                            setStartDate(newDate);
+                                        } else {
+                                            setStartDate(newValue);
+                                        }
+                                    }}
+                                    ampm={false}
+                                    slotProps={{ textField: { fullWidth: true } }}
+                                />
+                            </Stack>
+                            <Stack direction="row" spacing={2} alignItems="center">
+                                <DatePicker
+                                    label={t('event.endDate', 'End Date')}
+                                    value={endDate}
+                                    onChange={(newValue) => setEndDate(newValue)}
+                                    slotProps={{ textField: { fullWidth: true } }}
+                                />
+                                <TimePicker
+                                    label={t('event.endTime', 'End Time')}
+                                    value={endDate}
+                                    onChange={(newValue) => {
+                                        if (endDate && newValue) {
+                                            const newDate = new Date(endDate);
+                                            newDate.setHours(newValue.getHours());
+                                            newDate.setMinutes(newValue.getMinutes());
+                                            setEndDate(newDate);
+                                        } else {
+                                            setEndDate(newValue);
+                                        }
+                                    }}
+                                    ampm={false}
+                                    slotProps={{ textField: { fullWidth: true } }}
+                                />
+                            </Stack>
+                            <TextField
+                                select
+                                label={t('event.timezone', 'Timezone')}
+                                value={eventTimezone}
+                                onChange={(e) => setEventTimezone(e.target.value)}
+                                SelectProps={{
+                                    native: true,
                                 }}
-                                ampm={false}
-                                slotProps={{ textField: { fullWidth: true } }}
-                            />
-                        </Stack>
-
-                        <Stack direction="row" spacing={2}>
-                            <DatePicker
-                                label={t('event.endDate', 'End Date')}
-                                value={endDate}
-                                onChange={(newValue) => setEndDate(newValue)}
-                                slotProps={{ textField: { fullWidth: true } }}
-                            />
-                            <TimePicker
-                                label={t('event.endTime', 'End Time')}
-                                value={endDate}
-                                onChange={(newValue) => {
-                                    if (endDate && newValue) {
-                                        const newDate = new Date(endDate);
-                                        newDate.setHours(newValue.getHours());
-                                        newDate.setMinutes(newValue.getMinutes());
-                                        setEndDate(newDate);
-                                    } else {
-                                        setEndDate(newValue);
-                                    }
-                                }}
-                                ampm={false}
-                                slotProps={{ textField: { fullWidth: true } }}
-                            />
+                                size="small"
+                                fullWidth
+                            >
+                                {TIMEZONES.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                        {t(`timezones.${option.value.replace('/', '_')}`, option.label)}
+                                    </option>
+                                ))}
+                            </TextField>
                         </Stack>
 
                         {/* Note */}

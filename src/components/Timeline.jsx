@@ -1,4 +1,5 @@
 import { eachDayOfInterval } from 'date-fns';
+import { formatInTimeZone } from 'date-fns-tz';
 import EventRow from './EventRow';
 import { useRef, useEffect, useLayoutEffect, useState } from 'react';
 
@@ -12,8 +13,9 @@ import { useRef, useEffect, useLayoutEffect, useState } from 'react';
  * @param {Object} highlight
  * @param {Function} onLoadPrev
  * @param {Function} onLoadNext
+ * @param {string} props.travelTimezone
  */
-export default function Timeline({ startDate, endDate, events, onEventClick, onAddEvent, highlight, onLoadPrev, onLoadNext, onUpdateEvent, clashes }) {
+export default function Timeline({ startDate, endDate, events, onEventClick, onAddEvent, highlight, onLoadPrev, onLoadNext, onUpdateEvent, clashes, travelTimezone, onToggleTaskComplete }) {
     const scrollContainerRef = useRef(null);
     const [days, setDays] = useState([]);
 
@@ -320,20 +322,43 @@ export default function Timeline({ startDate, endDate, events, onEventClick, onA
     return (
         <div className="timeline-root flex flex-col h-full overflow-hidden bg-white border rounded-lg shadow-sm relative">
             {/* Header - Time Axis */}
-            <div className="flex border-b border-gray-200 bg-gray-50 z-30">
-                <div className="w-24 flex-shrink-0 border-r border-gray-200 p-2 bg-gray-50 sticky left-0 z-40">
-                    {/* Empty corner */}
+            <div className={`flex border-b border-gray-200 bg-gray-50 z-30 h-8`}>
+                <div className="w-24 flex-shrink-0 border-r border-gray-200 p-0 bg-gray-50 sticky left-0 z-40 flex flex-col justify-center items-center">
+                    <span className="text-[10px] text-gray-500 font-medium uppercase truncate w-full text-center" title={travelTimezone || 'Local Time'}>
+                        {travelTimezone ? (travelTimezone === 'Asia/Shanghai' ? 'BEIJING TIME' : `${travelTimezone.split('/').pop().replace(/_/g, ' ')} TIME`) : 'LOCAL TIME'}
+                    </span>
                 </div>
-                <div className="flex-grow relative h-8 min-w-[1200px] text-xs text-gray-400">
-                    {Array.from({ length: 25 }).map((_, i) => (
-                        <div
-                            key={i}
-                            className="absolute top-1 transform -translate-x-1/2"
-                            style={{ left: `${(i / 24) * 100}%` }}
-                        >
-                            {i}:00
-                        </div>
-                    ))}
+                <div className="flex-grow relative min-w-[1200px] text-xs text-gray-400 flex flex-col justify-center">
+                    {/* Single Time Axis */}
+                    <div className="relative h-8">
+                        {Array.from({ length: 25 }).map((_, i) => {
+                            let hourText = `${i}:00`;
+                            if (travelTimezone) {
+                                const localDate = new Date();
+                                localDate.setHours(i, 0, 0, 0);
+                                try {
+                                    hourText = formatInTimeZone(localDate, travelTimezone, 'HH:mm');
+                                } catch (e) {
+                                    try {
+                                        const parts = new Intl.DateTimeFormat('en-US', { timeZone: travelTimezone, hour: 'numeric', hourCycle: 'h23' }).formatToParts(localDate);
+                                        const hour = parts.find(p => p.type === 'hour').value;
+                                        hourText = `${hour.padStart(2, '0')}:00`;
+                                    } catch (e2) {
+                                        hourText = "--";
+                                    }
+                                }
+                            }
+                            return (
+                                <div
+                                    key={`time-${i}`}
+                                    className="absolute top-1/2 transform -translate-y-1/2 -translate-x-1/2 text-gray-500 font-medium text-[11px]"
+                                    style={{ left: `${(i / 24) * 100}%` }}
+                                >
+                                    {hourText}
+                                </div>
+                            );
+                        })}
+                    </div>
                 </div>
             </div>
 
@@ -354,12 +379,14 @@ export default function Timeline({ startDate, endDate, events, onEventClick, onA
                         highlight={highlight}
                         onDragStart={handleDragStart} // Pass handler
                         dragState={dragState} // Pass drag state for ghost rendering
+                        displayTimezone={travelTimezone || 'Asia/Shanghai'}
+                        onToggleTaskComplete={onToggleTaskComplete}
                     />
                 ))}
             </div>
 
             {/* Removed Floating Ghost Overlay - Rendering in EventRow now */}
-        </div>
+        </div >
     );
 }
 

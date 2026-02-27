@@ -5,13 +5,16 @@ import Timeline from './components/Timeline'
 import AddEventModal from './components/AddEventModal'
 import EventDetailsModal from './components/EventDetailsModal'
 import ClashBanner from './components/ClashBanner'
+import OverdueBanner from './components/OverdueBanner'
 import { checkForClashes } from './utils/dateUtils'
-import { Plus, Languages, Printer } from 'lucide-react'
+import { TIMEZONES } from './utils/constants'
+import { Plus, Languages, Printer, Globe } from 'lucide-react'
 
 function App() {
     const { t, i18n } = useTranslation();
     const [events, setEvents] = useState([]);
     const [highlight, setHighlight] = useState(null); // { type: 'clash' | 'today', start: Date, end: Date }
+    const [travelTimezone, setTravelTimezone] = useState('');
 
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [selectedEvent, setSelectedEvent] = useState(null);
@@ -30,11 +33,25 @@ function App() {
                     start: new Date(e.start),
                     end: new Date(e.end)
                 }));
+                // Load saved timezone if exists
+                const savedTz = localStorage.getItem('tplanner_travel_timezone');
+                if (savedTz) setTravelTimezone(savedTz);
+
                 setEvents(hydrated);
                 setIsLoaded(true);
             })
             .catch(err => console.error('Failed to fetch events', err));
     }, []);
+
+    const handleTimezoneChange = (e) => {
+        const value = e.target.value;
+        setTravelTimezone(value);
+        if (value) {
+            localStorage.setItem('tplanner_travel_timezone', value);
+        } else {
+            localStorage.removeItem('tplanner_travel_timezone');
+        }
+    };
 
     // Save data on change (debounced)
     useEffect(() => {
@@ -143,10 +160,23 @@ function App() {
         }, 100);
     };
 
-    const handleSaveEvent = (eventData) => {
+    const handleToggleTaskComplete = (eventId, completedStatus) => {
+        setEvents(prev => prev.map(e =>
+            e.id === eventId ? { ...e, completed: completedStatus } : e
+        ));
+    };
+
+    const handleSaveEvent = (eventData, config = { scope: 'single' }) => {
         setEvents(prev => {
             let newEvents = [...prev];
             const updates = Array.isArray(eventData) ? eventData : [eventData];
+
+            if (config.scope === 'all' && config.originalGroupId) {
+                newEvents = newEvents.filter(e => e.groupId !== config.originalGroupId);
+            } else if (config.scope === 'future' && config.originalGroupId && config.originalStartDate) {
+                const cutoff = new Date(config.originalStartDate).getTime();
+                newEvents = newEvents.filter(e => !(e.groupId === config.originalGroupId && e.start.getTime() >= cutoff));
+            }
 
             updates.forEach(update => {
                 const index = newEvents.findIndex(e => e.id === update.id);
@@ -165,11 +195,22 @@ function App() {
         // Update selectedEvent if needed (only if single edit matches)
         if (!Array.isArray(eventData) && selectedEvent && selectedEvent.id === eventData.id) {
             setSelectedEvent(eventData);
+        } else if (config.scope !== 'single' && selectedEvent) {
+            // If we edited a series and had one selected, close the details modal to avoid staleness
+            setSelectedEvent(null);
         }
     };
 
-    const handleDeleteEvent = (id) => {
-        setEvents(prev => prev.filter(e => e.id !== id));
+    const handleDeleteEvent = (id, scope = 'single', event = null) => {
+        setEvents(prev => {
+            if (scope === 'all' && event?.groupId) {
+                return prev.filter(e => e.groupId !== event.groupId);
+            } else if (scope === 'future' && event?.groupId) {
+                const cutoff = new Date(event.start).getTime();
+                return prev.filter(e => !(e.groupId === event.groupId && e.start.getTime() >= cutoff));
+            }
+            return prev.filter(e => e.id !== id);
+        });
         setSelectedEvent(null);
     }
 
@@ -231,10 +272,23 @@ function App() {
             <header className="bg-white shadow-sm px-6 py-4 flex justify-between items-center z-50">
                 <h1 className="text-xl font-bold text-gray-800">{t('app.title')}</h1>
                 <div className="flex items-center gap-2">
-                    <div className="flex bg-gray-100 rounded-md p-1 mr-4">
+                    <div className="flex bg-gray-100 rounded-md p-1 mr-2">
                         <button onClick={handleToday} className="px-3 py-1 text-sm font-medium text-gray-600 hover:bg-white hover:shadow-sm rounded transition-all">
                             {t('nav.today')}
                         </button>
+                    </div>
+
+                    <div className="flex items-center gap-1 bg-blue-50/50 rounded-md px-2 py-1 mr-2 border border-blue-100">
+                        <Globe className="w-4 h-4 text-blue-600" />
+                        <select
+                            value={travelTimezone}
+                            onChange={handleTimezoneChange}
+                            className="bg-transparent text-sm font-medium text-blue-800 focus:outline-none cursor-pointer"
+                        >
+                            {TIMEZONES.map(tz => (
+                                <option key={tz.value} value={tz.value}>{t(`timezones.${tz.value.replace('/', '_')}`, tz.label)}</option>
+                            ))}
+                        </select>
                     </div>
 
                     <button
@@ -323,9 +377,21 @@ function App() {
             </header>
 
             <main className="flex-grow flex flex-col p-4 overflow-hidden">
+                <OverdueBanner
+                    events={events}
+                    travelTimezone={travelTimezone}
+                    onHighlight={(h) => {
+                        setHighlight(h);
+                        if (h.type === 'overdue') {
+                            handleJumpToDate(h.start);
+                        }
+                        setTimeout(() => setHighlight(null), 3000);
+                    }}
+                />
                 <ClashBanner
                     clashes={clashes}
                     events={events}
+                    travelTimezone={travelTimezone}
                     onHighlight={(h) => {
                         setHighlight(h);
                         // Jump to it if it's a clash
@@ -347,6 +413,8 @@ function App() {
                     onLoadPrev={handleLoadMorePrev}
                     onLoadNext={handleLoadMoreNext}
                     onUpdateEvent={handleSaveEvent}
+                    onToggleTaskComplete={handleToggleTaskComplete}
+                    travelTimezone={travelTimezone}
                 />
             </main>
 
@@ -356,10 +424,12 @@ function App() {
                 onSave={handleSaveEvent}
                 defaultDate={modalDefaultDate}
                 initialEvent={editingEvent}
+                events={events}
             />
 
             <EventDetailsModal
                 event={selectedEvent}
+                travelTimezone={travelTimezone}
                 onClose={() => setSelectedEvent(null)}
                 onDelete={handleDeleteEvent}
                 onEdit={handleEditEvent}

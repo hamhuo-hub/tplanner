@@ -17,7 +17,9 @@
         "cancel": "取消",
         "delete": "删除",
         "edit": "编辑",
-        "print": "打印"
+        "print": "打印",
+        "showAll": "显示全部 ({{count}})",
+        "showLess": "收起"
     },
     "recurrence": {
         "none": "无",
@@ -25,17 +27,34 @@
         "weekly": "每周",
         "monthly": "每月",
         "count": "重复次数",
-        "max": "(最大 50)"
+        "max": "(最大 50)",
+        "editScope": "编辑范围",
+        "deleteScope": "删除范围",
+        "scopeSingle": "仅此事件",
+        "scopeFuture": "此事件及后续事件",
+        "scopeAll": "系列中的所有事件"
     },
     "event": {
         "title": "标题",
         "start": "开始时间",
         "end": "结束时间",
+        "timezone": "时区",
         "note": "备注",
         "color": "颜色",
         "details": "事件详情",
         "timeLabel": "时间",
         "notePlaceholder": "在此输入详细备注..."
+    },
+    "timezones": {
+        "default": "中国时间 (默认)",
+        "America_Los_Angeles": "洛杉矶 (PT)",
+        "America_New_York": "纽约 (ET)",
+        "Europe_London": "伦敦 (GMT)",
+        "Europe_Paris": "巴黎 (CET)",
+        "Asia_Dubai": "迪拜 (GST)",
+        "Asia_Tokyo": "东京 (JST)",
+        "Australia_Sydney": "悉尼 (AET)",
+        "Pacific_Auckland": "奥克兰 (NZST)"
     },
     "clash": {
         "detected": "检测到日程冲突",

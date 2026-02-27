@@ -12,7 +12,7 @@ import { MASSEY_COLORS } from '../utils/constants';
  * @param {Function} props.onAddEvent
  * @param {Object} dragState
  */
-export default function EventRow({ date, events, onEventClick, onAddEvent, highlight, onDragStart, dragState, clashes }) {
+export default function EventRow({ date, events, onEventClick, onAddEvent, highlight, onDragStart, dragState, clashes, displayTimezone, onToggleTaskComplete }) {
     const { i18n } = useTranslation();
     const locale = getDateLocale(i18n.language);
 
@@ -43,42 +43,6 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
             end: clampedEnd
         };
     }).sort((a, b) => a.start - b.start);
-
-    const finalRegularEvents = [];
-    if (processedRegularEvents.length > 0) {
-        const clusters = [];
-        let currentCluster = [];
-        let clusterEnd = null;
-
-        processedRegularEvents.forEach(event => {
-            if (!clusterEnd || event.start < clusterEnd) {
-                currentCluster.push(event);
-                clusterEnd = clusterEnd ? max([clusterEnd, event.end]) : event.end;
-            } else {
-                clusters.push(currentCluster);
-                currentCluster = [event];
-                clusterEnd = event.end;
-            }
-        });
-        if (currentCluster.length > 0) clusters.push(currentCluster);
-
-        clusters.forEach(cluster => {
-            // Checks global 'clashes' for this event ID.
-            // This ensures visuals match the global conflict logic (which already handles same-type check).
-            cluster.forEach((ev, idx) => {
-                const isConflicting = clashes ? clashes.some(c => c.eventId === ev.id) : false;
-                finalRegularEvents.push({
-                    ...ev,
-                    isConflicting,
-                    style: {
-                        top: `${idx * 15}%`,
-                        height: '80%',
-                        zIndex: 10 + idx
-                    }
-                });
-            });
-        });
-    }
 
     // --- Process Status Events (Stacking Logic) ---
     const processedStatusEvents = statusEvents.map(e => {
@@ -113,6 +77,75 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
             rowIndex
         };
     });
+
+    const finalRegularEvents = [];
+    if (processedRegularEvents.length > 0) {
+        const clusters = [];
+        let currentCluster = [];
+        let clusterEnd = null;
+
+        processedRegularEvents.forEach(event => {
+            if (!clusterEnd || event.start < clusterEnd) {
+                currentCluster.push(event);
+                clusterEnd = clusterEnd ? max([clusterEnd, event.end]) : event.end;
+            } else {
+                clusters.push(currentCluster);
+                currentCluster = [event];
+                clusterEnd = event.end;
+            }
+        });
+        if (currentCluster.length > 0) clusters.push(currentCluster);
+
+        clusters.forEach(cluster => {
+            // Checks global 'clashes' for this event ID.
+            // This ensures visuals match the global conflict logic (which already handles same-type check).
+            cluster.forEach((ev, idx) => {
+                const isConflicting = clashes ? clashes.some(c => c.eventId === ev.id) : false;
+
+                // Check if obscured by status events
+                const overlappingStatus = finalStatusEvents.filter(se =>
+                    areIntervalsOverlapping(
+                        { start: se.start, end: se.end },
+                        { start: ev.start, end: ev.end }
+                    )
+                );
+
+                let titleOffsetPx = 0;
+                if (overlappingStatus.length > 0) {
+                    const maxStatusRow = Math.max(...overlappingStatus.map(se => se.rowIndex));
+
+                    // Status event top is (rowIndex * 18). Height is 16.
+                    // So its bottom occupies space down to (maxStatusRow * 18 + 16) px from the container top.
+                    const statusBottomPx = maxStatusRow * 18 + 16;
+
+                    // Regular event container has fixed height h-32 (128px)
+                    // The regular event style uses: top: `calc(15% + (idx * 15%))`
+                    // Percentage of 128px is used.
+                    const topPercent = 0.15 + (idx * 0.15);
+                    const regularTopPx = 128 * topPercent;
+
+                    // We only want to push the title down if the status event physically obscures the regular event's top.
+                    // The + 4px extra is just to add a nice padding gap below the status event.
+                    if (statusBottomPx > regularTopPx) {
+                        titleOffsetPx = (statusBottomPx - regularTopPx) + 4;
+                    }
+                }
+
+                finalRegularEvents.push({
+                    ...ev,
+                    isConflicting,
+                    titleOffsetPx: titleOffsetPx,
+                    style: {
+                        top: `${idx * 15}%`,
+                        height: '80%',
+                        zIndex: 10 + idx
+                    }
+                });
+            });
+        });
+    }
+
+
 
 
     const isWeekend = date.getDay() === 0 || date.getDay() === 6;
@@ -161,11 +194,31 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                 {statusEvents.length > 0 && (
                     <div className="absolute top-0 left-0 right-0 h-[15%] z-30 pointer-events-none">
                         {finalStatusEvents.map(ev => {
-                            const totalMinutes = 24 * 60;
-                            const startMinutes = (ev.start.getHours() * 60) + ev.start.getMinutes();
-                            const endMinutes = (ev.end.getHours() * 60) + ev.end.getMinutes();
-                            const endMinutesFinal = (ev.end.getTime() === dayEnd.getTime() + 1) ? totalMinutes : endMinutes;
+                            const tz = displayTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+                            const extractMinutes = (dateStr) => {
+                                const parts = dateStr.split(':');
+                                return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+                            };
 
+                            let startMinutes, endMinutesFinal;
+                            try {
+                                const startTzTime = formatInTimeZone(ev.start, tz, 'HH:mm');
+                                const endTzTime = formatInTimeZone(ev.end, tz, 'HH:mm');
+
+                                startMinutes = extractMinutes(startTzTime);
+                                let endMinutes = extractMinutes(endTzTime);
+
+                                if (endMinutes < startMinutes) endMinutes += 24 * 60;
+                                if (endMinutes - startMinutes < 15) endMinutes = startMinutes + 15;
+
+                                endMinutesFinal = (ev.end.getTime() === dayEnd.getTime() + 1) ? 24 * 60 : endMinutes;
+                            } catch (e) {
+                                startMinutes = (ev.start.getHours() * 60) + ev.start.getMinutes();
+                                const endMinutes = (ev.end.getHours() * 60) + ev.end.getMinutes();
+                                endMinutesFinal = (ev.end.getTime() === dayEnd.getTime() + 1) ? 24 * 60 : endMinutes;
+                            }
+
+                            const totalMinutes = 24 * 60;
                             const left = (startMinutes / totalMinutes) * 100;
                             const width = ((endMinutesFinal - startMinutes) / totalMinutes) * 100;
 
@@ -257,10 +310,12 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                                 key={event.id}
                                 event={event}
                                 isConflicting={event.isConflicting}
+                                displayTimezone={displayTimezone}
                                 onClick={(e) => {
                                     const original = events.find(ev => ev.id === event.id);
                                     onEventClick(original || event);
                                 }}
+                                onToggleTaskComplete={onToggleTaskComplete}
                                 onDragStart={(e) => onDragStart(event, e.clientX, e.clientY, date)}
                                 style={{
                                     ...event.style,
@@ -308,6 +363,7 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                                         end: snapEnd
                                     }}
                                     isConflicting={false}
+                                    displayTimezone={displayTimezone}
                                     onClick={() => { }}
                                     style={{
                                         left: `${leftPercent}%`,

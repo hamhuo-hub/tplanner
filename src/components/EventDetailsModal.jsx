@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { format } from 'date-fns';
+import { formatInTimeZone } from 'date-fns-tz';
 import { useTranslation } from 'react-i18next';
 import { MASSEY_COLORS } from '../utils/constants';
 import { X, CheckCircle, Circle } from 'lucide-react';
@@ -11,9 +13,10 @@ import { getDateLocale } from '../utils/dateLocale';
  * @param {Function} [props.onDelete]
  * @param {Function} [props.onEdit]
  */
-export default function EventDetailsModal({ event, onClose, onDelete, onEdit, onSave }) {
+export default function EventDetailsModal({ event, travelTimezone, onClose, onDelete, onEdit, onSave }) {
     const { t, i18n } = useTranslation();
     const locale = getDateLocale(i18n.language);
+    const [deleteScope, setDeleteScope] = useState('single');
 
     if (!event) return null;
 
@@ -48,9 +51,25 @@ export default function EventDetailsModal({ event, onClose, onDelete, onEdit, on
                             <p className="text-gray-700 text-sm">
                                 {format(event.start, 'EEEE, d MMMM yyyy', { locale })}
                                 <br />
-                                <span className="font-medium">
+                                <span className="font-medium mr-2">
                                     {format(event.start, 'HH:mm')} - {format(event.end, 'HH:mm')}
                                 </span>
+                                <div className="text-xs text-gray-500 mt-1 flex items-center">
+                                    <span>Original: </span>
+                                    {(() => {
+                                        const displayTz = event.timezone || 'Asia/Shanghai';
+                                        return (
+                                            <>
+                                                <span className="font-medium mx-1">
+                                                    {formatInTimeZone(event.start, displayTz, 'HH:mm')} - {formatInTimeZone(event.end, displayTz, 'HH:mm')}
+                                                </span>
+                                                <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100 uppercase tracking-wider inline-block">
+                                                    {event.timezone ? event.timezone.split('/').pop().replace(/_/g, ' ') : 'China Time'}
+                                                </span>
+                                            </>
+                                        );
+                                    })()}
+                                </div>
                             </p>
                         </div>
 
@@ -100,17 +119,30 @@ export default function EventDetailsModal({ event, onClose, onDelete, onEdit, on
 
                     <div className="mt-6 flex justify-end gap-3 border-t border-gray-100 pt-4">
                         {onDelete && (
-                            <button
-                                onClick={() => {
-                                    if (confirm(t('messages.deleteConfirmation'))) {
-                                        onDelete(event.id);
-                                        onClose();
-                                    }
-                                }}
-                                className="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded hover:bg-red-50 transition-colors"
-                            >
-                                {t('actions.delete')}
-                            </button>
+                            <div className="flex items-center gap-2">
+                                {event.groupId && (
+                                    <select
+                                        value={deleteScope}
+                                        onChange={(e) => setDeleteScope(e.target.value)}
+                                        className="text-xs border border-gray-200 rounded p-1 text-gray-600 bg-gray-50 focus:outline-none focus:border-red-300"
+                                    >
+                                        <option value="single">{t('recurrence.scopeSingle')}</option>
+                                        <option value="future">{t('recurrence.scopeFuture')}</option>
+                                        <option value="all">{t('recurrence.scopeAll')}</option>
+                                    </select>
+                                )}
+                                <button
+                                    onClick={() => {
+                                        if (confirm(t('messages.deleteConfirmation'))) {
+                                            onDelete(event.id, deleteScope, event);
+                                            onClose();
+                                        }
+                                    }}
+                                    className="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded hover:bg-red-50 transition-colors"
+                                >
+                                    {t('actions.delete')}
+                                </button>
+                            </div>
                         )}
                         {onEdit && (
                             <button
