@@ -74,11 +74,15 @@ app.listen(PORT, () => {
     const url = `http://localhost:${PORT}`;
     console.log(`Server running on ${url}`);
 
-    // Auto-open browser if in production/pkg
-    if (isPackaged) {
+    const isHeadless = process.env.HEADLESS === 'true';
+
+    // Auto-open browser and setup tray if in production/pkg AND NOT headless
+    if (isPackaged && !isHeadless) {
         setupTray(); // Setup Tray
         const startCmd = process.platform === 'win32' ? 'start' : 'open';
         exec(`${startCmd} ${url}`);
+    } else if (isHeadless) {
+        console.log(`[HEADLESS MODE] Serving purely as Web/API container. No GUI or tray spawned.`);
     }
 
     // Keep alive debug
@@ -89,57 +93,60 @@ app.listen(PORT, () => {
 
 // --- System Tray Logic ---
 function setupTray() {
-    const SysTray = require('systray2').default;
-
-    // Load icon.ico or use fallback
-    let iconBase64 = "";
     try {
-        const iconPath = path.join(__dirname, 'icon.ico');
-        if (fs.existsSync(iconPath)) {
-            const iconBuffer = fs.readFileSync(iconPath);
-            iconBase64 = iconBuffer.toString('base64');
-        } else {
-            // console.log("icon.ico not found, using fallback.");
-            throw new Error("Icon not found");
+        const SysTray = require('systray2').default;
+
+        // Load icon.ico or use fallback
+        let iconBase64 = "";
+        try {
+            const iconPath = path.join(__dirname, 'icon.ico');
+            if (fs.existsSync(iconPath)) {
+                const iconBuffer = fs.readFileSync(iconPath);
+                iconBase64 = iconBuffer.toString('base64');
+            } else {
+                throw new Error("Icon not found");
+            }
+        } catch (e) {
         }
-    } catch (e) {
+
+        const tray = new SysTray({
+            menu: {
+                icon: iconBase64,
+                title: "tPlanner",
+                tooltip: "Planner",
+                items: [
+                    {
+                        title: 'Open tPlanner',
+                        tooltip: 'Open in Browser',
+                        checked: false,
+                        enabled: true
+                    },
+                    SysTray.separator,
+                    {
+                        title: 'Exit',
+                        tooltip: 'Stop Server',
+                        checked: false,
+                        enabled: true
+                    }
+                ]
+            },
+            debug: false,
+            copyDir: true // Copy the helper binary
+        });
+
+        tray.onClick(action => {
+            if (action.item.title === 'Open tPlanner') {
+                const startCmd = process.platform === 'win32' ? 'start' : 'open';
+                const url = `http://localhost:${PORT}`;
+                exec(`${startCmd} ${url}`);
+            } else if (action.item.title === 'Exit') {
+                tray.kill(false); // remove icon
+                process.exit(0);
+            }
+        });
+    } catch (err) {
+        console.log('Failed to initialize systray2 (Safe to ignore in headless/Linux):', err.message);
     }
-
-    const tray = new SysTray({
-        menu: {
-            icon: iconBase64,
-            title: "tPlanner",
-            tooltip: "Planner",
-            items: [
-                {
-                    title: 'Open tPlanner',
-                    tooltip: 'Open in Browser',
-                    checked: false,
-                    enabled: true
-                },
-                SysTray.separator,
-                {
-                    title: 'Exit',
-                    tooltip: 'Stop Server',
-                    checked: false,
-                    enabled: true
-                }
-            ]
-        },
-        debug: false,
-        copyDir: true // Copy the helper binary
-    });
-
-    tray.onClick(action => {
-        if (action.item.title === 'Open tPlanner') {
-            const startCmd = process.platform === 'win32' ? 'start' : 'open';
-            const url = `http://localhost:${PORT}`;
-            exec(`${startCmd} ${url}`);
-        } else if (action.item.title === 'Exit') {
-            tray.kill(false); // remove icon
-            process.exit(0);
-        }
-    });
 }
 
 process.on('exit', (code) => {

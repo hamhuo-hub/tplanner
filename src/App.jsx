@@ -9,6 +9,7 @@ import OverdueBanner from './components/OverdueBanner'
 import { checkForClashes } from './utils/dateUtils'
 import { TIMEZONES } from './utils/constants'
 import { Plus, Languages, Printer, Globe } from 'lucide-react'
+import { getDatabase } from './database/db'
 
 function App() {
     const { t, i18n } = useTranslation();
@@ -21,27 +22,41 @@ function App() {
     const [modalDefaultDate, setModalDefaultDate] = useState(null);
     const [editingEvent, setEditingEvent] = useState(null);
     const [isLoaded, setIsLoaded] = useState(false);
+    const [db, setDb] = useState(null);
 
-    // Fetch initial data
+    // Fetch initial data & setup subscriber
     useEffect(() => {
-        // Add timestamp to prevent caching
-        fetch(`http://localhost:3001/api/events?t=${new Date().getTime()}`)
-            .then(res => res.json())
-            .then(data => {
-                const hydrated = data.map(e => ({
-                    ...e,
-                    start: new Date(e.start),
-                    end: new Date(e.end)
-                }));
-                // Load saved timezone if exists
-                const savedTz = localStorage.getItem('tplanner_travel_timezone');
-                if (savedTz) setTravelTimezone(savedTz);
-
+        let subscription;
+        getDatabase().then(database => {
+            setDb(database);
+            
+            // Subscribe to all events
+            subscription = database.events.find().$.subscribe(docs => {
+                const hydrated = docs.map(doc => {
+                    const e = doc.toJSON();
+                    return {
+                        ...e,
+                        start: new Date(e.start),
+                        end: new Date(e.end)
+                    };
+                });
                 setEvents(hydrated);
                 setIsLoaded(true);
-            })
-            .catch(err => console.error('Failed to fetch events', err));
+            });
+        }).catch(err => {
+            console.error("Failed to init RxDB", err);
+        });
+
+        // Load saved timezone if exists
+        const savedTz = localStorage.getItem('tplanner_travel_timezone');
+        if (savedTz) setTravelTimezone(savedTz);
+
+        return () => {
+            if (subscription) subscription.unsubscribe();
+        };
     }, []);
+
+    const [viewRange, setViewRange] = useState({ start: null, end: null });
 
     const handleTimezoneChange = (e) => {
         const value = e.target.value;
@@ -52,23 +67,6 @@ function App() {
             localStorage.removeItem('tplanner_travel_timezone');
         }
     };
-
-    // Save data on change (debounced)
-    useEffect(() => {
-        if (!isLoaded) return; // Don't save if not yet loaded (prevents overwriting with empty array on init)
-
-        const timer = setTimeout(() => {
-            fetch('http://localhost:3001/api/events', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(events)
-            }).catch(err => console.error('Failed to save events', err));
-        }, 1000);
-
-        return () => clearTimeout(timer);
-    }, [events, isLoaded]);
-
-    const [viewRange, setViewRange] = useState({ start: null, end: null });
 
     // Initialize view range on load or when events change significantly?
     // Actually, we want to start at Today or Earliest Event.
@@ -160,34 +158,51 @@ function App() {
         }, 100);
     };
 
-    const handleToggleTaskComplete = (eventId, completedStatus) => {
-        setEvents(prev => prev.map(e =>
-            e.id === eventId ? { ...e, completed: completedStatus } : e
-        ));
+    const handleToggleTaskComplete = async (eventId, completedStatus) => {
+        if (!db) return;
+        try {
+            const doc = await db.events.findOne(eventId).exec();
+            if (doc) {
+                await doc.update({
+                    $set: { completed: completedStatus, updatedAt: Date.now() }
+                });
+            }
+        } catch (err) {
+            console.error('Update failed', err);
+        }
     };
 
-    const handleSaveEvent = (eventData, config = { scope: 'single' }) => {
-        setEvents(prev => {
-            let newEvents = [...prev];
-            const updates = Array.isArray(eventData) ? eventData : [eventData];
+    const handleSaveEvent = async (eventData, config = { scope: 'single' }) => {
+        if (!db) return;
+        
+        const updates = Array.isArray(eventData) ? eventData : [eventData];
 
+        try {
             if (config.scope === 'all' && config.originalGroupId) {
-                newEvents = newEvents.filter(e => e.groupId !== config.originalGroupId);
+                const docsObj = await db.events.find({ selector: { groupId: config.originalGroupId } }).exec();
+                await Promise.all(docsObj.map(doc => doc.remove()));
             } else if (config.scope === 'future' && config.originalGroupId && config.originalStartDate) {
+                // Ensure date formatting is consistent
                 const cutoff = new Date(config.originalStartDate).getTime();
-                newEvents = newEvents.filter(e => !(e.groupId === config.originalGroupId && e.start.getTime() >= cutoff));
+                const docsObj = await db.events.find({ selector: { groupId: config.originalGroupId } }).exec();
+                const toRemove = docsObj.filter(doc => new Date(doc.get('start')).getTime() >= cutoff);
+                await Promise.all(toRemove.map(doc => doc.remove()));
             }
 
-            updates.forEach(update => {
-                const index = newEvents.findIndex(e => e.id === update.id);
-                if (index >= 0) {
-                    newEvents[index] = update;
-                } else {
-                    newEvents.push(update);
-                }
+            // Prepare updates using RxDB schema compliant format
+            const upserts = updates.map(update => {
+                const cleanUpdate = { ...update };
+                cleanUpdate.start = new Date(cleanUpdate.start).toISOString();
+                cleanUpdate.end = new Date(cleanUpdate.end).toISOString();
+                cleanUpdate.updatedAt = Date.now();
+                return cleanUpdate;
             });
-            return newEvents;
-        });
+
+            // Bulk upsert
+            await db.events.bulkUpsert(upserts);
+        } catch (err) {
+            console.error('Error saving events to RxDB', err);
+        }
 
         setEditingEvent(null);
         setIsAddModalOpen(false);
@@ -201,16 +216,24 @@ function App() {
         }
     };
 
-    const handleDeleteEvent = (id, scope = 'single', event = null) => {
-        setEvents(prev => {
+    const handleDeleteEvent = async (id, scope = 'single', event = null) => {
+        if (!db) return;
+        try {
             if (scope === 'all' && event?.groupId) {
-                return prev.filter(e => e.groupId !== event.groupId);
+                const docsObj = await db.events.find({ selector: { groupId: event.groupId } }).exec();
+                await Promise.all(docsObj.map(doc => doc.remove()));
             } else if (scope === 'future' && event?.groupId) {
                 const cutoff = new Date(event.start).getTime();
-                return prev.filter(e => !(e.groupId === event.groupId && e.start.getTime() >= cutoff));
+                const docsObj = await db.events.find({ selector: { groupId: event.groupId } }).exec();
+                const toRemove = docsObj.filter(doc => new Date(doc.get('start')).getTime() >= cutoff);
+                await Promise.all(toRemove.map(doc => doc.remove()));
+            } else {
+                const doc = await db.events.findOne(id).exec();
+                if (doc) await doc.remove();
             }
-            return prev.filter(e => e.id !== id);
-        });
+        } catch(err) {
+             console.error('Error deleting event', err);
+        }
         setSelectedEvent(null);
     }
 
@@ -331,21 +354,38 @@ function App() {
                             type="file"
                             accept=".json"
                             className="hidden"
-                            onChange={(e) => {
+                            onChange={async (e) => {
                                 const file = e.target.files[0];
-                                if (!file) return;
+                                if (!file || !db) return;
                                 const reader = new FileReader();
-                                reader.onload = (ev) => {
+                                reader.onload = async (ev) => {
                                     try {
                                         const parsed = JSON.parse(ev.target.result);
                                         // Basic validation
                                         if (Array.isArray(parsed)) {
-                                            const hydrated = parsed.map(ev => ({
-                                                ...ev,
-                                                start: new Date(ev.start),
-                                                end: new Date(ev.end)
-                                            }));
-                                            setEvents(hydrated);
+                                            // Wipe DB
+                                            const allDocs = await db.events.find().exec();
+                                            await Promise.all(allDocs.map(d => d.remove()));
+                                            
+                                            // Make sure fields fit schema
+                                            const upserts = parsed.map(event => {
+                                                const cleanUpdate = { ...event };
+                                                cleanUpdate.start = new Date(cleanUpdate.start).toISOString();
+                                                cleanUpdate.end = new Date(cleanUpdate.end).toISOString();
+                                                cleanUpdate.updatedAt = Date.now();
+                                                // Handle undefined string properties which RxDB dislikes sometimes
+                                                if (!cleanUpdate.note) cleanUpdate.note = "";
+                                                if (!cleanUpdate.timezone) cleanUpdate.timezone = "";
+                                                if (!cleanUpdate.groupId) cleanUpdate.groupId = "";
+                                                if (cleanUpdate.completed === undefined) cleanUpdate.completed = false;
+                                                if (cleanUpdate.checklist === undefined) cleanUpdate.checklist = [];
+                                                if (!cleanUpdate.recurrenceType) cleanUpdate.recurrenceType = "none";
+                                                if (!cleanUpdate.recurrenceCount) cleanUpdate.recurrenceCount = 1;
+                                                return cleanUpdate;
+                                            });
+
+                                            await db.events.bulkUpsert(upserts);
+
                                             // Reset view
                                             const today = new Date();
                                             today.setHours(0, 0, 0, 0);
