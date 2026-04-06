@@ -70,7 +70,7 @@ if (fs.existsSync(path.join(__dirname, 'package-lock.json'))) {
 
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const rcedit = require('rcedit');
+const { rcedit } = require('rcedit');
 
 console.log('Installing production dependencies in staging...');
 try {
