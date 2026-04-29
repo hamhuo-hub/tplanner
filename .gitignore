@@ -57,3 +57,5 @@ src/assets/react.svg
 /dist
 /dist
 /staging
+/dist-electron
+/release
