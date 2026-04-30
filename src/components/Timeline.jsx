@@ -165,18 +165,10 @@ export default function Timeline({ startDate, endDate, events, onEventClick, onA
                 </div>
                 <div className="timeline-header-axis" style={{ position: 'relative', minWidth: 1200 }}>
                     {Array.from({ length: 25 }).map((_, i) => {
-                        let hourText = `${i}:00`;
-                        if (travelTimezone) {
-                            const d = new Date(); d.setHours(i, 0, 0, 0);
-                            try {
-                                hourText = formatInTimeZone(d, travelTimezone, 'HH:mm');
-                            } catch {
-                                try {
-                                    const parts = new Intl.DateTimeFormat('en-US', { timeZone: travelTimezone, hour: 'numeric', hourCycle: 'h23' }).formatToParts(d);
-                                    hourText = `${parts.find(p => p.type === 'hour').value.padStart(2, '0')}:00`;
-                                } catch { hourText = '--'; }
-                            }
-                        }
+                        // The axis always represents hours 0–23 in the display timezone.
+                        // Each EventRow row = one day in that timezone, and positions
+                        // inside the row are computed via formatInTimeZone in EventBlock.
+                        const hourText = `${String(i).padStart(2, '0')}:00`;
                         return (
                             <div key={i} className="timeline-hour-tick" style={{ left: `${(i / 24) * 100}%` }}>
                                 {hourText}

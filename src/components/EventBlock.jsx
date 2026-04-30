@@ -1,25 +1,28 @@
 import { MASSEY_COLORS } from '../utils/constants';
-import { formatInTimeZone } from 'date-fns-tz';
+import { fromZonedTime, formatInTimeZone } from 'date-fns-tz';
 
 export default function EventBlock({ event, onClick, isConflicting, displayTimezone, onToggleTaskComplete, onDragStart, style }) {
     const tz = displayTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-    const toMins = str => { const [h, m] = str.split(':').map(Number); return h * 60 + m; };
-    let startMins, endMins;
+    // dateStr = the calendar date of this row in the display timezone.
+    // event.start has already been clamped to [dayStart, dayEnd] by EventRow,
+    // so formatInTimeZone(event.start, tz) gives the correct date for this row.
+    let dayStartMs;
     try {
-        startMins = toMins(formatInTimeZone(event.start, tz, 'HH:mm'));
-        endMins   = toMins(formatInTimeZone(event.end,   tz, 'HH:mm'));
-        if (endMins < startMins) endMins += 1440;
-        if (endMins - startMins < 15) endMins = startMins + 15;
+        const dateStr = formatInTimeZone(event.start, tz, 'yyyy-MM-dd');
+        dayStartMs = fromZonedTime(`${dateStr}T00:00:00`, tz).getTime();
     } catch {
-        startMins = event.start.getHours() * 60 + event.start.getMinutes();
-        endMins   = event.end.getHours()   * 60 + event.end.getMinutes();
-        if (endMins < startMins) endMins += 1440;
+        dayStartMs = new Date(event.start).setHours(0, 0, 0, 0);
     }
+    const DAY_MS     = 24 * 60 * 60 * 1000;
+    const startMsOff = Math.max(0, event.start.getTime() - dayStartMs);
+    const endMsOff   = Math.min(DAY_MS, event.end.getTime() - dayStartMs);
+    const startMins  = startMsOff / 60000;
+    const endMins    = Math.max(startMins + 15, endMsOff / 60000);
 
-    const durationMins  = endMins - startMins;
-    const leftPercent   = (startMins / 1440) * 100;
-    const widthPercent  = (durationMins / 1440) * 100;
+    const durationMins = endMins - startMins;
+    const leftPercent  = (startMins / 1440) * 100;
+    const widthPercent = (durationMins / 1440) * 100;
     const isCompleted   = event.completed === true;
     const color         = isCompleted ? '#3A342A' : (MASSEY_COLORS[event.colorId] ?? MASSEY_COLORS[0]);
     const titleOffsetPx = event.titleOffsetPx || 0;

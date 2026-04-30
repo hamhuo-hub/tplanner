@@ -7,6 +7,9 @@ import EventDetailsModal from './components/EventDetailsModal'
 import ClashBanner from './components/ClashBanner'
 import OverdueBanner from './components/OverdueBanner'
 import TitleBar from './components/TitleBar'
+import ThemeManager from './components/ThemeManager'
+import ZoomControl from './components/ZoomControl'
+import { ThemeProvider } from './contexts/ThemeContext'
 import { checkForClashes } from './utils/dateUtils'
 import { TIMEZONES } from './utils/constants'
 import { Plus, Languages, Printer, Globe, Download, Upload } from 'lucide-react'
@@ -379,6 +382,12 @@ function App() {
                         />
                     </label>
 
+                    {/* Theme Manager */}
+                    <ThemeManager />
+
+                    {/* Zoom Control */}
+                    <ZoomControl />
+
                     {/* Add Event */}
                     <button
                         onClick={openAddModal}
@@ -449,4 +458,10 @@ function App() {
     )
 }
 
-export default App
+export default function AppWithTheme() {
+    return (
+        <ThemeProvider>
+            <App />
+        </ThemeProvider>
+    );
+}

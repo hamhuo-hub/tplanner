@@ -24,9 +24,20 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
-      "icon.ico"
+      "icon.ico",
+      "themes/**/*"
     ],
     "extraResources": [],
+    "fileAssociations": [
+      {
+        "ext": "tptheme",
+        "name": "tPlanner Theme",
+        "description": "tPlanner Theme Package",
+        "mimeType": "application/x-tptheme",
+        "role": "Editor",
+        "icon": "icon.ico"
+      }
+    ],
     "win": {
       "target": [
         {

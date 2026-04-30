@@ -1,16 +1,21 @@
-import { format, areIntervalsOverlapping, startOfDay, endOfDay, max, min, addMinutes } from 'date-fns';
+import { format, areIntervalsOverlapping, max, min, addMinutes } from 'date-fns';
+import { fromZonedTime, formatInTimeZone } from 'date-fns-tz';
 import EventBlock from './EventBlock';
 import { useTranslation } from 'react-i18next';
 import { getDateLocale } from '../utils/dateLocale';
 import { MASSEY_COLORS } from '../utils/constants';
-import { formatInTimeZone } from 'date-fns-tz';
 
 export default function EventRow({ date, events, onEventClick, onAddEvent, highlight, onDragStart, dragState, clashes, displayTimezone, onToggleTaskComplete }) {
     const { i18n } = useTranslation();
     const locale = getDateLocale(i18n.language);
 
-    const dayStart = startOfDay(date);
-    const dayEnd   = endOfDay(date);
+    // ── Day boundaries in the DISPLAY timezone ──────────────────────────────
+    // Using fromZonedTime so that "Apr 24" always means Apr 24 00:00–23:59
+    // in the selected timezone, not in the browser's local timezone.
+    const tz = displayTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const dateStr = format(date, 'yyyy-MM-dd'); // always local-date label (Apr 24)
+    const dayStart = fromZonedTime(`${dateStr}T00:00:00`, tz);
+    const dayEnd   = fromZonedTime(`${dateStr}T23:59:59.999`, tz);
 
     const dayEventsRaw  = events.filter(e => areIntervalsOverlapping({ start: e.start, end: e.end }, { start: dayStart, end: dayEnd }));
     const statusEvents  = dayEventsRaw.filter(e => e.type === 'status');

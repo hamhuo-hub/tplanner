@@ -3,7 +3,10 @@
    Black-Gold × Soviet Constructivism Design System
    ═══════════════════════════════════════════════════════════════════════════ */
 
+/* Fonts: Built-in Soviet Constructivism (Oswald + IBM Plex Mono) */
 @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@300;400;500;600;700&family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap');
+/* Fonts: Reverse: 1999 theme (Playfair Display + Cinzel + Cormorant Garamond) */
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,400&family=Cinzel:wght@700&family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&display=swap');
 @import "tailwindcss";
 
 /* ── Design Tokens ──────────────────────────────────────────────────────── */
@@ -828,3 +831,95 @@ input[type="number"] {
 
     .border-b { break-inside: avoid; }
 }
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THEME ENGINE — Light Mode Adapter
+   Applied by ThemeEngine when meta.type === 'light' (e.g. Blue Archive)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+body.tpt-light-mode {
+    color-scheme: light;
+}
+
+/* When light mode is active, scrollbars should invert */
+body.tpt-light-mode ::-webkit-scrollbar-track { background: var(--clr-void); }
+body.tpt-light-mode ::-webkit-scrollbar-thumb { background: var(--clr-border-bright); }
+body.tpt-light-mode ::-webkit-scrollbar-thumb:hover { background: var(--clr-gold-dim); }
+
+/* Light mode: ensure MUI paper picks up surface color */
+body.tpt-light-mode .MuiPaper-root,
+body.tpt-light-mode .MuiDialog-paper {
+    background: var(--clr-surface) !important;
+    border-color: var(--clr-border) !important;
+    color: var(--clr-text) !important;
+}
+body.tpt-light-mode .MuiInputBase-root {
+    background: var(--clr-raised) !important;
+}
+body.tpt-light-mode .MuiOutlinedInput-notchedOutline {
+    border-color: var(--clr-border) !important;
+}
+
+/* Typography token inheritance — ensures font-family tokens apply globally */
+body { font-family: var(--font-body, var(--font-mono, monospace)); }
+h1, h2, h3, h4, h5, h6,
+.font-display,
+.titlebar-title,
+.banner-title,
+.event-block-title,
+.modal-event-title,
+[class*="heading"] {
+    font-family: var(--font-display, 'Oswald', sans-serif) !important;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   TOAST NOTIFICATION — Theme install feedback
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.tpt-toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(0);
+    padding: 8px 18px;
+    background: var(--clr-surface);
+    border: 1px solid var(--clr-border-bright);
+    border-left: 3px solid var(--clr-gold);
+    border-radius: var(--radius);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    color: var(--clr-text);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.45);
+    z-index: 99999;
+    animation: toast-in 0.25s cubic-bezier(0.175,0.885,0.32,1.275) both;
+    white-space: nowrap;
+    max-width: 90vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tpt-toast[data-type="error"] {
+    border-left-color: var(--clr-red);
+    color: var(--clr-text);
+}
+
+@keyframes toast-in {
+    from { opacity: 0; transform: translateX(-50%) translateY(12px); }
+    to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THEME MANAGER — Panel inner scrollbar styling
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Theme card hover state */
+div[style*="cursor: pointer"]:hover {
+    border-color: var(--clr-gold-dim) !important;
+    background: var(--clr-gold-ghost) !important;
+}
+
+/* Playfair Display, Cinzel, Cormorant Garamond are imported at the top of this file. */

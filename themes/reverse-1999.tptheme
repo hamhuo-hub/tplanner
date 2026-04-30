@@ -1,0 +1,63 @@
+{
+  "name": "Reverse: 1999 — Oblivion",
+  "id": "reverse-1999-oblivion",
+  "version": "1.0.0",
+  "author": "tPlanner Themes",
+  "description": "Art Deco meets Vienna Secession. Low-saturation warmth, serif typography and film-grain texture create a cinematic ASMR stillness from the early 20th century.",
+  "meta": {
+    "type": "dark",
+    "preview": {
+      "bg": "#1A1918",
+      "surface": "#2C2926",
+      "accent": "#D4AF37",
+      "text": "#E8E4D9"
+    }
+  },
+  "tokens": {
+    "--clr-void":           "#0E0D0C",
+    "--clr-bg":             "#1A1918",
+    "--clr-surface":        "#2C2926",
+    "--clr-raised":         "#3A3530",
+    "--clr-border":         "#4A4540",
+    "--clr-border-bright":  "#6A6258",
+
+    "--clr-gold":           "#D4AF37",
+    "--clr-gold-bright":    "#E8C75A",
+    "--clr-gold-dim":       "#7A6420",
+    "--clr-gold-ghost":     "rgba(212, 175, 55, 0.10)",
+    "--clr-gold-hover":     "rgba(212, 175, 55, 0.18)",
+
+    "--clr-red":            "#8B2020",
+    "--clr-red-dim":        "rgba(139, 32, 32, 0.15)",
+    "--clr-red-glow":       "rgba(139, 32, 32, 0.35)",
+
+    "--clr-text":           "#E8E4D9",
+    "--clr-text-dim":       "#8A857B",
+    "--clr-text-mute":      "#4A4540",
+
+    "--clr-warning":        "#D4AF37",
+    "--clr-success":        "#4A6A4A",
+    "--clr-info":           "#4A6078"
+  },
+  "typography": {
+    "--font-display":  "'Playfair Display', 'Cinzel', 'Palatino Linotype', 'Times New Roman', serif",
+    "--font-mono":     "'Cormorant Garamond', 'IM Fell English', 'Georgia', serif",
+    "--font-body":     "'Cormorant Garamond', 'Georgia', serif"
+  },
+  "shape": {
+    "--radius-sm": "0px",
+    "--radius":    "1px",
+    "--radius-lg": "2px"
+  },
+  "animations": {
+    "--transition-fast":   "200ms cubic-bezier(0.25, 0.1, 0.25, 1)",
+    "--transition-normal": "450ms cubic-bezier(0.25, 0.1, 0.25, 1)"
+  },
+  "effects": {
+    "filmGrain":      true,
+    "vignette":       true,
+    "gridLines":      false,
+    "vignetteColor":  "rgba(14, 13, 12, 0.85)",
+    "grainOpacity":   0.06
+  }
+}
