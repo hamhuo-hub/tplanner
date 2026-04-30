@@ -59,5 +59,15 @@
     "gridLines":   true,
     "gridColor":   "rgba(191, 223, 255, 0.35)",
     "gridSize":    "28px"
-  }
+  },
+  "eventColors": [
+    "#4A7EC0",
+    "#2D3A5F",
+    "#D64562",
+    "#2E7D5A",
+    "#6A5ACD",
+    "#C86A30",
+    "#3A9DBF",
+    "#8090B0"
+  ]
 }

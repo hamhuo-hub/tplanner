@@ -54,6 +54,16 @@
     /* Motion */
     --transition-fast:   120ms ease;
     --transition-normal: 200ms ease;
+
+    /* Event color palette — overridable by .tptheme packages */
+    --clr-event-0: #5B8FCC; /* Steel Blue      */
+    --clr-event-1: #C9A84C; /* Antique Gold    */
+    --clr-event-2: #C0697A; /* Dusty Rose      */
+    --clr-event-3: #5B9E72; /* Sage Green      */
+    --clr-event-4: #8B6BAE; /* Dusty Lavender  */
+    --clr-event-5: #C87D5A; /* Burnt Sienna    */
+    --clr-event-6: #4A9DA8; /* Steel Teal      */
+    --clr-event-7: #8A8A8A; /* Stone Grey      */
 }
 
 /* ── Global Reset ───────────────────────────────────────────────────────── */
@@ -517,11 +527,13 @@ input[type="number"] {
 }
 
 .event-block-inner {
-    padding: 2px 6px 2px 8px;
+    padding: 0 6px 0 8px;
     height: 100%;
     display: flex;
     flex-direction: column;
     justify-content: center;
+    gap: 1px;
+    min-width: 0; /* allow text-overflow to work */
 }
 
 .event-block-title {
@@ -534,6 +546,7 @@ input[type="number"] {
     overflow: hidden;
     text-overflow: ellipsis;
     text-transform: uppercase;
+    line-height: 1.2;
 }
 
 .event-block-title--completed {

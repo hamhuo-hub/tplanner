@@ -20,12 +20,13 @@ export default function EventBlock({ event, onClick, isConflicting, displayTimez
     const startMins  = startMsOff / 60000;
     const endMins    = Math.max(startMins + 15, endMsOff / 60000);
 
-    const durationMins = endMins - startMins;
-    const leftPercent  = (startMins / 1440) * 100;
-    const widthPercent = (durationMins / 1440) * 100;
+    const durationMins  = endMins - startMins;
+    const leftPercent   = (startMins / 1440) * 100;
+    const widthPercent  = (durationMins / 1440) * 100;
     const isCompleted   = event.completed === true;
-    const color         = isCompleted ? '#3A342A' : (MASSEY_COLORS[event.colorId] ?? MASSEY_COLORS[0]);
-    const titleOffsetPx = event.titleOffsetPx || 0;
+    const colorIdx = event.colorId ?? 0;
+    // Use CSS variable so .tptheme packages can override event colors
+    const colorVar = `var(--clr-event-${colorIdx}, ${MASSEY_COLORS[colorIdx] ?? MASSEY_COLORS[0]})`;
 
     let blockClass = 'event-block';
     if (isConflicting) blockClass += ' event-block--conflicting';
@@ -37,7 +38,8 @@ export default function EventBlock({ event, onClick, isConflicting, displayTimez
             onMouseDown={e => { if (e.button !== 0) return; e.stopPropagation(); onDragStart?.(e); }}
             className={blockClass}
             style={{
-                backgroundColor: color,
+                backgroundColor: colorVar,
+                opacity: isCompleted ? 0.45 : 1,
                 left:  `${leftPercent}%`,
                 width: `${widthPercent}%`,
                 zIndex: 10,
@@ -45,8 +47,10 @@ export default function EventBlock({ event, onClick, isConflicting, displayTimez
             }}
             title={`${event.title} (${formatInTimeZone(event.start, tz, 'HH:mm')} – ${formatInTimeZone(event.end, tz, 'HH:mm')})`}
         >
-            <div className="event-block-inner" style={{ paddingTop: `calc(0.25rem + ${titleOffsetPx}px)` }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 3 }}>
+            {/* event-block-inner: CSS already has display:flex + justify-content:center
+                 Do NOT override with paddingTop, it breaks vertical centering. */}
+            <div className="event-block-inner">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     {/* Task checkbox */}
                     {event.type === 'task' && (
                         <div

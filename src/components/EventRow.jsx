@@ -50,42 +50,50 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
         return { ...ev, rowIndex };
     });
 
-    // Regular events — cluster stacking
-    const finalRegularEvents = [];
-    if (processedRegularEvents.length > 0) {
-        const clusters = [];
-        let currentCluster = [], clusterEnd = null;
-        processedRegularEvents.forEach(event => {
-            if (!clusterEnd || event.start < clusterEnd) {
-                currentCluster.push(event);
-                clusterEnd = clusterEnd ? max([clusterEnd, event.end]) : event.end;
-            } else {
-                clusters.push(currentCluster);
-                currentCluster = [event];
-                clusterEnd = event.end;
-            }
-        });
-        if (currentCluster.length) clusters.push(currentCluster);
+    // ── Lane assignment for regular events ────────────────────────────────
+    // Greedy algorithm: each event goes into the first available lane where
+    // it doesn't overlap any existing event. Result: no visual overlap.
+    const lanes = []; // lanes[i] = array of events already placed in lane i
 
-        clusters.forEach(cluster => {
-            cluster.forEach((ev, idx) => {
-                const isConflicting = clashes ? clashes.some(c => c.eventId === ev.id) : false;
-                const overlappingStatus = finalStatusEvents.filter(se =>
-                    areIntervalsOverlapping({ start: se.start, end: se.end }, { start: ev.start, end: ev.end })
-                );
-                let titleOffsetPx = 0;
-                if (overlappingStatus.length > 0) {
-                    const maxStatusRow = Math.max(...overlappingStatus.map(se => se.rowIndex));
-                    const statusBottomPx = maxStatusRow * 18 + 16;
-                    const regularTopPx  = 80 * (0.15 + idx * 0.15);
-                    if (statusBottomPx > regularTopPx) titleOffsetPx = (statusBottomPx - regularTopPx) + 4;
-                }
-                finalRegularEvents.push({ ...ev, isConflicting, titleOffsetPx, style: { top: `${idx * 15}%`, height: '80%', zIndex: 10 + idx } });
-            });
-        });
-    }
+    const processedWithLane = processedRegularEvents.map(ev => {
+        let laneIdx = 0;
+        while (true) {
+            const lane = lanes[laneIdx];
+            if (!lane) {
+                lanes[laneIdx] = [ev];
+                break;
+            }
+            const hasConflict = lane.some(existing =>
+                areIntervalsOverlapping(
+                    { start: existing.start, end: existing.end },
+                    { start: ev.start, end: ev.end },
+                    { inclusive: false }
+                )
+            );
+            if (!hasConflict) {
+                lane.push(ev);
+                break;
+            }
+            laneIdx++;
+        }
+        return { ...ev, laneIdx };
+    });
+
+    const totalLanes = lanes.length || 1;
+
+    const finalRegularEvents = processedWithLane.map(ev => ({
+        ...ev,
+        isConflicting: clashes ? clashes.some(c => c.eventId === ev.id) : false,
+        // Lane height: divide the event area (below status strip) equally
+        laneTopPct:    15 + (ev.laneIdx / totalLanes) * 85,
+        laneHeightPct: (1 / totalLanes) * 85,
+    }));
 
     const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+    // Row height grows with lane count so events never overlap
+    const ROW_BASE_PX   = 52;
+    const LANE_HEIGHT_PX = 36;
+    const rowHeightPx   = ROW_BASE_PX + (totalLanes - 1) * LANE_HEIGHT_PX;
 
     const handleGridClick = (e) => {
         if (e.target.closest('.event-block')) return;
@@ -97,7 +105,10 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
     };
 
     return (
-        <div id={`row-${format(date, 'yyyy-MM-dd')}`} className={`event-row ${isWeekend ? 'event-row--weekend' : 'event-row--weekday'}`}>
+        <div id={`row-${format(date, 'yyyy-MM-dd')}`}
+             className={`event-row ${isWeekend ? 'event-row--weekend' : 'event-row--weekday'}`}
+             style={{ minHeight: rowHeightPx }}
+        >
             {/* Date Column */}
             <div className="event-row-date">
                 <span className="event-row-date-dow">{format(date, 'EEE', { locale })}</span>
@@ -115,12 +126,12 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                 {statusEvents.length > 0 && (
                     <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '15%', zIndex: 30, pointerEvents: 'none' }}>
                         {finalStatusEvents.map(ev => {
-                            const tz = displayTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+                            const tzInner = displayTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
                             const toMins = str => { const [h, m] = str.split(':').map(Number); return h * 60 + m; };
                             let startMins, endMins;
                             try {
-                                startMins = toMins(formatInTimeZone(ev.start, tz, 'HH:mm'));
-                                endMins   = toMins(formatInTimeZone(ev.end,   tz, 'HH:mm'));
+                                startMins = toMins(formatInTimeZone(ev.start, tzInner, 'HH:mm'));
+                                endMins   = toMins(formatInTimeZone(ev.end,   tzInner, 'HH:mm'));
                                 if (endMins < startMins) endMins += 1440;
                                 if (endMins - startMins < 15) endMins = startMins + 15;
                             } catch {
@@ -129,24 +140,44 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                             }
                             const left  = (startMins / 1440) * 100;
                             const width = ((endMins - startMins) / 1440) * 100;
+                            const colorIdx = ev.colorId ?? 0;
+                            const colorVar = `var(--clr-event-${colorIdx}, ${MASSEY_COLORS[colorIdx] ?? MASSEY_COLORS[0]})`;
                             return (
                                 <div key={ev.id}
                                     style={{
-                                        position: 'absolute',
-                                        backgroundColor: ev.colorId !== undefined ? MASSEY_COLORS[ev.colorId] : '#4A4A4A',
+                                        position:        'absolute',
+                                        backgroundColor: colorVar,
                                         left: `${left}%`, width: `${width}%`,
                                         top: `${ev.rowIndex * 18}px`, height: '16px',
-                                        borderRadius: 2, borderLeft: '3px solid rgba(255,255,255,0.3)',
-                                        overflow: 'hidden', paddingLeft: 4,
-                                        pointerEvents: 'auto', cursor: 'pointer',
+                                        borderRadius:    2,
+                                        borderLeft:      '3px solid rgba(255,255,255,0.3)',
+                                        overflow:        'hidden',
+                                        paddingLeft:     5,
+                                        paddingRight:    4,
+                                        // Vertically center the text inside the 16px strip
+                                        display:         'flex',
+                                        alignItems:      'center',
+                                        pointerEvents:   'auto',
+                                        cursor:          'pointer',
                                     }}
                                     onClick={e => { e.stopPropagation(); onEventClick(events.find(o => o.id === ev.id) || ev); }}
                                 >
-                                    <span style={{ fontFamily: 'var(--font-display)', fontSize: '9px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#fff', whiteSpace: 'nowrap' }}>
+                                    <span style={{
+                                        fontFamily:    'var(--font-display)',
+                                        fontSize:      '9px',
+                                        fontWeight:    600,
+                                        letterSpacing: '0.06em',
+                                        textTransform: 'uppercase',
+                                        color:         '#fff',
+                                        whiteSpace:    'nowrap',
+                                        overflow:      'hidden',
+                                        textOverflow:  'ellipsis',
+                                    }}>
                                         {ev.title}
                                     </span>
                                 </div>
                             );
+
                         })}
                     </div>
                 )}
@@ -155,6 +186,19 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                 {Array.from({ length: 24 }).map((_, i) => (
                     <div key={i} className="hour-line" style={{ left: `${(i / 24) * 100}%` }} />
                 ))}
+
+                {/* Lane separator lines (subtle) — only when >1 lane */}
+                {totalLanes > 1 && Array.from({ length: totalLanes - 1 }).map((_, i) => {
+                    const topPct = 15 + ((i + 1) / totalLanes) * 85;
+                    return (
+                        <div key={`lane-sep-${i}`} style={{
+                            position: 'absolute', left: 0, right: 0,
+                            top: `${topPct}%`, height: '1px',
+                            background: 'rgba(255,255,255,0.04)',
+                            pointerEvents: 'none', zIndex: 5,
+                        }} />
+                    );
+                })}
 
                 {/* Clash highlight */}
                 {highlight && highlight.type !== 'today' && areIntervalsOverlapping(
@@ -179,7 +223,7 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                     <div className="highlight-today" style={{ position: 'absolute', inset: 0, zIndex: 10, pointerEvents: 'none', borderRadius: 2 }} />
                 )}
 
-                {/* Regular events */}
+                {/* Regular events — lane-positioned, no overlap */}
                 {finalRegularEvents.map(event => {
                     const isDragging = dragState?.event?.id === event.id;
                     return (
@@ -192,9 +236,10 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                             onToggleTaskComplete={onToggleTaskComplete}
                             onDragStart={e => onDragStart(event, e.clientX, e.clientY, date)}
                             style={{
-                                ...event.style,
-                                top: `calc(15% + ${event.style.top})`,
-                                height: '70%',
+                                position: 'absolute',
+                                top:    `calc(${event.laneTopPct}% + 2px)`,
+                                height: `calc(${event.laneHeightPct}% - 4px)`,
+                                zIndex: 10 + event.laneIdx,
                                 opacity: isDragging ? 0 : 1,
                                 pointerEvents: isDragging ? 'none' : 'auto',
                             }}

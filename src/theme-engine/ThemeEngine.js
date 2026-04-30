@@ -164,6 +164,12 @@ class ThemeEngine {
         if (theme.animations) {
             Object.entries(theme.animations).forEach(([k, v]) => vars.push(`  ${k}: ${v};`));
         }
+        // Event color palette — 8 slots, override --clr-event-0 … --clr-event-7
+        if (Array.isArray(theme.eventColors)) {
+            theme.eventColors.slice(0, 8).forEach((color, i) => {
+                if (color) vars.push(`  --clr-event-${i}: ${color};`);
+            });
+        }
 
         this._styleEl.textContent = `:root {\n${vars.join('\n')}\n}`;
 

@@ -23,16 +23,23 @@ export const EVENT_TYPES = {
  * @property {number} overlapMinutes
  */
 
+// Default event color palette — lower saturation, harmonious tones.
+// These are also exposed as CSS variables --clr-event-0 … --clr-event-7
+// so that .tptheme packages can override them via their "eventColors" field.
 export const MASSEY_COLORS = [
-    "#377EB8", // 0: Blue
-    "#FF7F00", // 1: Orange
-    "#E41A1C", // 2: Red
-    "#4DAF4A", // 3: Green
-    "#984EA3", // 4: Purple
-    "#A65628", // 5: Brown
-    "#F781BF", // 6: Pink
-    "#999999", // 7: Grey
+    "#5B8FCC", // 0: Steel Blue
+    "#C9A84C", // 1: Antique Gold
+    "#C0697A", // 2: Dusty Rose
+    "#5B9E72", // 3: Sage Green
+    "#8B6BAE", // 4: Dusty Lavender
+    "#C87D5A", // 5: Burnt Sienna
+    "#4A9DA8", // 6: Steel Teal
+    "#8A8A8A", // 7: Stone Grey
 ];
+
+// CSS variable names corresponding to each color slot.
+export const EVENT_COLOR_VARS = MASSEY_COLORS.map((_, i) => `--clr-event-${i}`);
+
 
 export const TIMEZONES = [
     { value: '', label: 'Beijing Time (Default)' },
