@@ -1,18 +1,12 @@
 import { useState } from 'react';
 import { AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { formatInTimeZone } from 'date-fns-tz';
-
 import { useTranslation } from 'react-i18next';
 
-/**
- * @param {Object} props
- * @param {import('../utils/constants').Event[]} props.events
- */
 export default function OverdueBanner({ events, onHighlight, travelTimezone }) {
     const { t } = useTranslation();
     const [isExpanded, setIsExpanded] = useState(false);
 
-    // Calculate currently overdue tasks.
     const now = new Date();
     const overdueTasks = events.filter(e => e.type === 'task' && !e.completed && e.end < now);
 
@@ -22,48 +16,37 @@ export default function OverdueBanner({ events, onHighlight, travelTimezone }) {
     const hasMore = overdueTasks.length > 3;
 
     return (
-        <div className="bg-orange-100 border-l-4 border-orange-500 text-orange-800 p-4 mb-4 shadow-md animate-in slide-in-from-top duration-300">
-            <div className="flex items-start">
-                <AlertCircle className="w-6 h-6 mr-3 mt-1 flex-shrink-0" />
-                <div className="flex-grow">
-                    <p className="font-bold">{t('task.overdueDetected', 'Overdue Tasks Detected')}</p>
-                    <ul className="mt-2 text-sm list-disc list-inside space-y-1">
-                        {displayTasks.map(task => (
-                            <li key={task.id}>
-                                <button
-                                    onClick={() => {
-                                        onHighlight({
-                                            type: 'overdue',
-                                            start: new Date(task.start),
-                                            end: new Date(task.end)
-                                        });
-                                    }}
-                                    className="hover:underline text-left inline-flex items-center"
-                                >
-                                    <span className="font-medium mr-2">{task.title}</span>
-                                    <span className="text-xs text-orange-900 bg-orange-200 px-1 rounded whitespace-nowrap">
-                                        {(() => {
-                                            const displayTz = travelTimezone || 'Asia/Shanghai';
-                                            return `${formatInTimeZone(task.start, displayTz, 'MMM d HH:mm')} - ${formatInTimeZone(task.end, displayTz, 'HH:mm')}`;
-                                        })()}
-                                    </span>
-                                </button>
-                            </li>
-                        ))}
-                    </ul>
-                    {hasMore && (
-                        <button
-                            onClick={() => setIsExpanded(!isExpanded)}
-                            className="mt-2 flex items-center text-sm font-medium hover:text-orange-900 transition-colors"
-                        >
-                            {isExpanded ? (
-                                <><ChevronUp className="w-4 h-4 mr-1" /> {t('actions.showLess', 'Show less')}</>
-                            ) : (
-                                <><ChevronDown className="w-4 h-4 mr-1" /> {t('actions.showAll', { count: overdueTasks.length, defaultValue: `Show all (${overdueTasks.length})` })}</>
-                            )}
-                        </button>
-                    )}
-                </div>
+        <div className="banner banner--overdue overdue-banner">
+            <AlertCircle size={15} style={{ flexShrink: 0, marginTop: 2, color: 'var(--clr-gold)' }} />
+            <div style={{ flex: 1 }}>
+                <p className="banner-title">{t('task.overdueDetected', 'Overdue Tasks')}</p>
+                <ul style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 3, listStyle: 'none' }}>
+                    {displayTasks.map(task => (
+                        <li key={task.id}>
+                            <button onClick={() => onHighlight({ type: 'overdue', start: new Date(task.start), end: new Date(task.end) })}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: 0, fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--clr-text)', textAlign: 'left' }}
+                            >
+                                <strong style={{ color: 'var(--clr-gold)' }}>{task.title}</strong>
+                                <span className="banner-tag">
+                                    {(() => {
+                                        const tz = travelTimezone || 'Asia/Shanghai';
+                                        return `${formatInTimeZone(task.start, tz, 'MMM d HH:mm')}–${formatInTimeZone(task.end, tz, 'HH:mm')}`;
+                                    })()}
+                                </span>
+                            </button>
+                        </li>
+                    ))}
+                </ul>
+                {hasMore && (
+                    <button onClick={() => setIsExpanded(!isExpanded)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, marginTop: 6, fontFamily: 'var(--font-display)', fontSize: '10px', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--clr-gold-dim)' }}
+                    >
+                        {isExpanded
+                            ? <><ChevronUp size={12} /> {t('actions.showLess', 'Show less')}</>
+                            : <><ChevronDown size={12} /> {t('actions.showAll', { count: overdueTasks.length, defaultValue: `Show all (${overdueTasks.length})` })}</>
+                        }
+                    </button>
+                )}
             </div>
         </div>
     );

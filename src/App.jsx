@@ -6,15 +6,16 @@ import AddEventModal from './components/AddEventModal'
 import EventDetailsModal from './components/EventDetailsModal'
 import ClashBanner from './components/ClashBanner'
 import OverdueBanner from './components/OverdueBanner'
+import TitleBar from './components/TitleBar'
 import { checkForClashes } from './utils/dateUtils'
 import { TIMEZONES } from './utils/constants'
-import { Plus, Languages, Printer, Globe } from 'lucide-react'
+import { Plus, Languages, Printer, Globe, Download, Upload } from 'lucide-react'
 import { getDatabase } from './database/db'
 
 function App() {
     const { t, i18n } = useTranslation();
     const [events, setEvents] = useState([]);
-    const [highlight, setHighlight] = useState(null); // { type: 'clash' | 'today', start: Date, end: Date }
+    const [highlight, setHighlight] = useState(null);
     const [travelTimezone, setTravelTimezone] = useState('');
 
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -24,13 +25,14 @@ function App() {
     const [isLoaded, setIsLoaded] = useState(false);
     const [db, setDb] = useState(null);
 
-    // Fetch initial data & setup subscriber
+    // Detect Electron environment
+    const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
+
+    // ── Database Init ─────────────────────────────────────────────────────
     useEffect(() => {
         let subscription;
         getDatabase().then(database => {
             setDb(database);
-            
-            // Subscribe to all events
             subscription = database.events.find().$.subscribe(docs => {
                 const hydrated = docs.map(doc => {
                     const e = doc.toJSON();
@@ -47,13 +49,10 @@ function App() {
             console.error("Failed to init RxDB", err);
         });
 
-        // Load saved timezone if exists
         const savedTz = localStorage.getItem('tplanner_travel_timezone');
         if (savedTz) setTravelTimezone(savedTz);
 
-        return () => {
-            if (subscription) subscription.unsubscribe();
-        };
+        return () => { if (subscription) subscription.unsubscribe(); };
     }, []);
 
     const [viewRange, setViewRange] = useState({ start: null, end: null });
@@ -68,26 +67,18 @@ function App() {
         }
     };
 
-    // Initialize view range on load or when events change significantly?
-    // Actually, we want to start at Today or Earliest Event.
     useEffect(() => {
         if (!viewRange.start) {
-            // Initial load or Reset
-            // Default: Today - 7 days to Today + 30 days
             const today = new Date();
             today.setHours(0, 0, 0, 0);
-
             const start = new Date(today);
             start.setDate(today.getDate() - 7);
             const end = new Date(today);
             end.setDate(today.getDate() + 30);
-
             setViewRange({ start, end });
         }
     }, [viewRange.start]);
 
-    // Derived clash calculation - checks ALL events, not just view?
-    // Yes, clashes exist regardless of view.
     const clashes = useMemo(() => checkForClashes(events), [events]);
 
     const handleLoadMorePrev = () => {
@@ -115,46 +106,32 @@ function App() {
         start.setDate(today.getDate() - 7);
         const end = new Date(today);
         end.setDate(today.getDate() + 30);
-
         setViewRange({ start, end });
-
-        // Scroll to today after render
         setTimeout(() => {
             const dateStr = format(today, 'yyyy-MM-dd');
             const element = document.getElementById(`row-${dateStr}`);
             if (element) {
                 element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                // Highlight
                 const startOfDay = new Date(today);
                 const endOfDay = new Date(today); endOfDay.setHours(23, 59, 59, 999);
-                setHighlight({
-                    type: 'today',
-                    start: startOfDay,
-                    end: endOfDay
-                });
+                setHighlight({ type: 'today', start: startOfDay, end: endOfDay });
                 setTimeout(() => setHighlight(null), 3000);
             }
         }, 100);
     };
 
-    // Jump to specific date (for conflicts)
     const handleJumpToDate = (date) => {
         const target = new Date(date);
         target.setHours(0, 0, 0, 0);
-
         const start = new Date(target);
         start.setDate(target.getDate() - 7);
         const end = new Date(target);
         end.setDate(target.getDate() + 30);
-
         setViewRange({ start, end });
-
         setTimeout(() => {
             const dateStr = format(target, 'yyyy-MM-dd');
             const element = document.getElementById(`row-${dateStr}`);
-            if (element) {
-                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
+            if (element) element.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, 100);
     };
 
@@ -163,9 +140,7 @@ function App() {
         try {
             const doc = await db.events.findOne(eventId).exec();
             if (doc) {
-                await doc.update({
-                    $set: { completed: completedStatus, updatedAt: Date.now() }
-                });
+                await doc.update({ $set: { completed: completedStatus, updatedAt: Date.now() } });
             }
         } catch (err) {
             console.error('Update failed', err);
@@ -174,22 +149,17 @@ function App() {
 
     const handleSaveEvent = async (eventData, config = { scope: 'single' }) => {
         if (!db) return;
-        
         const updates = Array.isArray(eventData) ? eventData : [eventData];
-
         try {
             if (config.scope === 'all' && config.originalGroupId) {
                 const docsObj = await db.events.find({ selector: { groupId: config.originalGroupId } }).exec();
                 await Promise.all(docsObj.map(doc => doc.remove()));
             } else if (config.scope === 'future' && config.originalGroupId && config.originalStartDate) {
-                // Ensure date formatting is consistent
                 const cutoff = new Date(config.originalStartDate).getTime();
                 const docsObj = await db.events.find({ selector: { groupId: config.originalGroupId } }).exec();
                 const toRemove = docsObj.filter(doc => new Date(doc.get('start')).getTime() >= cutoff);
                 await Promise.all(toRemove.map(doc => doc.remove()));
             }
-
-            // Prepare updates using RxDB schema compliant format
             const upserts = updates.map(update => {
                 const cleanUpdate = { ...update };
                 cleanUpdate.start = new Date(cleanUpdate.start).toISOString();
@@ -197,21 +167,15 @@ function App() {
                 cleanUpdate.updatedAt = Date.now();
                 return cleanUpdate;
             });
-
-            // Bulk upsert
             await db.events.bulkUpsert(upserts);
         } catch (err) {
             console.error('Error saving events to RxDB', err);
         }
-
         setEditingEvent(null);
         setIsAddModalOpen(false);
-
-        // Update selectedEvent if needed (only if single edit matches)
         if (!Array.isArray(eventData) && selectedEvent && selectedEvent.id === eventData.id) {
             setSelectedEvent(eventData);
         } else if (config.scope !== 'single' && selectedEvent) {
-            // If we edited a series and had one selected, close the details modal to avoid staleness
             setSelectedEvent(null);
         }
     };
@@ -231,13 +195,12 @@ function App() {
                 const doc = await db.events.findOne(id).exec();
                 if (doc) await doc.remove();
             }
-        } catch(err) {
-             console.error('Error deleting event', err);
+        } catch (err) {
+            console.error('Error deleting event', err);
         }
         setSelectedEvent(null);
-    }
+    };
 
-    // Triggered by clicking on the timeline grid
     const handleTimelineClick = (start) => {
         setModalDefaultDate(start);
         setEditingEvent(null);
@@ -261,170 +224,181 @@ function App() {
     };
 
     const handlePrint = () => {
-        // 1. Find the date range to print (Today -> Last Event)
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-
-        // Find last event date
         let maxDate = new Date(today);
         if (events.length > 0) {
             const lastEventDate = events.reduce((max, e) => e.end > max ? e.end : max, new Date(0));
-            if (lastEventDate > maxDate) {
-                // Clone the date to avoid mutating the event object!
-                maxDate = new Date(lastEventDate);
-            }
+            if (lastEventDate > maxDate) maxDate = new Date(lastEventDate);
         }
-
-        // Add a buffer to maxDate (e.g., end of that week)
         maxDate.setDate(maxDate.getDate() + 7);
-
-        // 2. Set View Range
         const printStart = new Date(today);
-        printStart.setDate(printStart.getDate() - 1); // Start slightly before today for context
-
+        printStart.setDate(printStart.getDate() - 1);
         setViewRange({ start: printStart, end: maxDate });
+        setTimeout(() => window.print(), 500);
+    };
 
-        // 3. Print after render
-        setTimeout(() => {
-            window.print();
-        }, 500);
+    const handleExport = () => {
+        const dataStr = JSON.stringify(events, null, 2);
+        const blob = new Blob([dataStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "tplanner-data.json";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleImport = async (e) => {
+        const file = e.target.files[0];
+        if (!file || !db) return;
+        const reader = new FileReader();
+        reader.onload = async (ev) => {
+            try {
+                const parsed = JSON.parse(ev.target.result);
+                if (Array.isArray(parsed)) {
+                    const allDocs = await db.events.find().exec();
+                    await Promise.all(allDocs.map(d => d.remove()));
+                    const upserts = parsed.map(event => {
+                        const cleanUpdate = { ...event };
+                        cleanUpdate.start = new Date(cleanUpdate.start).toISOString();
+                        cleanUpdate.end = new Date(cleanUpdate.end).toISOString();
+                        cleanUpdate.updatedAt = Date.now();
+                        if (!cleanUpdate.note) cleanUpdate.note = "";
+                        if (!cleanUpdate.timezone) cleanUpdate.timezone = "";
+                        if (!cleanUpdate.groupId) cleanUpdate.groupId = "";
+                        if (cleanUpdate.completed === undefined) cleanUpdate.completed = false;
+                        if (cleanUpdate.checklist === undefined) cleanUpdate.checklist = [];
+                        if (!cleanUpdate.recurrenceType) cleanUpdate.recurrenceType = "none";
+                        if (!cleanUpdate.recurrenceCount) cleanUpdate.recurrenceCount = 1;
+                        return cleanUpdate;
+                    });
+                    await db.events.bulkUpsert(upserts);
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    setViewRange({
+                        start: new Date(today.setDate(today.getDate() - 7)),
+                        end: new Date(today.setDate(today.getDate() + 30))
+                    });
+                    alert(t('messages.importSuccess'));
+                } else {
+                    alert(t('messages.importError'));
+                }
+            } catch (err) {
+                console.error(err);
+                alert(t('messages.parseError'));
+            }
+        };
+        reader.readAsText(file);
     };
 
     return (
-        <div className="app-container h-screen flex flex-col bg-gray-100 overflow-hidden">
-            <header className="bg-white shadow-sm px-6 py-4 flex justify-between items-center z-50">
-                <h1 className="text-xl font-bold text-gray-800">{t('app.title')}</h1>
-                <div className="flex items-center gap-2">
-                    <div className="flex bg-gray-100 rounded-md p-1 mr-2">
-                        <button onClick={handleToday} className="px-3 py-1 text-sm font-medium text-gray-600 hover:bg-white hover:shadow-sm rounded transition-all">
-                            {t('nav.today')}
-                        </button>
-                    </div>
+        <div className="app-container" style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--clr-bg)', overflow: 'hidden' }}>
 
-                    <div className="flex items-center gap-1 bg-blue-50/50 rounded-md px-2 py-1 mr-2 border border-blue-100">
-                        <Globe className="w-4 h-4 text-blue-600" />
+            {/* Custom Title Bar (Electron only) */}
+            {isElectron && <TitleBar />}
+
+            {/* App Header */}
+            <header className="app-header">
+                <div className="app-header-left">
+                    {/* App title — only show if NOT in electron (TitleBar already shows it) */}
+                    {!isElectron && (
+                        <h1 className="app-header-title">{t('app.title')}</h1>
+                    )}
+
+                    {/* Today button */}
+                    <button onClick={handleToday} className="btn btn--ghost" id="btn-today">
+                        {t('nav.today')}
+                    </button>
+                </div>
+
+                <div className="app-header-right">
+                    {/* Timezone selector */}
+                    <div className="tz-select-wrap" title="Display Timezone">
+                        <Globe size={13} />
                         <select
                             value={travelTimezone}
                             onChange={handleTimezoneChange}
-                            className="bg-transparent text-sm font-medium text-blue-800 focus:outline-none cursor-pointer"
+                            className="tz-select"
+                            id="tz-select"
                         >
                             {TIMEZONES.map(tz => (
-                                <option key={tz.value} value={tz.value}>{t(`timezones.${tz.value.replace('/', '_')}`, tz.label)}</option>
+                                <option key={tz.value} value={tz.value}>
+                                    {t(`timezones.${tz.value.replace('/', '_')}`, tz.label)}
+                                </option>
                             ))}
                         </select>
                     </div>
 
+                    {/* Language toggle */}
                     <button
                         onClick={toggleLanguage}
-                        className="flex items-center gap-2 text-gray-600 hover:text-gray-900 font-medium px-3 py-2 text-sm"
+                        className="btn btn--ghost"
                         title={t('app.switchLanguage')}
+                        id="btn-lang"
                     >
-                        <Languages className="w-4 h-4" />
-                        {i18n.language === 'en' ? '中文' : 'English'}
+                        <Languages size={13} />
+                        {i18n.language === 'en' ? '中文' : 'EN'}
                     </button>
 
+                    {/* Print */}
                     <button
                         onClick={handlePrint}
-                        className="flex items-center gap-2 text-gray-600 hover:text-gray-900 font-medium px-3 py-2 text-sm"
+                        className="btn btn--ghost"
                         title={t('app.printCalendar')}
+                        id="btn-print"
                     >
-                        <Printer className="w-4 h-4" />
-                        {t('actions.print')}
+                        <Printer size={13} />
                     </button>
 
+                    {/* Export */}
                     <button
-                        onClick={() => {
-                            const dataStr = JSON.stringify(events, null, 2);
-                            const blob = new Blob([dataStr], { type: "application/json" });
-                            const url = URL.createObjectURL(blob);
-                            const link = document.createElement("a");
-                            link.href = url;
-                            link.download = "tplanner-data.json";
-                            document.body.appendChild(link);
-                            link.click();
-                            document.body.removeChild(link);
-                        }}
-                        className="text-gray-600 hover:text-gray-900 font-medium px-3 py-2 text-sm"
+                        onClick={handleExport}
+                        className="btn btn--ghost"
+                        title={t('actions.export')}
+                        id="btn-export"
                     >
-                        {t('actions.export')}
+                        <Download size={13} />
                     </button>
-                    <label className="text-gray-600 hover:text-gray-900 font-medium px-3 py-2 text-sm cursor-pointer">
-                        {t('actions.import')}
+
+                    {/* Import */}
+                    <label
+                        className="btn btn--ghost"
+                        title={t('actions.import')}
+                        style={{ cursor: 'pointer' }}
+                        id="btn-import-label"
+                    >
+                        <Upload size={13} />
                         <input
                             type="file"
                             accept=".json"
-                            className="hidden"
-                            onChange={async (e) => {
-                                const file = e.target.files[0];
-                                if (!file || !db) return;
-                                const reader = new FileReader();
-                                reader.onload = async (ev) => {
-                                    try {
-                                        const parsed = JSON.parse(ev.target.result);
-                                        // Basic validation
-                                        if (Array.isArray(parsed)) {
-                                            // Wipe DB
-                                            const allDocs = await db.events.find().exec();
-                                            await Promise.all(allDocs.map(d => d.remove()));
-                                            
-                                            // Make sure fields fit schema
-                                            const upserts = parsed.map(event => {
-                                                const cleanUpdate = { ...event };
-                                                cleanUpdate.start = new Date(cleanUpdate.start).toISOString();
-                                                cleanUpdate.end = new Date(cleanUpdate.end).toISOString();
-                                                cleanUpdate.updatedAt = Date.now();
-                                                // Handle undefined string properties which RxDB dislikes sometimes
-                                                if (!cleanUpdate.note) cleanUpdate.note = "";
-                                                if (!cleanUpdate.timezone) cleanUpdate.timezone = "";
-                                                if (!cleanUpdate.groupId) cleanUpdate.groupId = "";
-                                                if (cleanUpdate.completed === undefined) cleanUpdate.completed = false;
-                                                if (cleanUpdate.checklist === undefined) cleanUpdate.checklist = [];
-                                                if (!cleanUpdate.recurrenceType) cleanUpdate.recurrenceType = "none";
-                                                if (!cleanUpdate.recurrenceCount) cleanUpdate.recurrenceCount = 1;
-                                                return cleanUpdate;
-                                            });
-
-                                            await db.events.bulkUpsert(upserts);
-
-                                            // Reset view
-                                            const today = new Date();
-                                            today.setHours(0, 0, 0, 0);
-                                            setViewRange({
-                                                start: new Date(today.setDate(today.getDate() - 7)),
-                                                end: new Date(today.setDate(today.getDate() + 30))
-                                            });
-                                            alert(t('messages.importSuccess'));
-                                        } else {
-                                            alert(t('messages.importError'));
-                                        }
-                                    } catch (err) {
-                                        console.error(err);
-                                        alert(t('messages.parseError'));
-                                    }
-                                };
-                                reader.readAsText(file);
-                            }}
+                            style={{ display: 'none' }}
+                            onChange={handleImport}
+                            id="btn-import"
                         />
                     </label>
+
+                    {/* Add Event */}
                     <button
                         onClick={openAddModal}
-                        className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md shadow-sm transition-colors"
+                        className="btn btn--primary"
+                        id="btn-add-event"
                     >
-                        <Plus className="w-4 h-4" />
+                        <Plus size={13} />
                         {t('actions.addEvent')}
                     </button>
                 </div>
             </header>
 
-            <main className="flex-grow flex flex-col p-4 overflow-hidden">
+            {/* Main Content */}
+            <main style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '12px', overflow: 'hidden', gap: '8px' }}>
                 <OverdueBanner
                     events={events}
                     travelTimezone={travelTimezone}
                     onHighlight={(h) => {
                         setHighlight(h);
-                        if (h.type === 'overdue') {
-                            handleJumpToDate(h.start);
-                        }
+                        if (h.type === 'overdue') handleJumpToDate(h.start);
                         setTimeout(() => setHighlight(null), 3000);
                     }}
                 />
@@ -434,11 +408,7 @@ function App() {
                     travelTimezone={travelTimezone}
                     onHighlight={(h) => {
                         setHighlight(h);
-                        // Jump to it if it's a clash
-                        if (h.type === 'clash') {
-                            handleJumpToDate(h.start);
-                        }
-
+                        if (h.type === 'clash') handleJumpToDate(h.start);
                         setTimeout(() => setHighlight(null), 3000);
                     }}
                 />

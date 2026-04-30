@@ -1,110 +1,68 @@
 import { MASSEY_COLORS } from '../utils/constants';
-import { format } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 
-/**
- * @param {Object} props
- * @param {import('../utils/constants').Event} props.event
- * @param {Function} props.onClick
- */
-export default function EventBlock({ event, onClick, isConflicting, displayTimezone, ...props }) {
-    // Determine effective timezone name for calculations
+export default function EventBlock({ event, onClick, isConflicting, displayTimezone, onToggleTaskComplete, onDragStart, style }) {
     const tz = displayTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-    // We parse the exact time in the target display timezone and compute minutes
-    // This aligns the visual block to the numbers printed on the Timeline axis.
-    const extractMinutes = (dateStr) => {
-        const parts = dateStr.split(':');
-        return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
-    };
-
-    let startMinutes, endMinutes;
+    const toMins = str => { const [h, m] = str.split(':').map(Number); return h * 60 + m; };
+    let startMins, endMins;
     try {
-        const startTzTime = formatInTimeZone(event.start, tz, 'HH:mm');
-        const endTzTime = formatInTimeZone(event.end, tz, 'HH:mm');
-
-        startMinutes = extractMinutes(startTzTime);
-        endMinutes = extractMinutes(endTzTime);
-
-        // Handle midnight crossover if end time wraps to next day logically but is actually a duration
-        if (endMinutes < startMinutes) {
-            endMinutes += 24 * 60;
-        }
-
-        // Extremely short events (e.g. 0 duration) should have a minimal visual width
-        if (endMinutes - startMinutes < 15) {
-            endMinutes = startMinutes + 15;
-        }
-    } catch (e) {
-        // Fallback to local timezone calculation
-        startMinutes = event.start.getHours() * 60 + event.start.getMinutes();
-        endMinutes = event.end.getHours() * 60 + event.end.getMinutes();
-        if (endMinutes < startMinutes) endMinutes += 24 * 60;
+        startMins = toMins(formatInTimeZone(event.start, tz, 'HH:mm'));
+        endMins   = toMins(formatInTimeZone(event.end,   tz, 'HH:mm'));
+        if (endMins < startMins) endMins += 1440;
+        if (endMins - startMins < 15) endMins = startMins + 15;
+    } catch {
+        startMins = event.start.getHours() * 60 + event.start.getMinutes();
+        endMins   = event.end.getHours()   * 60 + event.end.getMinutes();
+        if (endMins < startMins) endMins += 1440;
     }
 
-    const durationMinutes = endMinutes - startMinutes;
-    const totalDayMinutes = 24 * 60;
-
-    const leftPercent = (startMinutes / totalDayMinutes) * 100;
-    const widthPercent = (durationMinutes / totalDayMinutes) * 100;
-
-    const isCompleted = event.completed === true;
-    const color = isCompleted ? '#9CA3AF' : (MASSEY_COLORS[event.colorId] || MASSEY_COLORS[0]); // Gray-400 equivalent for completed
+    const durationMins  = endMins - startMins;
+    const leftPercent   = (startMins / 1440) * 100;
+    const widthPercent  = (durationMins / 1440) * 100;
+    const isCompleted   = event.completed === true;
+    const color         = isCompleted ? '#3A342A' : (MASSEY_COLORS[event.colorId] ?? MASSEY_COLORS[0]);
     const titleOffsetPx = event.titleOffsetPx || 0;
+
+    let blockClass = 'event-block';
+    if (isConflicting) blockClass += ' event-block--conflicting';
+    if (isCompleted)   blockClass += ' event-block--completed';
 
     return (
         <div
-            onClick={(e) => { e.stopPropagation(); onClick(event); }}
-            onMouseDown={(e) => {
-                // Only left click
-                if (e.button !== 0) return;
-                e.stopPropagation();
-                if (props.onDragStart) {
-                    props.onDragStart(e);
-                }
-            }}
-            className={`event-block absolute rounded shadow-md border overflow-hidden cursor-pointer hover:brightness-110 transition-all ${isConflicting ? 'border-white/40 ring-1 ring-black/10 saturate-150 brightness-[0.75]' : 'border-white/20'} ${isCompleted ? 'opacity-80 line-through' : 'text-white'}`}
+            onClick={e => { e.stopPropagation(); onClick(event); }}
+            onMouseDown={e => { if (e.button !== 0) return; e.stopPropagation(); onDragStart?.(e); }}
+            className={blockClass}
             style={{
                 backgroundColor: color,
-                left: `${leftPercent}%`,
+                left:  `${leftPercent}%`,
                 width: `${widthPercent}%`,
                 zIndex: 10,
-                color: 'white',
-                fontSize: '0.75rem',
-                ...(props.style || { top: '4px', bottom: '4px' }) // Default or override
+                ...(style || { top: '4px', bottom: '4px' }),
             }}
-            title={`${event.title} (${formatInTimeZone(event.start, displayTimezone, 'HH:mm')} - ${formatInTimeZone(event.end, displayTimezone, 'HH:mm')})`}
+            title={`${event.title} (${formatInTimeZone(event.start, tz, 'HH:mm')} – ${formatInTimeZone(event.end, tz, 'HH:mm')})`}
         >
-            <div
-                className="px-2 h-full flex flex-col transition-all duration-300"
-                style={{ paddingTop: `calc(0.25rem + ${titleOffsetPx}px)` }}
-            >
-                <div className="flex items-start">
+            <div className="event-block-inner" style={{ paddingTop: `calc(0.25rem + ${titleOffsetPx}px)` }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 3 }}>
+                    {/* Task checkbox */}
                     {event.type === 'task' && (
                         <div
-                            className="mr-1 mt-0.5 cursor-pointer flex-shrink-0 relative w-3 h-3 border border-white rounded-sm bg-white/10 hover:bg-white/30 flex items-center justify-center transition-colors"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                if (props.onToggleTaskComplete) {
-                                    props.onToggleTaskComplete(event.id, !isCompleted);
-                                }
-                            }}
+                            className="task-checkbox"
+                            onClick={e => { e.stopPropagation(); onToggleTaskComplete?.(event.id, !isCompleted); }}
                         >
                             {isCompleted && (
-                                <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                <svg style={{ width: 8, height: 8, color: 'var(--clr-gold)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="square" strokeLinejoin="miter" strokeWidth={3} d="M5 13l4 4L19 7" />
                                 </svg>
                             )}
                         </div>
                     )}
-                    <div className="font-bold truncate leading-tight flex-grow">
+                    <div className={`event-block-title${isCompleted ? ' event-block-title--completed' : ''}`}>
                         {event.title}
                     </div>
                 </div>
-                {durationMinutes > 45 && event.note && (
-                    <div className="truncate opacity-90 text-[10px] mt-0.5">
-                        {event.note}
-                    </div>
+                {durationMins > 45 && event.note && (
+                    <div className="event-block-note">{event.note}</div>
                 )}
             </div>
         </div>

@@ -3,16 +3,9 @@ import { format } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import { useTranslation } from 'react-i18next';
 import { MASSEY_COLORS } from '../utils/constants';
-import { X, CheckCircle, Circle } from 'lucide-react';
+import { X, CheckCircle2, Circle } from 'lucide-react';
 import { getDateLocale } from '../utils/dateLocale';
 
-/**
- * @param {Object} props
- * @param {import('../utils/constants').Event | null} props.event
- * @param {Function} props.onClose
- * @param {Function} [props.onDelete]
- * @param {Function} [props.onEdit]
- */
 export default function EventDetailsModal({ event, travelTimezone, onClose, onDelete, onEdit, onSave }) {
     const { t, i18n } = useTranslation();
     const locale = getDateLocale(i18n.language);
@@ -20,142 +13,119 @@ export default function EventDetailsModal({ event, travelTimezone, onClose, onDe
 
     if (!event) return null;
 
-    const color = MASSEY_COLORS[event.colorId] || MASSEY_COLORS[0];
+    const color = MASSEY_COLORS[event.colorId] ?? MASSEY_COLORS[0];
 
     return (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
-            <div
-                className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200"
-                onClick={(e) => e.stopPropagation()}
-            >
-                {/* Header with color - reduced height to half of original (h-12) */}
-                <div
-                    className={`h-12 relative flex justify-end p-2`}
-                    style={{ backgroundColor: color }}
-                >
-                    <button
-                        onClick={onClose}
-                        className="text-white/80 hover:text-white bg-black/10 hover:bg-black/20 rounded-full p-1"
-                        title={t('actions.close')}
-                    >
-                        <X className="w-5 h-5" />
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-panel" onClick={e => e.stopPropagation()} style={{ borderTopColor: color }}>
+
+                {/* Header */}
+                <div className="modal-header">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, overflow: 'hidden' }}>
+                        <div style={{ width: 10, height: 10, background: color, borderRadius: 1, flexShrink: 0 }} />
+                        <h2 className="modal-event-title">{event.title}</h2>
+                    </div>
+                    <button onClick={onClose} className="btn btn--ghost" style={{ padding: '4px 8px', border: 'none' }} title={t('actions.close')}>
+                        <X size={15} />
                     </button>
                 </div>
 
-                <div className="p-6 relative">
-                    <h2 className="text-xl font-bold text-gray-800 mb-4 pr-8">{event.title}</h2>
-
-                    <div className="space-y-4">
-                        <div>
-                            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">{t('event.timeLabel')}</p>
-                            <p className="text-gray-700 text-sm">
-                                {format(event.start, 'EEEE, d MMMM yyyy', { locale })}
-                                <br />
-                                <span className="font-medium mr-2">
-                                    {format(event.start, 'HH:mm')} - {format(event.end, 'HH:mm')}
-                                </span>
-                                <div className="text-xs text-gray-500 mt-1 flex items-center">
-                                    <span>Original: </span>
-                                    {(() => {
-                                        const displayTz = event.timezone || 'Asia/Shanghai';
-                                        return (
-                                            <>
-                                                <span className="font-medium mx-1">
-                                                    {formatInTimeZone(event.start, displayTz, 'HH:mm')} - {formatInTimeZone(event.end, displayTz, 'HH:mm')}
-                                                </span>
-                                                <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100 uppercase tracking-wider inline-block">
-                                                    {event.timezone ? event.timezone.split('/').pop().replace(/_/g, ' ') : 'China Time'}
-                                                </span>
-                                            </>
-                                        );
-                                    })()}
-                                </div>
-                            </p>
+                {/* Content */}
+                <div className="modal-content" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    {/* Time */}
+                    <div>
+                        <span className="modal-label">{t('event.timeLabel')}</span>
+                        <p className="modal-value">
+                            {format(event.start, 'EEEE, d MMMM yyyy', { locale })}
+                            <br />
+                            <span style={{ color: 'var(--clr-gold)', fontWeight: 600 }}>
+                                {format(event.start, 'HH:mm')} — {format(event.end, 'HH:mm')}
+                            </span>
+                        </p>
+                        {/* Timezone display */}
+                        <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '10px', color: 'var(--clr-text-dim)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Original:</span>
+                            {(() => {
+                                const displayTz = event.timezone || 'Asia/Shanghai';
+                                return (
+                                    <>
+                                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--clr-text)' }}>
+                                            {formatInTimeZone(event.start, displayTz, 'HH:mm')} — {formatInTimeZone(event.end, displayTz, 'HH:mm')}
+                                        </span>
+                                        <span style={{ fontSize: '9px', background: 'var(--clr-gold-ghost)', color: 'var(--clr-gold)', border: '1px solid var(--clr-gold-dim)', padding: '1px 6px', borderRadius: 2, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+                                            {displayTz.split('/').pop().replace(/_/g, ' ')}
+                                        </span>
+                                    </>
+                                );
+                            })()}
                         </div>
-
-                        {event.note && (
-                            <div>
-                                <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">{t('event.note')}</p>
-                                {/* Max height 300px as requested */}
-                                <div className="text-gray-700 text-sm whitespace-pre-wrap max-h-[300px] overflow-y-auto border border-gray-100 rounded p-2 bg-gray-50">
-                                    {event.note}
-                                </div>
-                            </div>
-                        )}
-
-                        {event.checklist && event.checklist.length > 0 && (
-                            <div>
-                                <div className="flex justify-between items-center mb-1">
-                                    <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">{t('event.checklist', 'Checklist')}</p>
-                                    <span className="text-xs text-gray-400">
-                                        {event.checklist.filter(i => i.completed).length}/{event.checklist.length}
-                                    </span>
-                                </div>
-                                <div className="space-y-1">
-                                    {event.checklist.map((item, idx) => (
-                                        <div
-                                            key={item.id || idx}
-                                            className="flex items-start gap-2 p-2 rounded hover:bg-gray-50 cursor-pointer group"
-                                            onClick={() => {
-                                                if (onSave) {
-                                                    const newChecklist = [...event.checklist];
-                                                    newChecklist[idx] = { ...item, completed: !item.completed };
-                                                    onSave({ ...event, checklist: newChecklist });
-                                                }
-                                            }}
-                                        >
-                                            <div className={`mt-0.5 ${item.completed ? 'text-green-500' : 'text-gray-300 group-hover:text-gray-400'}`}>
-                                                {item.completed ? <CheckCircle size={18} /> : <Circle size={18} />}
-                                            </div>
-                                            <span className={`text-sm ${item.completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}>
-                                                {item.text}
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
                     </div>
 
-                    <div className="mt-6 flex justify-end gap-3 border-t border-gray-100 pt-4">
-                        {onDelete && (
-                            <div className="flex items-center gap-2">
-                                {event.groupId && (
-                                    <select
-                                        value={deleteScope}
-                                        onChange={(e) => setDeleteScope(e.target.value)}
-                                        className="text-xs border border-gray-200 rounded p-1 text-gray-600 bg-gray-50 focus:outline-none focus:border-red-300"
+                    {/* Note */}
+                    {event.note && (
+                        <div>
+                            <span className="modal-label">{t('event.note')}</span>
+                            <div className="modal-note-box">{event.note}</div>
+                        </div>
+                    )}
+
+                    {/* Checklist */}
+                    {event.checklist?.length > 0 && (
+                        <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                <span className="modal-label" style={{ marginBottom: 0 }}>{t('event.checklist', 'Checklist')}</span>
+                                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--clr-gold-dim)' }}>
+                                    {event.checklist.filter(i => i.completed).length}/{event.checklist.length}
+                                </span>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                {event.checklist.map((item, idx) => (
+                                    <div key={item.id || idx} className="modal-checklist-item"
+                                        onClick={() => {
+                                            if (!onSave) return;
+                                            const newChecklist = [...event.checklist];
+                                            newChecklist[idx] = { ...item, completed: !item.completed };
+                                            onSave({ ...event, checklist: newChecklist });
+                                        }}
                                     >
-                                        <option value="single">{t('recurrence.scopeSingle')}</option>
-                                        <option value="future">{t('recurrence.scopeFuture')}</option>
-                                        <option value="all">{t('recurrence.scopeAll')}</option>
-                                    </select>
-                                )}
-                                <button
-                                    onClick={() => {
-                                        if (confirm(t('messages.deleteConfirmation'))) {
-                                            onDelete(event.id, deleteScope, event);
-                                            onClose();
-                                        }
-                                    }}
-                                    className="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded hover:bg-red-50 transition-colors"
-                                >
-                                    {t('actions.delete')}
-                                </button>
+                                        <div style={{ color: item.completed ? 'var(--clr-gold)' : 'var(--clr-border-bright)', flexShrink: 0 }}>
+                                            {item.completed ? <CheckCircle2 size={15} /> : <Circle size={15} />}
+                                        </div>
+                                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: item.completed ? 'var(--clr-text-dim)' : 'var(--clr-text)', textDecoration: item.completed ? 'line-through' : 'none' }}>
+                                            {item.text}
+                                        </span>
+                                    </div>
+                                ))}
                             </div>
-                        )}
-                        {onEdit && (
-                            <button
-                                onClick={() => {
-                                    onEdit(event);
-                                    onClose();
-                                }}
-                                className="px-3 py-1.5 text-xs font-medium text-blue-600 border border-blue-200 rounded hover:bg-blue-50 transition-colors"
+                        </div>
+                    )}
+                </div>
+
+                {/* Actions */}
+                <div className="modal-actions">
+                    {onDelete && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginRight: 'auto' }}>
+                            {event.groupId && (
+                                <select value={deleteScope} onChange={e => setDeleteScope(e.target.value)}
+                                    style={{ background: 'var(--clr-void)', border: '1px solid var(--clr-border)', color: 'var(--clr-text-dim)', fontFamily: 'var(--font-mono)', fontSize: '10px', padding: '4px 6px', borderRadius: 2, outline: 'none', cursor: 'pointer' }}
+                                >
+                                    <option value="single">{t('recurrence.scopeSingle')}</option>
+                                    <option value="future">{t('recurrence.scopeFuture')}</option>
+                                    <option value="all">{t('recurrence.scopeAll')}</option>
+                                </select>
+                            )}
+                            <button id="btn-delete-event" className="btn btn--danger"
+                                onClick={() => { if (confirm(t('messages.deleteConfirmation'))) { onDelete(event.id, deleteScope, event); onClose(); } }}
                             >
-                                {t('actions.edit')}
+                                {t('actions.delete')}
                             </button>
-                        )}
-                    </div>
+                        </div>
+                    )}
+                    {onEdit && (
+                        <button id="btn-edit-event" className="btn" onClick={() => { onEdit(event); onClose(); }}>
+                            {t('actions.edit')}
+                        </button>
+                    )}
                 </div>
             </div>
         </div>

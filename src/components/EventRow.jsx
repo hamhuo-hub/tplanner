@@ -1,70 +1,40 @@
-import { format, areIntervalsOverlapping, startOfDay, endOfDay, max, min, addMinutes, isSameDay } from 'date-fns';
+import { format, areIntervalsOverlapping, startOfDay, endOfDay, max, min, addMinutes } from 'date-fns';
 import EventBlock from './EventBlock';
 import { useTranslation } from 'react-i18next';
 import { getDateLocale } from '../utils/dateLocale';
 import { MASSEY_COLORS } from '../utils/constants';
+import { formatInTimeZone } from 'date-fns-tz';
 
-/**
- * @param {Object} props
- * @param {Date} props.date
- * @param {import('../utils/constants').Event[]} props.events
- * @param {Function} props.onEventClick
- * @param {Function} props.onAddEvent
- * @param {Object} dragState
- */
 export default function EventRow({ date, events, onEventClick, onAddEvent, highlight, onDragStart, dragState, clashes, displayTimezone, onToggleTaskComplete }) {
     const { i18n } = useTranslation();
     const locale = getDateLocale(i18n.language);
 
     const dayStart = startOfDay(date);
-    const dayEnd = endOfDay(date);
+    const dayEnd   = endOfDay(date);
 
-    // Filter events for this day
-    const dayEventsRaw = events.filter(e =>
-        areIntervalsOverlapping(
-            { start: e.start, end: e.end },
-            { start: dayStart, end: dayEnd }
-        )
-    );
+    const dayEventsRaw  = events.filter(e => areIntervalsOverlapping({ start: e.start, end: e.end }, { start: dayStart, end: dayEnd }));
+    const statusEvents  = dayEventsRaw.filter(e => e.type === 'status');
+    const regularEvents = dayEventsRaw.filter(e => e.type !== 'status');
 
-    // Split into Status and Regular Events
-    const statusEvents = dayEventsRaw.filter(e => e.type === 'status');
-    const regularEvents = dayEventsRaw.filter(e => e.type !== 'status'); // Show everything else as regular events
+    // Clamp & sort regular events
+    const processedRegularEvents = regularEvents.map(e => ({
+        ...e, originalStart: e.start, originalEnd: e.end,
+        start: max([e.start, dayStart]), end: min([e.end, dayEnd])
+    })).sort((a, b) => a.start - b.start);
 
-    // --- Process Regular Events (Existing Logic) ---
-    const processedRegularEvents = regularEvents.map(e => {
-        const clampedStart = max([e.start, dayStart]);
-        const clampedEnd = min([e.end, dayEnd]);
-        return {
-            ...e,
-            originalStart: e.start,
-            originalEnd: e.end,
-            start: clampedStart,
-            end: clampedEnd
-        };
-    }).sort((a, b) => a.start - b.start);
-
-    // --- Process Status Events (Stacking Logic) ---
-    const processedStatusEvents = statusEvents.map(e => {
-        const clampedStart = max([e.start, dayStart]);
-        const clampedEnd = min([e.end, dayEnd]);
-        return {
-            ...e,
-            start: clampedStart,
-            end: clampedEnd
-        };
-    }).sort((a, b) => a.start - b.start);
+    // Status events — row stacking
+    const processedStatusEvents = statusEvents.map(e => ({
+        ...e, start: max([e.start, dayStart]), end: min([e.end, dayEnd])
+    })).sort((a, b) => a.start - b.start);
 
     const statusRows = [];
     const finalStatusEvents = processedStatusEvents.map(ev => {
-        // Find first row where this event fits
         let rowIndex = 0;
         while (true) {
             const row = statusRows[rowIndex] || [];
-            const collision = row.find(existing => areIntervalsOverlapping(
-                { start: existing.start, end: existing.end },
-                { start: ev.start, end: ev.end }
-            ));
+            const collision = row.find(existing =>
+                areIntervalsOverlapping({ start: existing.start, end: existing.end }, { start: ev.start, end: ev.end })
+            );
             if (!collision) {
                 if (!statusRows[rowIndex]) statusRows[rowIndex] = [];
                 statusRows[rowIndex].push(ev);
@@ -72,18 +42,14 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
             }
             rowIndex++;
         }
-        return {
-            ...ev,
-            rowIndex
-        };
+        return { ...ev, rowIndex };
     });
 
+    // Regular events — cluster stacking
     const finalRegularEvents = [];
     if (processedRegularEvents.length > 0) {
         const clusters = [];
-        let currentCluster = [];
-        let clusterEnd = null;
-
+        let currentCluster = [], clusterEnd = null;
         processedRegularEvents.forEach(event => {
             if (!clusterEnd || event.start < clusterEnd) {
                 currentCluster.push(event);
@@ -94,293 +60,166 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                 clusterEnd = event.end;
             }
         });
-        if (currentCluster.length > 0) clusters.push(currentCluster);
+        if (currentCluster.length) clusters.push(currentCluster);
 
         clusters.forEach(cluster => {
-            // Checks global 'clashes' for this event ID.
-            // This ensures visuals match the global conflict logic (which already handles same-type check).
             cluster.forEach((ev, idx) => {
                 const isConflicting = clashes ? clashes.some(c => c.eventId === ev.id) : false;
-
-                // Check if obscured by status events
                 const overlappingStatus = finalStatusEvents.filter(se =>
-                    areIntervalsOverlapping(
-                        { start: se.start, end: se.end },
-                        { start: ev.start, end: ev.end }
-                    )
+                    areIntervalsOverlapping({ start: se.start, end: se.end }, { start: ev.start, end: ev.end })
                 );
-
                 let titleOffsetPx = 0;
                 if (overlappingStatus.length > 0) {
                     const maxStatusRow = Math.max(...overlappingStatus.map(se => se.rowIndex));
-
-                    // Status event top is (rowIndex * 18). Height is 16.
-                    // So its bottom occupies space down to (maxStatusRow * 18 + 16) px from the container top.
                     const statusBottomPx = maxStatusRow * 18 + 16;
-
-                    // Regular event container has fixed height h-32 (128px)
-                    // The regular event style uses: top: `calc(15% + (idx * 15%))`
-                    // Percentage of 128px is used.
-                    const topPercent = 0.15 + (idx * 0.15);
-                    const regularTopPx = 128 * topPercent;
-
-                    // We only want to push the title down if the status event physically obscures the regular event's top.
-                    // The + 4px extra is just to add a nice padding gap below the status event.
-                    if (statusBottomPx > regularTopPx) {
-                        titleOffsetPx = (statusBottomPx - regularTopPx) + 4;
-                    }
+                    const regularTopPx  = 80 * (0.15 + idx * 0.15);
+                    if (statusBottomPx > regularTopPx) titleOffsetPx = (statusBottomPx - regularTopPx) + 4;
                 }
-
-                finalRegularEvents.push({
-                    ...ev,
-                    isConflicting,
-                    titleOffsetPx: titleOffsetPx,
-                    style: {
-                        top: `${idx * 15}%`,
-                        height: '80%',
-                        zIndex: 10 + idx
-                    }
-                });
+                finalRegularEvents.push({ ...ev, isConflicting, titleOffsetPx, style: { top: `${idx * 15}%`, height: '80%', zIndex: 10 + idx } });
             });
         });
     }
 
-
-
-
     const isWeekend = date.getDay() === 0 || date.getDay() === 6;
 
     const handleGridClick = (e) => {
-        // Prevent clicking on grid if we actually clicked an event (safety check)
         if (e.target.closest('.event-block')) return;
-
         const rect = e.currentTarget.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const width = rect.width;
-        const ratio = x / width;
-        const totalMinutes = 24 * 60;
-        const rawMinutes = totalMinutes * ratio;
-        const clickMinutes = Math.round(rawMinutes / 10) * 10;
-
+        const clickMinutes = Math.round((24 * 60 * (e.clientX - rect.left) / rect.width) / 10) * 10;
         const clickDate = new Date(dayStart);
-        clickDate.setHours(0, 0, 0, 0);
         clickDate.setMinutes(clickMinutes);
-        const end = addMinutes(clickDate, 60);
-
-        if (onAddEvent) {
-            onAddEvent(clickDate, end);
-        }
+        onAddEvent?.(clickDate, addMinutes(clickDate, 60));
     };
 
     return (
-        <div
-            id={`row-${format(date, 'yyyy-MM-dd')}`}
-            className={`flex border-b border-gray-200 ${isWeekend ? 'bg-gray-50' : 'bg-white'} transition-colors duration-500`}
-        >
+        <div id={`row-${format(date, 'yyyy-MM-dd')}`} className={`event-row ${isWeekend ? 'event-row--weekend' : 'event-row--weekday'}`}>
             {/* Date Column */}
-            <div className="w-24 flex-shrink-0 p-2 border-r border-gray-200 flex flex-col justify-center items-center text-center sticky left-0 z-20 bg-inherit shadow-[4px_0_24px_-12px_rgba(0,0,0,0.1)]">
-                <span className="text-xs text-gray-500 font-medium">{format(date, 'EEE', { locale })}</span>
-                <span className={`text-lg font-bold ${isWeekend ? 'text-gray-600' : 'text-blue-600'}`}>
-                    {format(date, 'd MMM', { locale })}
+            <div className="event-row-date">
+                <span className="event-row-date-dow">{format(date, 'EEE', { locale })}</span>
+                <span className={`event-row-date-num${isWeekend ? ' event-row-date-num--weekend' : ''}`}>
+                    {format(date, 'd')}
+                    <span style={{ fontSize: '10px', display: 'block', fontWeight: 400, letterSpacing: '0.05em', color: 'var(--clr-text-dim)', marginTop: '-2px' }}>
+                        {format(date, 'MMM', { locale })}
+                    </span>
                 </span>
             </div>
 
-            {/* Main Grid Container */}
-            <div
-                className="flex-grow relative h-32 min-w-[1200px] cursor-crosshair group flex flex-col"
-                onClick={handleGridClick}
-            >
-                {/* Status Zone (Top ~15%) */}
+            {/* Grid */}
+            <div className="event-row-grid" onClick={handleGridClick}>
+                {/* Status events (top strip) */}
                 {statusEvents.length > 0 && (
-                    <div className="absolute top-0 left-0 right-0 h-[15%] z-30 pointer-events-none">
+                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '15%', zIndex: 30, pointerEvents: 'none' }}>
                         {finalStatusEvents.map(ev => {
                             const tz = displayTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
-                            const extractMinutes = (dateStr) => {
-                                const parts = dateStr.split(':');
-                                return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
-                            };
-
-                            let startMinutes, endMinutesFinal;
+                            const toMins = str => { const [h, m] = str.split(':').map(Number); return h * 60 + m; };
+                            let startMins, endMins;
                             try {
-                                const startTzTime = formatInTimeZone(ev.start, tz, 'HH:mm');
-                                const endTzTime = formatInTimeZone(ev.end, tz, 'HH:mm');
-
-                                startMinutes = extractMinutes(startTzTime);
-                                let endMinutes = extractMinutes(endTzTime);
-
-                                if (endMinutes < startMinutes) endMinutes += 24 * 60;
-                                if (endMinutes - startMinutes < 15) endMinutes = startMinutes + 15;
-
-                                endMinutesFinal = (ev.end.getTime() === dayEnd.getTime() + 1) ? 24 * 60 : endMinutes;
-                            } catch (e) {
-                                startMinutes = (ev.start.getHours() * 60) + ev.start.getMinutes();
-                                const endMinutes = (ev.end.getHours() * 60) + ev.end.getMinutes();
-                                endMinutesFinal = (ev.end.getTime() === dayEnd.getTime() + 1) ? 24 * 60 : endMinutes;
+                                startMins = toMins(formatInTimeZone(ev.start, tz, 'HH:mm'));
+                                endMins   = toMins(formatInTimeZone(ev.end,   tz, 'HH:mm'));
+                                if (endMins < startMins) endMins += 1440;
+                                if (endMins - startMins < 15) endMins = startMins + 15;
+                            } catch {
+                                startMins = ev.start.getHours() * 60 + ev.start.getMinutes();
+                                endMins   = ev.end.getHours()   * 60 + ev.end.getMinutes();
                             }
-
-                            const totalMinutes = 24 * 60;
-                            const left = (startMinutes / totalMinutes) * 100;
-                            const width = ((endMinutesFinal - startMinutes) / totalMinutes) * 100;
-
+                            const left  = (startMins / 1440) * 100;
+                            const width = ((endMins - startMins) / 1440) * 100;
                             return (
-                                <div
-                                    key={ev.id}
-                                    className={`absolute rounded px-1 text-[10px] whitespace-nowrap overflow-hidden text-white pointer-events-auto cursor-pointer shadow-sm hover:brightness-110`}
+                                <div key={ev.id}
                                     style={{
-                                        backgroundColor: ev.colorId !== undefined ? MASSEY_COLORS[ev.colorId] : '#999999',
-                                        left: `${left}%`,
-                                        width: `${width}%`,
-                                        top: `${ev.rowIndex * 18}px`,
-                                        height: '16px',
-                                        lineHeight: '16px'
+                                        position: 'absolute',
+                                        backgroundColor: ev.colorId !== undefined ? MASSEY_COLORS[ev.colorId] : '#4A4A4A',
+                                        left: `${left}%`, width: `${width}%`,
+                                        top: `${ev.rowIndex * 18}px`, height: '16px',
+                                        borderRadius: 2, borderLeft: '3px solid rgba(255,255,255,0.3)',
+                                        overflow: 'hidden', paddingLeft: 4,
+                                        pointerEvents: 'auto', cursor: 'pointer',
                                     }}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        // Find original to pass all props
-                                        const original = events.find(original => original.id === ev.id);
-                                        onEventClick(original || ev);
-                                    }}
+                                    onClick={e => { e.stopPropagation(); onEventClick(events.find(o => o.id === ev.id) || ev); }}
                                 >
-                                    {ev.title}
+                                    <span style={{ fontFamily: 'var(--font-display)', fontSize: '9px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#fff', whiteSpace: 'nowrap' }}>
+                                        {ev.title}
+                                    </span>
                                 </div>
                             );
                         })}
                     </div>
                 )}
 
-                {/* Regular Event Zone (Bottom ~85%) */}
-                <div className="relative flex-grow h-full">
-                    {/* Hour markers */}
-                    {Array.from({ length: 24 }).map((_, i) => (
-                        <div
-                            key={i}
-                            className="absolute top-0 bottom-0 border-l border-gray-100 group-hover:border-gray-200 transition-colors"
-                            style={{ left: `${(i / 24) * 100}%` }}
+                {/* Hour lines */}
+                {Array.from({ length: 24 }).map((_, i) => (
+                    <div key={i} className="hour-line" style={{ left: `${(i / 24) * 100}%` }} />
+                ))}
+
+                {/* Clash highlight */}
+                {highlight && highlight.type !== 'today' && areIntervalsOverlapping(
+                    { start: highlight.start, end: highlight.end }, { start: dayStart, end: dayEnd }
+                ) && (() => {
+                    const hStart = max([highlight.start, dayStart]);
+                    const hEnd   = min([highlight.end,   dayEnd]);
+                    if (hEnd <= hStart) return null;
+                    const startMins = hStart.getHours() * 60 + hStart.getMinutes();
+                    const endMins   = hEnd.getTime() === dayEnd.getTime() + 1 ? 1440 : hEnd.getHours() * 60 + hEnd.getMinutes();
+                    return (
+                        <div className="highlight-clash"
+                            style={{ position: 'absolute', left: `${(startMins / 1440) * 100}%`, width: `${((endMins - startMins) / 1440) * 100}%`, top: '15%', bottom: 0, background: 'rgba(192,57,43,0.12)', zIndex: 10, pointerEvents: 'none' }}
                         />
-                    ))}
+                    );
+                })()}
 
-                    {/* Highlight Overlay - Clashes */}
-                    {highlight && areIntervalsOverlapping(
-                        { start: highlight.start, end: highlight.end },
-                        { start: dayStart, end: dayEnd }
-                    ) && highlight.type !== 'today' && (() => {
-                        const hStart = max([highlight.start, dayStart]);
-                        const hEnd = min([highlight.end, dayEnd]);
+                {/* Today highlight */}
+                {highlight?.type === 'today' && areIntervalsOverlapping(
+                    { start: highlight.start, end: highlight.end }, { start: dayStart, end: dayEnd }
+                ) && (
+                    <div className="highlight-today" style={{ position: 'absolute', inset: 0, zIndex: 10, pointerEvents: 'none', borderRadius: 2 }} />
+                )}
 
-                        if (hEnd <= hStart) return null;
+                {/* Regular events */}
+                {finalRegularEvents.map(event => {
+                    const isDragging = dragState?.event?.id === event.id;
+                    return (
+                        <EventBlock
+                            key={event.id}
+                            event={event}
+                            isConflicting={event.isConflicting}
+                            displayTimezone={displayTimezone}
+                            onClick={() => onEventClick(events.find(ev => ev.id === event.id) || event)}
+                            onToggleTaskComplete={onToggleTaskComplete}
+                            onDragStart={e => onDragStart(event, e.clientX, e.clientY, date)}
+                            style={{
+                                ...event.style,
+                                top: `calc(15% + ${event.style.top})`,
+                                height: '70%',
+                                opacity: isDragging ? 0 : 1,
+                                pointerEvents: isDragging ? 'none' : 'auto',
+                            }}
+                        />
+                    );
+                })}
 
-                        const totalMinutes = 24 * 60;
-                        const startMinutes = (hStart.getHours() * 60) + hStart.getMinutes();
-                        const endMinutes = (hEnd.getHours() * 60) + hEnd.getMinutes();
-                        const endMinutesFinal = (hEnd.getTime() === dayEnd.getTime() + 1) ? totalMinutes : endMinutes;
-
-                        const left = (startMinutes / totalMinutes) * 100;
-                        const width = ((endMinutesFinal - startMinutes) / totalMinutes) * 100;
-
-                        return (
-                            <div
-                                className="absolute bg-red-500/20 border-2 border-red-500 z-10 pointer-events-none highlight-clash"
-                                style={{
-                                    left: `${left}%`,
-                                    width: `${width}%`,
-                                    top: '15%',
-                                    bottom: 0,
-                                    boxShadow: '0 0 15px rgba(239, 68, 68, 0.6)'
-                                }}
-                            />
-                        );
-                    })()}
-
-                    {/* Today Highlight Border */}
-                    {highlight && highlight.type === 'today' && areIntervalsOverlapping(
-                        { start: highlight.start, end: highlight.end },
-                        { start: dayStart, end: dayEnd }
-                    ) && (
-                            <div className="absolute inset-0 border-4 border-blue-400 animate-pulse z-10 pointer-events-none rounded-sm shadow-[0_0_15px_rgba(96,165,250,0.7)]" />
-                        )}
-
-
-                    {/* Regular Events */}
-                    {finalRegularEvents.map(event => {
-                        // If this event is being dragged, hide it (it's being represented by the ghost or elsewhere)
-                        const isDragging = dragState?.event?.id === event.id;
-
-                        return (
-                            <EventBlock
-                                key={event.id}
-                                event={event}
-                                isConflicting={event.isConflicting}
-                                displayTimezone={displayTimezone}
-                                onClick={(e) => {
-                                    const original = events.find(ev => ev.id === event.id);
-                                    onEventClick(original || event);
-                                }}
-                                onToggleTaskComplete={onToggleTaskComplete}
-                                onDragStart={(e) => onDragStart(event, e.clientX, e.clientY, date)}
-                                style={{
-                                    ...event.style,
-                                    top: `calc(15% + ${event.style.top})`,
-                                    height: '70%',
-                                    opacity: isDragging ? 0 : 1, // Hide original when dragging
-                                    pointerEvents: isDragging ? 'none' : 'auto'
-                                }}
-                            />
-                        );
-                    })}
-
-                    {/* Ghost Event (Snap Preview) */}
-                    {dragState && dragState.snapStart && dragState.snapEnd && (
-                        (() => {
-                            const dayStart = startOfDay(date);
-                            const dayEnd = endOfDay(date);
-                            const snapStart = dragState.snapStart;
-                            const snapEnd = dragState.snapEnd;
-
-                            // Check overlap
-                            if (!areIntervalsOverlapping({ start: dayStart, end: dayEnd }, { start: snapStart, end: snapEnd })) {
-                                return null;
-                            }
-
-                            // Calculate position within this day
-                            const rangeStart = max([dayStart, snapStart]);
-                            const rangeEnd = min([dayEnd, snapEnd]);
-
-                            const totalDayMins = 24 * 60;
-                            const startMins = rangeStart.getHours() * 60 + rangeStart.getMinutes();
-
-                            // Handle cross-day end time (e.g. 00:00 of next day needs to be 1440 mins)
-                            let endMins = rangeEnd.getHours() * 60 + rangeEnd.getMinutes();
-                            if (endMins === 0 && rangeEnd > rangeStart) endMins = totalDayMins;
-
-                            const leftPercent = (startMins / totalDayMins) * 100;
-                            const widthPercent = ((endMins - startMins) / totalDayMins) * 100;
-
-                            return (
-                                <EventBlock
-                                    event={{
-                                        ...dragState.event,
-                                        start: snapStart,
-                                        end: snapEnd
-                                    }}
-                                    isConflicting={false}
-                                    displayTimezone={displayTimezone}
-                                    onClick={() => { }}
-                                    style={{
-                                        left: `${leftPercent}%`,
-                                        width: `${widthPercent}%`,
-                                        top: '15%',
-                                        height: '70%',
-                                        zIndex: 50,
-                                        opacity: 0.8,
-                                        border: '2px dashed white',
-                                        boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
-                                        position: 'absolute'
-                                    }}
-                                />
-                            );
-                        })()
-                    )}
-                </div>
+                {/* Drag ghost */}
+                {dragState?.snapStart && dragState?.snapEnd && (() => {
+                    if (!areIntervalsOverlapping({ start: dayStart, end: dayEnd }, { start: dragState.snapStart, end: dragState.snapEnd })) return null;
+                    const rangeStart = max([dayStart, dragState.snapStart]);
+                    const rangeEnd   = min([dayEnd,   dragState.snapEnd]);
+                    const startMins  = rangeStart.getHours() * 60 + rangeStart.getMinutes();
+                    let   endMins    = rangeEnd.getHours()   * 60 + rangeEnd.getMinutes();
+                    if (endMins === 0 && rangeEnd > rangeStart) endMins = 1440;
+                    return (
+                        <EventBlock
+                            event={{ ...dragState.event, start: dragState.snapStart, end: dragState.snapEnd }}
+                            isConflicting={false}
+                            displayTimezone={displayTimezone}
+                            onClick={() => {}}
+                            style={{
+                                left: `${(startMins / 1440) * 100}%`,
+                                width: `${((endMins - startMins) / 1440) * 100}%`,
+                                top: '15%', height: '70%', zIndex: 50, position: 'absolute',
+                                opacity: 0.75, border: '2px dashed rgba(201,168,76,0.8)',
+                            }}
+                        />
+                    );
+                })()}
             </div>
         </div>
     );
