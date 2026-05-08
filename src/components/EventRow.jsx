@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { getDateLocale } from '../utils/dateLocale';
 import { MASSEY_COLORS } from '../utils/constants';
 
-export default function EventRow({ date, events, onEventClick, onAddEvent, highlight, onDragStart, dragState, clashes, displayTimezone, onToggleTaskComplete }) {
+export default function EventRow({ date, events, onEventClick, onAddEvent, highlight, onDragStart, dragState, clashes, displayTimezone, onToggleTaskComplete }) { 
     const { i18n } = useTranslation();
     const locale = getDateLocale(i18n.language);
 

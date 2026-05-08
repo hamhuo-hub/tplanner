@@ -58,4 +58,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
      * @returns {Promise<number>}
      */
     getZoom: () => ipcRenderer.invoke('app:getZoom'),
+
+    // ── Today-Widget Sync ─────────────────────────────────────────────────
+    /**
+     * Push the current event list to main so it can drive the widget +
+     * notification scheduler. start/end can be either Date or ISO strings —
+     * main re-hydrates either way.
+     */
+    syncEvents: (events) => ipcRenderer.send('events:sync', events),
+
+    /**
+     * Subscribe to remote updates pushed back from main (e.g. the user
+     * ticked a task in the widget — main tells the React app to mirror
+     * the change in RxDB so both views stay consistent).
+     */
+    onEventsRemoteUpdate: (callback) => {
+        const handler = (_e, payload) => callback(payload);
+        ipcRenderer.on('events:remoteUpdate', handler);
+        return () => ipcRenderer.removeListener('events:remoteUpdate', handler);
+    },
+
+    /** Show / hide the today widget on demand. */
+    showWidget: () => ipcRenderer.send('widget:show'),
+    hideWidget: () => ipcRenderer.send('widget:hide'),
 });

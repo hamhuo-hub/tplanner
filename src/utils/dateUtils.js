@@ -74,13 +74,12 @@ export const checkForClashes = (events) => {
                     end: overlapEnd
                 });
 
-                // Add reciprocal clash for easier lookup? 
-                // Usually better to have unique pairs or just list ids involved.
-                // Let's add double entries so we can easily find "clashes for event X".
                 clashes.push({
                     eventId: eventB.id,
                     clashWithId: eventA.id,
-                    overlapMinutes: duration
+                    overlapMinutes: duration,
+                    start: overlapStart,
+                    end: overlapEnd
                 });
             }
         }

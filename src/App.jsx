@@ -31,7 +31,7 @@ function App() {
     // Detect Electron environment
     const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
 
-    // ── Database Init ─────────────────────────────────────────────────────
+    // ── Database & Native Init ───────────────────────────────────────────
     useEffect(() => {
         let subscription;
         getDatabase().then(database => {
@@ -57,6 +57,34 @@ function App() {
 
         return () => { if (subscription) subscription.unsubscribe(); };
     }, []);
+
+    // ── Electron Today-Widget Sync ────────────────────────────────────────
+    // Push current events to the main process so the desktop widget +
+    // Windows-toast reminders stay in lockstep with what's in RxDB.
+    useEffect(() => {
+        if (!isLoaded) return;
+        if (!isElectron || !window.electronAPI?.syncEvents) return;
+        const serial = events.map(e => ({
+            ...e,
+            start: e.start instanceof Date ? e.start.toISOString() : e.start,
+            end:   e.end   instanceof Date ? e.end.toISOString()   : e.end,
+        }));
+        window.electronAPI.syncEvents(serial);
+    }, [events, isLoaded, isElectron]);
+
+    // Mirror task-toggles done in the widget back into RxDB so both views agree.
+    useEffect(() => {
+        if (!isElectron || !window.electronAPI?.onEventsRemoteUpdate || !db) return;
+        const off = window.electronAPI.onEventsRemoteUpdate(async ({ id, completed }) => {
+            try {
+                const doc = await db.events.findOne(id).exec();
+                if (doc) await doc.update({ $set: { completed, updatedAt: Date.now() } });
+            } catch (err) {
+                console.error('Widget→RxDB sync failed', err);
+            }
+        });
+        return () => { if (typeof off === 'function') off(); };
+    }, [db, isElectron]);
 
     const [viewRange, setViewRange] = useState({ start: null, end: null });
 
@@ -114,7 +142,8 @@ function App() {
             const dateStr = format(today, 'yyyy-MM-dd');
             const element = document.getElementById(`row-${dateStr}`);
             if (element) {
-                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // Using 'nearest' for block to avoid scrolling the whole page/app container
+                element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 const startOfDay = new Date(today);
                 const endOfDay = new Date(today); endOfDay.setHours(23, 59, 59, 999);
                 setHighlight({ type: 'today', start: startOfDay, end: endOfDay });
@@ -134,7 +163,10 @@ function App() {
         setTimeout(() => {
             const dateStr = format(target, 'yyyy-MM-dd');
             const element = document.getElementById(`row-${dateStr}`);
-            if (element) element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            if (element) {
+                // Using 'nearest' for block
+                element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
         }, 100);
     };
 
@@ -401,7 +433,7 @@ function App() {
             </header>
 
             {/* Main Content */}
-            <main style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '12px', overflow: 'hidden', gap: '8px' }}>
+            <main style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '12px', minHeight: 0, gap: '8px' }}>
                 <OverdueBanner
                     events={events}
                     travelTimezone={travelTimezone}

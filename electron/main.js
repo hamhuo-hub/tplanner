@@ -1,15 +1,35 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, Notification, nativeImage, shell, dialog, screen } = require('electron');
 const path = require('path');
 const fs   = require('fs');
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const IS_DEV = process.env.NODE_ENV === 'development' || !app.isPackaged;
-const VITE_DEV_SERVER_URL = 'http://localhost:5173';
+// vite-plugin-electron injects the actual dev server URL (with dynamic port) via env var
+const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'] || 'http://localhost:5173';
 const STATE_FILE = path.join(app.getPath('userData'), 'window-state.json');
 const DEFAULT_STATE = { width: 1280, height: 800, x: undefined, y: undefined, maximized: false };
 
+// Widget state lives in its own file so changes don't churn STATE_FILE.
+const WIDGET_STATE_FILE = path.join(app.getPath('userData'), 'widget-state.json');
+const EVENTS_CACHE_FILE = path.join(app.getPath('userData'), 'events-cache.json');
+const REMINDER_LEAD_MIN = 5; // minutes before event start to fire reminder
+const APP_USER_MODEL_ID = 'com.tplanner.app';
+
+// Persistent app identity so Windows toast notifications group / persist.
+if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID);
+
 // ── Pending theme install (from double-click before window is ready) ───────
 let pendingThemeFile = null;
+
+// ── Widget / events cache state ────────────────────────────────────────────
+let widgetWindow = null;
+let widgetVisibleByUser = null; // null = unset → respect saved preference
+/** Hydrated event objects: { id, title, start: Date, end: Date, type, ... } */
+let eventsCache = [];
+/** Active setTimeout handles, keyed by `${eventId}:start` / `${eventId}:lead`. */
+const reminderTimers = new Map();
+/** Avoid double-firing on the same event after process restart. */
+const firedReminders = new Set();
 
 // ── Window State ───────────────────────────────────────────────────────────
 function loadWindowState() {
@@ -102,6 +122,234 @@ function createWindow() {
     setupMaximizeListeners();
 }
 
+// ── Widget Window (Microsoft-Sticky-Notes-style today reminder) ────────────
+function loadWidgetState() {
+    const def = { x: undefined, y: undefined, width: 280, height: 420, alwaysOnTop: true, visible: true };
+    try {
+        if (fs.existsSync(WIDGET_STATE_FILE))
+            return { ...def, ...JSON.parse(fs.readFileSync(WIDGET_STATE_FILE, 'utf8')) };
+    } catch (e) { /* ignore */ }
+    return def;
+}
+
+function saveWidgetState(partial) {
+    try {
+        const current = loadWidgetState();
+        fs.writeFileSync(WIDGET_STATE_FILE, JSON.stringify({ ...current, ...partial }));
+    } catch (e) { /* ignore */ }
+}
+
+function ensureOnScreen(bounds) {
+    // Snap the window back into a visible display if the user unplugged the
+    // monitor it was on. Otherwise BrowserWindow opens off-screen.
+    if (bounds.x == null || bounds.y == null) return bounds;
+    const target = { x: bounds.x, y: bounds.y, width: bounds.width || 280, height: bounds.height || 420 };
+    const displays = screen.getAllDisplays();
+    for (const d of displays) {
+        const wa = d.workArea;
+        if (target.x >= wa.x && target.y >= wa.y &&
+            target.x + target.width  <= wa.x + wa.width &&
+            target.y + target.height <= wa.y + wa.height) return target;
+    }
+    // Fallback: top-right of primary display
+    const primary = screen.getPrimaryDisplay().workArea;
+    return {
+        x: primary.x + primary.width  - target.width  - 24,
+        y: primary.y + 24,
+        width:  target.width,
+        height: target.height,
+    };
+}
+
+function createWidgetWindow() {
+    if (widgetWindow && !widgetWindow.isDestroyed()) {
+        widgetWindow.show();
+        widgetWindow.focus();
+        return;
+    }
+
+    const state = loadWidgetState();
+    const bounds = ensureOnScreen({ x: state.x, y: state.y, width: state.width, height: state.height });
+
+    widgetWindow = new BrowserWindow({
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+        minWidth: 240,
+        minHeight: 280,
+        frame: false,
+        transparent: true,
+        backgroundColor: '#00000000',
+        alwaysOnTop: state.alwaysOnTop,
+        skipTaskbar: true,
+        resizable: true,
+        minimizable: false,
+        maximizable: false,
+        fullscreenable: false,
+        hasShadow: true,
+        icon: getIconPath(),
+        webPreferences: {
+            preload: path.join(__dirname, 'widget-preload.cjs'),
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: false,
+        },
+        show: false,
+    });
+
+    widgetWindow.loadFile(path.join(__dirname, 'widget.html'));
+
+    widgetWindow.once('ready-to-show', () => {
+        widgetWindow.show();
+        // Kick off initial render with whatever cache we have.
+        widgetWindow.webContents.send('widget:events', serializeEvents(eventsCache));
+    });
+
+    const persistBounds = () => {
+        if (!widgetWindow || widgetWindow.isDestroyed()) return;
+        const b = widgetWindow.getBounds();
+        saveWidgetState({ x: b.x, y: b.y, width: b.width, height: b.height });
+    };
+    widgetWindow.on('moved', persistBounds);
+    widgetWindow.on('resized', persistBounds);
+
+    widgetWindow.on('close', (e) => {
+        // Hide instead of destroy so the user can re-open from the tray
+        // without losing state. Real teardown happens when the app quits.
+        if (!app.isQuitting) {
+            e.preventDefault();
+            widgetWindow.hide();
+            widgetVisibleByUser = false;
+            saveWidgetState({ visible: false });
+        }
+    });
+
+    widgetWindow.on('closed', () => { widgetWindow = null; });
+
+    rebuildTrayMenu();
+}
+
+// ── Events cache + reminder scheduling ─────────────────────────────────────
+function loadEventsCache() {
+    try {
+        if (!fs.existsSync(EVENTS_CACHE_FILE)) return [];
+        const raw = JSON.parse(fs.readFileSync(EVENTS_CACHE_FILE, 'utf8'));
+        if (!Array.isArray(raw)) return [];
+        return hydrateEvents(raw);
+    } catch (e) {
+        return [];
+    }
+}
+
+function saveEventsCache(events) {
+    try {
+        fs.writeFileSync(EVENTS_CACHE_FILE, JSON.stringify(serializeEvents(events)));
+    } catch (e) { /* ignore */ }
+}
+
+function hydrateEvents(arr) {
+    const out = [];
+    for (const e of arr) {
+        if (!e || !e.id || !e.start || !e.end) continue;
+        out.push({
+            ...e,
+            start: new Date(e.start),
+            end: new Date(e.end),
+        });
+    }
+    return out;
+}
+
+function serializeEvents(arr) {
+    return arr.map(e => ({
+        ...e,
+        start: e.start instanceof Date ? e.start.toISOString() : e.start,
+        end:   e.end   instanceof Date ? e.end.toISOString()   : e.end,
+    }));
+}
+
+function isToday(d) {
+    const now = new Date();
+    return d.getFullYear() === now.getFullYear()
+        && d.getMonth() === now.getMonth()
+        && d.getDate() === now.getDate();
+}
+
+function getTodayEvents() {
+    return eventsCache.filter(e => isToday(e.start) || isToday(e.end)
+        || (e.start.getTime() <= Date.now() && e.end.getTime() >= Date.now()));
+}
+
+function clearAllReminders() {
+    for (const t of reminderTimers.values()) clearTimeout(t);
+    reminderTimers.clear();
+}
+
+function scheduleReminder(eventId, fireAt, label, kind) {
+    const key = eventId + ':' + kind;
+    if (reminderTimers.has(key)) clearTimeout(reminderTimers.get(key));
+    const delay = fireAt - Date.now();
+    if (delay <= 0) return; // already past
+    if (delay > 24 * 60 * 60 * 1000) return; // we re-schedule daily; ignore far-future
+    if (firedReminders.has(key)) return;
+    const handle = setTimeout(() => {
+        firedReminders.add(key);
+        reminderTimers.delete(key);
+        fireReminderNotification(eventId, label, kind);
+    }, delay);
+    reminderTimers.set(key, handle);
+}
+
+function rescheduleReminders() {
+    clearAllReminders();
+    for (const e of getTodayEvents()) {
+        // Status events are background bands, not actionable — skip.
+        if (e.type === 'status') continue;
+        // Lead reminder (5 min before)
+        const startTs = e.start.getTime();
+        scheduleReminder(e.id, startTs - REMINDER_LEAD_MIN * 60 * 1000, e.title || '事件',
+                         'lead');
+        // Start reminder
+        scheduleReminder(e.id, startTs, e.title || '事件', 'start');
+    }
+}
+
+function fireReminderNotification(eventId, title, kind) {
+    if (!Notification.isSupported()) return;
+    const event = eventsCache.find(e => e.id === eventId);
+    if (!event) return;
+    const startStr = formatTime(event.start);
+    const endStr   = formatTime(event.end);
+    const body = kind === 'lead'
+        ? `${REMINDER_LEAD_MIN} 分钟后开始 · ${startStr} – ${endStr}`
+        : `开始了 · ${startStr} – ${endStr}`;
+
+    const n = new Notification({
+        title: `tPlanner · ${title}`,
+        body,
+        icon: getIconPath(),
+        silent: false,
+    });
+    n.on('click', () => {
+        if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.show();
+            mainWindow.focus();
+        }
+    });
+    n.show();
+}
+
+function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+function formatTime(d) { return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
+
+function broadcastEventsToWidget() {
+    if (widgetWindow && !widgetWindow.isDestroyed()) {
+        widgetWindow.webContents.send('widget:events', serializeEvents(eventsCache));
+    }
+}
+
 // ── Icon ───────────────────────────────────────────────────────────────────
 function getIconPath() {
     const candidates = [
@@ -116,17 +364,38 @@ function getIconPath() {
 }
 
 // ── System Tray ────────────────────────────────────────────────────────────
+function rebuildTrayMenu() {
+    if (!tray) return;
+    const widgetOpen = widgetWindow && !widgetWindow.isDestroyed() && widgetWindow.isVisible();
+    tray.setContextMenu(Menu.buildFromTemplate([
+        { label: '打开 tPlanner', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
+        {
+            label: widgetOpen ? '隐藏今日便签' : '显示今日便签',
+            click: () => {
+                if (widgetOpen) {
+                    widgetWindow.hide();
+                    widgetVisibleByUser = false;
+                    saveWidgetState({ visible: false });
+                } else {
+                    createWidgetWindow();
+                    widgetVisibleByUser = true;
+                    saveWidgetState({ visible: true });
+                }
+                rebuildTrayMenu();
+            },
+        },
+        { type: 'separator' },
+        { label: '退出', click: () => { app.isQuitting = true; tray.destroy(); tray = null; app.quit(); } },
+    ]));
+}
+
 function createTray() {
     const iconPath = getIconPath();
     if (!iconPath) return;
     const icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
     tray = new Tray(icon);
     tray.setToolTip('tPlanner');
-    tray.setContextMenu(Menu.buildFromTemplate([
-        { label: '打开 tPlanner', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
-        { type: 'separator' },
-        { label: '退出', click: () => { tray.destroy(); tray = null; app.quit(); } }
-    ]));
+    rebuildTrayMenu();
     tray.on('double-click', () => { mainWindow?.show(); mainWindow?.focus(); });
 }
 
@@ -249,19 +518,99 @@ function setupMaximizeListeners() {
     mainWindow?.on('unmaximize', () => mainWindow?.webContents.send('window:maximized', false));
 }
 
+// ── IPC Handlers — Widget / Events Sync ───────────────────────────────────
+/**
+ * Renderer (main app) calls this whenever its event list changes. Main
+ * stores the events, persists them, broadcasts to the widget, and
+ * recomputes today's reminders.
+ */
+ipcMain.on('events:sync', (_e, raw) => {
+    if (!Array.isArray(raw)) return;
+    eventsCache = hydrateEvents(raw);
+    saveEventsCache(eventsCache);
+    // A new sync invalidates already-fired reminders for events whose times
+    // moved — clear the dedup set so the new schedule wins.
+    firedReminders.clear();
+    rescheduleReminders();
+    broadcastEventsToWidget();
+});
+
+/** Widget renderer pulls events on init or by user request. */
+ipcMain.handle('widget:getEvents', () => serializeEvents(eventsCache));
+
+ipcMain.on('widget:show', () => { createWidgetWindow(); rebuildTrayMenu(); });
+ipcMain.on('widget:hide', () => {
+    if (widgetWindow && !widgetWindow.isDestroyed()) widgetWindow.hide();
+    saveWidgetState({ visible: false });
+    rebuildTrayMenu();
+});
+ipcMain.on('widget:close', () => {
+    if (widgetWindow && !widgetWindow.isDestroyed()) widgetWindow.hide();
+    saveWidgetState({ visible: false });
+    rebuildTrayMenu();
+});
+ipcMain.on('widget:openMain', () => {
+    if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+    }
+});
+ipcMain.handle('widget:toggleAlwaysOnTop', () => {
+    if (!widgetWindow || widgetWindow.isDestroyed()) return false;
+    const next = !widgetWindow.isAlwaysOnTop();
+    widgetWindow.setAlwaysOnTop(next);
+    saveWidgetState({ alwaysOnTop: next });
+    return next;
+});
+ipcMain.handle('widget:isAlwaysOnTop', () => {
+    if (!widgetWindow || widgetWindow.isDestroyed()) return true;
+    return widgetWindow.isAlwaysOnTop();
+});
+
+/** Mark a task as completed from the widget. */
+ipcMain.on('widget:toggleTask', (_e, eventId) => {
+    const idx = eventsCache.findIndex(e => e.id === eventId);
+    if (idx < 0) return;
+    const ev = eventsCache[idx];
+    if (ev.type !== 'task') return;
+    ev.completed = !ev.completed;
+    ev.updatedAt = Date.now();
+    saveEventsCache(eventsCache);
+    // Notify the main app so the React store mirrors the change.
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('events:remoteUpdate', { id: eventId, completed: ev.completed });
+    }
+    broadcastEventsToWidget();
+});
+
 // ── App Lifecycle ─────────────────────────────────────────────────────────
 app.whenReady().then(() => {
     // Check argv for .tptheme on first launch (Windows double-click)
     const themeArg = process.argv.find(a => a.endsWith('.tptheme'));
     if (themeArg) pendingThemeFile = themeArg;
 
+    // Bring back persisted events so reminders work even if the main app
+    // window hasn't pushed yet.
+    eventsCache = loadEventsCache();
+    rescheduleReminders();
+
     createWindow();
     createTray();
+
+    // Open the widget if the user had it open last session.
+    const widgetState = loadWidgetState();
+    if (widgetState.visible) createWidgetWindow();
+
+    // Re-evaluate reminders at midnight so tomorrow's schedule kicks in.
+    setInterval(rescheduleReminders, 5 * 60 * 1000);
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
 });
+
+app.on('before-quit', () => { app.isQuitting = true; });
 
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin' && !tray) app.quit();

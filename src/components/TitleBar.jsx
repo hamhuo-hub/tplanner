@@ -16,7 +16,9 @@ export default function TitleBar({ title = 'TPLANNER' }) {
         return cleanup;
     }, []);
 
-    if (!window.electronAPI) return null;
+    // Detect mobile or browser environment - TitleBar should only ever show in Electron
+    const isMobile = typeof window !== 'undefined' && /Mobi|Android/i.test(navigator.userAgent);
+    if (!window.electronAPI || isMobile) return null;
 
     return (
         <div className="titlebar" id="titlebar">
