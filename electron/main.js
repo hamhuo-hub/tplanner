@@ -43,11 +43,18 @@ function loadWindowState() {
     return { ...DEFAULT_STATE };
 }
 
+// ── 异步写工具（所有持久化都走这里，绝不阻塞主进程） ─────────────────────────
+function writeAsync(filePath, data) {
+    fs.writeFile(filePath, data, (err) => {
+        if (err) console.error('[IO]', filePath, err.message);
+    });
+}
+
 function saveWindowState(win) {
     try {
         const isMax  = win.isMaximized();
         const bounds = isMax ? {} : win.getBounds();
-        fs.writeFileSync(STATE_FILE, JSON.stringify({ ...bounds, maximized: isMax }));
+        writeAsync(STATE_FILE, JSON.stringify({ ...bounds, maximized: isMax }));
     } catch (e) { /* ignore */ }
 }
 
@@ -138,7 +145,7 @@ function loadWidgetState() {
 function saveWidgetState(partial) {
     try {
         const current = loadWidgetState();
-        fs.writeFileSync(WIDGET_STATE_FILE, JSON.stringify({ ...current, ...partial }));
+        writeAsync(WIDGET_STATE_FILE, JSON.stringify({ ...current, ...partial }));
     } catch (e) { /* ignore */ }
 }
 
@@ -246,9 +253,7 @@ function loadEventsCache() {
 }
 
 function saveEventsCache(events) {
-    try {
-        fs.writeFileSync(EVENTS_CACHE_FILE, JSON.stringify(serializeEvents(events)));
-    } catch (e) { /* ignore */ }
+    writeAsync(EVENTS_CACHE_FILE, JSON.stringify(serializeEvents(events)));
 }
 
 function hydrateEvents(arr) {
@@ -497,6 +502,25 @@ ipcMain.on('window:maximize', () => {
 ipcMain.on('window:close',  () => { if (mainWindow) mainWindow.hide(); });
 ipcMain.on('window:quit',   () => { tray?.destroy(); tray = null; app.quit(); });
 
+// ── DevTools / Debug ──────────────────────────────────────────────────────
+ipcMain.on('devtools:toggle', () => {
+    if (!mainWindow) return;
+    if (mainWindow.webContents.isDevToolsOpened()) {
+        mainWindow.webContents.closeDevTools();
+    } else {
+        mainWindow.webContents.openDevTools({ mode: 'detach' });
+    }
+});
+ipcMain.handle('devtools:getMemory', () => process.memoryUsage());
+ipcMain.handle('devtools:getPerfInfo', () => ({
+    processMemory: process.memoryUsage(),
+    uptime: process.uptime(),
+    platform: process.platform,
+    nodeVersion: process.version,
+    electronVersion: process.versions.electron,
+    cpuUsage: process.cpuUsage(),
+}));
+
 ipcMain.handle('app:version',     () => app.getVersion());
 ipcMain.handle('app:isMaximized', () => mainWindow?.isMaximized() ?? false);
 
@@ -529,7 +553,7 @@ ipcMain.handle('app:setZoom', (_, factor) => {
     // Persist for next startup
     try {
         const zoomFile = path.join(app.getPath('userData'), 'zoom.json');
-        fs.writeFileSync(zoomFile, JSON.stringify({ factor: clamped }));
+        writeAsync(zoomFile, JSON.stringify({ factor: clamped }));
     } catch (e) { /* ignore */ }
     return clamped;
 });
@@ -552,15 +576,19 @@ function setupMaximizeListeners() {
  * stores the events, persists them, broadcasts to the widget, and
  * recomputes today's reminders.
  */
+// Debounce: 快速连续操作（删除、批量更新）只触发一次写盘
+let syncDebounceTimer = null;
 ipcMain.on('events:sync', (_e, raw) => {
     if (!Array.isArray(raw)) return;
-    eventsCache = hydrateEvents(raw);
-    saveEventsCache(eventsCache);
-    // A new sync invalidates already-fired reminders for events whose times
-    // moved — clear the dedup set so the new schedule wins.
-    firedReminders.clear();
-    rescheduleReminders();
-    broadcastEventsToWidget();
+    eventsCache = hydrateEvents(raw);   // 内存更新立即生效
+    broadcastEventsToWidget();           // widget 立即刷新，不需要等写盘
+
+    clearTimeout(syncDebounceTimer);
+    syncDebounceTimer = setTimeout(() => {
+        saveEventsCache(eventsCache);    // 延迟写盘，避免频繁 I/O
+        firedReminders.clear();
+        rescheduleReminders();
+    }, 300);
 });
 
 /** Widget renderer pulls events on init or by user request. */
@@ -622,7 +650,7 @@ function loadJournals() {
 }
 
 function saveJournals(data) {
-    try { fs.writeFileSync(JOURNALS_FILE, JSON.stringify(data)); } catch (e) { /* ignore */ }
+    writeAsync(JOURNALS_FILE, JSON.stringify(data));
 }
 
 ipcMain.handle('journal:getAll', () => loadJournals());
@@ -658,7 +686,7 @@ function loadLanConfig() {
 }
 
 function saveLanConfig(cfg) {
-    try { fs.writeFileSync(LAN_CONFIG_FILE, JSON.stringify(cfg)); } catch (e) { /* ignore */ }
+    writeAsync(LAN_CONFIG_FILE, JSON.stringify(cfg));
 }
 
 function startLanServer(port) {

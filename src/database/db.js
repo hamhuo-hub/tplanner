@@ -19,20 +19,11 @@ export const getDatabase = async () => {
     if (dbPromise) return dbPromise;
 
     dbPromise = (async () => {
-        console.log('Initializing RxDB...');
         const db = await createRxDatabase({
-            name: 'tplannerdb', // the name of the database
-            storage: getRxStorageDexie() // the storage engine
+            name: 'tplannerdb',
+            storage: getRxStorageDexie(),
         });
-
-        console.log('Creating database collections...');
-        await db.addCollections({
-            events: {
-                schema: eventSchema
-            }
-        });
-
-        console.log('Database initialized successfully.');
+        await db.addCollections({ events: { schema: eventSchema } });
         return db;
     })();
 

@@ -1,3 +1,4 @@
+import './utils/suppressLogs'   // must be first — patches console before any lib loads
 import i18n from './i18n'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'

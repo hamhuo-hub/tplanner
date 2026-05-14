@@ -82,6 +82,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     showWidget: () => ipcRenderer.send('widget:show'),
     hideWidget: () => ipcRenderer.send('widget:hide'),
 
+    // ── DevTools / Debug ──────────────────────────────────────────────────
+    toggleDevTools: () => ipcRenderer.send('devtools:toggle'),
+    getPerfInfo:    () => ipcRenderer.invoke('devtools:getPerfInfo'),
+
     // ── LAN Sync ───────────────────────────────────────────────────────────
     discoverLan:   () => ipcRenderer.invoke('lan:discover'),
     getLanConfig:  () => ipcRenderer.invoke('lan:getConfig'),

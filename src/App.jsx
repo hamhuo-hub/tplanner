@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { format } from 'date-fns'
 import { useTranslation } from 'react-i18next'
 import Timeline from './components/Timeline'
@@ -11,6 +11,7 @@ import TitleBar from './components/TitleBar'
 import ThemeManager from './components/ThemeManager'
 import ZoomControl from './components/ZoomControl'
 import LanSync from './components/LanSync'
+import DebugPanel from './components/DebugPanel'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { checkForClashes } from './utils/dateUtils'
 import { TIMEZONES } from './utils/constants'
@@ -61,17 +62,20 @@ function App() {
     }, []);
 
     // ── Electron Today-Widget Sync ────────────────────────────────────────
-    // Push current events to the main process so the desktop widget +
-    // Windows-toast reminders stay in lockstep with what's in RxDB.
+    // Debounce: rapid RxDB updates (delete/batch) collapse into one IPC call
+    const syncTimerRef = useRef(null);
     useEffect(() => {
         if (!isLoaded) return;
         if (!isElectron || !window.electronAPI?.syncEvents) return;
-        const serial = events.map(e => ({
-            ...e,
-            start: e.start instanceof Date ? e.start.toISOString() : e.start,
-            end:   e.end   instanceof Date ? e.end.toISOString()   : e.end,
-        }));
-        window.electronAPI.syncEvents(serial);
+        clearTimeout(syncTimerRef.current);
+        syncTimerRef.current = setTimeout(() => {
+            const serial = events.map(e => ({
+                ...e,
+                start: e.start instanceof Date ? e.start.toISOString() : e.start,
+                end:   e.end   instanceof Date ? e.end.toISOString()   : e.end,
+            }));
+            window.electronAPI.syncEvents(serial);
+        }, 150);
     }, [events, isLoaded, isElectron]);
 
     // Mirror task-toggles done in the widget back into RxDB so both views agree.
@@ -563,6 +567,8 @@ function App() {
                 onEdit={handleEditEvent}
                 onSave={handleSaveEvent}
             />
+
+            <DebugPanel />
         </div>
     )
 }

@@ -119,29 +119,32 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
         let finalStartDate = startDate;
         let finalEndDate = endDate;
 
-        // All-day: clamp times to 00:00:00 → 23:59:59
         if (allDay) {
-            finalStartDate = new Date(startDate);
-            finalStartDate.setHours(0, 0, 0, 0);
-            finalEndDate = new Date(endDate);
-            finalEndDate.setHours(23, 59, 59, 999);
-        }
-
-        // If a specific timezone is selected, we assume the user entered the time AS IF they were in that timezone.
-        // We need to construct a Date object that represents that absolute moment in time.
-        // Since the user typed "10:00" into the picker, the Date object currently thinks it's 10:00 local time.
-        if (eventTimezone) {
+            // All-day: force 00:00:00 → 23:59:59 in the selected timezone
+            // Build the string directly so the timezone block below doesn't override it
+            if (eventTimezone) {
+                try {
+                    const sd = `${startDate.getFullYear()}-${String(startDate.getMonth()+1).padStart(2,'0')}-${String(startDate.getDate()).padStart(2,'0')}T00:00:00`;
+                    const ed = `${endDate.getFullYear()}-${String(endDate.getMonth()+1).padStart(2,'0')}-${String(endDate.getDate()).padStart(2,'0')}T23:59:59`;
+                    finalStartDate = toDate(sd, { timeZone: eventTimezone });
+                    finalEndDate   = toDate(ed, { timeZone: eventTimezone });
+                } catch {
+                    finalStartDate = new Date(startDate); finalStartDate.setHours(0,  0,  0,   0);
+                    finalEndDate   = new Date(endDate);   finalEndDate.setHours(23, 59, 59, 999);
+                }
+            } else {
+                finalStartDate = new Date(startDate); finalStartDate.setHours(0,  0,  0,   0);
+                finalEndDate   = new Date(endDate);   finalEndDate.setHours(23, 59, 59, 999);
+            }
+        } else if (eventTimezone) {
+            // Timed event with timezone: interpret entered time as-if in that timezone
             try {
-                // Extract the YYYY-MM-DD HH:mm representation of what the user entered
-                const startStr = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}T${String(startDate.getHours()).padStart(2, '0')}:${String(startDate.getMinutes()).padStart(2, '0')}:00`;
-                const endStr = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}T${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}:00`;
-
-                // Parse it relative to the selected timezone using date-fns-tz
+                const startStr = `${startDate.getFullYear()}-${String(startDate.getMonth()+1).padStart(2,'0')}-${String(startDate.getDate()).padStart(2,'0')}T${String(startDate.getHours()).padStart(2,'0')}:${String(startDate.getMinutes()).padStart(2,'0')}:00`;
+                const endStr   = `${endDate.getFullYear()}-${String(endDate.getMonth()+1).padStart(2,'0')}-${String(endDate.getDate()).padStart(2,'0')}T${String(endDate.getHours()).padStart(2,'0')}:${String(endDate.getMinutes()).padStart(2,'0')}:00`;
                 finalStartDate = toDate(startStr, { timeZone: eventTimezone });
-                finalEndDate = toDate(endStr, { timeZone: eventTimezone });
+                finalEndDate   = toDate(endStr,   { timeZone: eventTimezone });
             } catch (e) {
                 console.error("Failed to parse date with timezone", e);
-                // Fallback to local
             }
         }
 
@@ -223,7 +226,10 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
 
     return (
         <>
-            <Dialog open={isOpen} onClose={onClose} maxWidth="sm" fullWidth>
+            <Dialog open={isOpen} onClose={onClose} maxWidth="sm" fullWidth
+                disableScrollLock
+                closeAfterTransition={false}
+            >
                 <DialogTitle>
                     {initialEvent ? t('actions.edit') : t('actions.addEvent')}
                 </DialogTitle>
