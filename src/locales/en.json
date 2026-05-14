@@ -43,7 +43,18 @@
         "color": "Color",
         "details": "Event Details",
         "timeLabel": "Time",
-        "notePlaceholder": "Type your detailed notes here..."
+        "notePlaceholder": "Type your detailed notes here...",
+        "typeEvent": "Reminder",
+        "typeStatus": "Status",
+        "typeTask": "Task",
+        "checklist": "Checklist",
+        "checklistItem": "Item...",
+        "recurrence": "Repeat",
+        "allDay": "All Day"
+    },
+    "reminder": {
+        "upcoming": "Upcoming Reminders",
+        "ongoing": "Ongoing"
     },
     "timezones": {
         "default": "Beijing Time (Default)",
@@ -54,7 +65,31 @@
         "Asia_Dubai": "Dubai (GST)",
         "Asia_Tokyo": "Tokyo (JST)",
         "Australia_Sydney": "Sydney (AET)",
-        "Pacific_Auckland": "Auckland (NZST)"
+        "Pacific_Auckland": "Auckland (NZST/NZDT)"
+    },
+    "task": {
+        "overdueDetected": "Overdue Tasks",
+        "overdue": "Overdue",
+        "upcoming": "Upcoming Deadlines",
+        "dueNow": "Due now",
+        "dueToday": "Due today",
+        "dueTomorrow": "Due tomorrow",
+        "dueInDays": "{{count}} days left"
+    },
+    "lanSync": {
+        "title": "LAN Sync",
+        "peerIp": "Peer IP",
+        "port": "Port",
+        "syncNow": "Sync Now",
+        "autoSync": "Auto Sync",
+        "interval": "Interval (sec)",
+        "status": "Status",
+        "idle": "Idle",
+        "syncing": "Syncing…",
+        "success": "Synced",
+        "error": "Sync failed",
+        "serverRunning": "Local server running",
+        "serverPort": "Server port"
     },
     "clash": {
         "detected": "Schedule Conflict Detected",

@@ -4,9 +4,6 @@ import { fromZonedTime, formatInTimeZone } from 'date-fns-tz';
 export default function EventBlock({ event, onClick, isConflicting, displayTimezone, onToggleTaskComplete, onDragStart, style }) {
     const tz = displayTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-    // dateStr = the calendar date of this row in the display timezone.
-    // event.start has already been clamped to [dayStart, dayEnd] by EventRow,
-    // so formatInTimeZone(event.start, tz) gives the correct date for this row.
     let dayStartMs;
     try {
         const dateStr = formatInTimeZone(event.start, tz, 'yyyy-MM-dd');
@@ -19,14 +16,26 @@ export default function EventBlock({ event, onClick, isConflicting, displayTimez
     const endMsOff   = Math.min(DAY_MS, event.end.getTime() - dayStartMs);
     const startMins  = startMsOff / 60000;
     const endMins    = Math.max(startMins + 15, endMsOff / 60000);
+    const durationMins = endMins - startMins;
 
-    const durationMins  = endMins - startMins;
-    const leftPercent   = (startMins / 1440) * 100;
-    const widthPercent  = (durationMins / 1440) * 100;
-    const isCompleted   = event.completed === true;
+    const leftPercent  = (startMins / 1440) * 100;
+    const widthPercent = (durationMins / 1440) * 100;
+    const isCompleted  = event.completed === true;
     const colorIdx = event.colorId ?? 0;
-    // Use CSS variable so .tptheme packages can override event colors
     const colorVar = `var(--clr-event-${colorIdx}, ${MASSEY_COLORS[colorIdx] ?? MASSEY_COLORS[0]})`;
+
+    // Checklist progress
+    const checklist = event.checklist ?? [];
+    const hasChecklist = checklist.length > 0;
+    const doneCount = checklist.filter(i => i.completed).length;
+    const allDone = hasChecklist ? doneCount === checklist.length : true;
+
+    const handleCheckboxClick = (e) => {
+        e.stopPropagation();
+        // Block main toggle if checklist exists and not all items done
+        if (hasChecklist && !allDone && !isCompleted) return;
+        onToggleTaskComplete?.(event.id, !isCompleted);
+    };
 
     let blockClass = 'event-block';
     if (isConflicting) blockClass += ' event-block--conflicting';
@@ -47,15 +56,15 @@ export default function EventBlock({ event, onClick, isConflicting, displayTimez
             }}
             title={`${event.title} (${formatInTimeZone(event.start, tz, 'HH:mm')} – ${formatInTimeZone(event.end, tz, 'HH:mm')})`}
         >
-            {/* event-block-inner: CSS already has display:flex + justify-content:center
-                 Do NOT override with paddingTop, it breaks vertical centering. */}
             <div className="event-block-inner">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    {/* Task checkbox */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+                    {/* Task checkbox — greyed out when subtasks pending */}
                     {event.type === 'task' && (
                         <div
                             className="task-checkbox"
-                            onClick={e => { e.stopPropagation(); onToggleTaskComplete?.(event.id, !isCompleted); }}
+                            onClick={handleCheckboxClick}
+                            title={hasChecklist && !allDone ? `请先完成子任务 (${doneCount}/${checklist.length})` : undefined}
+                            style={{ opacity: hasChecklist && !allDone && !isCompleted ? 0.4 : 1, cursor: hasChecklist && !allDone && !isCompleted ? 'not-allowed' : 'pointer' }}
                         >
                             {isCompleted && (
                                 <svg style={{ width: 8, height: 8, color: 'var(--clr-gold)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -64,9 +73,24 @@ export default function EventBlock({ event, onClick, isConflicting, displayTimez
                             )}
                         </div>
                     )}
-                    <div className={`event-block-title${isCompleted ? ' event-block-title--completed' : ''}`}>
+                    <div className={`event-block-title${isCompleted ? ' event-block-title--completed' : ''}`} style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {event.title}
                     </div>
+                    {/* Subtask progress badge */}
+                    {hasChecklist && (
+                        <span style={{
+                            flexShrink: 0,
+                            fontSize: '9px',
+                            fontFamily: 'var(--font-mono)',
+                            background: allDone ? 'rgba(74,124,89,0.35)' : 'rgba(0,0,0,0.25)',
+                            color: allDone ? '#7EC897' : 'rgba(255,255,255,0.7)',
+                            padding: '1px 4px',
+                            borderRadius: 3,
+                            letterSpacing: '0.02em',
+                        }}>
+                            {doneCount}/{checklist.length}
+                        </span>
+                    )}
                 </div>
                 {durationMins > 45 && event.note && (
                     <div className="event-block-note">{event.note}</div>

@@ -43,7 +43,18 @@
         "color": "颜色",
         "details": "事件详情",
         "timeLabel": "时间",
-        "notePlaceholder": "在此输入详细备注..."
+        "notePlaceholder": "在此输入详细备注...",
+        "typeEvent": "提醒",
+        "typeStatus": "状态",
+        "typeTask": "任务",
+        "checklist": "清单",
+        "checklistItem": "项目...",
+        "recurrence": "重复",
+        "allDay": "全天"
+    },
+    "reminder": {
+        "upcoming": "即将到来的提醒",
+        "ongoing": "正在进行"
     },
     "timezones": {
         "default": "中国时间 (默认)",
@@ -54,7 +65,31 @@
         "Asia_Dubai": "迪拜 (GST)",
         "Asia_Tokyo": "东京 (JST)",
         "Australia_Sydney": "悉尼 (AET)",
-        "Pacific_Auckland": "奥克兰 (NZST)"
+        "Pacific_Auckland": "奥克兰 (NZST/NZDT)"
+    },
+    "task": {
+        "overdueDetected": "已逾期任务",
+        "overdue": "已逾期",
+        "upcoming": "即将截止",
+        "dueNow": "立即到期",
+        "dueToday": "今天到期",
+        "dueTomorrow": "明天到期",
+        "dueInDays": "还剩 {{count}} 天"
+    },
+    "lanSync": {
+        "title": "局域网同步",
+        "peerIp": "对端 IP",
+        "port": "端口",
+        "syncNow": "立即同步",
+        "autoSync": "自动同步",
+        "interval": "同步间隔（秒）",
+        "status": "状态",
+        "idle": "就绪",
+        "syncing": "同步中…",
+        "success": "同步成功",
+        "error": "同步失败",
+        "serverRunning": "本机服务运行中",
+        "serverPort": "服务端口"
     },
     "clash": {
         "detected": "检测到日程冲突",

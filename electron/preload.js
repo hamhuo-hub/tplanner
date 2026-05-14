@@ -81,4 +81,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
     /** Show / hide the today widget on demand. */
     showWidget: () => ipcRenderer.send('widget:show'),
     hideWidget: () => ipcRenderer.send('widget:hide'),
+
+    // ── LAN Sync ───────────────────────────────────────────────────────────
+    discoverLan:   () => ipcRenderer.invoke('lan:discover'),
+    getLanConfig:  () => ipcRenderer.invoke('lan:getConfig'),
+    saveLanConfig: (cfg) => ipcRenderer.send('lan:saveConfig', cfg),
+    getLocalIp:    () => ipcRenderer.invoke('lan:getLocalIp'),
+    onLanEventsUpdated: (cb) => {
+        const h = (_e, events) => cb(events);
+        ipcRenderer.on('lan:eventsUpdated', h);
+        return () => ipcRenderer.removeListener('lan:eventsUpdated', h);
+    },
+    onLanServerError: (cb) => {
+        const h = (_e, msg) => cb(msg);
+        ipcRenderer.on('lan:serverError', h);
+        return () => ipcRenderer.removeListener('lan:serverError', h);
+    },
+
+    // ── Journal (随笔) ─────────────────────────────────────────────────────
+    getJournals: () => ipcRenderer.invoke('journal:getAll'),
+    saveJournal: (date, text) => ipcRenderer.send('journal:save', date, text),
+    onJournalUpdated: (callback) => {
+        const handler = (_e, date, text) => callback(date, text);
+        ipcRenderer.on('journal:updated', handler);
+        return () => ipcRenderer.removeListener('journal:updated', handler);
+    },
 });

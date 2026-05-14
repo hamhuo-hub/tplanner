@@ -27,4 +27,13 @@ contextBridge.exposeInMainWorld('widgetAPI', {
 
     /** Toggle a task's completed flag (round-trips through main). */
     toggleTask: (eventId) => ipcRenderer.send('widget:toggleTask', eventId),
+
+    // ── Journal (随笔) ─────────────────────────────────────────────────────
+    getJournals: () => ipcRenderer.invoke('journal:getAll'),
+    saveJournal: (date, text) => ipcRenderer.send('journal:save', date, text),
+    onJournalUpdated: (callback) => {
+        const handler = (_e, date, text) => callback(date, text);
+        ipcRenderer.on('journal:updated', handler);
+        return () => ipcRenderer.removeListener('journal:updated', handler);
+    },
 });

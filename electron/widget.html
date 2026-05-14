@@ -169,6 +169,68 @@
   }
   .item.task.done .item-title { text-decoration: line-through; color: var(--text-dim); }
 
+  /* ── Subtask list ──────────────────────────────────────────────── */
+  .subtask-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 5px;
+    padding-left: 4px;
+    border-left: 2px solid var(--border-bright);
+  }
+  .subtask-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+    cursor: pointer;
+    border-radius: 2px;
+  }
+  .subtask-item:hover { background: rgba(255,255,255,0.04); }
+  .subtask-bullet {
+    width: 11px; height: 11px;
+    border: 1.5px solid var(--border-bright);
+    border-radius: 3px;
+    flex-shrink: 0;
+    position: relative;
+    background: transparent;
+  }
+  .subtask-bullet.done {
+    background: var(--gold);
+    border-color: var(--gold);
+  }
+  .subtask-bullet.done::after {
+    content: '✓'; color: #0A0A0A; font-size: 8px; font-weight: 700;
+    position: absolute; top: -2px; left: 0px;
+  }
+  .subtask-text {
+    font-size: 11px;
+    color: var(--text-soft);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .subtask-text.done { text-decoration: line-through; color: var(--text-dim); }
+  .subtask-toggle {
+    background: none; border: none; color: var(--text-dim); cursor: pointer;
+    font-size: 10px; padding: 0 2px; line-height: 1;
+  }
+  .subtask-toggle:hover { color: var(--text); }
+  .progress-badge {
+    font-size: 9px;
+    font-family: 'Segoe UI', sans-serif;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: rgba(0,0,0,0.3);
+    color: var(--text-dim);
+    flex-shrink: 0;
+    letter-spacing: 0.02em;
+  }
+  .progress-badge.done-all {
+    background: rgba(74,124,89,0.35);
+    color: #7EC897;
+  }
+
   .item-body {
     flex: 1;
     display: flex;
@@ -254,6 +316,40 @@
   }
   .link-btn:hover { color: var(--gold); }
 
+  /* ── Journal (随笔) ────────────────────────────────────────────── */
+  .journal-section {
+    border-top: 1px solid var(--border);
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .journal-label {
+    font-size: 9px;
+    color: var(--text-dim);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .journal-textarea {
+    width: 100%;
+    min-height: 60px;
+    max-height: 120px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 6px 8px;
+    resize: vertical;
+    outline: none;
+    transition: border-color 120ms;
+  }
+  .journal-textarea:focus { border-color: var(--gold); }
+  .journal-textarea::placeholder { color: var(--text-dim); }
+
   /* Scrollbar */
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -281,6 +377,11 @@
       <div class="empty-text">加载中…</div>
     </div>
   </main>
+
+  <div class="journal-section">
+    <div class="journal-label">今日随笔</div>
+    <textarea class="journal-textarea" id="journal-input" placeholder="记录今天的想法…"></textarea>
+  </div>
 
   <footer>
     <div class="stats" id="stats"><span>--</span></div>

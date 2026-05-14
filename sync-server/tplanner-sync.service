@@ -1,0 +1,30 @@
+[Unit]
+Description=tPlanner Sync Server
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 修改为实际部署路径
+WorkingDirectory=/opt/tplanner-sync
+ExecStart=/usr/bin/node /opt/tplanner-sync/server.js
+Restart=on-failure
+RestartSec=5
+
+# 环境变量（按需修改）
+Environment=PORT=37401
+Environment=DATA_DIR=/opt/tplanner-sync/data
+
+# 安全加固：以独立用户运行
+User=tplanner
+Group=tplanner
+NoNewPrivileges=true
+PrivateTmp=true
+
+# 日志直接交给 systemd journal
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tplanner-sync
+
+[Install]
+WantedBy=multi-user.target

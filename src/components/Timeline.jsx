@@ -1,9 +1,9 @@
-import { eachDayOfInterval } from 'date-fns';
+import { eachDayOfInterval, format } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import EventRow from './EventRow';
 import { useRef, useEffect, useLayoutEffect, useState } from 'react';
 
-export default function Timeline({ startDate, endDate, events, onEventClick, onAddEvent, highlight, onLoadPrev, onLoadNext, onUpdateEvent, clashes, travelTimezone, onToggleTaskComplete }) {
+export default function Timeline({ startDate, endDate, events, onEventClick, onAddEvent, highlight, onLoadPrev, onLoadNext, onUpdateEvent, clashes, travelTimezone, onToggleTaskComplete, journals, onSaveJournal }) {
     const scrollContainerRef = useRef(null);
     const [days, setDays] = useState([]);
     const prevStartDateRef = useRef(startDate);
@@ -193,6 +193,8 @@ export default function Timeline({ startDate, endDate, events, onEventClick, onA
                         dragState={dragState}
                         displayTimezone={travelTimezone || 'Asia/Shanghai'}
                         onToggleTaskComplete={onToggleTaskComplete}
+                        journalText={journals?.[format(day, 'yyyy-MM-dd')] || ''}
+                        onSaveJournal={(text) => onSaveJournal?.(format(day, 'yyyy-MM-dd'), text)}
                     />
                 ))}
             </div>

@@ -4,8 +4,9 @@ import EventBlock from './EventBlock';
 import { useTranslation } from 'react-i18next';
 import { getDateLocale } from '../utils/dateLocale';
 import { MASSEY_COLORS } from '../utils/constants';
+import { useState, useRef, useCallback, useEffect } from 'react';
 
-export default function EventRow({ date, events, onEventClick, onAddEvent, highlight, onDragStart, dragState, clashes, displayTimezone, onToggleTaskComplete }) { 
+export default function EventRow({ date, events, onEventClick, onAddEvent, highlight, onDragStart, dragState, clashes, displayTimezone, onToggleTaskComplete, journalText, onSaveJournal }) {
     const { i18n } = useTranslation();
     const locale = getDateLocale(i18n.language);
 
@@ -90,6 +91,37 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
     }));
 
     const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+
+    // ── Journal hover popup ──────────────────────────────────────────────
+    const [journalOpen, setJournalOpen] = useState(false);
+    const [localJournal, setLocalJournal] = useState(journalText || '');
+    const dateColRef = useRef(null);
+    const popupRef = useRef(null);
+    const saveTimerRef = useRef(null);
+
+    // Keep local text in sync when parent prop changes (e.g. cross-window update)
+    useEffect(() => { setLocalJournal(journalText || ''); }, [journalText]);
+
+    const handleJournalChange = useCallback((e) => {
+        const text = e.target.value;
+        setLocalJournal(text);
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = setTimeout(() => {
+            onSaveJournal?.(text);
+        }, 500);
+    }, [onSaveJournal]);
+
+    // Close popup when clicking outside
+    useEffect(() => {
+        if (!journalOpen) return;
+        const handler = (e) => {
+            if (!popupRef.current?.contains(e.target) && !dateColRef.current?.contains(e.target)) {
+                setJournalOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [journalOpen]);
     // Row height grows with lane count so events never overlap
     const ROW_BASE_PX   = 52;
     const LANE_HEIGHT_PX = 36;
@@ -110,7 +142,13 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
              style={{ minHeight: rowHeightPx }}
         >
             {/* Date Column */}
-            <div className="event-row-date">
+            <div
+                className="event-row-date"
+                ref={dateColRef}
+                style={{ position: 'relative', cursor: 'pointer' }}
+                onClick={() => setJournalOpen(v => !v)}
+                title="随笔记录"
+            >
                 <span className="event-row-date-dow">{format(date, 'EEE', { locale })}</span>
                 <span className={`event-row-date-num${isWeekend ? ' event-row-date-num--weekend' : ''}`}>
                     {format(date, 'd')}
@@ -118,6 +156,62 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                         {format(date, 'MMM', { locale })}
                     </span>
                 </span>
+                {/* Dot indicator when journal has content */}
+                {localJournal && (
+                    <span style={{ display: 'block', width: 5, height: 5, borderRadius: '50%', background: 'var(--clr-gold, #C9A84C)', margin: '2px auto 0' }} />
+                )}
+
+                {/* Journal popup — same visual language as the widget */}
+                {journalOpen && (
+                    <div
+                        ref={popupRef}
+                        onClick={e => e.stopPropagation()}
+                        style={{
+                            position: 'absolute',
+                            left: '100%',
+                            top: 0,
+                            zIndex: 200,
+                            width: 240,
+                            background: 'rgba(24,24,24,0.97)',
+                            border: '1px solid #383838',
+                            borderTop: '3px solid var(--clr-gold)',
+                            borderRadius: 6,
+                            padding: '8px 10px',
+                            boxShadow: '0 6px 24px rgba(0,0,0,0.6)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 6,
+                        }}
+                    >
+                        <span style={{ fontSize: '9px', color: '#6B6355', letterSpacing: '0.14em', textTransform: 'uppercase' }}>
+                            {format(date, 'M月d日', { locale })} · 随笔
+                        </span>
+                        <textarea
+                            autoFocus
+                            value={localJournal}
+                            onChange={handleJournalChange}
+                            placeholder="记录今天的想法…"
+                            style={{
+                                width: '100%',
+                                minHeight: 80,
+                                maxHeight: 160,
+                                background: 'rgba(34,34,34,0.96)',
+                                border: '1px solid #2D2D2D',
+                                borderRadius: 4,
+                                color: '#E8E0D0',
+                                fontSize: '12px',
+                                lineHeight: 1.5,
+                                padding: '6px 8px',
+                                resize: 'vertical',
+                                fontFamily: 'inherit',
+                                outline: 'none',
+                                transition: 'border-color 120ms',
+                            }}
+                            onFocus={e => { e.target.style.borderColor = 'var(--clr-gold)'; }}
+                            onBlur={e => { e.target.style.borderColor = '#2D2D2D'; }}
+                        />
+                    </div>
+                )}
             </div>
 
             {/* Grid */}

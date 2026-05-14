@@ -50,7 +50,7 @@ export const TIMEZONES = [
     { value: 'Asia/Dubai', label: 'Dubai (GST)' },
     { value: 'Asia/Tokyo', label: 'Tokyo (JST)' },
     { value: 'Australia/Sydney', label: 'Sydney (AET)' },
-    { value: 'Pacific/Auckland', label: 'Auckland (NZST)' },
+    { value: 'Pacific/Auckland', label: 'Auckland (NZST/NZDT)' },
 ];
 
 // Event Constraints

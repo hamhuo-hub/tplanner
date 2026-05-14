@@ -15,7 +15,9 @@ import {
     Stack,
     Box,
     Typography,
-    IconButton
+    IconButton,
+    FormControlLabel,
+    Switch,
 } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
@@ -52,20 +54,30 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
     const [recurrenceCount, setRecurrenceCount] = useState(1);
     const [editScope, setEditScope] = useState('single');
 
+    const [allDay, setAllDay] = useState(false);
     const [isLargeNoteOpen, setIsLargeNoteOpen] = useState(false);
 
     useEffect(() => {
         if (isOpen) {
             if (initialEvent) {
                 // Edit Mode
+                const evType = initialEvent.type || EVENT_TYPES.EVENT;
                 setTitle(initialEvent.title);
-                setType(initialEvent.type || EVENT_TYPES.EVENT);
+                setType(evType);
                 setStartDate(initialEvent.start);
                 setEndDate(initialEvent.end);
                 setEventTimezone(initialEvent.timezone || '');
                 setNote(initialEvent.note || '');
                 setChecklist(initialEvent.checklist || []);
                 setColorId(initialEvent.colorId);
+
+                // Detect all-day: 00:00 start and 23:59 end, only for status/task
+                const isAllDay = evType !== EVENT_TYPES.EVENT
+                    && initialEvent.start.getHours() === 0
+                    && initialEvent.start.getMinutes() === 0
+                    && initialEvent.end.getHours() === 23
+                    && initialEvent.end.getMinutes() >= 59;
+                setAllDay(isAllDay);
 
                 // Edit recurrence
                 setRecurrenceType(initialEvent.recurrenceType || 'none');
@@ -74,8 +86,6 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
             } else {
                 // Create Mode
                 const now = defaultDate || new Date();
-                // If defaultDate provided (grid click), use it.
-                // If direct "Add" button, set to next hour.
                 let start = new Date(now);
                 if (!defaultDate) {
                     start.setMinutes(0, 0, 0);
@@ -88,8 +98,8 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                 setType(EVENT_TYPES.EVENT);
                 setStartDate(start);
                 setEndDate(end);
+                setAllDay(false);
 
-                // Get travel timezone from localStorage if creating a new event
                 const savedTravelTz = localStorage.getItem('tplanner_travel_timezone');
                 setEventTimezone(savedTravelTz || 'Asia/Shanghai');
 
@@ -97,7 +107,6 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                 setChecklist([]);
                 setColorId(0);
 
-                // Reset Recurrence
                 setRecurrenceType('none');
                 setRecurrenceCount(1);
             }
@@ -109,6 +118,14 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
 
         let finalStartDate = startDate;
         let finalEndDate = endDate;
+
+        // All-day: clamp times to 00:00:00 → 23:59:59
+        if (allDay) {
+            finalStartDate = new Date(startDate);
+            finalStartDate.setHours(0, 0, 0, 0);
+            finalEndDate = new Date(endDate);
+            finalEndDate.setHours(23, 59, 59, 999);
+        }
 
         // If a specific timezone is selected, we assume the user entered the time AS IF they were in that timezone.
         // We need to construct a Date object that represents that absolute moment in time.
@@ -197,9 +214,10 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
         onClose();
     };
 
-    const handleTypeChange = (event, newType) => {
+    const handleTypeChange = (_, newType) => {
         if (newType !== null) {
             setType(newType);
+            if (newType === EVENT_TYPES.EVENT) setAllDay(false);
         }
     };
 
@@ -220,7 +238,7 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                             fullWidth
                         >
                             <ToggleButton value={EVENT_TYPES.EVENT}>
-                                {t('event.typeEvent', 'Event')}
+                                {t('event.typeReminder', 'Reminder')}
                             </ToggleButton>
                             <ToggleButton value={EVENT_TYPES.STATUS}>
                                 {t('event.typeStatus', 'Status')}
@@ -296,6 +314,34 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
 
                         {/* Date & Time Pickers */}
                         <Stack spacing={2}>
+                            {/* All-day toggle — only for Status and Task */}
+                            {type !== EVENT_TYPES.EVENT && (
+                                <FormControlLabel
+                                    control={
+                                        <Switch
+                                            checked={allDay}
+                                            onChange={(e) => {
+                                                const next = e.target.checked;
+                                                setAllDay(next);
+                                                // When switching to all-day, snap end date to match start date
+                                                if (next && startDate && endDate) {
+                                                    const snapped = new Date(startDate);
+                                                    snapped.setHours(23, 59, 59, 999);
+                                                    // Keep end date but ensure it's same day or later
+                                                    if (endDate < startDate) setEndDate(snapped);
+                                                }
+                                            }}
+                                            size="small"
+                                        />
+                                    }
+                                    label={
+                                        <Typography variant="body2" color="text.secondary">
+                                            {t('event.allDay', '全天')}
+                                        </Typography>
+                                    }
+                                />
+                            )}
+
                             <Stack direction="row" spacing={2} alignItems="center">
                                 <DatePicker
                                     label={t('event.startDate', 'Start Date')}
@@ -303,22 +349,24 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                                     onChange={(newValue) => setStartDate(newValue)}
                                     slotProps={{ textField: { fullWidth: true } }}
                                 />
-                                <TimePicker
-                                    label={t('event.startTime', 'Start Time')}
-                                    value={startDate}
-                                    onChange={(newValue) => {
-                                        if (startDate && newValue) {
-                                            const newDate = new Date(startDate);
-                                            newDate.setHours(newValue.getHours());
-                                            newDate.setMinutes(newValue.getMinutes());
-                                            setStartDate(newDate);
-                                        } else {
-                                            setStartDate(newValue);
-                                        }
-                                    }}
-                                    ampm={false}
-                                    slotProps={{ textField: { fullWidth: true } }}
-                                />
+                                {!allDay && (
+                                    <TimePicker
+                                        label={t('event.startTime', 'Start Time')}
+                                        value={startDate}
+                                        onChange={(newValue) => {
+                                            if (startDate && newValue) {
+                                                const newDate = new Date(startDate);
+                                                newDate.setHours(newValue.getHours());
+                                                newDate.setMinutes(newValue.getMinutes());
+                                                setStartDate(newDate);
+                                            } else {
+                                                setStartDate(newValue);
+                                            }
+                                        }}
+                                        ampm={false}
+                                        slotProps={{ textField: { fullWidth: true } }}
+                                    />
+                                )}
                             </Stack>
                             <Stack direction="row" spacing={2} alignItems="center">
                                 <DatePicker
@@ -327,22 +375,24 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                                     onChange={(newValue) => setEndDate(newValue)}
                                     slotProps={{ textField: { fullWidth: true } }}
                                 />
-                                <TimePicker
-                                    label={t('event.endTime', 'End Time')}
-                                    value={endDate}
-                                    onChange={(newValue) => {
-                                        if (endDate && newValue) {
-                                            const newDate = new Date(endDate);
-                                            newDate.setHours(newValue.getHours());
-                                            newDate.setMinutes(newValue.getMinutes());
-                                            setEndDate(newDate);
-                                        } else {
-                                            setEndDate(newValue);
-                                        }
-                                    }}
-                                    ampm={false}
-                                    slotProps={{ textField: { fullWidth: true } }}
-                                />
+                                {!allDay && (
+                                    <TimePicker
+                                        label={t('event.endTime', 'End Time')}
+                                        value={endDate}
+                                        onChange={(newValue) => {
+                                            if (endDate && newValue) {
+                                                const newDate = new Date(endDate);
+                                                newDate.setHours(newValue.getHours());
+                                                newDate.setMinutes(newValue.getMinutes());
+                                                setEndDate(newDate);
+                                            } else {
+                                                setEndDate(newValue);
+                                            }
+                                        }}
+                                        ampm={false}
+                                        slotProps={{ textField: { fullWidth: true } }}
+                                    />
+                                )}
                             </Stack>
                             <TextField
                                 select

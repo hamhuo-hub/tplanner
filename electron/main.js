@@ -1,6 +1,8 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, Notification, nativeImage, shell, dialog, screen } = require('electron');
-const path = require('path');
-const fs   = require('fs');
+const path  = require('path');
+const fs    = require('fs');
+const http  = require('http');
+const dgram = require('dgram');
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const IS_DEV = process.env.NODE_ENV === 'development' || !app.isPackaged;
@@ -10,9 +12,10 @@ const STATE_FILE = path.join(app.getPath('userData'), 'window-state.json');
 const DEFAULT_STATE = { width: 1280, height: 800, x: undefined, y: undefined, maximized: false };
 
 // Widget state lives in its own file so changes don't churn STATE_FILE.
-const WIDGET_STATE_FILE = path.join(app.getPath('userData'), 'widget-state.json');
-const EVENTS_CACHE_FILE = path.join(app.getPath('userData'), 'events-cache.json');
-const REMINDER_LEAD_MIN = 5; // minutes before event start to fire reminder
+const WIDGET_STATE_FILE  = path.join(app.getPath('userData'), 'widget-state.json');
+const EVENTS_CACHE_FILE  = path.join(app.getPath('userData'), 'events-cache.json');
+const JOURNALS_FILE      = path.join(app.getPath('userData'), 'journals.json');
+const REMINDER_LEAD_MIN = 30; // minutes before event start to fire reminder
 const APP_USER_MODEL_ID = 'com.tplanner.app';
 
 // Persistent app identity so Windows toast notifications group / persist.
@@ -352,11 +355,22 @@ function broadcastEventsToWidget() {
 
 // ── Icon ───────────────────────────────────────────────────────────────────
 function getIconPath() {
-    const candidates = [
-        path.join(__dirname, '../icon.ico'),
-        path.join(__dirname, '../public/icon.ico'),
-        path.join(app.getAppPath(), 'icon.ico'),
-    ];
+    // On Linux nativeImage can't reliably decode .ico — prefer .png
+    const isPng = process.platform === 'linux';
+    const candidates = isPng
+        ? [
+            path.join(__dirname, '../icon.png'),
+            path.join(__dirname, '../public/icon.png'),
+            path.join(app.getAppPath(), 'icon.png'),
+            // fallback to ico if no png found
+            path.join(__dirname, '../icon.ico'),
+            path.join(__dirname, '../public/icon.ico'),
+          ]
+        : [
+            path.join(__dirname, '../icon.ico'),
+            path.join(__dirname, '../public/icon.ico'),
+            path.join(app.getAppPath(), 'icon.ico'),
+          ];
     for (const p of candidates) {
         if (fs.existsSync(p)) return p;
     }
@@ -391,9 +405,23 @@ function rebuildTrayMenu() {
 
 function createTray() {
     const iconPath = getIconPath();
-    if (!iconPath) return;
-    const icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
-    tray = new Tray(icon);
+    if (!iconPath) {
+        console.warn('[tray] No icon found — skipping tray');
+        return;
+    }
+    if (IS_DEV) console.log('[tray] icon path:', iconPath);
+
+    let trayIcon;
+    if (process.platform === 'linux') {
+        // On Linux, pass the path directly so libappindicator handles sizing.
+        // Passing a nativeImage that has been resized can produce an empty image
+        // on some GTK/AppIndicator stacks, which results in the placeholder "!" icon.
+        trayIcon = iconPath;
+    } else {
+        trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+    }
+
+    tray = new Tray(trayIcon);
     tray.setToolTip('tPlanner');
     rebuildTrayMenu();
     tray.on('double-click', () => { mainWindow?.show(); mainWindow?.focus(); });
@@ -584,6 +612,181 @@ ipcMain.on('widget:toggleTask', (_e, eventId) => {
     broadcastEventsToWidget();
 });
 
+// ── Journal (随笔) IPC ─────────────────────────────────────────────────────
+function loadJournals() {
+    try {
+        if (fs.existsSync(JOURNALS_FILE))
+            return JSON.parse(fs.readFileSync(JOURNALS_FILE, 'utf8'));
+    } catch (e) { /* ignore */ }
+    return {};
+}
+
+function saveJournals(data) {
+    try { fs.writeFileSync(JOURNALS_FILE, JSON.stringify(data)); } catch (e) { /* ignore */ }
+}
+
+ipcMain.handle('journal:getAll', () => loadJournals());
+
+ipcMain.on('journal:save', (_e, date, text) => {
+    const data = loadJournals();
+    if (text && text.trim()) {
+        data[date] = text;
+    } else {
+        delete data[date];
+    }
+    saveJournals(data);
+    // Broadcast to OTHER windows only — sender already has the latest value
+    const senderId = _e.sender.id;
+    BrowserWindow.getAllWindows().forEach(win => {
+        if (!win.isDestroyed() && win.webContents.id !== senderId)
+            win.webContents.send('journal:updated', date, text);
+    });
+});
+
+// ── LAN Sync ───────────────────────────────────────────────────────────────
+const LAN_CONFIG_FILE = path.join(app.getPath('userData'), 'lan-sync.json');
+const DEFAULT_LAN_CONFIG = { peerIp: '', port: 37401, serverEnabled: false };
+
+let lanServer = null;
+
+function loadLanConfig() {
+    try {
+        if (fs.existsSync(LAN_CONFIG_FILE))
+            return { ...DEFAULT_LAN_CONFIG, ...JSON.parse(fs.readFileSync(LAN_CONFIG_FILE, 'utf8')) };
+    } catch (e) { /* ignore */ }
+    return { ...DEFAULT_LAN_CONFIG };
+}
+
+function saveLanConfig(cfg) {
+    try { fs.writeFileSync(LAN_CONFIG_FILE, JSON.stringify(cfg)); } catch (e) { /* ignore */ }
+}
+
+function startLanServer(port) {
+    if (lanServer) {
+        lanServer.close();
+        lanServer = null;
+    }
+    lanServer = http.createServer((req, res) => {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+
+        if (req.url === '/tplanner/events') {
+            if (req.method === 'GET') {
+                const data = JSON.stringify(serializeEvents(eventsCache));
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(data);
+            } else if (req.method === 'PUT') {
+                let body = '';
+                req.on('data', c => body += c);
+                req.on('end', () => {
+                    try {
+                        const incoming = JSON.parse(body);
+                        if (Array.isArray(incoming)) {
+                            // Merge: keep latest updatedAt per id
+                            const map = new Map(eventsCache.map(e => [e.id, e]));
+                            for (const e of hydrateEvents(incoming)) {
+                                const existing = map.get(e.id);
+                                if (!existing || (e.updatedAt || 0) > (existing.updatedAt || 0)) {
+                                    map.set(e.id, e);
+                                }
+                            }
+                            eventsCache = Array.from(map.values());
+                            saveEventsCache(eventsCache);
+                            rescheduleReminders();
+                            broadcastEventsToWidget();
+                            // Notify main window to refresh from cache
+                            if (mainWindow && !mainWindow.isDestroyed()) {
+                                mainWindow.webContents.send('lan:eventsUpdated', serializeEvents(eventsCache));
+                            }
+                        }
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ ok: true, count: eventsCache.length }));
+                    } catch (e) {
+                        res.writeHead(400); res.end(JSON.stringify({ error: 'bad json' }));
+                    }
+                });
+            } else {
+                res.writeHead(405); res.end();
+            }
+        } else {
+            res.writeHead(404); res.end();
+        }
+    });
+    lanServer.listen(port, '0.0.0.0', () => {
+        console.log(`[LAN Sync] Server listening on port ${port}`);
+    });
+    lanServer.on('error', (e) => {
+        console.error('[LAN Sync] Server error:', e.message);
+        if (mainWindow && !mainWindow.isDestroyed())
+            mainWindow.webContents.send('lan:serverError', e.message);
+    });
+}
+
+const DISCOVER_PORT = 37402;
+const DISCOVER_TIMEOUT_MS = 2500;
+
+ipcMain.handle('lan:discover', () => new Promise((resolve) => {
+    const found = new Map();
+    const sock  = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+
+    sock.on('message', (msg, rinfo) => {
+        try {
+            const info = JSON.parse(msg.toString());
+            // 过滤掉本机自己的服务（避免把自己显示出来）
+            const key = `${info.ip}:${info.port}`;
+            found.set(key, { ...info, ip: info.ip || rinfo.address });
+        } catch (_) {}
+    });
+
+    sock.on('error', () => {});
+
+    sock.bind(0, () => {
+        sock.setBroadcast(true);
+        const probe = Buffer.from('TPLANNER_DISCOVER');
+        // 全局广播
+        sock.send(probe, DISCOVER_PORT, '255.255.255.255');
+        // 同时尝试本机所在各子网广播
+        const { networkInterfaces } = require('os');
+        const nets = networkInterfaces();
+        for (const iface of Object.values(nets)) {
+            for (const net of iface) {
+                if (net.family !== 'IPv4' || net.internal) continue;
+                const parts = net.address.split('.');
+                const bcast = `${parts[0]}.${parts[1]}.${parts[2]}.255`;
+                sock.send(probe, DISCOVER_PORT, bcast);
+            }
+        }
+    });
+
+    setTimeout(() => {
+        try { sock.close(); } catch (_) {}
+        resolve(Array.from(found.values()));
+    }, DISCOVER_TIMEOUT_MS);
+}));
+
+ipcMain.handle('lan:getConfig', () => loadLanConfig());
+ipcMain.on('lan:saveConfig', (_e, cfg) => {
+    saveLanConfig(cfg);
+    if (cfg.serverEnabled) {
+        startLanServer(cfg.port || 37401);
+    } else if (lanServer) {
+        lanServer.close();
+        lanServer = null;
+    }
+});
+ipcMain.handle('lan:getLocalIp', () => {
+    const { networkInterfaces } = require('os');
+    const nets = networkInterfaces();
+    for (const name of Object.keys(nets)) {
+        for (const net of nets[name]) {
+            if (net.family === 'IPv4' && !net.internal) return net.address;
+        }
+    }
+    return '127.0.0.1';
+});
+
 // ── App Lifecycle ─────────────────────────────────────────────────────────
 app.whenReady().then(() => {
     // Check argv for .tptheme on first launch (Windows double-click)
@@ -597,6 +800,10 @@ app.whenReady().then(() => {
 
     createWindow();
     createTray();
+
+    // Auto-start LAN server if it was enabled last session
+    const lanCfg = loadLanConfig();
+    if (lanCfg.serverEnabled) startLanServer(lanCfg.port || 37401);
 
     // Open the widget if the user had it open last session.
     const widgetState = loadWidgetState();

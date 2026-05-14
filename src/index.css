@@ -31,6 +31,10 @@
     --clr-red-dim:   rgba(192, 57, 43, 0.15);
     --clr-red-glow:  rgba(192, 57, 43, 0.4);
 
+    /* Steel Blue */
+    --clr-blue:      #5B8FCC;
+    --clr-blue-dim:  rgba(91, 143, 204, 0.15);
+
     /* Text */
     --clr-text:      #E0D8C8;
     --clr-text-dim:  #6B6355;
@@ -684,6 +688,34 @@ input[type="number"] {
 }
 
 .banner--overdue::before { background: var(--clr-gold); }
+
+.banner--upcoming {
+    background: rgba(74,157,168,0.06);
+    border-color: rgba(74,157,168,0.25);
+    color: #B0D8DC;
+}
+
+.banner--upcoming::before { background: var(--clr-teal, #4A9DA8); }
+
+.banner--upcoming .banner-tag {
+    background: rgba(74,157,168,0.15);
+    color: var(--clr-teal, #4A9DA8);
+    border: 1px solid rgba(74,157,168,0.3);
+}
+
+.banner--reminder {
+    background: var(--clr-blue-dim);
+    border-color: rgba(91,143,204,0.28);
+    color: #C0D4EE;
+}
+
+.banner--reminder::before { background: var(--clr-blue); }
+
+.banner--reminder .banner-tag {
+    background: rgba(91,143,204,0.18);
+    color: #8BB8E8;
+    border: 1px solid rgba(91,143,204,0.35);
+}
 
 .banner-title {
     font-family: var(--font-display);

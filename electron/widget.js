@@ -16,7 +16,15 @@
   var state = {
     events: [],
     now: new Date(),
+    journals: {},
   };
+
+  function todayKey() {
+    var d = new Date();
+    return d.getFullYear() + '-'
+      + pad2(d.getMonth() + 1) + '-'
+      + pad2(d.getDate());
+  }
 
   // ── DOM helpers ────────────────────────────────────────────────────
   function $(id) { return document.getElementById(id); }
@@ -107,17 +115,26 @@
 
   function renderItem(e, nowTs, sectionKey) {
     var status = statusFor(e, nowTs);
+    var checklist = e.checklist || [];
+    var hasChecklist = checklist.length > 0;
+    var doneCount = checklist.filter(function(i) { return i.completed; }).length;
+    var allDone = hasChecklist ? doneCount === checklist.length : true;
+
     var item = el('div', 'item' + (e.type === 'task' ? ' task' : '')
       + (e.type === 'task' && e.completed ? ' done' : '')
       + (status === 'now' ? ' now' : '')
       + (status === 'past' ? ' past' : ''));
 
-    // Bullet — task is a clickable circle, others get a colored slab
     var color = EVENT_COLORS[(e.colorId || 0) % EVENT_COLORS.length];
     if (e.type === 'task') {
       var bullet = el('span', 'item-bullet');
+      // Block main toggle if subtasks not all done
+      bullet.title = hasChecklist && !allDone ? '请先完成所有子任务' : '';
+      bullet.style.cursor = hasChecklist && !allDone && !e.completed ? 'not-allowed' : 'pointer';
+      bullet.style.opacity = hasChecklist && !allDone && !e.completed ? '0.4' : '1';
       bullet.addEventListener('click', function (ev) {
         ev.stopPropagation();
+        if (hasChecklist && !allDone && !e.completed) return;
         if (window.widgetAPI && window.widgetAPI.toggleTask) {
           window.widgetAPI.toggleTask(e.id);
         }
@@ -135,6 +152,13 @@
     title.textContent = e.title || '(无标题)';
     title.title = e.title || '';
     row1.appendChild(title);
+
+    // Subtask progress badge
+    if (hasChecklist) {
+      var badge = el('span', 'progress-badge' + (allDone ? ' done-all' : ''));
+      badge.textContent = doneCount + '/' + checklist.length;
+      row1.appendChild(badge);
+    }
 
     if (status === 'now') {
       var tag = el('span', 'item-tag now'); tag.textContent = '现在';
@@ -160,6 +184,38 @@
       row2.appendChild(note);
     }
     body.appendChild(row2);
+
+    // Subtask list (collapsible)
+    if (hasChecklist) {
+      var subtaskOpen = true; // default expanded
+      var subtaskList = el('div', 'subtask-list');
+
+      function renderSubtasks() {
+        clear(subtaskList);
+        checklist.forEach(function(sub, idx) {
+          var row = el('div', 'subtask-item');
+          var sbullet = el('span', 'subtask-bullet' + (sub.completed ? ' done' : ''));
+          row.appendChild(sbullet);
+          var stext = el('span', 'subtask-text' + (sub.completed ? ' done' : ''));
+          stext.textContent = sub.text || '';
+          row.appendChild(stext);
+          subtaskList.appendChild(row);
+        });
+      }
+      renderSubtasks();
+
+      // Toggle expand/collapse via clicking the progress badge
+      if (badge) {
+        badge.style.cursor = 'pointer';
+        badge.addEventListener('click', function(ev) {
+          ev.stopPropagation();
+          subtaskOpen = !subtaskOpen;
+          subtaskList.style.display = subtaskOpen ? '' : 'none';
+        });
+      }
+
+      body.appendChild(subtaskList);
+    }
 
     item.appendChild(body);
     return item;
@@ -238,6 +294,30 @@
 
     // Re-render every 30s so "current/past/upcoming" stays accurate
     setInterval(render, 30 * 1000);
+
+    // ── Journal ──────────────────────────────────────────────────────
+    var journalEl = $('journal-input');
+    var journalTimer = null;
+
+    // Load today's journal on init
+    api.getJournals().then(function (journals) {
+      state.journals = journals || {};
+      journalEl.value = state.journals[todayKey()] || '';
+    });
+
+    // Live sync from other windows
+    api.onJournalUpdated(function (date, text) {
+      state.journals[date] = text || '';
+      if (date === todayKey()) journalEl.value = text || '';
+    });
+
+    // Debounced save on input
+    journalEl.addEventListener('input', function () {
+      clearTimeout(journalTimer);
+      journalTimer = setTimeout(function () {
+        api.saveJournal(todayKey(), journalEl.value);
+      }, 600);
+    });
   }
 
   if (document.readyState === 'loading') {

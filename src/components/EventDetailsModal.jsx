@@ -73,7 +73,7 @@ export default function EventDetailsModal({ event, travelTimezone, onClose, onDe
                     {event.checklist?.length > 0 && (
                         <div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                                <span className="modal-label" style={{ marginBottom: 0 }}>{t('event.checklist', 'Checklist')}</span>
+                                <span className="modal-label" style={{ marginBottom: 0 }}>{t('event.checklist', '子任务')}</span>
                                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--clr-gold-dim)' }}>
                                     {event.checklist.filter(i => i.completed).length}/{event.checklist.length}
                                 </span>
@@ -85,7 +85,11 @@ export default function EventDetailsModal({ event, travelTimezone, onClose, onDe
                                             if (!onSave) return;
                                             const newChecklist = [...event.checklist];
                                             newChecklist[idx] = { ...item, completed: !item.completed };
-                                            onSave({ ...event, checklist: newChecklist });
+                                            // Auto-complete or auto-uncomplete main task based on subtask state
+                                            const allDone = newChecklist.every(i => i.completed);
+                                            const anyUndone = newChecklist.some(i => !i.completed);
+                                            const newCompleted = allDone ? true : anyUndone ? false : event.completed;
+                                            onSave({ ...event, checklist: newChecklist, completed: newCompleted });
                                         }}
                                     >
                                         <div style={{ color: item.completed ? 'var(--clr-gold)' : 'var(--clr-border-bright)', flexShrink: 0 }}>

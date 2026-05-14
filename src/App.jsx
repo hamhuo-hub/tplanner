@@ -6,9 +6,11 @@ import AddEventModal from './components/AddEventModal'
 import EventDetailsModal from './components/EventDetailsModal'
 import ClashBanner from './components/ClashBanner'
 import OverdueBanner from './components/OverdueBanner'
+import ReminderBanner from './components/ReminderBanner'
 import TitleBar from './components/TitleBar'
 import ThemeManager from './components/ThemeManager'
 import ZoomControl from './components/ZoomControl'
+import LanSync from './components/LanSync'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { checkForClashes } from './utils/dateUtils'
 import { TIMEZONES } from './utils/constants'
@@ -85,6 +87,42 @@ function App() {
         });
         return () => { if (typeof off === 'function') off(); };
     }, [db, isElectron]);
+
+    // ── Journal (随笔) ────────────────────────────────────────────────────
+    const [journals, setJournals] = useState({});
+
+    useEffect(() => {
+        if (isElectron && window.electronAPI?.getJournals) {
+            window.electronAPI.getJournals().then(j => setJournals(j || {}));
+            const off = window.electronAPI.onJournalUpdated?.((date, text) => {
+                setJournals(prev => ({ ...prev, [date]: text || '' }));
+            });
+            return () => { if (typeof off === 'function') off(); };
+        } else {
+            // Web fallback: scan localStorage
+            const data = {};
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                if (k?.startsWith('tplanner_journal_')) {
+                    data[k.replace('tplanner_journal_', '')] = localStorage.getItem(k);
+                }
+            }
+            setJournals(data);
+        }
+    }, [isElectron]);
+
+    const handleSaveJournal = (dateStr, text) => {
+        setJournals(prev => ({ ...prev, [dateStr]: text }));
+        if (isElectron && window.electronAPI?.saveJournal) {
+            window.electronAPI.saveJournal(dateStr, text);
+        } else {
+            if (text?.trim()) {
+                localStorage.setItem(`tplanner_journal_${dateStr}`, text);
+            } else {
+                localStorage.removeItem(`tplanner_journal_${dateStr}`);
+            }
+        }
+    };
 
     const [viewRange, setViewRange] = useState({ start: null, end: null });
 
@@ -420,6 +458,34 @@ function App() {
                     {/* Zoom Control */}
                     <ZoomControl />
 
+                    {/* LAN Sync */}
+                    {isElectron && (
+                        <LanSync
+                            events={events}
+                            onMergeEvents={async (merged) => {
+                                if (!db) return;
+                                try {
+                                    const upserts = merged.map(e => ({
+                                        ...e,
+                                        start: e.start instanceof Date ? e.start.toISOString() : e.start,
+                                        end:   e.end   instanceof Date ? e.end.toISOString()   : e.end,
+                                        updatedAt: e.updatedAt || Date.now(),
+                                        note: e.note || '',
+                                        timezone: e.timezone || '',
+                                        groupId: e.groupId || '',
+                                        completed: e.completed ?? false,
+                                        checklist: e.checklist ?? [],
+                                        recurrenceType: e.recurrenceType || 'none',
+                                        recurrenceCount: e.recurrenceCount || 1,
+                                    }));
+                                    await db.events.bulkUpsert(upserts);
+                                } catch (err) {
+                                    console.error('LAN merge failed', err);
+                                }
+                            }}
+                        />
+                    )}
+
                     {/* Add Event */}
                     <button
                         onClick={openAddModal}
@@ -434,6 +500,15 @@ function App() {
 
             {/* Main Content */}
             <main style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '12px', minHeight: 0, gap: '8px' }}>
+                <ReminderBanner
+                    events={events}
+                    travelTimezone={travelTimezone}
+                    onHighlight={(h) => {
+                        setHighlight(h);
+                        handleJumpToDate(h.start);
+                        setTimeout(() => setHighlight(null), 3000);
+                    }}
+                />
                 <OverdueBanner
                     events={events}
                     travelTimezone={travelTimezone}
@@ -466,6 +541,8 @@ function App() {
                     onUpdateEvent={handleSaveEvent}
                     onToggleTaskComplete={handleToggleTaskComplete}
                     travelTimezone={travelTimezone}
+                    journals={journals}
+                    onSaveJournal={handleSaveJournal}
                 />
             </main>
 
