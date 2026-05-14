@@ -5,27 +5,38 @@ import { format } from 'date-fns';
 
 const DEFAULT_CONFIG = { peerIp: '', port: 37401, serverEnabled: false, autoSync: false, interval: 60 };
 
-// ── 冲突分析 ──────────────────────────────────────────────────────────────────
+// ── 冲突分析（tombstone 感知）────────────────────────────────────────────────
+function isAlive(e) { return !e.deletedAt; }
+
 function analyzeConflict(local, remote) {
     const localMap  = new Map(local.map(e  => [e.id, e]));
     const remoteMap = new Map(remote.map(e => [e.id, e]));
 
-    const results = { added: [], removed: [], updated: [], synced: [], conflicted: [] };
+    const results = { added: [], removed: [], updated: [], deleted: [], synced: [], conflicted: [] };
 
     for (const [id, re] of remoteMap) {
         const le = localMap.get(id);
         if (!le) {
-            results.added.push(re);
+            if (isAlive(re)) results.added.push(re);
+            // else: remote tombstone for unknown id — no-op
         } else if ((re.updatedAt || 0) > (le.updatedAt || 0)) {
-            results.updated.push({ local: le, remote: re });
+            if (!isAlive(re) && isAlive(le)) {
+                results.deleted.push({ local: le, remote: re }); // remote deleted it
+            } else {
+                results.updated.push({ local: le, remote: re });
+            }
         } else if ((re.updatedAt || 0) < (le.updatedAt || 0)) {
-            results.conflicted.push({ local: le, remote: re }); // local wins
+            if (!isAlive(le) && isAlive(re)) {
+                results.deleted.push({ local: le, remote: re }); // local deleted it (local wins)
+            } else {
+                results.conflicted.push({ local: le, remote: re });
+            }
         } else {
             results.synced.push(le);
         }
     }
     for (const [id, le] of localMap) {
-        if (!remoteMap.has(id)) results.removed.push(le); // local-only → push to remote
+        if (!remoteMap.has(id) && isAlive(le)) results.removed.push(le);
     }
     return results;
 }
@@ -72,8 +83,8 @@ function ServerCard({ server, selected, onSelect }) {
 // ── 子组件：冲突预览弹窗 ──────────────────────────────────────────────────────
 function ConflictModal({ analysis, peer, onConfirm, onCancel }) {
     const [showDetail, setShowDetail] = useState(false);
-    const { added, removed, updated, conflicted, synced } = analysis;
-    const hasChanges = added.length + removed.length + updated.length > 0;
+    const { added, removed, updated, deleted, conflicted, synced } = analysis;
+    const hasChanges = added.length + removed.length + updated.length + deleted.length > 0;
 
     return (
         <div style={{
@@ -110,11 +121,12 @@ function ConflictModal({ analysis, peer, onConfirm, onCancel }) {
                     </div>
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {added.length > 0     && <StatRow icon="↓" color="#5B8FCC" label={`从对端拉取 ${added.length} 条新事件`} />}
-                        {removed.length > 0   && <StatRow icon="↑" color="#4A9DA8" label={`推送本地独有 ${removed.length} 条事件`} />}
-                        {updated.length > 0   && <StatRow icon="↻" color="#C9A84C" label={`${updated.length} 条事件将被对端较新版本覆盖`} />}
+                        {added.length > 0      && <StatRow icon="↓" color="#5B8FCC" label={`从对端拉取 ${added.length} 条新事件`} />}
+                        {removed.length > 0    && <StatRow icon="↑" color="#4A9DA8" label={`推送本地独有 ${removed.length} 条事件`} />}
+                        {deleted.length > 0    && <StatRow icon="🗑" color="#A04040" label={`${deleted.length} 条事件将被删除（已在其中一端删除）`} />}
+                        {updated.length > 0    && <StatRow icon="↻" color="#C9A84C" label={`${updated.length} 条事件将被对端较新版本覆盖`} />}
                         {conflicted.length > 0 && <StatRow icon="!" color="#C0392B" label={`${conflicted.length} 条事件本地版本更新（保留本地）`} />}
-                        {synced.length > 0    && <StatRow icon="✓" color="#4A7C59" label={`${synced.length} 条已同步无变化`} />}
+                        {synced.length > 0     && <StatRow icon="✓" color="#4A7C59" label={`${synced.length} 条已同步无变化`} />}
                     </div>
                 )}
 
@@ -131,6 +143,16 @@ function ConflictModal({ analysis, peer, onConfirm, onCancel }) {
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 260, overflow: 'auto' }}>
                                 <EventGroup title="将从对端拉取" color="#5B8FCC" items={added} renderItem={e => e.title} />
                                 <EventGroup title="将推送到对端" color="#4A9DA8" items={removed} renderItem={e => e.title} />
+                                <EventGroup title="将被删除（tombstone 传播）" color="#A04040" items={deleted}
+                                    renderItem={({ local: l, remote: r }) => (
+                                        <span style={{ textDecoration: 'line-through', color: 'var(--clr-text-dim)' }}>
+                                            {l.title}
+                                            <span style={{ fontSize: 9, marginLeft: 6 }}>
+                                                {(r.deletedAt || l.deletedAt) ? format(new Date(r.deletedAt || l.deletedAt), 'MM-dd HH:mm') + ' 删除' : ''}
+                                            </span>
+                                        </span>
+                                    )}
+                                />
                                 <EventGroup title="将被对端版本覆盖" color="#C9A84C" items={updated}
                                     renderItem={({ local: l, remote: r }) => (
                                         <span>

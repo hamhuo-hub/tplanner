@@ -72,9 +72,13 @@ function rotatBackup() {
     }
 }
 
-// ── 合并逻辑：updatedAt 较大的版本胜出 ──────────────────────────────────────
+// ── 合并逻辑：updatedAt 较大的版本胜出；tombstone（deletedAt>0）正常参与竞争 ──
+// 30 天前的 tombstone 在服务端也物理清除，防止无限积累
+const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
 function mergeEvents(local, incoming) {
     const map = new Map();
+    const now = Date.now();
     for (const e of local)    map.set(e.id, e);
     for (const e of incoming) {
         const exist = map.get(e.id);
@@ -82,7 +86,10 @@ function mergeEvents(local, incoming) {
             map.set(e.id, e);
         }
     }
-    return Array.from(map.values());
+    // Drop tombstones older than TTL — both sides already have them
+    return Array.from(map.values()).filter(e =>
+        !e.deletedAt || (now - e.deletedAt) < TOMBSTONE_TTL_MS
+    );
 }
 
 // ── HTTP 工具 ─────────────────────────────────────────────────────────────────

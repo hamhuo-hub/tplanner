@@ -40,13 +40,11 @@ function App() {
         getDatabase().then(database => {
             setDb(database);
             subscription = database.events.find().$.subscribe(docs => {
+                // Keep ALL docs (including tombstones) in state so they can
+                // be included in the sync payload and propagate deletions.
                 const hydrated = docs.map(doc => {
                     const e = doc.toJSON();
-                    return {
-                        ...e,
-                        start: new Date(e.start),
-                        end: new Date(e.end)
-                    };
+                    return { ...e, start: new Date(e.start), end: new Date(e.end) };
                 });
                 setEvents(hydrated);
                 setIsLoaded(true);
@@ -152,7 +150,9 @@ function App() {
         }
     }, [viewRange.start]);
 
-    const clashes = useMemo(() => checkForClashes(events), [events]);
+    // Strip tombstones for display; sync payload keeps them to propagate deletions
+    const visibleEvents = useMemo(() => events.filter(e => !e.deletedAt), [events]);
+    const clashes = useMemo(() => checkForClashes(visibleEvents), [visibleEvents]);
 
     const handleLoadMorePrev = () => {
         if (!viewRange.start) return;
@@ -257,20 +257,26 @@ function App() {
         }
     };
 
+    // Soft-delete: stamp deletedAt instead of physically removing,
+    // so the tombstone propagates to peers during the next LAN sync.
+    const softDelete = async (doc) => {
+        await doc.update({ $set: { deletedAt: Date.now(), updatedAt: Date.now() } });
+    };
+
     const handleDeleteEvent = async (id, scope = 'single', event = null) => {
         if (!db) return;
         try {
             if (scope === 'all' && event?.groupId) {
                 const docsObj = await db.events.find({ selector: { groupId: event.groupId } }).exec();
-                await Promise.all(docsObj.map(doc => doc.remove()));
+                await Promise.all(docsObj.map(softDelete));
             } else if (scope === 'future' && event?.groupId) {
                 const cutoff = new Date(event.start).getTime();
                 const docsObj = await db.events.find({ selector: { groupId: event.groupId } }).exec();
-                const toRemove = docsObj.filter(doc => new Date(doc.get('start')).getTime() >= cutoff);
-                await Promise.all(toRemove.map(doc => doc.remove()));
+                const toMark = docsObj.filter(doc => new Date(doc.get('start')).getTime() >= cutoff);
+                await Promise.all(toMark.map(softDelete));
             } else {
                 const doc = await db.events.findOne(id).exec();
-                if (doc) await doc.remove();
+                if (doc) await softDelete(doc);
             }
         } catch (err) {
             console.error('Error deleting event', err);
@@ -465,7 +471,7 @@ function App() {
                     {/* LAN Sync */}
                     {isElectron && (
                         <LanSync
-                            events={events}
+                            events={events}   /* include tombstones so deletions propagate */
                             onMergeEvents={async (merged) => {
                                 if (!db) return;
                                 try {
@@ -505,7 +511,7 @@ function App() {
             {/* Main Content */}
             <main style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '12px', minHeight: 0, gap: '8px' }}>
                 <ReminderBanner
-                    events={events}
+                    events={visibleEvents}
                     travelTimezone={travelTimezone}
                     onHighlight={(h) => {
                         setHighlight(h);
@@ -514,7 +520,7 @@ function App() {
                     }}
                 />
                 <OverdueBanner
-                    events={events}
+                    events={visibleEvents}
                     travelTimezone={travelTimezone}
                     onHighlight={(h) => {
                         setHighlight(h);
@@ -524,7 +530,7 @@ function App() {
                 />
                 <ClashBanner
                     clashes={clashes}
-                    events={events}
+                    events={visibleEvents}
                     travelTimezone={travelTimezone}
                     onHighlight={(h) => {
                         setHighlight(h);
@@ -535,7 +541,7 @@ function App() {
                 <Timeline
                     startDate={viewRange.start || new Date()}
                     endDate={viewRange.end || new Date()}
-                    events={events}
+                    events={visibleEvents}
                     clashes={clashes}
                     onEventClick={setSelectedEvent}
                     onAddEvent={handleTimelineClick}
@@ -556,7 +562,7 @@ function App() {
                 onSave={handleSaveEvent}
                 defaultDate={modalDefaultDate}
                 initialEvent={editingEvent}
-                events={events}
+                events={visibleEvents}
             />
 
             <EventDetailsModal

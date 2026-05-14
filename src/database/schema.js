@@ -1,6 +1,6 @@
 export const eventSchema = {
     title: 'event schema',
-    version: 0,
+    version: 1,
     primaryKey: 'id',
     type: 'object',
     properties: {
@@ -20,7 +20,8 @@ export const eventSchema = {
         completed: { type: 'boolean' },
         recurrenceType: { type: 'string' },
         recurrenceCount: { type: 'number' },
-        updatedAt: { type: 'number' } // For future CRDT / replication use
+        updatedAt: { type: 'number' },
+        deletedAt: { type: 'number' } // tombstone timestamp; 0 or absent = alive
     },
     required: ['id', 'title', 'start', 'end']
 };
