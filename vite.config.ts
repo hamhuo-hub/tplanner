@@ -28,6 +28,29 @@ function copyWidgetAssets(): Plugin {
 
 export default defineConfig({
   base: './',
+
+  // Force a single copy of these packages — prevents "multiple React instances"
+  // and "@emotion/react already loaded" warnings when some deps bundle their own.
+  resolve: {
+    dedupe: [
+      'react',
+      'react-dom',
+      '@emotion/react',
+      '@emotion/styled',
+      '@emotion/cache',
+      '@emotion/serialize',
+    ],
+  },
+
+  optimizeDeps: {
+    include: [
+      'react',
+      'react-dom',
+      '@emotion/react',
+      '@emotion/styled',
+    ],
+  },
+
   plugins: [
     react(),
     copyWidgetAssets(),

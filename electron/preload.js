@@ -102,6 +102,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return () => ipcRenderer.removeListener('lan:serverError', h);
     },
 
+    // ── Daily Checklist ────────────────────────────────────────────────────
+    getChecklists:  () => ipcRenderer.invoke('checklist:getAll'),
+    saveChecklist:  (date, items) => ipcRenderer.send('checklist:save', date, items),
+    onChecklistUpdated: (callback) => {
+        const handler = (_e, date, items) => callback(date, items);
+        ipcRenderer.on('checklist:updated', handler);
+        return () => ipcRenderer.removeListener('checklist:updated', handler);
+    },
+
     // ── Journal (随笔) ─────────────────────────────────────────────────────
     getJournals: () => ipcRenderer.invoke('journal:getAll'),
     saveJournal: (date, text) => ipcRenderer.send('journal:save', date, text),

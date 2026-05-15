@@ -79,10 +79,14 @@ function App() {
     // Mirror task-toggles done in the widget back into RxDB so both views agree.
     useEffect(() => {
         if (!isElectron || !window.electronAPI?.onEventsRemoteUpdate || !db) return;
-        const off = window.electronAPI.onEventsRemoteUpdate(async ({ id, completed }) => {
+        const off = window.electronAPI.onEventsRemoteUpdate(async ({ id, completed, checklist }) => {
             try {
                 const doc = await db.events.findOne(id).exec();
-                if (doc) await doc.update({ $set: { completed, updatedAt: Date.now() } });
+                if (doc) {
+                    const patch = { completed, updatedAt: Date.now() };
+                    if (checklist !== undefined) patch.checklist = checklist;
+                    await doc.update({ $set: patch });
+                }
             } catch (err) {
                 console.error('Widget→RxDB sync failed', err);
             }

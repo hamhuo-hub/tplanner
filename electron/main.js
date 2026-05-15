@@ -633,9 +633,37 @@ ipcMain.on('widget:toggleTask', (_e, eventId) => {
     ev.completed = !ev.completed;
     ev.updatedAt = Date.now();
     saveEventsCache(eventsCache);
-    // Notify the main app so the React store mirrors the change.
     if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('events:remoteUpdate', { id: eventId, completed: ev.completed });
+    }
+    broadcastEventsToWidget();
+});
+
+ipcMain.on('widget:toggleSubtask', (_e, eventId, subtaskId) => {
+    const idx = eventsCache.findIndex(e => e.id === eventId);
+    if (idx < 0) return;
+    const ev = eventsCache[idx];
+    if (!Array.isArray(ev.checklist)) return;
+
+    const sub = ev.checklist.find(s => s.id === subtaskId);
+    if (!sub) return;
+    sub.completed = !sub.completed;
+
+    // Mirror the same auto-complete logic as EventDetailsModal
+    const allDone  = ev.checklist.every(s => s.completed);
+    const anyUndone = ev.checklist.some(s => !s.completed);
+    if (allDone)   ev.completed = true;
+    if (anyUndone) ev.completed = false;
+
+    ev.updatedAt = Date.now();
+    saveEventsCache(eventsCache);
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('events:remoteUpdate', {
+            id: eventId,
+            completed: ev.completed,
+            checklist: ev.checklist,
+        });
     }
     broadcastEventsToWidget();
 });
@@ -668,6 +696,38 @@ ipcMain.on('journal:save', (_e, date, text) => {
     BrowserWindow.getAllWindows().forEach(win => {
         if (!win.isDestroyed() && win.webContents.id !== senderId)
             win.webContents.send('journal:updated', date, text);
+    });
+});
+
+// ── Daily Checklist ────────────────────────────────────────────────────────
+const CHECKLISTS_FILE = path.join(app.getPath('userData'), 'daily-checklists.json');
+
+function loadChecklists() {
+    try {
+        if (fs.existsSync(CHECKLISTS_FILE))
+            return JSON.parse(fs.readFileSync(CHECKLISTS_FILE, 'utf8'));
+    } catch (e) { /* ignore */ }
+    return {};
+}
+
+function saveChecklists(data) {
+    writeAsync(CHECKLISTS_FILE, JSON.stringify(data));
+}
+
+ipcMain.handle('checklist:getAll', () => loadChecklists());
+
+ipcMain.on('checklist:save', (_e, date, items) => {
+    const data = loadChecklists();
+    if (Array.isArray(items) && items.length > 0) {
+        data[date] = items;
+    } else {
+        delete data[date];
+    }
+    saveChecklists(data);
+    const senderId = _e.sender.id;
+    BrowserWindow.getAllWindows().forEach(win => {
+        if (!win.isDestroyed() && win.webContents.id !== senderId)
+            win.webContents.send('checklist:updated', date, items);
     });
 });
 

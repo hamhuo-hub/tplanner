@@ -28,6 +28,18 @@ contextBridge.exposeInMainWorld('widgetAPI', {
     /** Toggle a task's completed flag (round-trips through main). */
     toggleTask: (eventId) => ipcRenderer.send('widget:toggleTask', eventId),
 
+    /** Toggle an individual subtask checklist item. */
+    toggleSubtask: (eventId, subtaskId) => ipcRenderer.send('widget:toggleSubtask', eventId, subtaskId),
+
+    // ── Daily Checklist ────────────────────────────────────────────────────
+    getChecklists:  () => ipcRenderer.invoke('checklist:getAll'),
+    saveChecklist:  (date, items) => ipcRenderer.send('checklist:save', date, items),
+    onChecklistUpdated: (callback) => {
+        const handler = (_e, date, items) => callback(date, items);
+        ipcRenderer.on('checklist:updated', handler);
+        return () => ipcRenderer.removeListener('checklist:updated', handler);
+    },
+
     // ── Journal (随笔) ─────────────────────────────────────────────────────
     getJournals: () => ipcRenderer.invoke('journal:getAll'),
     saveJournal: (date, text) => ipcRenderer.send('journal:save', date, text),

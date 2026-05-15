@@ -192,10 +192,19 @@
 
       function renderSubtasks() {
         clear(subtaskList);
-        checklist.forEach(function(sub, idx) {
+        checklist.forEach(function(sub) {
+          var subId = sub.id;
           var row = el('div', 'subtask-item');
+
           var sbullet = el('span', 'subtask-bullet' + (sub.completed ? ' done' : ''));
+          sbullet.addEventListener('click', function(ev) {
+            ev.stopPropagation();
+            if (window.widgetAPI && window.widgetAPI.toggleSubtask) {
+              window.widgetAPI.toggleSubtask(e.id, subId);
+            }
+          });
           row.appendChild(sbullet);
+
           var stext = el('span', 'subtask-text' + (sub.completed ? ' done' : ''));
           stext.textContent = sub.text || '';
           row.appendChild(stext);
@@ -299,25 +308,23 @@
     var journalEl = $('journal-input');
     var journalTimer = null;
 
-    // Load today's journal on init
     api.getJournals().then(function (journals) {
       state.journals = journals || {};
       journalEl.value = state.journals[todayKey()] || '';
     });
 
-    // Live sync from other windows
     api.onJournalUpdated(function (date, text) {
       state.journals[date] = text || '';
       if (date === todayKey()) journalEl.value = text || '';
     });
 
-    // Debounced save on input
     journalEl.addEventListener('input', function () {
       clearTimeout(journalTimer);
       journalTimer = setTimeout(function () {
         api.saveJournal(todayKey(), journalEl.value);
       }, 600);
     });
+
   }
 
   if (document.readyState === 'loading') {
