@@ -147,7 +147,7 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                 ref={dateColRef}
                 style={{ position: 'relative', cursor: 'pointer' }}
                 onClick={() => setJournalOpen(v => !v)}
-                title="随笔记录"
+                title="随手记"
             >
                 <span className="event-row-date-dow">{format(date, 'EEE', { locale })}</span>
                 <span className={`event-row-date-num${isWeekend ? ' event-row-date-num--weekend' : ''}`}>

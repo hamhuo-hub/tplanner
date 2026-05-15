@@ -156,7 +156,7 @@ curl http://localhost:37401/health
 |------|---------|
 | 事件数据库 | RxDB / IndexedDB（浏览器标准存储） |
 | 事件缓存 | `userData/events-cache.json`（供 Widget 离线访问） |
-| 随笔记录 | `userData/journals.json` |
+| 随手记 | `userData/journals.json` |
 | 窗口状态 | `userData/window-state.json` |
 | 主题 | `userData/themes/` |
 | 局域网配置 | `userData/lan-sync.json` |
