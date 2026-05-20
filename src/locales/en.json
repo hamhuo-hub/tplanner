@@ -19,7 +19,11 @@
         "edit": "Edit",
         "print": "Print",
         "showAll": "Show all ({{count}})",
-        "showLess": "Show less"
+        "showLess": "Show less",
+        "addItem": "Add Item",
+        "close": "Close",
+        "copy": "Copy",
+        "confirm": "Confirm"
     },
     "recurrence": {
         "none": "None",
@@ -38,12 +42,17 @@
         "title": "Title",
         "start": "Start",
         "end": "End",
+        "startDate": "Start Date",
+        "startTime": "Start Time",
+        "endDate": "End Date",
+        "endTime": "End Time",
         "timezone": "Timezone",
         "note": "Note",
         "color": "Color",
         "details": "Event Details",
         "timeLabel": "Time",
         "notePlaceholder": "Type your detailed notes here...",
+        "typeReminder": "Reminder",
         "typeEvent": "Reminder",
         "typeStatus": "Status",
         "typeTask": "Task",
@@ -88,8 +97,33 @@
         "syncing": "Syncing…",
         "success": "Synced",
         "error": "Sync failed",
-        "serverRunning": "Local server running",
-        "serverPort": "Server port"
+        "serverRunning": "Local server",
+        "serverPort": "Server port",
+        "scan": "Scan LAN",
+        "scanning": "Scanning…",
+        "noDevices": "No devices found. Enter IP manually.",
+        "manualIp": "Manual IP (fallback)",
+        "confirmMerge": "Confirm Merge",
+        "noChanges": "Data is in sync, nothing to merge.",
+        "previewTitle": "Sync Preview",
+        "detailShow": "View details",
+        "detailHide": "Hide details",
+        "pullFrom": "Pull {{count}} new event(s) from peer",
+        "pushTo": "Push {{count}} local-only event(s) to peer",
+        "willDelete": "{{count}} event(s) will be deleted (tombstone)",
+        "willOverwrite": "{{count}} event(s) will be overwritten by peer",
+        "localWins": "{{count}} event(s) kept (local is newer)",
+        "alreadySynced": "{{count}} event(s) already in sync",
+        "noTarget": "No sync target selected",
+        "syncWithPeer": "Sync · {{name}}"
+    },
+    "journal": {
+        "label": "Daily Notes",
+        "placeholder": "Jot down today's thoughts…"
+    },
+    "contextMenu": {
+        "copy": "Duplicate",
+        "delete": "Delete"
     },
     "clash": {
         "detected": "Schedule Conflict Detected",

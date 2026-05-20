@@ -19,7 +19,11 @@
         "edit": "编辑",
         "print": "打印",
         "showAll": "显示全部 ({{count}})",
-        "showLess": "收起"
+        "showLess": "收起",
+        "addItem": "添加项目",
+        "close": "关闭",
+        "copy": "复制",
+        "confirm": "确认"
     },
     "recurrence": {
         "none": "无",
@@ -38,16 +42,21 @@
         "title": "标题",
         "start": "开始时间",
         "end": "结束时间",
+        "startDate": "开始日期",
+        "startTime": "开始时间",
+        "endDate": "结束日期",
+        "endTime": "结束时间",
         "timezone": "时区",
         "note": "备注",
         "color": "颜色",
         "details": "事件详情",
         "timeLabel": "时间",
         "notePlaceholder": "在此输入详细备注...",
+        "typeReminder": "提醒",
         "typeEvent": "提醒",
         "typeStatus": "状态",
         "typeTask": "任务",
-        "checklist": "清单",
+        "checklist": "子任务",
         "checklistItem": "项目...",
         "recurrence": "重复",
         "allDay": "全天"
@@ -88,8 +97,33 @@
         "syncing": "同步中…",
         "success": "同步成功",
         "error": "同步失败",
-        "serverRunning": "本机服务运行中",
-        "serverPort": "服务端口"
+        "serverRunning": "本机服务",
+        "serverPort": "服务端口",
+        "scan": "扫描局域网",
+        "scanning": "扫描中…",
+        "noDevices": "未发现设备，可手动填写 IP",
+        "manualIp": "手动 IP（备用）",
+        "confirmMerge": "确认合并",
+        "noChanges": "数据完全一致，无需合并",
+        "previewTitle": "同步预览",
+        "detailShow": "查看详情",
+        "detailHide": "收起详情",
+        "pullFrom": "从对端拉取 {{count}} 条新事件",
+        "pushTo": "推送本地独有 {{count}} 条事件",
+        "willDelete": "{{count}} 条事件将被删除（已在其中一端删除）",
+        "willOverwrite": "{{count}} 条事件将被对端较新版本覆盖",
+        "localWins": "{{count}} 条事件本地版本更新（保留本地）",
+        "alreadySynced": "{{count}} 条已同步无变化",
+        "noTarget": "未选择同步目标",
+        "syncWithPeer": "同步 · {{name}}"
+    },
+    "journal": {
+        "label": "随笔记录",
+        "placeholder": "记录今天的想法…"
+    },
+    "contextMenu": {
+        "copy": "复制",
+        "delete": "删除"
     },
     "clash": {
         "detected": "检测到日程冲突",

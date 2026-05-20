@@ -1,7 +1,7 @@
 import { MASSEY_COLORS } from '../utils/constants';
 import { fromZonedTime, formatInTimeZone } from 'date-fns-tz';
 
-export default function EventBlock({ event, onClick, isConflicting, displayTimezone, onToggleTaskComplete, onDragStart, style }) {
+export default function EventBlock({ event, onClick, isConflicting, displayTimezone, onToggleTaskComplete, onDragStart, onContextMenu, isShadow, style }) {
     const tz = displayTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
 
     let dayStartMs;
@@ -40,15 +40,17 @@ export default function EventBlock({ event, onClick, isConflicting, displayTimez
     let blockClass = 'event-block';
     if (isConflicting) blockClass += ' event-block--conflicting';
     if (isCompleted)   blockClass += ' event-block--completed';
+    if (isShadow)      blockClass += ' event-block--shadow';
 
     return (
         <div
             onClick={e => { e.stopPropagation(); onClick(event); }}
             onMouseDown={e => { if (e.button !== 0) return; e.stopPropagation(); onDragStart?.(e); }}
+            onContextMenu={e => { e.preventDefault(); e.stopPropagation(); onContextMenu?.(e, event); }}
             className={blockClass}
             style={{
                 backgroundColor: colorVar,
-                opacity: isCompleted ? 0.45 : 1,
+                opacity: isShadow ? 0.25 : isCompleted ? 0.45 : 1,
                 left:  `${leftPercent}%`,
                 width: `${widthPercent}%`,
                 zIndex: 10,

@@ -82,6 +82,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     showWidget: () => ipcRenderer.send('widget:show'),
     hideWidget: () => ipcRenderer.send('widget:hide'),
 
+    // ── Auto Launch ────────────────────────────────────────────────────────
+    getAutoLaunch: () => ipcRenderer.invoke('app:getAutoLaunch'),
+    setAutoLaunch: (enable) => ipcRenderer.send('app:setAutoLaunch', enable),
+    onAutoLaunchChanged: (cb) => {
+        const h = (_e, v) => cb(v);
+        ipcRenderer.on('autoLaunch:changed', h);
+        return () => ipcRenderer.removeListener('autoLaunch:changed', h);
+    },
+
     // ── DevTools / Debug ──────────────────────────────────────────────────
     toggleDevTools: () => ipcRenderer.send('devtools:toggle'),
     getPerfInfo:    () => ipcRenderer.invoke('devtools:getPerfInfo'),
@@ -112,11 +121,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
 
     // ── Journal (随笔) ─────────────────────────────────────────────────────
-    getJournals: () => ipcRenderer.invoke('journal:getAll'),
-    saveJournal: (date, text) => ipcRenderer.send('journal:save', date, text),
+    getJournals:    () => ipcRenderer.invoke('journal:getAll'),
+    saveJournal:    (date, text) => ipcRenderer.send('journal:save', date, text),
+    saveAllJournals: (merged) => ipcRenderer.send('journal:saveAll', merged),
     onJournalUpdated: (callback) => {
         const handler = (_e, date, text) => callback(date, text);
         ipcRenderer.on('journal:updated', handler);
         return () => ipcRenderer.removeListener('journal:updated', handler);
+    },
+    onJournalAllUpdated: (callback) => {
+        const handler = (_e, merged) => callback(merged);
+        ipcRenderer.on('journal:allUpdated', handler);
+        return () => ipcRenderer.removeListener('journal:allUpdated', handler);
     },
 });

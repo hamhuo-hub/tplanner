@@ -6,8 +6,8 @@ import { getDateLocale } from '../utils/dateLocale';
 import { MASSEY_COLORS } from '../utils/constants';
 import { useState, useRef, useCallback, useEffect } from 'react';
 
-export default function EventRow({ date, events, onEventClick, onAddEvent, highlight, onDragStart, dragState, clashes, displayTimezone, onToggleTaskComplete, journalText, onSaveJournal }) {
-    const { i18n } = useTranslation();
+export default function EventRow({ date, events, onEventClick, onAddEvent, highlight, onDragStart, dragState, clashes, displayTimezone, onToggleTaskComplete, journalText, onSaveJournal, onContextMenu }) {
+    const { t, i18n } = useTranslation();
     const locale = getDateLocale(i18n.language);
 
     // ── Day boundaries in the DISPLAY timezone ──────────────────────────────
@@ -51,30 +51,26 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
         return { ...ev, rowIndex };
     });
 
-    // ── Lane assignment for regular events ────────────────────────────────
-    // Greedy algorithm: each event goes into the first available lane where
-    // it doesn't overlap any existing event. Result: no visual overlap.
-    const lanes = []; // lanes[i] = array of events already placed in lane i
+    // ── Lane assignment ───────────────────────────────────────────────────
+    // Completed tasks are rendered as a background "shadow" and do NOT
+    // participate in lane assignment — only active (incomplete) events get lanes.
+    const activeEvents    = processedRegularEvents.filter(e => !(e.type === 'task' && e.completed));
+    const completedTasks  = processedRegularEvents.filter(e =>   e.type === 'task' && e.completed);
 
-    const processedWithLane = processedRegularEvents.map(ev => {
+    const lanes = [];
+    const activeWithLane = activeEvents.map(ev => {
         let laneIdx = 0;
         while (true) {
             const lane = lanes[laneIdx];
-            if (!lane) {
-                lanes[laneIdx] = [ev];
-                break;
-            }
+            if (!lane) { lanes[laneIdx] = [ev]; break; }
             const hasConflict = lane.some(existing =>
                 areIntervalsOverlapping(
                     { start: existing.start, end: existing.end },
-                    { start: ev.start, end: ev.end },
+                    { start: ev.start,       end: ev.end },
                     { inclusive: false }
                 )
             );
-            if (!hasConflict) {
-                lane.push(ev);
-                break;
-            }
+            if (!hasConflict) { lane.push(ev); break; }
             laneIdx++;
         }
         return { ...ev, laneIdx };
@@ -82,13 +78,25 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
 
     const totalLanes = lanes.length || 1;
 
-    const finalRegularEvents = processedWithLane.map(ev => ({
-        ...ev,
-        isConflicting: clashes ? clashes.some(c => c.eventId === ev.id) : false,
-        // Lane height: divide the event area (below status strip) equally
-        laneTopPct:    15 + (ev.laneIdx / totalLanes) * 85,
-        laneHeightPct: (1 / totalLanes) * 85,
-    }));
+    const finalRegularEvents = [
+        // Active events in their lanes
+        ...activeWithLane.map(ev => ({
+            ...ev,
+            isShadow: false,
+            isConflicting: clashes ? clashes.some(c => c.eventId === ev.id) : false,
+            laneTopPct:    15 + (ev.laneIdx / totalLanes) * 85,
+            laneHeightPct: (1 / totalLanes) * 85,
+        })),
+        // Completed tasks as shadows — always behind, fixed to base lane position
+        ...completedTasks.map(ev => ({
+            ...ev,
+            isShadow: true,
+            laneIdx:       0,
+            isConflicting: false,
+            laneTopPct:    15,
+            laneHeightPct: 85,
+        })),
+    ];
 
     const isWeekend = date.getDay() === 0 || date.getDay() === 6;
 
@@ -147,7 +155,7 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                 ref={dateColRef}
                 style={{ position: 'relative', cursor: 'pointer' }}
                 onClick={() => setJournalOpen(v => !v)}
-                title="随手记"
+                title={t('journal.label')}
             >
                 <span className="event-row-date-dow">{format(date, 'EEE', { locale })}</span>
                 <span className={`event-row-date-num${isWeekend ? ' event-row-date-num--weekend' : ''}`}>
@@ -184,13 +192,13 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                         }}
                     >
                         <span style={{ fontSize: '9px', color: '#6B6355', letterSpacing: '0.14em', textTransform: 'uppercase' }}>
-                            {format(date, 'M月d日', { locale })} · 随笔
+                            {format(date, i18n.language === 'zh' ? 'M月d日' : 'MMM d', { locale })} · {t('journal.label')}
                         </span>
                         <textarea
                             autoFocus
                             value={localJournal}
                             onChange={handleJournalChange}
-                            placeholder="记录今天的想法…"
+                            placeholder={t('journal.placeholder')}
                             style={{
                                 width: '100%',
                                 minHeight: 80,
@@ -325,15 +333,17 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                             key={event.id}
                             event={event}
                             isConflicting={event.isConflicting}
+                            isShadow={event.isShadow}
                             displayTimezone={displayTimezone}
                             onClick={() => onEventClick(events.find(ev => ev.id === event.id) || event)}
                             onToggleTaskComplete={onToggleTaskComplete}
-                            onDragStart={e => onDragStart(event, e.clientX, e.clientY, date)}
+                            onDragStart={e => !event.isShadow && onDragStart(event, e.clientX, e.clientY, date)}
+                            onContextMenu={(e, ev) => onContextMenu?.(e, events.find(o => o.id === ev.id) || ev)}
                             style={{
                                 position: 'absolute',
                                 top:    `calc(${event.laneTopPct}% + 2px)`,
                                 height: `calc(${event.laneHeightPct}% - 4px)`,
-                                zIndex: 10 + event.laneIdx,
+                                zIndex: event.isShadow ? 5 : 10 + event.laneIdx,
                                 opacity: isDragging ? 0 : 1,
                                 pointerEvents: isDragging ? 'none' : 'auto',
                             }}

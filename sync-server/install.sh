@@ -5,7 +5,7 @@
 
 set -e
 
-INSTALL_DIR="/opt/tplanner-sync"
+INSTALL_DIR="/home/hamhuo/Documents/sync-server"
 SERVICE_NAME="tplanner-sync"
 SERVICE_USER="tplanner"
 PORT="${PORT:-37401}"

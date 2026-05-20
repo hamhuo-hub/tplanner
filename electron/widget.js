@@ -19,6 +19,13 @@
     journals: {},
   };
 
+  // Persist completed-section collapsed state across sessions
+  var completedCollapsed = localStorage.getItem('widget_completed_collapsed') !== 'false';
+  function saveCollapsed(v) {
+    completedCollapsed = v;
+    localStorage.setItem('widget_completed_collapsed', v ? 'true' : 'false');
+  }
+
   function todayKey() {
     var d = new Date();
     return d.getFullYear() + '-'
@@ -79,7 +86,7 @@
     var todays = eventsForToday();
     if (todays.length === 0) {
       var empty = el('div', 'empty');
-      var icon = el('div', 'empty-icon material-symbols-outlined'); icon.textContent = 'event_available';
+      var icon = el('div', 'empty-icon material-symbols-outlined'); icon.textContent = 'ALL CLEAR';
       var text = el('div', 'empty-text'); text.textContent = '今天没有安排，享受清闲吧';
       empty.appendChild(icon);
       empty.appendChild(text);
@@ -88,8 +95,10 @@
     }
 
     var nowTs = state.now.getTime();
-    var groups = { current: [], upcoming: [], past: [] };
+    var groups = { current: [], upcoming: [], past: [], done: [] };
     todays.forEach(function (e) {
+      // Completed tasks go to dedicated "done" group
+      if (e.type === 'task' && e.completed) { groups.done.push(e); return; }
       var st = statusFor(e, nowTs);
       if (st === 'past') groups.past.push(e);
       else if (st === 'now') groups.current.push(e);
@@ -98,8 +107,8 @@
 
     var sections = [
       { key: 'current',  label: '进行中', list: groups.current },
-      { key: 'upcoming', label: '稍后',  list: groups.upcoming },
-      { key: 'past',     label: '已过',  list: groups.past },
+      { key: 'upcoming', label: '稍后',   list: groups.upcoming },
+      { key: 'past',     label: '已过',   list: groups.past },
     ];
 
     sections.forEach(function (sec) {
@@ -111,6 +120,37 @@
       list.appendChild(hd);
       sec.list.forEach(function (e) { list.appendChild(renderItem(e, nowTs, sec.key)); });
     });
+
+    // ── Completed section (collapsible) ──────────────────────────────────
+    if (groups.done.length > 0) {
+      var doneHd = el('div', 'group-label');
+      doneHd.style.cursor = 'pointer';
+      doneHd.style.userSelect = 'none';
+
+      var doneLabel = document.createTextNode('已完成 ');
+      doneHd.appendChild(doneLabel);
+      var doneCount = el('span', 'count'); doneCount.textContent = groups.done.length;
+      doneHd.appendChild(doneCount);
+
+      var arrow = el('span');
+      arrow.style.marginLeft = '4px';
+      arrow.style.fontSize = '9px';
+      arrow.textContent = completedCollapsed ? '▶' : '▼';
+      doneHd.appendChild(arrow);
+
+      var doneBody = el('div');
+      doneBody.style.display = completedCollapsed ? 'none' : '';
+      groups.done.forEach(function (e) { doneBody.appendChild(renderItem(e, nowTs, 'done')); });
+
+      doneHd.addEventListener('click', function () {
+        saveCollapsed(!completedCollapsed);
+        doneBody.style.display = completedCollapsed ? 'none' : '';
+        arrow.textContent = completedCollapsed ? '▶' : '▼';
+      });
+
+      list.appendChild(doneHd);
+      list.appendChild(doneBody);
+    }
   }
 
   function renderItem(e, nowTs, sectionKey) {

@@ -45,8 +45,9 @@ export const checkForClashes = (events) => {
             const eventA = events[i];
             const eventB = events[j];
 
-            // Ignore 'status' events for clashes
+            // Ignore status events and completed tasks — they are shadows, not conflicts
             if (eventA.type === 'status' || eventB.type === 'status') continue;
+            if (eventA.completed || eventB.completed) continue;
 
             // NEW: Ignore clashes between different types (e.g. Event vs Task)
             // Default to 'event' if type is undefined

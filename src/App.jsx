@@ -12,10 +12,11 @@ import ThemeManager from './components/ThemeManager'
 import ZoomControl from './components/ZoomControl'
 import LanSync from './components/LanSync'
 import DebugPanel from './components/DebugPanel'
+import ContextMenu from './components/ContextMenu'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { checkForClashes } from './utils/dateUtils'
 import { TIMEZONES } from './utils/constants'
-import { Plus, Languages, Printer, Globe, Download, Upload } from 'lucide-react'
+import { Plus, Languages, Printer, Globe, Download, Upload, Power } from 'lucide-react'
 import { getDatabase } from './database/db'
 
 function App() {
@@ -24,6 +25,9 @@ function App() {
     const [highlight, setHighlight] = useState(null);
     const [travelTimezone, setTravelTimezone] = useState('');
 
+    const [contextMenu, setContextMenu] = useState(null); // { x, y, event }
+    const [clipboard, setClipboard]   = useState(null);  // event waiting to be pasted
+    const [autoLaunch, setAutoLaunch] = useState(false);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [selectedEvent, setSelectedEvent] = useState(null);
     const [modalDefaultDate, setModalDefaultDate] = useState(null);
@@ -61,6 +65,22 @@ function App() {
 
     // ── Electron Today-Widget Sync ────────────────────────────────────────
     // Debounce: rapid RxDB updates (delete/batch) collapse into one IPC call
+    // ESC cancels paste mode
+    useEffect(() => {
+        if (!clipboard) return;
+        const handler = (e) => { if (e.key === 'Escape') setClipboard(null); };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [clipboard]);
+
+    // Sync auto-launch state from tray menu changes
+    useEffect(() => {
+        if (!isElectron) return;
+        window.electronAPI?.getAutoLaunch().then(v => setAutoLaunch(!!v));
+        const off = window.electronAPI?.onAutoLaunchChanged?.((v) => setAutoLaunch(v));
+        return () => off?.();
+    }, [isElectron]);
+
     const syncTimerRef = useRef(null);
     useEffect(() => {
         if (!isLoaded) return;
@@ -100,10 +120,14 @@ function App() {
     useEffect(() => {
         if (isElectron && window.electronAPI?.getJournals) {
             window.electronAPI.getJournals().then(j => setJournals(j || {}));
-            const off = window.electronAPI.onJournalUpdated?.((date, text) => {
+            const off1 = window.electronAPI.onJournalUpdated?.((date, text) => {
                 setJournals(prev => ({ ...prev, [date]: text || '' }));
             });
-            return () => { if (typeof off === 'function') off(); };
+            // LAN sync batch update
+            const off2 = window.electronAPI.onJournalAllUpdated?.(merged => {
+                setJournals(merged || {});
+            });
+            return () => { off1?.(); off2?.(); };
         } else {
             // Web fallback: scan localStorage
             const data = {};
@@ -288,7 +312,40 @@ function App() {
         setSelectedEvent(null);
     };
 
+    // Copy: store in clipboard, don't save yet
+    const handleCopyEvent = (event) => {
+        setClipboard(event);
+    };
+
+    // Paste clipboard event at clicked time
+    const pasteClipboard = async (start) => {
+        if (!db || !clipboard) return;
+        const duration = clipboard.end - clipboard.start;
+        try {
+            const copy = {
+                ...clipboard,
+                id: crypto.randomUUID(),
+                title: clipboard.title + ' (副本)',
+                groupId: crypto.randomUUID(),
+                start: new Date(start).toISOString(),
+                end:   new Date(start.getTime() + duration).toISOString(),
+                completed: false,
+                deletedAt: 0,
+                updatedAt: Date.now(),
+                checklist: (clipboard.checklist || []).map(i => ({ ...i, id: crypto.randomUUID(), completed: false })),
+            };
+            await db.events.insert(copy);
+        } catch (err) {
+            console.error('Paste failed', err);
+        }
+        setClipboard(null);
+    };
+
     const handleTimelineClick = (start) => {
+        if (clipboard) {
+            pasteClipboard(start);
+            return;
+        }
         setModalDefaultDate(start);
         setEditingEvent(null);
         setIsAddModalOpen(true);
@@ -381,7 +438,7 @@ function App() {
     };
 
     return (
-        <div className="app-container" style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--clr-bg)', overflow: 'hidden' }}>
+        <div className="app-container" style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--clr-bg)', overflow: 'hidden', cursor: clipboard ? 'crosshair' : undefined }}>
 
             {/* Custom Title Bar (Electron only) */}
             {isElectron && <TitleBar />}
@@ -475,7 +532,8 @@ function App() {
                     {/* LAN Sync */}
                     {isElectron && (
                         <LanSync
-                            events={events}   /* include tombstones so deletions propagate */
+                            events={events}
+                            journals={journals}
                             onMergeEvents={async (merged) => {
                                 if (!db) return;
                                 try {
@@ -495,6 +553,18 @@ function App() {
                                     await db.events.bulkUpsert(upserts);
                                 } catch (err) {
                                     console.error('LAN merge failed', err);
+                                }
+                            }}
+                            onMergeJournals={(merged) => {
+                                setJournals(merged);
+                                if (isElectron && window.electronAPI?.saveAllJournals) {
+                                    // Single atomic write — no N sequential IPC calls
+                                    window.electronAPI.saveAllJournals(merged);
+                                } else {
+                                    Object.entries(merged).forEach(([date, text]) => {
+                                        if (text?.trim()) localStorage.setItem(`tplanner_journal_${date}`, text);
+                                        else localStorage.removeItem(`tplanner_journal_${date}`);
+                                    });
                                 }
                             }}
                         />
@@ -554,6 +624,7 @@ function App() {
                     onLoadNext={handleLoadMoreNext}
                     onUpdateEvent={handleSaveEvent}
                     onToggleTaskComplete={handleToggleTaskComplete}
+                    onContextMenu={(e, ev) => setContextMenu({ x: e.clientX, y: e.clientY, event: ev })}
                     travelTimezone={travelTimezone}
                     journals={journals}
                     onSaveJournal={handleSaveJournal}
@@ -579,6 +650,37 @@ function App() {
             />
 
             <DebugPanel />
+
+            {/* Paste mode toast */}
+            {clipboard && (
+                <div style={{
+                    position: 'fixed', bottom: 60, left: '50%', transform: 'translateX(-50%)',
+                    zIndex: 9000, background: 'var(--clr-surface,#1e1e1e)',
+                    border: '1px solid var(--clr-gold,#C9A84C)', borderRadius: 8,
+                    padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 12,
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+                    fontFamily: 'var(--font-mono)', fontSize: 12,
+                }}>
+                    <span style={{ color: 'var(--clr-gold)' }}>已复制</span>
+                    <span style={{ color: 'var(--clr-text)' }}>「{clipboard.title}」</span>
+                    <span style={{ color: 'var(--clr-text-dim)' }}>— 点击时间轴空白处粘贴</span>
+                    <button onClick={() => setClipboard(null)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--clr-text-dim)', padding: 0, marginLeft: 4 }}
+                        title="取消 (Esc)"
+                    >✕</button>
+                </div>
+            )}
+
+            {contextMenu && (
+                <ContextMenu
+                    x={contextMenu.x}
+                    y={contextMenu.y}
+                    event={contextMenu.event}
+                    onClose={() => setContextMenu(null)}
+                    onCopy={handleCopyEvent}
+                    onDelete={(ev) => handleDeleteEvent(ev.id, 'single', ev)}
+                />
+            )}
         </div>
     )
 }

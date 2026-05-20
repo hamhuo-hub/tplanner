@@ -13,7 +13,6 @@ const DEFAULT_STATE = { width: 1280, height: 800, x: undefined, y: undefined, ma
 
 // Widget state lives in its own file so changes don't churn STATE_FILE.
 const WIDGET_STATE_FILE  = path.join(app.getPath('userData'), 'widget-state.json');
-const EVENTS_CACHE_FILE  = path.join(app.getPath('userData'), 'events-cache.json');
 const JOURNALS_FILE      = path.join(app.getPath('userData'), 'journals.json');
 const REMINDER_LEAD_MIN = 30; // minutes before event start to fire reminder
 const APP_USER_MODEL_ID = 'com.tplanner.app';
@@ -241,21 +240,6 @@ function createWidgetWindow() {
 }
 
 // ── Events cache + reminder scheduling ─────────────────────────────────────
-function loadEventsCache() {
-    try {
-        if (!fs.existsSync(EVENTS_CACHE_FILE)) return [];
-        const raw = JSON.parse(fs.readFileSync(EVENTS_CACHE_FILE, 'utf8'));
-        if (!Array.isArray(raw)) return [];
-        return hydrateEvents(raw);
-    } catch (e) {
-        return [];
-    }
-}
-
-function saveEventsCache(events) {
-    writeAsync(EVENTS_CACHE_FILE, JSON.stringify(serializeEvents(events)));
-}
-
 function hydrateEvents(arr) {
     const out = [];
     for (const e of arr) {
@@ -285,7 +269,7 @@ function isToday(d) {
 }
 
 function getTodayEvents() {
-    return eventsCache.filter(e => isToday(e.start) || isToday(e.end)
+    return liveEvents().filter(e => isToday(e.start) || isToday(e.end)
         || (e.start.getTime() <= Date.now() && e.end.getTime() >= Date.now()));
 }
 
@@ -352,9 +336,14 @@ function fireReminderNotification(eventId, title, kind) {
 function pad2(n) { return n < 10 ? '0' + n : '' + n; }
 function formatTime(d) { return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
 
+// Only live events reach the widget — tombstones stay internal
+function liveEvents() {
+    return eventsCache.filter(e => !e.deletedAt);
+}
+
 function broadcastEventsToWidget() {
     if (widgetWindow && !widgetWindow.isDestroyed()) {
-        widgetWindow.webContents.send('widget:events', serializeEvents(eventsCache));
+        widgetWindow.webContents.send('widget:events', serializeEvents(liveEvents()));
     }
 }
 
@@ -385,7 +374,8 @@ function getIconPath() {
 // ── System Tray ────────────────────────────────────────────────────────────
 function rebuildTrayMenu() {
     if (!tray) return;
-    const widgetOpen = widgetWindow && !widgetWindow.isDestroyed() && widgetWindow.isVisible();
+    const widgetOpen  = widgetWindow && !widgetWindow.isDestroyed() && widgetWindow.isVisible();
+    const autoLaunch  = app.getLoginItemSettings().openAtLogin;
     tray.setContextMenu(Menu.buildFromTemplate([
         { label: '打开 tPlanner', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
         {
@@ -401,6 +391,20 @@ function rebuildTrayMenu() {
                     saveWidgetState({ visible: true });
                 }
                 rebuildTrayMenu();
+            },
+        },
+        { type: 'separator' },
+        {
+            label: '开机自动启动',
+            type: 'checkbox',
+            checked: autoLaunch,
+            click: () => {
+                const next = !autoLaunch;
+                if (!IS_DEV || process.platform !== 'linux') {
+                    app.setLoginItemSettings({ openAtLogin: next, openAsHidden: true });
+                }
+                rebuildTrayMenu();
+                mainWindow?.webContents.send('autoLaunch:changed', next);
             },
         },
         { type: 'separator' },
@@ -502,6 +506,24 @@ ipcMain.on('window:maximize', () => {
 ipcMain.on('window:close',  () => { if (mainWindow) mainWindow.hide(); });
 ipcMain.on('window:quit',   () => { tray?.destroy(); tray = null; app.quit(); });
 
+// ── Auto Launch ───────────────────────────────────────────────────────────
+ipcMain.handle('app:getAutoLaunch', () => {
+    return app.getLoginItemSettings().openAtLogin;
+});
+
+ipcMain.on('app:setAutoLaunch', (_e, enable) => {
+    if (process.platform === 'linux' && !app.isPackaged) {
+        // In dev mode on Linux, skip — no meaningful exe path
+        return;
+    }
+    app.setLoginItemSettings({
+        openAtLogin: enable,
+        // On macOS/Windows, open silently (minimized to tray)
+        openAsHidden: true,
+        // Electron uses the current exe path automatically
+    });
+});
+
 // ── DevTools / Debug ──────────────────────────────────────────────────────
 ipcMain.on('devtools:toggle', () => {
     if (!mainWindow) return;
@@ -580,19 +602,18 @@ function setupMaximizeListeners() {
 let syncDebounceTimer = null;
 ipcMain.on('events:sync', (_e, raw) => {
     if (!Array.isArray(raw)) return;
-    eventsCache = hydrateEvents(raw);   // 内存更新立即生效
-    broadcastEventsToWidget();           // widget 立即刷新，不需要等写盘
+    eventsCache = hydrateEvents(raw);
+    broadcastEventsToWidget();
 
     clearTimeout(syncDebounceTimer);
     syncDebounceTimer = setTimeout(() => {
-        saveEventsCache(eventsCache);    // 延迟写盘，避免频繁 I/O
         firedReminders.clear();
         rescheduleReminders();
     }, 300);
 });
 
 /** Widget renderer pulls events on init or by user request. */
-ipcMain.handle('widget:getEvents', () => serializeEvents(eventsCache));
+ipcMain.handle('widget:getEvents', () => serializeEvents(liveEvents()));
 
 ipcMain.on('widget:show', () => { createWidgetWindow(); rebuildTrayMenu(); });
 ipcMain.on('widget:hide', () => {
@@ -632,7 +653,7 @@ ipcMain.on('widget:toggleTask', (_e, eventId) => {
     if (ev.type !== 'task') return;
     ev.completed = !ev.completed;
     ev.updatedAt = Date.now();
-    saveEventsCache(eventsCache);
+    // eventsCache is in-memory only; RxDB in renderer is authoritative
     if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('events:remoteUpdate', { id: eventId, completed: ev.completed });
     }
@@ -656,7 +677,7 @@ ipcMain.on('widget:toggleSubtask', (_e, eventId, subtaskId) => {
     if (anyUndone) ev.completed = false;
 
     ev.updatedAt = Date.now();
-    saveEventsCache(eventsCache);
+    // eventsCache is in-memory only; RxDB in renderer is authoritative
 
     if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('events:remoteUpdate', {
@@ -685,17 +706,23 @@ ipcMain.handle('journal:getAll', () => loadJournals());
 
 ipcMain.on('journal:save', (_e, date, text) => {
     const data = loadJournals();
-    if (text && text.trim()) {
-        data[date] = text;
-    } else {
-        delete data[date];
-    }
+    if (text && text.trim()) { data[date] = text; } else { delete data[date]; }
     saveJournals(data);
-    // Broadcast to OTHER windows only — sender already has the latest value
-    const senderId = _e.sender.id;
+    const sid = _e.sender.id;
     BrowserWindow.getAllWindows().forEach(win => {
-        if (!win.isDestroyed() && win.webContents.id !== senderId)
+        if (!win.isDestroyed() && win.webContents.id !== sid)
             win.webContents.send('journal:updated', date, text);
+    });
+});
+
+// Batch replace for LAN sync — replaces all journals atomically
+ipcMain.on('journal:saveAll', (_e, merged) => {
+    if (!merged || typeof merged !== 'object') return;
+    saveJournals(merged);
+    const sid = _e.sender.id;
+    BrowserWindow.getAllWindows().forEach(win => {
+        if (!win.isDestroyed() && win.webContents.id !== sid)
+            win.webContents.send('journal:allUpdated', merged);
     });
 });
 
@@ -781,7 +808,7 @@ function startLanServer(port) {
                                 }
                             }
                             eventsCache = Array.from(map.values());
-                            saveEventsCache(eventsCache);
+                            // eventsCache is in-memory only; RxDB in renderer is authoritative
                             rescheduleReminders();
                             broadcastEventsToWidget();
                             // Notify main window to refresh from cache
@@ -880,11 +907,6 @@ app.whenReady().then(() => {
     // Check argv for .tptheme on first launch (Windows double-click)
     const themeArg = process.argv.find(a => a.endsWith('.tptheme'));
     if (themeArg) pendingThemeFile = themeArg;
-
-    // Bring back persisted events so reminders work even if the main app
-    // window hasn't pushed yet.
-    eventsCache = loadEventsCache();
-    rescheduleReminders();
 
     createWindow();
     createTray();

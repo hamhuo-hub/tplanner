@@ -216,7 +216,7 @@ function EventGroup({ title, color, items, renderItem }) {
 }
 
 // ── 主组件 ────────────────────────────────────────────────────────────────────
-export default function LanSync({ events, onMergeEvents }) {
+export default function LanSync({ events, onMergeEvents, journals, onMergeJournals }) {
     const { t } = useTranslation();
     const [open, setOpen]           = useState(false);
     const [config, setConfig]       = useState(DEFAULT_CONFIG);
@@ -237,6 +237,12 @@ export default function LanSync({ events, onMergeEvents }) {
     const autoTimerRef = useRef(null);
     const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
 
+    // Always-current refs — avoids stale closures in async callbacks and timers
+    const eventsRef  = useRef(events);
+    const journalsRef = useRef(journals);
+    useEffect(() => { eventsRef.current  = events;  }, [events]);
+    useEffect(() => { journalsRef.current = journals; }, [journals]);
+
     // Load config + local IP
     useEffect(() => {
         if (!isElectron) return;
@@ -247,12 +253,13 @@ export default function LanSync({ events, onMergeEvents }) {
         return () => { off1?.(); off2?.(); };
     }, [isElectron]);
 
-    // Auto-sync timer
+    // Auto-sync timer — uses ref so it always sees the latest doSync/events
+    const doSyncRef = useRef(null);
     useEffect(() => {
         clearInterval(autoTimerRef.current);
         const peer = selected || (config.peerIp ? { ip: config.peerIp, port: config.port } : null);
         if (config.autoSync && peer) {
-            autoTimerRef.current = setInterval(() => doSync(peer, true), (config.interval || 60) * 1000);
+            autoTimerRef.current = setInterval(() => doSyncRef.current?.(peer, true), (config.interval || 60) * 1000);
         }
         return () => clearInterval(autoTimerRef.current);
     }, [config.autoSync, config.interval, selected]);
@@ -279,21 +286,32 @@ export default function LanSync({ events, onMergeEvents }) {
         }
     }, [isElectron]);
 
+    // ── journals 合并：同一天保留内容较长的一方 ──────────────────────────────
+    function mergeJournals(local, remote) {
+        const result = { ...(local || {}) };
+        for (const [date, text] of Object.entries(remote || {})) {
+            if (!result[date] || (text && text.length > (result[date] || '').length)) {
+                result[date] = text;
+            }
+        }
+        return result;
+    }
+
     // ── 同步（含冲突预览） ────────────────────────────────────────────────────
     const doSync = useCallback(async (peer, skipPreview = false) => {
         if (!peer?.ip || !peer?.port) {
             setStatus('error'); setStatusMsg('未选择同步目标'); return;
         }
         setStatus('syncing'); setStatusMsg('');
-        const url = `http://${peer.ip}:${peer.port}/tplanner/events`;
+        const base = `http://${peer.ip}:${peer.port}`;
         try {
-            const res = await fetch(url, { method: 'GET', signal: AbortSignal.timeout(5000) });
+            const res = await fetch(`${base}/tplanner/events`, { method: 'GET', signal: AbortSignal.timeout(5000) });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const remoteEvents = await res.json();
 
             if (!skipPreview) {
-                // 显示冲突预览让用户确认
-                const analysis = analyzeConflict(events, remoteEvents);
+                // Use ref for latest events to avoid stale analysis
+                const analysis = analyzeConflict(eventsRef.current, remoteEvents);
                 setPreview({ analysis, remoteEvents, peer });
                 setStatus('idle');
                 return;
@@ -303,21 +321,48 @@ export default function LanSync({ events, onMergeEvents }) {
         } catch (e) {
             setStatus('error'); setStatusMsg(e.message);
         }
-    }, [events]);
+    }, []);  // no deps — always reads from refs
+
+    // Keep doSyncRef current so the auto-sync timer always uses the latest version
+    useEffect(() => { doSyncRef.current = doSync; }, [doSync]);
 
     const executeMerge = useCallback(async (peer, remoteEvents) => {
-        const url = `http://${peer.ip}:${peer.port}/tplanner/events`;
-        const merged = mergeEvents(events, remoteEvents);
-        await fetch(url, {
+        const base = `http://${peer.ip}:${peer.port}`;
+        // Read from refs to always get the latest events/journals, even if called
+        // from a stale closure (e.g. ConflictModal confirm button)
+        const localEvents  = eventsRef.current;
+        const localJournals = journalsRef.current;
+
+        // ── Events ──────────────────────────────────────────────────────────
+        const mergedEvents = mergeEvents(localEvents, remoteEvents);
+        await fetch(`${base}/tplanner/events`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(merged),
+            body: JSON.stringify(mergedEvents),
             signal: AbortSignal.timeout(5000),
         });
-        onMergeEvents?.(merged);
-        setStatus('success'); setStatusMsg(`已同步 ${merged.length} 条事件`);
+        onMergeEvents?.(mergedEvents);
+
+        // ── Journals ─────────────────────────────────────────────────────────
+        try {
+            const jRes = await fetch(`${base}/tplanner/journals`, { method: 'GET', signal: AbortSignal.timeout(5000) });
+            if (jRes.ok) {
+                const remoteJournals = await jRes.json();
+                const mergedJournals = mergeJournals(localJournals, remoteJournals);
+                await fetch(`${base}/tplanner/journals`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(mergedJournals),
+                    signal: AbortSignal.timeout(5000),
+                });
+                onMergeJournals?.(mergedJournals);
+            }
+        } catch (_) { /* journals sync failure is non-fatal */ }
+
+        setStatus('success');
+        setStatusMsg(`已同步 ${mergedEvents.length} 条事件`);
         setPreview(null);
-    }, [events, onMergeEvents]);
+    }, [onMergeEvents, onMergeJournals]);  // refs are stable, no need as deps
 
     const activePeer = selected ?? (config.peerIp ? { ip: config.peerIp, port: config.port, name: config.peerIp } : null);
     const statusColor = { idle: 'var(--clr-text-dim)', syncing: 'var(--clr-gold)', success: '#4A9DA8', error: 'var(--clr-red,#C0392B)' }[status];

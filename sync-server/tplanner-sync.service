@@ -5,25 +5,21 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# 修改为实际部署路径
-WorkingDirectory=/opt/tplanner-sync
-ExecStart=/usr/bin/node /opt/tplanner-sync/server.js
+WorkingDirectory=/home/hamhuo/Documents/sync-server
+ExecStart=/home/hamhuo/.nvm/versions/node/v22.22.3/bin/node /home/hamhuo/Documents/sync-server/server.js
 Restart=on-failure
 RestartSec=5
 
-# 环境变量（按需修改）
 Environment=PORT=37401
-Environment=DATA_DIR=/opt/tplanner-sync/data
+Environment=DATA_DIR=/home/hamhuo/Documents/sync-server/data
 
-# 安全加固：以独立用户运行
-User=tplanner
-Group=tplanner
-NoNewPrivileges=true
-PrivateTmp=true
+# 以文件所有者身份运行，避免权限问题
+User=hamhuo
+Group=hamhuo
 
-# 日志直接交给 systemd journal
-StandardOutput=journal
-StandardError=journal
+# 同时写 journal 和文件（append: 前缀是必须的）
+StandardOutput=append:/home/hamhuo/Documents/sync-server/data/server.log
+StandardError=append:/home/hamhuo/Documents/sync-server/data/server.log
 SyslogIdentifier=tplanner-sync
 
 [Install]

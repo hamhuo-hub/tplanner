@@ -22,15 +22,17 @@ const os    = require('os');
 const PORT         = parseInt(process.env.PORT          || '37401', 10);
 const DISCOVER_PORT = parseInt(process.env.DISCOVER_PORT || '37402', 10);
 const DATA_DIR  = process.env.DATA_DIR  || path.join(__dirname, 'data');
-const DATA_FILE = path.join(DATA_DIR, 'events.json');
-const LOG_FILE  = path.join(DATA_DIR, 'server.log');
+const DATA_FILE     = path.join(DATA_DIR, 'events.json');
+const JOURNALS_FILE = path.join(DATA_DIR, 'journals.json');
+const LOG_FILE      = path.join(DATA_DIR, 'server.log');
 
 // 最多保留多少个备份
 const MAX_BACKUPS = 5;
 
 // ── 启动前准备 ─────────────────────────────────────────────────────────────────
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '[]');
+if (!fs.existsSync(DATA_DIR))     fs.mkdirSync(DATA_DIR, { recursive: true });
+if (!fs.existsSync(DATA_FILE))     fs.writeFileSync(DATA_FILE, '[]');
+if (!fs.existsSync(JOURNALS_FILE)) fs.writeFileSync(JOURNALS_FILE, '{}');
 
 // ── 日志 ──────────────────────────────────────────────────────────────────────
 function log(level, msg) {
@@ -90,6 +92,28 @@ function mergeEvents(local, incoming) {
     return Array.from(map.values()).filter(e =>
         !e.deletedAt || (now - e.deletedAt) < TOMBSTONE_TTL_MS
     );
+}
+
+// ── Journals 读写与合并 ──────────────────────────────────────────────────────
+function readJournals() {
+    try { return JSON.parse(fs.readFileSync(JOURNALS_FILE, 'utf8')); } catch { return {}; }
+}
+
+function writeJournals(data) {
+    fs.writeFile(JOURNALS_FILE, JSON.stringify(data), (err) => {
+        if (err) log('ERROR', 'journals write: ' + err.message);
+    });
+}
+
+// 合并策略：同一天两边都有内容时保留较长的（内容多 = 编辑更多）
+function mergeJournals(local, incoming) {
+    const result = { ...local };
+    for (const [date, text] of Object.entries(incoming)) {
+        if (!result[date] || (text && text.length > result[date].length)) {
+            result[date] = text;
+        }
+    }
+    return result;
 }
 
 // ── HTTP 工具 ─────────────────────────────────────────────────────────────────
@@ -190,6 +214,28 @@ async function handleRequest(req, res) {
 
         log('INFO', `Merged: local=${local.length} incoming=${incoming.length} result=${merged.length}`);
         json(res, 200, { ok: true, count: merged.length });
+        return;
+    }
+
+    // ── GET /tplanner/journals ───────────────────────────────────────────────
+    if (method === 'GET' && url === '/tplanner/journals') {
+        json(res, 200, readJournals());
+        return;
+    }
+
+    // ── PUT /tplanner/journals ───────────────────────────────────────────────
+    if (method === 'PUT' && url === '/tplanner/journals') {
+        let body;
+        try { body = await readBody(req); } catch (e) { json(res, 413, { error: e.message }); return; }
+        let incoming;
+        try { incoming = JSON.parse(body); } catch { json(res, 400, { error: 'Invalid JSON' }); return; }
+        if (typeof incoming !== 'object' || Array.isArray(incoming)) {
+            json(res, 400, { error: 'Expected object' }); return;
+        }
+        const merged = mergeJournals(readJournals(), incoming);
+        writeJournals(merged);
+        log('INFO', `Journals merged: ${Object.keys(merged).length} days`);
+        json(res, 200, merged);
         return;
     }
 

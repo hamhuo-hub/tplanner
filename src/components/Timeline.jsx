@@ -3,7 +3,7 @@ import { formatInTimeZone } from 'date-fns-tz';
 import EventRow from './EventRow';
 import { useRef, useEffect, useLayoutEffect, useState } from 'react';
 
-export default function Timeline({ startDate, endDate, events, onEventClick, onAddEvent, highlight, onLoadPrev, onLoadNext, onUpdateEvent, clashes, travelTimezone, onToggleTaskComplete, journals, onSaveJournal }) {
+export default function Timeline({ startDate, endDate, events, onEventClick, onAddEvent, highlight, onLoadPrev, onLoadNext, onUpdateEvent, clashes, travelTimezone, onToggleTaskComplete, journals, onSaveJournal, onContextMenu }) {
     const scrollContainerRef = useRef(null);
     const [days, setDays] = useState([]);
     const prevStartDateRef = useRef(startDate);
@@ -83,6 +83,9 @@ export default function Timeline({ startDate, endDate, events, onEventClick, onA
             if (Math.abs(e.clientX - data.startX) > 5 || Math.abs(e.clientY - data.startY) > 5) {
                 data.status = 'dragging';
                 dragInteractionRef.current.didMove = true;
+                // Suppress browser text selection during drag
+                document.body.style.userSelect = 'none';
+                window.getSelection()?.removeAllRanges();
                 const currentMs = getTimeFromClient(e.clientX, e.clientY);
                 if (currentMs) {
                     const snap = calculateSnap(currentMs, data.event.end - data.event.start, data.offsetMs);
@@ -102,24 +105,6 @@ export default function Timeline({ startDate, endDate, events, onEventClick, onA
 
     const finalizeDrop = (event, snapStart, snapEnd) => {
         if (!snapStart || !snapEnd) return;
-        const otherEvents = eventsRef.current.filter(e => e.id !== event.id);
-        const overlaps = otherEvents.filter(e => e.type !== 'status' && snapStart < e.end && snapEnd > e.start);
-        if (event.type === 'task') {
-            const hitTask = overlaps.find(e => e.type === 'task');
-            if (hitTask) {
-                const overlapStart = new Date(Math.max(hitTask.start, snapStart));
-                const overlapEnd   = new Date(Math.min(hitTask.end, snapEnd));
-                const overlapDuration = overlapEnd - overlapStart;
-                if (overlapDuration <= 0) { onUpdateEvent?.([{ ...event, start: snapStart, end: snapEnd }]); return; }
-                const updates = [{ ...event, start: snapStart, end: snapEnd }];
-                if (hitTask.start < overlapStart) updates.push({ ...hitTask, end: overlapStart });
-                if (hitTask.end > overlapEnd) {
-                    updates.push({ ...hitTask, id: crypto.randomUUID(), start: overlapEnd, end: new Date(hitTask.end.getTime() + (snapEnd - snapStart) - (overlapEnd - overlapStart)) });
-                }
-                onUpdateEvent?.(updates);
-                return;
-            }
-        }
         onUpdateEvent?.([{ ...event, start: snapStart, end: snapEnd }]);
     };
 
@@ -127,6 +112,7 @@ export default function Timeline({ startDate, endDate, events, onEventClick, onA
         const data = dragDataRef.current;
         window.removeEventListener('mousemove', handleGlobalMouseMove);
         window.removeEventListener('mouseup', handleGlobalMouseUp);
+        document.body.style.userSelect = '';
         if (data.status === 'dragging' && data.event && data.latestSnap) {
             finalizeDrop(data.event, data.latestSnap.snapStart, data.latestSnap.snapEnd);
             setDragState(prev => prev ? ({ ...prev, isDropping: true }) : null);
@@ -195,6 +181,7 @@ export default function Timeline({ startDate, endDate, events, onEventClick, onA
                         onToggleTaskComplete={onToggleTaskComplete}
                         journalText={journals?.[format(day, 'yyyy-MM-dd')] || ''}
                         onSaveJournal={(text) => onSaveJournal?.(format(day, 'yyyy-MM-dd'), text)}
+                        onContextMenu={onContextMenu}
                     />
                 ))}
             </div>
