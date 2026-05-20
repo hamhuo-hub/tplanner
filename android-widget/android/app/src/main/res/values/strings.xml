@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">tPlanner 便签</string>
+    <string name="title_activity_main">tPlanner 便签</string>
+    <string name="package_name">com.tplanner.widget</string>
+    <string name="custom_url_scheme">com.tplanner.widget</string>
+</resources>

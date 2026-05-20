@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#C9A84C">
+<link rel="icon" href="icon.png">
+<title>tPlanner 便签</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Settings overlay -->
+<div id="settings-overlay" class="overlay hidden">
+  <div class="settings-panel">
+    <div class="settings-title">⚙ 服务器设置</div>
+
+    <!-- Auto scan -->
+    <button id="btn-scan" class="btn-scan">🔍 扫描局域网</button>
+    <div id="scan-status" class="scan-status hidden"></div>
+    <div id="scan-results" class="scan-results hidden"></div>
+
+    <div class="divider">或手动填写</div>
+
+    <label class="settings-label">IP 地址</label>
+    <input id="input-ip" type="text" class="settings-input" placeholder="192.168.x.x" inputmode="decimal">
+    <label class="settings-label">端口</label>
+    <input id="input-port" type="number" class="settings-input" value="37401" inputmode="numeric">
+
+    <button id="btn-save-settings" class="btn-primary" style="margin-top:4px">保存连接</button>
+    <button id="btn-cancel-settings" class="btn-ghost">取消</button>
+  </div>
+</div>
+
+<!-- Main app -->
+<div id="app">
+  <header>
+    <div class="hdr-left">
+      <div class="hdr-date" id="hdr-date">--</div>
+      <div class="hdr-sub" id="hdr-sub">加载中…</div>
+    </div>
+    <div class="hdr-right">
+      <button class="icon-btn" id="btn-refresh" title="刷新">↻</button>
+      <button class="icon-btn" id="btn-settings" title="设置">⚙</button>
+    </div>
+  </header>
+
+  <div id="no-server" class="empty hidden">
+    <div class="empty-icon">📡</div>
+    <div class="empty-text">请先设置同步服务器</div>
+    <button class="btn-primary" id="btn-go-settings" style="margin-top:16px;width:auto;padding:10px 24px">前往设置</button>
+  </div>
+
+  <main id="list"></main>
+
+  <div class="journal-section">
+    <div class="journal-label">随笔记录</div>
+    <textarea id="journal-input" class="journal-textarea" placeholder="记录今天的想法…"></textarea>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

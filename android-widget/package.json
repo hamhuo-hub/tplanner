@@ -1,0 +1,15 @@
+{
+  "name": "tplanner-widget-android",
+  "version": "1.0.0",
+  "description": "tPlanner Today Widget — Android",
+  "scripts": {
+    "sync": "npx cap sync android",
+    "open": "npx cap open android",
+    "build:apk": "npx cap sync android && cd android && ./gradlew assembleDebug"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^6.0.0",
+    "@capacitor/cli": "^6.0.0",
+    "@capacitor/core": "^6.0.0"
+  }
+}
