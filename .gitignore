@@ -67,3 +67,5 @@ src/assets/react.svg
 /capacitor-cordova-android-plugins
 local.properties
 package-lock.json
+/build
+/wear-widget
