@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">tPlanner</string>
+    <string name="watch_face_name">tPlanner 表盘</string>
+    <string name="tile_name">今日便签</string>
+</resources>
