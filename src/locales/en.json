@@ -1,0 +1,140 @@
+{
+    "app": {
+        "title": "tPlanner",
+        "switchLanguage": "Switch Language",
+        "printCalendar": "Print Calendar"
+    },
+    "nav": {
+        "prev": "Prev 2M",
+        "today": "Today",
+        "next": "Next 2M"
+    },
+    "actions": {
+        "export": "Export",
+        "import": "Import",
+        "addEvent": "Add Event",
+        "save": "Save",
+        "cancel": "Cancel",
+        "delete": "Delete",
+        "edit": "Edit",
+        "print": "Print",
+        "showAll": "Show all ({{count}})",
+        "showLess": "Show less",
+        "addItem": "Add Item",
+        "close": "Close",
+        "copy": "Copy",
+        "confirm": "Confirm"
+    },
+    "recurrence": {
+        "none": "None",
+        "daily": "Daily",
+        "weekly": "Weekly",
+        "monthly": "Monthly",
+        "count": "Repeat Count",
+        "max": "(Max 50)",
+        "editScope": "Edit Scope",
+        "deleteScope": "Delete Scope",
+        "scopeSingle": "This event only",
+        "scopeFuture": "This and following events",
+        "scopeAll": "All events in series"
+    },
+    "event": {
+        "title": "Title",
+        "start": "Start",
+        "end": "End",
+        "startDate": "Start Date",
+        "startTime": "Start Time",
+        "endDate": "End Date",
+        "endTime": "End Time",
+        "timezone": "Timezone",
+        "note": "Note",
+        "color": "Color",
+        "details": "Event Details",
+        "timeLabel": "Time",
+        "notePlaceholder": "Type your detailed notes here...",
+        "typeReminder": "Reminder",
+        "typeEvent": "Reminder",
+        "typeStatus": "Status",
+        "typeTask": "Task",
+        "checklist": "Checklist",
+        "checklistItem": "Item...",
+        "recurrence": "Repeat",
+        "allDay": "All Day"
+    },
+    "reminder": {
+        "upcoming": "Upcoming Reminders",
+        "ongoing": "Ongoing"
+    },
+    "timezones": {
+        "default": "Beijing Time (Default)",
+        "America_Los_Angeles": "Los Angeles (PT)",
+        "America_New_York": "New York (ET)",
+        "Europe_London": "London (GMT)",
+        "Europe_Paris": "Paris (CET)",
+        "Asia_Dubai": "Dubai (GST)",
+        "Asia_Tokyo": "Tokyo (JST)",
+        "Australia_Sydney": "Sydney (AET)",
+        "Pacific_Auckland": "Auckland (NZST/NZDT)"
+    },
+    "task": {
+        "overdueDetected": "Overdue Tasks",
+        "overdue": "Overdue",
+        "upcoming": "Upcoming Deadlines",
+        "dueNow": "Due now",
+        "dueToday": "Due today",
+        "dueTomorrow": "Due tomorrow",
+        "dueInDays": "{{count}} days left"
+    },
+    "lanSync": {
+        "title": "LAN Sync",
+        "peerIp": "Peer IP",
+        "port": "Port",
+        "syncNow": "Sync Now",
+        "autoSync": "Auto Sync",
+        "interval": "Interval (sec)",
+        "status": "Status",
+        "idle": "Idle",
+        "syncing": "Syncing…",
+        "success": "Synced",
+        "error": "Sync failed",
+        "serverRunning": "Local server",
+        "serverPort": "Server port",
+        "scan": "Scan LAN",
+        "scanning": "Scanning…",
+        "noDevices": "No devices found. Enter IP manually.",
+        "manualIp": "Manual IP (fallback)",
+        "confirmMerge": "Confirm Merge",
+        "noChanges": "Data is in sync, nothing to merge.",
+        "previewTitle": "Sync Preview",
+        "detailShow": "View details",
+        "detailHide": "Hide details",
+        "pullFrom": "Pull {{count}} new event(s) from peer",
+        "pushTo": "Push {{count}} local-only event(s) to peer",
+        "willDelete": "{{count}} event(s) will be deleted (tombstone)",
+        "willOverwrite": "{{count}} event(s) will be overwritten by peer",
+        "localWins": "{{count}} event(s) kept (local is newer)",
+        "alreadySynced": "{{count}} event(s) already in sync",
+        "noTarget": "No sync target selected",
+        "syncWithPeer": "Sync · {{name}}"
+    },
+    "journal": {
+        "label": "Daily Notes",
+        "placeholder": "Jot down today's thoughts…"
+    },
+    "contextMenu": {
+        "copy": "Duplicate",
+        "delete": "Delete"
+    },
+    "clash": {
+        "detected": "Schedule Conflict Detected",
+        "message": "You have {{count}} overlap in your schedule.",
+        "message_plural": "You have {{count}} overlaps in your schedule.",
+        "jump": "Jump to"
+    },
+    "messages": {
+        "importSuccess": "Data imported successfully!",
+        "importError": "Invalid data format.",
+        "parseError": "Failed to parse file.",
+        "deleteConfirmation": "Are you sure you want to delete this event?"
+    }
+}
