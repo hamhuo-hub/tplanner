@@ -16,7 +16,6 @@
   var state = {
     events: [],
     now: new Date(),
-    journals: {},
   };
 
   // Persist completed-section collapsed state across sessions
@@ -24,13 +23,6 @@
   function saveCollapsed(v) {
     completedCollapsed = v;
     localStorage.setItem('widget_completed_collapsed', v ? 'true' : 'false');
-  }
-
-  function todayKey() {
-    var d = new Date();
-    return d.getFullYear() + '-'
-      + pad2(d.getMonth() + 1) + '-'
-      + pad2(d.getDate());
   }
 
   // ── DOM helpers ────────────────────────────────────────────────────
@@ -343,28 +335,6 @@
 
     // Re-render every 30s so "current/past/upcoming" stays accurate
     setInterval(render, 30 * 1000);
-
-    // ── Journal ──────────────────────────────────────────────────────
-    var journalEl = $('journal-input');
-    var journalTimer = null;
-
-    api.getJournals().then(function (journals) {
-      state.journals = journals || {};
-      journalEl.value = state.journals[todayKey()] || '';
-    });
-
-    api.onJournalUpdated(function (date, text) {
-      state.journals[date] = text || '';
-      if (date === todayKey()) journalEl.value = text || '';
-    });
-
-    journalEl.addEventListener('input', function () {
-      clearTimeout(journalTimer);
-      journalTimer = setTimeout(function () {
-        api.saveJournal(todayKey(), journalEl.value);
-      }, 600);
-    });
-
   }
 
   if (document.readyState === 'loading') {

@@ -52,10 +52,13 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
     });
 
     // ── Lane assignment ───────────────────────────────────────────────────
-    // Completed tasks are rendered as a background "shadow" and do NOT
-    // participate in lane assignment — only active (incomplete) events get lanes.
-    const activeEvents    = processedRegularEvents.filter(e => !(e.type === 'task' && e.completed));
+    // Reminders and completed tasks do NOT participate in lane assignment:
+    // - Reminders have no time-conflict semantics, so they must not force
+    //   unrelated events into extra lanes.
+    // - Completed tasks are rendered as background "shadows".
+    const reminderEvents  = processedRegularEvents.filter(e =>   e.type === 'reminder');
     const completedTasks  = processedRegularEvents.filter(e =>   e.type === 'task' && e.completed);
+    const activeEvents    = processedRegularEvents.filter(e =>   e.type !== 'reminder' && !(e.type === 'task' && e.completed));
 
     const lanes = [];
     const activeWithLane = activeEvents.map(ev => {
@@ -79,7 +82,7 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
     const totalLanes = lanes.length || 1;
 
     const finalRegularEvents = [
-        // Active events in their lanes
+        // Active events (no reminders) in their computed lanes
         ...activeWithLane.map(ev => ({
             ...ev,
             isShadow: false,
@@ -91,6 +94,15 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
         ...completedTasks.map(ev => ({
             ...ev,
             isShadow: true,
+            laneIdx:       0,
+            isConflicting: false,
+            laneTopPct:    15,
+            laneHeightPct: 85,
+        })),
+        // Reminders — fixed position, never conflicting, never affect lane count
+        ...reminderEvents.map(ev => ({
+            ...ev,
+            isShadow: false,
             laneIdx:       0,
             isConflicting: false,
             laneTopPct:    15,

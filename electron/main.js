@@ -17,6 +17,44 @@ const JOURNALS_FILE      = path.join(app.getPath('userData'), 'journals.json');
 const REMINDER_LEAD_MIN = 30; // minutes before event start to fire reminder
 const APP_USER_MODEL_ID = 'com.tplanner.app';
 
+// ── Linux autostart helpers ────────────────────────────────────────────────
+// app.setLoginItemSettings is unreliable on Linux (especially AppImage).
+// We manage the XDG autostart desktop file directly instead.
+const LINUX_AUTOSTART_DIR  = path.join(app.getPath('home'), '.config', 'autostart');
+const LINUX_AUTOSTART_FILE = path.join(LINUX_AUTOSTART_DIR, 'tplanner.desktop');
+
+function getLinuxExecPath() {
+    // APPIMAGE env var is set by the AppImage runtime; fall back to execPath for deb/other
+    return process.env.APPIMAGE || process.execPath;
+}
+
+function getLinuxAutostart() {
+    try { return fs.existsSync(LINUX_AUTOSTART_FILE); } catch { return false; }
+}
+
+function setLinuxAutostart(enable) {
+    try {
+        if (enable) {
+            fs.mkdirSync(LINUX_AUTOSTART_DIR, { recursive: true });
+            const execPath = getLinuxExecPath();
+            const desktop = [
+                '[Desktop Entry]',
+                'Type=Application',
+                'Name=tPlanner',
+                `Exec=${execPath} --hidden`,
+                'Hidden=false',
+                'NoDisplay=false',
+                'X-GNOME-Autostart-enabled=true',
+            ].join('\n') + '\n';
+            fs.writeFileSync(LINUX_AUTOSTART_FILE, desktop, 'utf8');
+        } else {
+            if (fs.existsSync(LINUX_AUTOSTART_FILE)) fs.unlinkSync(LINUX_AUTOSTART_FILE);
+        }
+    } catch (e) {
+        console.error('[autostart] failed:', e);
+    }
+}
+
 // Persistent app identity so Windows toast notifications group / persist.
 if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID);
 
@@ -26,6 +64,20 @@ let pendingThemeFile = null;
 // ── Widget / events cache state ────────────────────────────────────────────
 let widgetWindow = null;
 let widgetVisibleByUser = null; // null = unset → respect saved preference
+let notesWindow = null;
+
+const NOTES_STATE_FILE = path.join(app.getPath('userData'), 'notes-state.json');
+function loadNotesState() {
+    try {
+        if (fs.existsSync(NOTES_STATE_FILE))
+            return { width: 300, height: 400, alwaysOnTop: true, visible: false, ...JSON.parse(fs.readFileSync(NOTES_STATE_FILE, 'utf8')) };
+    } catch (e) { /* ignore */ }
+    return { width: 300, height: 400, alwaysOnTop: true, visible: false };
+}
+function saveNotesState(patch) {
+    const current = loadNotesState();
+    writeAsync(NOTES_STATE_FILE, JSON.stringify({ ...current, ...patch }));
+}
 /** Hydrated event objects: { id, title, start: Date, end: Date, type, ... } */
 let eventsCache = [];
 /** Active setTimeout handles, keyed by `${eventId}:start` / `${eventId}:lead`. */
@@ -239,6 +291,68 @@ function createWidgetWindow() {
     rebuildTrayMenu();
 }
 
+// ── Notes Widget Window ────────────────────────────────────────────────────
+function createNotesWindow() {
+    if (notesWindow && !notesWindow.isDestroyed()) {
+        notesWindow.show();
+        notesWindow.focus();
+        return;
+    }
+
+    const state = loadNotesState();
+    const bounds = ensureOnScreen({ x: state.x, y: state.y, width: state.width, height: state.height });
+
+    notesWindow = new BrowserWindow({
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+        minWidth: 200,
+        minHeight: 200,
+        frame: false,
+        transparent: true,
+        backgroundColor: '#00000000',
+        alwaysOnTop: state.alwaysOnTop !== false,
+        skipTaskbar: true,
+        resizable: true,
+        minimizable: false,
+        maximizable: false,
+        fullscreenable: false,
+        hasShadow: true,
+        icon: getIconPath(),
+        webPreferences: {
+            preload: path.join(__dirname, 'notes-widget-preload.cjs'),
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: false,
+        },
+        show: false,
+    });
+
+    notesWindow.loadFile(path.join(__dirname, 'notes-widget.html'));
+
+    notesWindow.once('ready-to-show', () => { notesWindow.show(); });
+
+    const persistBounds = () => {
+        if (!notesWindow || notesWindow.isDestroyed()) return;
+        const b = notesWindow.getBounds();
+        saveNotesState({ x: b.x, y: b.y, width: b.width, height: b.height });
+    };
+    notesWindow.on('moved',   persistBounds);
+    notesWindow.on('resized', persistBounds);
+
+    notesWindow.on('close', (e) => {
+        if (!app.isQuitting) {
+            e.preventDefault();
+            notesWindow.hide();
+            saveNotesState({ visible: false });
+        }
+    });
+    notesWindow.on('closed', () => { notesWindow = null; });
+
+    rebuildTrayMenu();
+}
+
 // ── Events cache + reminder scheduling ─────────────────────────────────────
 function hydrateEvents(arr) {
     const out = [];
@@ -375,11 +489,14 @@ function getIconPath() {
 function rebuildTrayMenu() {
     if (!tray) return;
     const widgetOpen  = widgetWindow && !widgetWindow.isDestroyed() && widgetWindow.isVisible();
-    const autoLaunch  = app.getLoginItemSettings().openAtLogin;
+    const autoLaunch = process.platform === 'linux'
+        ? getLinuxAutostart()
+        : app.getLoginItemSettings().openAtLogin;
+    const notesOpen = notesWindow && !notesWindow.isDestroyed() && notesWindow.isVisible();
     tray.setContextMenu(Menu.buildFromTemplate([
         { label: '打开 tPlanner', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
         {
-            label: widgetOpen ? '隐藏今日便签' : '显示今日便签',
+            label: widgetOpen ? '隐藏任务便签' : '显示任务便签',
             click: () => {
                 if (widgetOpen) {
                     widgetWindow.hide();
@@ -393,6 +510,19 @@ function rebuildTrayMenu() {
                 rebuildTrayMenu();
             },
         },
+        {
+            label: notesOpen ? '隐藏随手记' : '显示随手记',
+            click: () => {
+                if (notesOpen) {
+                    notesWindow.hide();
+                    saveNotesState({ visible: false });
+                } else {
+                    createNotesWindow();
+                    saveNotesState({ visible: true });
+                }
+                rebuildTrayMenu();
+            },
+        },
         { type: 'separator' },
         {
             label: '开机自动启动',
@@ -400,7 +530,9 @@ function rebuildTrayMenu() {
             checked: autoLaunch,
             click: () => {
                 const next = !autoLaunch;
-                if (!IS_DEV || process.platform !== 'linux') {
+                if (process.platform === 'linux') {
+                    setLinuxAutostart(next);
+                } else {
                     app.setLoginItemSettings({ openAtLogin: next, openAsHidden: true });
                 }
                 rebuildTrayMenu();
@@ -508,20 +640,16 @@ ipcMain.on('window:quit',   () => { tray?.destroy(); tray = null; app.quit(); })
 
 // ── Auto Launch ───────────────────────────────────────────────────────────
 ipcMain.handle('app:getAutoLaunch', () => {
+    if (process.platform === 'linux') return getLinuxAutostart();
     return app.getLoginItemSettings().openAtLogin;
 });
 
 ipcMain.on('app:setAutoLaunch', (_e, enable) => {
-    if (process.platform === 'linux' && !app.isPackaged) {
-        // In dev mode on Linux, skip — no meaningful exe path
+    if (process.platform === 'linux') {
+        if (app.isPackaged) setLinuxAutostart(enable);
         return;
     }
-    app.setLoginItemSettings({
-        openAtLogin: enable,
-        // On macOS/Windows, open silently (minimized to tray)
-        openAsHidden: true,
-        // Electron uses the current exe path automatically
-    });
+    app.setLoginItemSettings({ openAtLogin: enable, openAsHidden: true });
 });
 
 // ── DevTools / Debug ──────────────────────────────────────────────────────
@@ -643,6 +771,31 @@ ipcMain.handle('widget:toggleAlwaysOnTop', () => {
 ipcMain.handle('widget:isAlwaysOnTop', () => {
     if (!widgetWindow || widgetWindow.isDestroyed()) return true;
     return widgetWindow.isAlwaysOnTop();
+});
+
+// ── Notes Widget IPC ──────────────────────────────────────────────────────
+ipcMain.on('notes:close', () => {
+    if (notesWindow && !notesWindow.isDestroyed()) notesWindow.hide();
+    saveNotesState({ visible: false });
+    rebuildTrayMenu();
+});
+ipcMain.on('notes:openMain', () => {
+    if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+    }
+});
+ipcMain.handle('notes:toggleAlwaysOnTop', () => {
+    if (!notesWindow || notesWindow.isDestroyed()) return true;
+    const next = !notesWindow.isAlwaysOnTop();
+    notesWindow.setAlwaysOnTop(next);
+    saveNotesState({ alwaysOnTop: next });
+    return next;
+});
+ipcMain.handle('notes:isAlwaysOnTop', () => {
+    if (!notesWindow || notesWindow.isDestroyed()) return true;
+    return notesWindow.isAlwaysOnTop();
 });
 
 /** Mark a task as completed from the widget. */
@@ -915,9 +1068,11 @@ app.whenReady().then(() => {
     const lanCfg = loadLanConfig();
     if (lanCfg.serverEnabled) startLanServer(lanCfg.port || 37401);
 
-    // Open the widget if the user had it open last session.
+    // Restore widgets that were open last session.
     const widgetState = loadWidgetState();
     if (widgetState.visible) createWidgetWindow();
+    const notesState = loadNotesState();
+    if (notesState.visible) createNotesWindow();
 
     // Re-evaluate reminders at midnight so tomorrow's schedule kicks in.
     setInterval(rescheduleReminders, 5 * 60 * 1000);

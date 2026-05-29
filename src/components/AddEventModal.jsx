@@ -162,6 +162,7 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                 timezone: eventTimezone,
                 note,
                 checklist: type === EVENT_TYPES.TASK ? checklist : undefined,
+                completed: initialEvent ? (initialEvent.completed ?? false) : false,
                 colorId,
                 groupId: (initialEvent && editScope === 'single') ? initialEvent.groupId : groupId,
                 recurrenceType: (initialEvent && editScope === 'single') ? initialEvent.recurrenceType : recurrenceType,
@@ -447,15 +448,16 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                                 </Typography>
                                 <Stack spacing={1}>
                                     {checklist.map((item, index) => (
-                                        <Stack key={index} direction="row" spacing={1} alignItems="center">
+                                        <Stack key={item.id || index} direction="row" spacing={1} alignItems="center">
                                             <TextField
                                                 fullWidth
                                                 size="small"
                                                 value={item.text}
                                                 onChange={(e) => {
-                                                    const newChecklist = [...checklist];
-                                                    newChecklist[index].text = e.target.value;
-                                                    setChecklist(newChecklist);
+                                                    const val = e.target.value;
+                                                    setChecklist(checklist.map((it, i) =>
+                                                        i === index ? { ...it, text: val } : it
+                                                    ));
                                                 }}
                                                 placeholder={t('event.checklistItem', 'Item...')}
                                             />

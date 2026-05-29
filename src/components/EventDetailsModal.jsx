@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import { useTranslation } from 'react-i18next';
@@ -10,6 +10,9 @@ export default function EventDetailsModal({ event, travelTimezone, onClose, onDe
     const { t, i18n } = useTranslation();
     const locale = getDateLocale(i18n.language);
     const [deleteScope, setDeleteScope] = useState('single');
+    const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+    useEffect(() => { setConfirmingDelete(false); }, [event?.id]);
 
     if (!event) return null;
 
@@ -109,23 +112,39 @@ export default function EventDetailsModal({ event, travelTimezone, onClose, onDe
                 <div className="modal-actions">
                     {onDelete && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginRight: 'auto' }}>
-                            {event.groupId && (
-                                <select value={deleteScope} onChange={e => setDeleteScope(e.target.value)}
-                                    style={{ background: 'var(--clr-void)', border: '1px solid var(--clr-border)', color: 'var(--clr-text-dim)', fontFamily: 'var(--font-mono)', fontSize: '10px', padding: '4px 6px', borderRadius: 2, outline: 'none', cursor: 'pointer' }}
-                                >
-                                    <option value="single">{t('recurrence.scopeSingle')}</option>
-                                    <option value="future">{t('recurrence.scopeFuture')}</option>
-                                    <option value="all">{t('recurrence.scopeAll')}</option>
-                                </select>
+                            {!confirmingDelete ? (
+                                <>
+                                    {event.groupId && (
+                                        <select value={deleteScope} onChange={e => setDeleteScope(e.target.value)}
+                                            style={{ background: 'var(--clr-void)', border: '1px solid var(--clr-border)', color: 'var(--clr-text-dim)', fontFamily: 'var(--font-mono)', fontSize: '10px', padding: '4px 6px', borderRadius: 2, outline: 'none', cursor: 'pointer' }}
+                                        >
+                                            <option value="single">{t('recurrence.scopeSingle')}</option>
+                                            <option value="future">{t('recurrence.scopeFuture')}</option>
+                                            <option value="all">{t('recurrence.scopeAll')}</option>
+                                        </select>
+                                    )}
+                                    <button id="btn-delete-event" className="btn btn--danger"
+                                        onClick={() => setConfirmingDelete(true)}
+                                    >
+                                        {t('actions.delete')}
+                                    </button>
+                                </>
+                            ) : (
+                                <>
+                                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--clr-text-dim)' }}>
+                                        {t('messages.deleteConfirmation', '确认删除？')}
+                                    </span>
+                                    <button className="btn btn--danger" onClick={() => { onDelete(event.id, deleteScope, event); onClose(); }}>
+                                        {t('actions.confirm', '确认')}
+                                    </button>
+                                    <button className="btn" onClick={() => setConfirmingDelete(false)}>
+                                        {t('actions.cancel')}
+                                    </button>
+                                </>
                             )}
-                            <button id="btn-delete-event" className="btn btn--danger"
-                                onClick={() => { if (confirm(t('messages.deleteConfirmation'))) { onDelete(event.id, deleteScope, event); onClose(); } }}
-                            >
-                                {t('actions.delete')}
-                            </button>
                         </div>
                     )}
-                    {onEdit && (
+                    {!confirmingDelete && onEdit && (
                         <button id="btn-edit-event" className="btn" onClick={() => { onEdit(event); onClose(); }}>
                             {t('actions.edit')}
                         </button>

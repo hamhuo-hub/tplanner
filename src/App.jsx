@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
+import { debounceTime } from 'rxjs'
 import { format } from 'date-fns'
 import { useTranslation } from 'react-i18next'
 import Timeline from './components/Timeline'
@@ -43,7 +44,7 @@ function App() {
         let subscription;
         getDatabase().then(database => {
             setDb(database);
-            subscription = database.events.find().$.subscribe(docs => {
+            subscription = database.events.find().$.pipe(debounceTime(50)).subscribe(docs => {
                 // Keep ALL docs (including tombstones) in state so they can
                 // be included in the sync payload and propagate deletions.
                 const hydrated = docs.map(doc => {
@@ -294,14 +295,22 @@ function App() {
     const handleDeleteEvent = async (id, scope = 'single', event = null) => {
         if (!db) return;
         try {
+            const now = Date.now();
             if (scope === 'all' && event?.groupId) {
                 const docsObj = await db.events.find({ selector: { groupId: event.groupId } }).exec();
-                await Promise.all(docsObj.map(softDelete));
+                // bulkUpsert fires a single batch write → single subscription emission
+                await db.events.bulkUpsert(docsObj.map(doc => ({
+                    ...doc.toJSON(), deletedAt: now, updatedAt: now,
+                })));
             } else if (scope === 'future' && event?.groupId) {
                 const cutoff = new Date(event.start).getTime();
                 const docsObj = await db.events.find({ selector: { groupId: event.groupId } }).exec();
                 const toMark = docsObj.filter(doc => new Date(doc.get('start')).getTime() >= cutoff);
-                await Promise.all(toMark.map(softDelete));
+                if (toMark.length) {
+                    await db.events.bulkUpsert(toMark.map(doc => ({
+                        ...doc.toJSON(), deletedAt: now, updatedAt: now,
+                    })));
+                }
             } else {
                 const doc = await db.events.findOne(id).exec();
                 if (doc) await softDelete(doc);
@@ -633,7 +642,7 @@ function App() {
 
             <AddEventModal
                 isOpen={isAddModalOpen}
-                onClose={() => setIsAddModalOpen(false)}
+                onClose={() => { setIsAddModalOpen(false); setEditingEvent(null); }}
                 onSave={handleSaveEvent}
                 defaultDate={modalDefaultDate}
                 initialEvent={editingEvent}

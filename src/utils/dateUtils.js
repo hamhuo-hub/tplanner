@@ -45,16 +45,13 @@ export const checkForClashes = (events) => {
             const eventA = events[i];
             const eventB = events[j];
 
-            // Ignore status/reminder items and completed tasks — they are shadows, not conflicts
-            if (eventA.type === 'status' || eventB.type === 'status') continue;
-            if (eventA.type === 'reminder' || eventB.type === 'reminder') continue;
-            if (eventA.completed || eventB.completed) continue;
-
-            // NEW: Ignore clashes between different types (e.g. Event vs Task)
-            // Default to 'event' if type is undefined
+            // Only event↔event and task↔task pairs need conflict detection
             const typeA = eventA.type || 'event';
             const typeB = eventB.type || 'event';
+            if (typeA !== 'event' && typeA !== 'task') continue;
+            if (typeB !== 'event' && typeB !== 'task') continue;
             if (typeA !== typeB) continue;
+            if (eventA.completed || eventB.completed) continue;
 
             // Check for overlap
             if (areIntervalsOverlapping(

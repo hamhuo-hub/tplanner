@@ -316,40 +316,6 @@
   }
   .link-btn:hover { color: var(--gold); }
 
-  /* ── Journal (随笔) ────────────────────────────────────────────── */
-  .journal-section {
-    border-top: 1px solid var(--border);
-    padding: 8px 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    flex-shrink: 0;
-  }
-  .journal-label {
-    font-size: 9px;
-    color: var(--text-dim);
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-  }
-  .journal-textarea {
-    width: 100%;
-    min-height: 60px;
-    max-height: 120px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--text);
-    font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
-    font-size: 12px;
-    line-height: 1.5;
-    padding: 6px 8px;
-    resize: vertical;
-    outline: none;
-    transition: border-color 120ms;
-  }
-  .journal-textarea:focus { border-color: var(--gold); }
-  .journal-textarea::placeholder { color: var(--text-dim); }
-
   /* Scrollbar */
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -377,11 +343,6 @@
       <div class="empty-text">加载中…</div>
     </div>
   </main>
-
-  <div class="journal-section">
-    <div class="journal-label">随手记</div>
-    <textarea class="journal-textarea" id="journal-input" placeholder="记录今天的想法…"></textarea>
-  </div>
 
   <footer>
     <div class="stats" id="stats"><span>--</span></div>

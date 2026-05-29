@@ -13,7 +13,7 @@ function copyWidgetAssets(): Plugin {
   const copy = () => {
     const outDir = resolve(__dirname, 'dist-electron')
     if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true })
-    const files = ['widget.html', 'widget.js']
+    const files = ['widget.html', 'widget.js', 'notes-widget.html', 'notes-widget.js']
     for (const f of files) {
       const src = resolve(__dirname, 'electron', f)
       if (existsSync(src)) copyFileSync(src, resolve(outDir, f))
@@ -102,6 +102,24 @@ export default defineConfig({
             sourcemap: true,
             outDir: 'dist-electron',
             lib: { entry: 'electron/widget-preload.js', formats: ['cjs'] },
+            rollupOptions: {
+              external: ['electron'],
+              output: { format: 'cjs', entryFileNames: '[name].cjs' },
+            },
+          },
+        },
+      },
+      {
+        // Notes-widget preload
+        entry: 'electron/notes-widget-preload.js',
+        onstart(options) {
+          try { options.reload(); } catch (e) { /* Electron process may have exited */ }
+        },
+        vite: {
+          build: {
+            sourcemap: true,
+            outDir: 'dist-electron',
+            lib: { entry: 'electron/notes-widget-preload.js', formats: ['cjs'] },
             rollupOptions: {
               external: ['electron'],
               output: { format: 'cjs', entryFileNames: '[name].cjs' },
