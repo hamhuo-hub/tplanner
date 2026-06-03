@@ -4,9 +4,10 @@ import EventBlock from './EventBlock';
 import { useTranslation } from 'react-i18next';
 import { getDateLocale } from '../utils/dateLocale';
 import { MASSEY_COLORS } from '../utils/constants';
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { marked } from 'marked';
 
-export default function EventRow({ date, events, onEventClick, onAddEvent, highlight, onDragStart, dragState, clashes, displayTimezone, onToggleTaskComplete, journalText, onSaveJournal, onContextMenu }) {
+export default function EventRow({ date, events, onEventClick, onAddEvent, highlight, onDragStart, dragState, clashes, displayTimezone, onToggleTaskComplete, journalText, onContextMenu }) {
     const { t, i18n } = useTranslation();
     const locale = getDateLocale(i18n.language);
 
@@ -114,22 +115,13 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
 
     // ── Journal hover popup ──────────────────────────────────────────────
     const [journalOpen, setJournalOpen] = useState(false);
-    const [localJournal, setLocalJournal] = useState(journalText || '');
     const dateColRef = useRef(null);
     const popupRef = useRef(null);
-    const saveTimerRef = useRef(null);
 
-    // Keep local text in sync when parent prop changes (e.g. cross-window update)
-    useEffect(() => { setLocalJournal(journalText || ''); }, [journalText]);
-
-    const handleJournalChange = useCallback((e) => {
-        const text = e.target.value;
-        setLocalJournal(text);
-        clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = setTimeout(() => {
-            onSaveJournal?.(text);
-        }, 500);
-    }, [onSaveJournal]);
+    const renderedMarkdown = useMemo(() => {
+        const result = marked.parse(journalText || '', { async: false, breaks: true });
+        return typeof result === 'string' ? result : '';
+    }, [journalText]);
 
     // Close popup when clicking outside
     useEffect(() => {
@@ -177,11 +169,11 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                     </span>
                 </span>
                 {/* Dot indicator when journal has content */}
-                {localJournal && (
+                {journalText && (
                     <span style={{ display: 'block', width: 5, height: 5, borderRadius: '50%', background: 'var(--clr-gold, #C9A84C)', margin: '2px auto 0' }} />
                 )}
 
-                {/* Journal popup — same visual language as the widget */}
+                {/* Journal popup — WYSIWYG: transparent textarea overlays live preview */}
                 {journalOpen && (
                     <div
                         ref={popupRef}
@@ -191,44 +183,26 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                             left: '100%',
                             top: 0,
                             zIndex: 200,
-                            width: 240,
+                            width: 280,
                             background: 'rgba(24,24,24,0.97)',
                             border: '1px solid #383838',
                             borderTop: '3px solid var(--clr-gold)',
                             borderRadius: 6,
-                            padding: '8px 10px',
                             boxShadow: '0 6px 24px rgba(0,0,0,0.6)',
                             display: 'flex',
                             flexDirection: 'column',
-                            gap: 6,
                         }}
                     >
-                        <span style={{ fontSize: '9px', color: '#6B6355', letterSpacing: '0.14em', textTransform: 'uppercase' }}>
+                        {/* Header */}
+                        <span style={{ padding: '5px 10px', fontSize: '9px', color: '#6B6355', letterSpacing: '0.14em', textTransform: 'uppercase', borderBottom: '1px solid #2A2A2A' }}>
                             {format(date, i18n.language === 'zh' ? 'M月d日' : 'MMM d', { locale })} · {t('journal.label')}
                         </span>
-                        <textarea
-                            autoFocus
-                            value={localJournal}
-                            onChange={handleJournalChange}
-                            placeholder={t('journal.placeholder')}
-                            style={{
-                                width: '100%',
-                                minHeight: 80,
-                                maxHeight: 160,
-                                background: 'rgba(34,34,34,0.96)',
-                                border: '1px solid #2D2D2D',
-                                borderRadius: 4,
-                                color: '#E8E0D0',
-                                fontSize: '12px',
-                                lineHeight: 1.5,
-                                padding: '6px 8px',
-                                resize: 'vertical',
-                                fontFamily: 'inherit',
-                                outline: 'none',
-                                transition: 'border-color 120ms',
-                            }}
-                            onFocus={e => { e.target.style.borderColor = 'var(--clr-gold)'; }}
-                            onBlur={e => { e.target.style.borderColor = '#2D2D2D'; }}
+
+                        {/* Read-only markdown preview */}
+                        <div
+                            className="journal-md-preview"
+                            dangerouslySetInnerHTML={{ __html: journalText ? renderedMarkdown : `<span style="color:#4A453D">${t('journal.placeholder')}</span>` }}
+                            style={{ padding: '7px 10px 8px', fontSize: '12px', lineHeight: 1.6, color: '#E8E0D0', minHeight: 80, maxHeight: 200, overflowY: 'auto' }}
                         />
                     </div>
                 )}

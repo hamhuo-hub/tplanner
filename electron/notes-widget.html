@@ -13,7 +13,6 @@
     --border: #2D2D2D;
     --border-bright: #404040;
     --gold: #C9A84C;
-    --gold-dim: rgba(201,168,76,0.18);
     --text: #E8E0D0;
     --text-dim: #7A7163;
     --text-soft: #9A9080;
@@ -32,86 +31,94 @@
 
   #app { display: flex; flex-direction: column; height: 100%; border-radius: 10px; overflow: hidden; }
 
-  /* ── Header ──────────────────────────────────────────── */
+  /* ── Header ─────────────────────────────────────── */
   header {
     -webkit-app-region: drag;
     padding: 8px 12px 7px;
     background: var(--void);
     border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+    display: flex; align-items: center; justify-content: space-between;
     flex-shrink: 0;
   }
-  .hdr-title {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--gold);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-  }
-  .hdr-right {
-    -webkit-app-region: no-drag;
-    display: flex;
-    gap: 2px;
-  }
+  .hdr-title { font-size: 11px; font-weight: 600; color: var(--gold); letter-spacing: 0.12em; text-transform: uppercase; }
+  .hdr-right { -webkit-app-region: no-drag; display: flex; gap: 2px; }
   .icon-btn {
-    width: 24px; height: 24px;
-    background: transparent;
-    border: none;
-    color: var(--text-dim);
-    cursor: pointer;
-    border-radius: 3px;
+    width: 24px; height: 24px; background: transparent; border: none;
+    color: var(--text-dim); cursor: pointer; border-radius: 3px;
     display: inline-flex; align-items: center; justify-content: center;
-    font-size: 13px; line-height: 1;
-    font-family: inherit;
-    transition: all 120ms ease;
+    font-size: 13px; line-height: 1; font-family: inherit; transition: all 120ms ease;
   }
   .icon-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
   .icon-btn.active { color: var(--gold); }
   .icon-btn.danger:hover { background: rgba(192,57,43,0.18); color: #F0A090; }
 
-  /* ── Body ────────────────────────────────────────────── */
-  main {
+  /* ── Editor ─────────────────────────────────────── */
+  main { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+
+  #notes-editor {
     flex: 1;
-    display: flex;
-    flex-direction: column;
-    padding: 0;
-    overflow: hidden;
-  }
-  #notes-input {
-    flex: 1;
-    width: 100%;
+    padding: 10px 12px;
+    overflow-y: auto;
     background: var(--surface);
-    border: none;
     color: var(--text);
     font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
     font-size: 13px;
     line-height: 1.65;
-    padding: 10px 12px;
-    resize: none;
     outline: none;
+    caret-color: var(--gold);
+    word-break: break-word;
+    white-space: pre-wrap;
   }
-  #notes-input::placeholder { color: var(--text-dim); }
+  #notes-editor.rendered { white-space: normal; }
+  #notes-editor:empty::before {
+    content: attr(data-placeholder);
+    color: var(--text-dim);
+    pointer-events: none;
+  }
 
-  /* ── Footer ──────────────────────────────────────────── */
+  /* ── Markdown render styles ──────────────────────── */
+  #notes-editor.rendered h1,
+  #notes-editor.rendered h2,
+  #notes-editor.rendered h3 { color: var(--gold) !important; font-weight: 700 !important; margin: 8px 0 2px !important; line-height: 1.3 !important; }
+  #notes-editor.rendered h1 { font-size: 17px !important; }
+  #notes-editor.rendered h2 { font-size: 15px !important; }
+  #notes-editor.rendered h3 { font-size: 13px !important; border-bottom: 1px solid var(--border); padding-bottom: 2px; }
+  #notes-editor.rendered h4 { font-size: 12px !important; color: var(--gold) !important; font-weight: 700 !important; margin: 6px 0 2px !important; }
+  #notes-editor.rendered p { margin: 0 0 4px; }
+  #notes-editor.rendered ul,
+  #notes-editor.rendered ol { padding-left: 18px; margin: 2px 0 4px; }
+  #notes-editor.rendered li { margin: 1px 0; }
+  #notes-editor.rendered code {
+    background: rgba(255,255,255,0.08) !important; border-radius: 3px;
+    padding: 1px 5px; font-size: 12px !important;
+    font-family: 'Consolas', 'Courier New', monospace !important; color: var(--gold) !important;
+  }
+  #notes-editor.rendered pre {
+    background: rgba(0,0,0,0.4); border-radius: 4px;
+    padding: 8px 10px; margin: 4px 0; overflow-x: auto;
+  }
+  #notes-editor.rendered pre code { background: none !important; padding: 0 !important; color: var(--text) !important; font-size: 12px !important; }
+  #notes-editor.rendered blockquote {
+    border-left: 3px solid var(--gold); margin: 4px 0;
+    padding-left: 10px; color: var(--text-soft);
+  }
+  #notes-editor.rendered strong { color: #F0C040 !important; font-weight: 700 !important; }
+  #notes-editor.rendered em { color: #b8a888; font-style: italic; }
+  #notes-editor.rendered a { color: var(--gold); }
+  #notes-editor.rendered hr { border: none; border-top: 1px solid var(--border); margin: 6px 0; }
+
+  /* ── Footer ─────────────────────────────────────── */
   footer {
     -webkit-app-region: drag;
-    padding: 4px 12px;
-    background: var(--void);
+    padding: 4px 12px; background: var(--void);
     border-top: 1px solid var(--border);
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
+    display: flex; justify-content: space-between; align-items: center;
     flex-shrink: 0;
   }
+  #mode-hint { font-size: 9px; color: var(--text-dim); letter-spacing: 0.06em; -webkit-app-region: no-drag; }
   #save-indicator {
-    font-size: 9px;
-    color: var(--text-dim);
-    letter-spacing: 0.08em;
-    -webkit-app-region: no-drag;
-    opacity: 0;
-    transition: opacity 200ms;
+    font-size: 9px; color: var(--text-dim); letter-spacing: 0.08em;
+    -webkit-app-region: no-drag; opacity: 0; transition: opacity 200ms;
   }
   #save-indicator.visible { opacity: 1; }
 
@@ -132,13 +139,18 @@
   </header>
 
   <main>
-    <textarea id="notes-input" placeholder="记录今天的想法、灵感…"></textarea>
+    <div id="notes-editor"
+         contenteditable="true"
+         spellcheck="false"
+         data-placeholder="记录今天的想法、灵感…"></div>
   </main>
 
   <footer>
+    <span id="mode-hint">点击编辑</span>
     <span id="save-indicator">已保存</span>
   </footer>
 </div>
+<script src="marked.umd.js"></script>
 <script src="notes-widget.js"></script>
 </body>
 </html>

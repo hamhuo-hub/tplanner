@@ -918,45 +918,6 @@ input[type="number"] {
 }
 
 
-/* ══════════════════════════════════════════════════════════════════════════
-   THEME ENGINE — Light Mode Adapter
-   Applied by ThemeEngine when meta.type === 'light' (e.g. Blue Archive)
-   ══════════════════════════════════════════════════════════════════════════ */
-
-body.tpt-light-mode {
-    color-scheme: light;
-}
-
-/* When light mode is active, scrollbars should invert */
-body.tpt-light-mode ::-webkit-scrollbar-track { background: var(--clr-void); }
-body.tpt-light-mode ::-webkit-scrollbar-thumb { background: var(--clr-border-bright); }
-body.tpt-light-mode ::-webkit-scrollbar-thumb:hover { background: var(--clr-gold-dim); }
-
-/* Light mode: ensure MUI paper picks up surface color */
-body.tpt-light-mode .MuiPaper-root,
-body.tpt-light-mode .MuiDialog-paper {
-    background: var(--clr-surface) !important;
-    border-color: var(--clr-border) !important;
-    color: var(--clr-text) !important;
-}
-body.tpt-light-mode .MuiInputBase-root {
-    background: var(--clr-raised) !important;
-}
-body.tpt-light-mode .MuiOutlinedInput-notchedOutline {
-    border-color: var(--clr-border) !important;
-}
-
-/* Typography token inheritance — ensures font-family tokens apply globally */
-body { font-family: var(--font-body, var(--font-mono, monospace)); }
-h1, h2, h3, h4, h5, h6,
-.font-display,
-.titlebar-title,
-.banner-title,
-.event-block-title,
-.modal-event-title,
-[class*="heading"] {
-    font-family: var(--font-display, 'Oswald', sans-serif) !important;
-}
 
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -996,84 +957,55 @@ h1, h2, h3, h4, h5, h6,
     to   { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 
-
-/* ══════════════════════════════════════════════════════════════════════════
-   THEME MANAGER — Panel inner scrollbar styling
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/* Theme card hover state */
-div[style*="cursor: pointer"]:hover {
-    border-color: var(--clr-gold-dim) !important;
-    background: var(--clr-gold-ghost) !important;
+/* ── Journal Markdown Preview ─────────────────────────────────────────── */
+.journal-md-preview h1, .journal-md-preview h2, .journal-md-preview h3 {
+    color: var(--clr-gold);
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    margin: 6px 0 3px;
 }
+.journal-md-preview p { margin: 3px 0; }
+.journal-md-preview ul, .journal-md-preview ol {
+    padding-left: 16px;
+    margin: 3px 0;
+}
+.journal-md-preview li { margin: 1px 0; }
+.journal-md-preview code {
+    background: rgba(255,255,255,0.07);
+    border-radius: 3px;
+    padding: 1px 4px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--clr-gold);
+}
+.journal-md-preview pre {
+    background: rgba(0,0,0,0.4);
+    border-radius: 4px;
+    padding: 6px 8px;
+    margin: 4px 0;
+    overflow-x: auto;
+}
+.journal-md-preview pre code {
+    background: none;
+    padding: 0;
+    color: #E8E0D0;
+}
+.journal-md-preview blockquote {
+    border-left: 3px solid var(--clr-gold);
+    margin: 4px 0;
+    padding-left: 8px;
+    color: #9a9080;
+}
+.journal-md-preview strong { color: #F0C040; font-weight: 700; }
+.journal-md-preview em { color: #b8a888; font-style: italic; }
+.journal-md-preview a { color: var(--clr-gold); text-underline-offset: 2px; }
+.journal-md-preview hr { border: none; border-top: 1px solid #2D2D2D; margin: 6px 0; }
 
-/* Playfair Display, Cinzel, Cormorant Garamond are imported at the top of this file. */
-
-/* ══════════════════════════════════════════════════════════════════════════
-   TV HOME PAGE — Remote-control optimised styles
-   ══════════════════════════════════════════════════════════════════════════ */
 
 /* Spin animation used for sync-in-progress indicator */
 @keyframes spin {
     from { transform: rotate(0deg); }
     to   { transform: rotate(360deg); }
-}
-
-/* TV mode: slightly taller header for comfortable 10-foot reading */
-.tv-mode .app-header.tv-header {
-    height: 60px;
-    padding: 0 28px;
-}
-
-/* TV mode: larger font scale on header buttons */
-.tv-mode .btn {
-    font-size: 13px;
-    padding: 8px 16px;
-    min-height: 38px;
-}
-
-/* TV mode: bigger timezone select */
-.tv-mode .tz-select {
-    font-size: 12px;
-    max-width: 200px;
-}
-
-/* TV focus ring — gold border, smooth transition */
-.tv-focus-ring {
-    outline: 2px solid var(--clr-gold) !important;
-    outline-offset: 3px;
-}
-
-/* TV nav hint bar */
-.tv-nav-hint {
-    padding: 4px 20px;
-    font-family: var(--font-mono);
-    font-size: 10px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    display: flex;
-    gap: 24px;
-    flex-shrink: 0;
-    border-bottom: 1px solid var(--clr-border);
-}
-
-.tv-nav-hint--active {
-    background: rgba(201, 168, 76, 0.06);
-    border-bottom-color: var(--clr-gold-dim);
-    color: var(--clr-gold);
-}
-
-.tv-nav-hint--idle {
-    background: transparent;
-    color: var(--clr-text-dim);
-}
-
-/* TV: disable cursor crosshair on timeline grid in TV mode (no click-to-add) */
-.tv-mode .event-row-grid {
-    cursor: default;
-}
-
-/* TV: ensure event blocks still show pointer (for remote click selection) */
-.tv-mode .event-block {
-    cursor: pointer;
 }
