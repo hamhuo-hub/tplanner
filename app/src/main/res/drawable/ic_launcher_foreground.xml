@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- T shape for tPlanner -->
+    <path
+        android:fillColor="#1E1E1E"
+        android:pathData="M28,32 L80,32 L80,44 L60,44 L60,76 L48,76 L48,44 L28,44 Z" />
+</vector>
