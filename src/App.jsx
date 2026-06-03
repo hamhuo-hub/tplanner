@@ -9,12 +9,10 @@ import ClashBanner from './components/ClashBanner'
 import OverdueBanner from './components/OverdueBanner'
 import ReminderBanner from './components/ReminderBanner'
 import TitleBar from './components/TitleBar'
-import ThemeManager from './components/ThemeManager'
 import ZoomControl from './components/ZoomControl'
 import LanSync from './components/LanSync'
 import DebugPanel from './components/DebugPanel'
 import ContextMenu from './components/ContextMenu'
-import { ThemeProvider } from './contexts/ThemeContext'
 import { checkForClashes } from './utils/dateUtils'
 import { TIMEZONES } from './utils/constants'
 import { Plus, Languages, Printer, Globe, Download, Upload, Power } from 'lucide-react'
@@ -532,9 +530,6 @@ function App() {
                         />
                     </label>
 
-                    {/* Theme Manager */}
-                    <ThemeManager />
-
                     {/* Zoom Control */}
                     <ZoomControl />
 
@@ -694,10 +689,4 @@ function App() {
     )
 }
 
-export default function AppWithTheme() {
-    return (
-        <ThemeProvider>
-            <App />
-        </ThemeProvider>
-    );
-}
+export default App;
