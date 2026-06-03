@@ -13,7 +13,7 @@ function copyWidgetAssets(): Plugin {
   const copy = () => {
     const outDir = resolve(__dirname, 'dist-electron')
     if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true })
-    const files = ['widget.html', 'widget.js', 'notes-widget.html', 'notes-widget.js']
+    const files = ['widget.html', 'widget.js', 'notes-widget.html', 'notes-widget.js', 'marked.umd.js']
     for (const f of files) {
       const src = resolve(__dirname, 'electron', f)
       if (existsSync(src)) copyFileSync(src, resolve(outDir, f))
