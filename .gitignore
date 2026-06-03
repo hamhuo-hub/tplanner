@@ -69,3 +69,4 @@ local.properties
 package-lock.json
 /build
 /wear-widget
+/prototype
