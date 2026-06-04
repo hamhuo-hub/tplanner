@@ -215,6 +215,17 @@ function EventGroup({ title, color, items, renderItem }) {
     );
 }
 
+// ── 连接历史（localStorage）────────────────────────────────────────────────
+function getHistory() {
+    try { return JSON.parse(localStorage.getItem('tplanner_sync_history') || '[]'); }
+    catch { return []; }
+}
+function saveHistory(peer) {
+    const list = getHistory().filter(h => !(h.ip === peer.ip && h.port === peer.port));
+    list.unshift({ name: peer.name || peer.ip, ip: peer.ip, port: peer.port });
+    localStorage.setItem('tplanner_sync_history', JSON.stringify(list.slice(0, 5)));
+}
+
 // ── 主组件 ────────────────────────────────────────────────────────────────────
 export default function LanSync({ events, onMergeEvents, journals, onMergeJournals }) {
     const { t } = useTranslation();
@@ -326,6 +337,19 @@ export default function LanSync({ events, onMergeEvents, journals, onMergeJourna
     // Keep doSyncRef current so the auto-sync timer always uses the latest version
     useEffect(() => { doSyncRef.current = doSync; }, [doSync]);
 
+    // 启动时后台自动连接历史服务器
+    useEffect(() => {
+        if (!isElectron) return;
+        const historyKeys = new Set(getHistory().map(h => `${h.ip}:${h.port}`));
+        window.electronAPI.discoverLan?.().then(found => {
+            if (!found?.length) return;
+            const target = found.find(p => historyKeys.size === 0 || historyKeys.has(`${p.ip}:${p.port}`));
+            if (!target) return;
+            setSelected(target);
+            doSyncRef.current?.(target, true);
+        }).catch(() => {});
+    }, [isElectron]);
+
     const executeMerge = useCallback(async (peer, remoteEvents) => {
         const base = `http://${peer.ip}:${peer.port}`;
         // Read from refs to always get the latest events/journals, even if called
@@ -359,6 +383,7 @@ export default function LanSync({ events, onMergeEvents, journals, onMergeJourna
             }
         } catch (_) { /* journals sync failure is non-fatal */ }
 
+        saveHistory(peer);
         setStatus('success');
         setStatusMsg(`已同步 ${mergedEvents.length} 条事件`);
         setPreview(null);
