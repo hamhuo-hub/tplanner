@@ -74,24 +74,25 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val store      = JournalStore(this)
-        val eventStore = EventStore(this)
-        val manager    = LanSyncManager(store, eventStore)
-        setContent { MainScreen(store = store, eventStore = eventStore, manager = manager) }
+        val store       = JournalStore(this)
+        val eventStore  = EventStore(this)
+        val manager     = LanSyncManager(store, eventStore)
+        val historyStore = SyncHistoryStore(this)
+        setContent { MainScreen(store = store, eventStore = eventStore, manager = manager, historyStore = historyStore) }
     }
 }
 
 @Composable
-fun MainScreen(store: JournalStore, eventStore: EventStore, manager: LanSyncManager) {
+fun MainScreen(store: JournalStore, eventStore: EventStore, manager: LanSyncManager, historyStore: SyncHistoryStore) {
     val scope  = rememberCoroutineScope()
     var content    by remember { mutableStateOf(store.getToday()) }
     var panelOpen  by remember { mutableStateOf(false) }
     var events     by remember { mutableStateOf(eventStore.getAll()) }
 
     // ── 扫描状态 ──────────────────────────────────────────────────────────────
-    var scanning   by remember { mutableStateOf(false) }
-    var peers      by remember { mutableStateOf<List<LanSyncManager.Peer>>(emptyList()) }
-    var selected   by remember { mutableStateOf<LanSyncManager.Peer?>(null) }
+    var scanning      by remember { mutableStateOf(false) }
+    var peers         by remember { mutableStateOf<List<LanSyncManager.Peer>>(emptyList()) }
+    var selected      by remember { mutableStateOf<LanSyncManager.Peer?>(null) }
     var manualIp   by remember { mutableStateOf("") }
     var manualPort by remember { mutableStateOf("37401") }
 
@@ -122,12 +123,33 @@ fun MainScreen(store: JournalStore, eventStore: EventStore, manager: LanSyncMana
                 is LanSyncManager.SyncResult.Success -> {
                     content = r.todayText
                     syncStatus = "success"; syncMsg = "已同步 · ${peer.name}"
-                    // 同步完成后拉取最新任务列表
+                    historyStore.saveSuccess(peer)
                     events = manager.fetchEvents(peer)
                 }
                 is LanSyncManager.SyncResult.Error -> {
                     syncStatus = "error"; syncMsg = r.message
                 }
+            }
+        }
+    }
+
+    // 启动时后台自动连接历史服务器
+    LaunchedEffect(Unit) {
+        val historyKeys = historyStore.getHistory().map { "${it.ip}:${it.port}" }.toHashSet()
+        val found = manager.discoverPeers()
+        val target = found.firstOrNull { historyKeys.isEmpty() || "${it.ip}:${it.port}" in historyKeys }
+            ?: return@LaunchedEffect
+        syncStatus = "syncing"; syncMsg = ""
+        when (val r = manager.syncJournals(target)) {
+            is LanSyncManager.SyncResult.Success -> {
+                content = r.todayText
+                selected = target
+                syncStatus = "success"; syncMsg = "已同步 · ${target.name}"
+                historyStore.saveSuccess(target)
+                events = manager.fetchEvents(target)
+            }
+            is LanSyncManager.SyncResult.Error -> {
+                syncStatus = "idle"
             }
         }
     }
@@ -165,17 +187,17 @@ fun MainScreen(store: JournalStore, eventStore: EventStore, manager: LanSyncMana
                             scanning    = scanning,
                             peers       = peers,
                             selected    = selected,
-                            manualIp    = manualIp,
-                            manualPort  = manualPort,
-                            syncStatus  = syncStatus,
-                            syncMsg     = syncMsg,
-                            canSync     = activePeer != null && syncStatus != "syncing",
-                            onScan      = onScan,
-                            onSelect    = { selected = it },
-                            onIpChange  = { manualIp = it },
+                            manualIp     = manualIp,
+                            manualPort   = manualPort,
+                            syncStatus   = syncStatus,
+                            syncMsg      = syncMsg,
+                            canSync      = activePeer != null && syncStatus != "syncing",
+                            onScan       = onScan,
+                            onSelect     = { selected = it },
+                            onIpChange   = { manualIp = it },
                             onPortChange = { manualPort = it },
-                            onSync      = onSync,
-                            onClose     = { panelOpen = false }
+                            onSync       = onSync,
+                            onClose      = { panelOpen = false }
                         )
                     }
                 }
@@ -274,7 +296,7 @@ fun SyncPanel(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = if (scanning) "扫描中…" else "🔍  扫描局域网",
+                    text = if (scanning) "扫描中…" else "⌕  扫描局域网",
                     color = if (scanning) DIM else Color(0xFFE0D8C8),
                     fontSize = 11.sp
                 )
