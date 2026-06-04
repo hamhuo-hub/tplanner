@@ -10,7 +10,7 @@ import java.net.InetAddress
 import java.net.SocketTimeoutException
 import java.net.URL
 
-class LanSyncManager(private val store: JournalStore) {
+class LanSyncManager(private val store: JournalStore, private val eventStore: EventStore? = null) {
 
     data class Peer(val name: String, val ip: String, val port: Int, val journalCount: Int)
 
@@ -55,6 +55,28 @@ class LanSyncManager(private val store: JournalStore) {
         }
         peers
     }
+
+    suspend fun fetchEvents(peer: Peer): List<TaskEvent> = withContext(Dispatchers.IO) {
+        try {
+            val json = httpGet("http://${peer.ip}:${peer.port}/tplanner/events")
+            val events = eventStore?.fromJson(json) ?: emptyList()
+            eventStore?.saveAll(events)
+            events
+        } catch (_: Exception) {
+            eventStore?.getAll() ?: emptyList()
+        }
+    }
+
+    suspend fun toggleTask(peer: Peer, eventId: String, completed: Boolean): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                val body = org.json.JSONObject().apply {
+                    put("completed", completed)
+                }.toString()
+                httpPatch("http://${peer.ip}:${peer.port}/tplanner/events/$eventId", body)
+                true
+            } catch (_: Exception) { false }
+        }
 
     suspend fun syncJournals(peer: Peer): SyncResult = withContext(Dispatchers.IO) {
         try {
@@ -102,6 +124,17 @@ class LanSyncManager(private val store: JournalStore) {
         return try {
             if (conn.responseCode != 200) throw Exception("HTTP ${conn.responseCode}")
             conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
+        } finally { conn.disconnect() }
+    }
+
+    private fun httpPatch(url: String, body: String) {
+        val conn = URL(url).openConnection() as HttpURLConnection
+        conn.requestMethod = "PATCH"; conn.connectTimeout = 5000; conn.readTimeout = 5000
+        conn.doOutput = true
+        conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        try {
+            conn.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(body) }
+            if (conn.responseCode !in 200..299) throw Exception("HTTP ${conn.responseCode}")
         } finally { conn.disconnect() }
     }
 
