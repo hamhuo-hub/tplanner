@@ -843,10 +843,29 @@ ipcMain.on('widget:toggleSubtask', (_e, eventId, subtaskId) => {
 });
 
 // ── Journal (随笔) IPC ─────────────────────────────────────────────────────
+// 条目格式：{ text, updatedAt, deletedAt }（与 events 的 tombstone 模型一致）。
+// 旧版纯字符串格式在读取时迁移为 { text, updatedAt: 0, deletedAt: null }，
+// 时间戳 0 保证会被任何带时间戳的写入/删除覆盖 —— 这是修复"软删除时间戳失效
+// 导致回环恢复"问题的关键：删除必须携带比原内容更新的 updatedAt 才能在合并时获胜。
+function normalizeJournalEntry(value) {
+    if (value && typeof value === 'object') {
+        return { text: value.text || '', updatedAt: value.updatedAt || 0, deletedAt: value.deletedAt ?? null };
+    }
+    return { text: value || '', updatedAt: 0, deletedAt: null };
+}
+
+function normalizeJournals(map) {
+    const result = {};
+    for (const [date, value] of Object.entries(map || {})) {
+        result[date] = normalizeJournalEntry(value);
+    }
+    return result;
+}
+
 function loadJournals() {
     try {
         if (fs.existsSync(JOURNALS_FILE))
-            return JSON.parse(fs.readFileSync(JOURNALS_FILE, 'utf8'));
+            return normalizeJournals(JSON.parse(fs.readFileSync(JOURNALS_FILE, 'utf8')));
     } catch (e) { /* ignore */ }
     return {};
 }
@@ -857,25 +876,26 @@ function saveJournals(data) {
 
 ipcMain.handle('journal:getAll', () => loadJournals());
 
-ipcMain.on('journal:save', (_e, date, text) => {
+ipcMain.on('journal:save', (_e, date, entry) => {
     const data = loadJournals();
-    if (text && text.trim()) { data[date] = text; } else { delete data[date]; }
+    data[date] = normalizeJournalEntry(entry);
     saveJournals(data);
     const sid = _e.sender.id;
     BrowserWindow.getAllWindows().forEach(win => {
         if (!win.isDestroyed() && win.webContents.id !== sid)
-            win.webContents.send('journal:updated', date, text);
+            win.webContents.send('journal:updated', date, data[date]);
     });
 });
 
 // Batch replace for LAN sync — replaces all journals atomically
 ipcMain.on('journal:saveAll', (_e, merged) => {
     if (!merged || typeof merged !== 'object') return;
-    saveJournals(merged);
+    const normalized = normalizeJournals(merged);
+    saveJournals(normalized);
     const sid = _e.sender.id;
     BrowserWindow.getAllWindows().forEach(win => {
         if (!win.isDestroyed() && win.webContents.id !== sid)
-            win.webContents.send('journal:allUpdated', merged);
+            win.webContents.send('journal:allUpdated', normalized);
     });
 });
 

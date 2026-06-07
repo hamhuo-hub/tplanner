@@ -299,12 +299,15 @@ export default function LanSync({ events, onMergeEvents, journals, onMergeJourna
         }
     }, [isElectron]);
 
-    // ── journals 合并：同一天保留内容较长的一方 ──────────────────────────────
+    // ── journals 合并：与 mergeEvents 相同的 updatedAt-wins + tombstone 策略 ──
+    // 条目格式 { text, updatedAt, deletedAt }；删除会写入 deletedAt+updatedAt，
+    // 因此删除记录在合并时会和"更早"的存活记录正常竞争，不会被回环恢复。
     function mergeJournals(local, remote) {
         const result = { ...(local || {}) };
-        for (const [date, text] of Object.entries(remote || {})) {
-            if (!result[date] || (text && text.length > (result[date] || '').length)) {
-                result[date] = text;
+        for (const [date, entry] of Object.entries(remote || {})) {
+            const existing = result[date];
+            if (!existing || (entry?.updatedAt || 0) > (existing?.updatedAt || 0)) {
+                result[date] = entry;
             }
         }
         return result;

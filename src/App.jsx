@@ -182,17 +182,45 @@ function App() {
     }, [db]);
 
     // ── Journal (随笔) ────────────────────────────────────────────────────
+    // 条目格式：{ text, updatedAt, deletedAt }，与 events 的 tombstone 模型一致。
+    // 删除时写入 deletedAt+updatedAt（而不是直接抹掉记录），这样合并时删除记录
+    // 能凭借更新的 updatedAt 战胜对端尚存的旧内容，从而修复"软删除时间戳失效
+    // 导致回环恢复"的问题。旧版纯字符串格式在读取时迁移为时间戳 0 的记录，
+    // 保证会被任何带时间戳的写入/删除覆盖。
+    const normalizeJournalEntry = (value) => {
+        if (value && typeof value === 'object') {
+            return { text: value.text || '', updatedAt: value.updatedAt || 0, deletedAt: value.deletedAt ?? null };
+        }
+        return { text: value || '', updatedAt: 0, deletedAt: null };
+    };
+    const normalizeJournals = (map) => {
+        const result = {};
+        for (const [date, value] of Object.entries(map || {})) {
+            result[date] = normalizeJournalEntry(value);
+        }
+        return result;
+    };
+
     const [journals, setJournals] = useState({});
+
+    // 用于展示的纯文本映射：过滤掉 tombstone，解包出 text
+    const visibleJournals = useMemo(() => {
+        const result = {};
+        for (const [date, entry] of Object.entries(journals)) {
+            if (entry && !entry.deletedAt) result[date] = entry.text;
+        }
+        return result;
+    }, [journals]);
 
     useEffect(() => {
         if (isElectron && window.electronAPI?.getJournals) {
-            window.electronAPI.getJournals().then(j => setJournals(j || {}));
-            const off1 = window.electronAPI.onJournalUpdated?.((date, text) => {
-                setJournals(prev => ({ ...prev, [date]: text || '' }));
+            window.electronAPI.getJournals().then(j => setJournals(normalizeJournals(j)));
+            const off1 = window.electronAPI.onJournalUpdated?.((date, entry) => {
+                setJournals(prev => ({ ...prev, [date]: normalizeJournalEntry(entry) }));
             });
             // LAN sync batch update
             const off2 = window.electronAPI.onJournalAllUpdated?.(merged => {
-                setJournals(merged || {});
+                setJournals(normalizeJournals(merged));
             });
             return () => { off1?.(); off2?.(); };
         } else {
@@ -201,7 +229,10 @@ function App() {
             for (let i = 0; i < localStorage.length; i++) {
                 const k = localStorage.key(i);
                 if (k?.startsWith('tplanner_journal_')) {
-                    data[k.replace('tplanner_journal_', '')] = localStorage.getItem(k);
+                    const raw = localStorage.getItem(k);
+                    let parsed;
+                    try { parsed = JSON.parse(raw); } catch { parsed = raw; }
+                    data[k.replace('tplanner_journal_', '')] = normalizeJournalEntry(parsed);
                 }
             }
             setJournals(data);
@@ -209,15 +240,15 @@ function App() {
     }, [isElectron]);
 
     const handleSaveJournal = (dateStr, text) => {
-        setJournals(prev => ({ ...prev, [dateStr]: text }));
+        const now = Date.now();
+        const entry = text?.trim()
+            ? { text, updatedAt: now, deletedAt: null }
+            : { text: '', updatedAt: now, deletedAt: now };
+        setJournals(prev => ({ ...prev, [dateStr]: entry }));
         if (isElectron && window.electronAPI?.saveJournal) {
-            window.electronAPI.saveJournal(dateStr, text);
+            window.electronAPI.saveJournal(dateStr, entry);
         } else {
-            if (text?.trim()) {
-                localStorage.setItem(`tplanner_journal_${dateStr}`, text);
-            } else {
-                localStorage.removeItem(`tplanner_journal_${dateStr}`);
-            }
+            localStorage.setItem(`tplanner_journal_${dateStr}`, JSON.stringify(entry));
         }
     };
 
@@ -629,14 +660,14 @@ function App() {
                                 }
                             }}
                             onMergeJournals={(merged) => {
-                                setJournals(merged);
+                                const normalized = normalizeJournals(merged);
+                                setJournals(normalized);
                                 if (isElectron && window.electronAPI?.saveAllJournals) {
                                     // Single atomic write — no N sequential IPC calls
-                                    window.electronAPI.saveAllJournals(merged);
+                                    window.electronAPI.saveAllJournals(normalized);
                                 } else {
-                                    Object.entries(merged).forEach(([date, text]) => {
-                                        if (text?.trim()) localStorage.setItem(`tplanner_journal_${date}`, text);
-                                        else localStorage.removeItem(`tplanner_journal_${date}`);
+                                    Object.entries(normalized).forEach(([date, entry]) => {
+                                        localStorage.setItem(`tplanner_journal_${date}`, JSON.stringify(entry));
                                     });
                                 }
                             }}
@@ -714,7 +745,7 @@ function App() {
                         onToggleTaskComplete={handleToggleTaskComplete}
                         onContextMenu={(e, ev) => setContextMenu({ x: e.clientX, y: e.clientY, event: ev })}
                         travelTimezone={travelTimezone}
-                        journals={journals}
+                        journals={visibleJournals}
                         onSaveJournal={handleSaveJournal}
                     />
                 </>}
