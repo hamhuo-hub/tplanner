@@ -131,6 +131,17 @@
         "message_plural": "您的日程中有 {{count}} 处重叠。",
         "jump": "跳转至"
     },
+    "tabs": {
+        "calendar": "日历",
+        "decade": "十年计划"
+    },
+    "decade": {
+        "titlePlaceholder": "目标标题…",
+        "notePlaceholder": "点击开始写作…",
+        "deleteGoal": "删除目标",
+        "defaultTitle": "新目标",
+        "goalFallback": "目标 {{n}}"
+    },
     "messages": {
         "importSuccess": "数据导入成功！",
         "importError": "数据格式无效。",

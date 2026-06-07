@@ -125,14 +125,16 @@ function App() {
     useEffect(() => {
         if (!db) return;
         const sub = db.goals.find().$.pipe(debounceTime(50)).subscribe(docs => {
-            setGoals(docs.filter(d => !d.get('deletedAt')).map(d => d.toJSON()));
+            setGoals(docs.map(d => d.toJSON()));
         });
         return () => sub.unsubscribe();
     }, [db]);
 
+    const visibleGoals = useMemo(() => goals.filter(g => !g.deletedAt), [goals]);
+
     const handleAddGoal = async ({ q, r, s }) => {
         if (!db) return;
-        const goal = makeGoal({ order: goals.length, q, r, s });
+        const goal = makeGoal({ order: visibleGoals.length, q, r, s });
         await db.goals.insert(goal);
         setSelectedGoalId(goal.id);
     };
@@ -141,7 +143,7 @@ function App() {
         if (!db) return;
         try {
             const doc = await db.goals.findOne(id).exec();
-            if (doc) await doc.update({ $set: { ...patch, updatedAt: Date.now() } });
+            if (doc) await doc.incrementalPatch({ ...patch, updatedAt: Date.now() });
         } catch (err) {
             console.error('Update goal failed', err);
         }
@@ -157,6 +159,27 @@ function App() {
         }
         if (selectedGoalId === id) setSelectedGoalId(null);
     };
+
+    // ── Debug console commands ────────────────────────────────────────────
+    useEffect(() => {
+        if (!db) return;
+        window.__tplanner = {
+            ...(window.__tplanner ?? {}),
+            clearEmptyGoals: async () => {
+                const docs = await db.goals.find().exec();
+                const empty = docs.filter(d => {
+                    const title = (d.get('title') ?? '').trim();
+                    const note  = (d.get('note')  ?? '').trim();
+                    const dead  = d.get('deletedAt') > 0;
+                    return !dead && note === '' && (title === '' || title === '新目标' || title === 'New Goal');
+                });
+                if (!empty.length) { console.log('[tplanner] 没有空目标'); return; }
+                const now = Date.now();
+                await Promise.all(empty.map(d => d.incrementalPatch({ deletedAt: now, updatedAt: now })));
+                console.log(`[tplanner] 已清除 ${empty.length} 个空目标`);
+            },
+        };
+    }, [db]);
 
     // ── Journal (随笔) ────────────────────────────────────────────────────
     const [journals, setJournals] = useState({});
@@ -495,8 +518,8 @@ function App() {
             {/* Custom Title Bar (Electron only) */}
             {isElectron && <TitleBar />}
 
-            {/* App Header — hidden on decade tab */}
-            {activeTab !== 'decade' && <header className="app-header">
+            {/* App Header — hidden on decade tab, but kept mounted so LanSync state persists */}
+            <header className="app-header" style={{ display: activeTab === 'decade' ? 'none' : undefined }}>
                 <div className="app-header-left">
                     {/* App title — only show if NOT in electron (TitleBar already shows it) */}
                     {!isElectron && (
@@ -644,7 +667,7 @@ function App() {
                         {t('actions.addEvent')}
                     </button>
                 </div>
-            </header>}
+            </header>
 
             {/* Main Content */}
             <main style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '12px', minHeight: 0, gap: '8px' }}>
@@ -697,7 +720,7 @@ function App() {
                 </>}
                 {activeTab === 'decade' && (
                     <DecadePlan
-                        goals={goals}
+                        goals={visibleGoals}
                         selectedId={selectedGoalId}
                         onSelect={setSelectedGoalId}
                         onAddGoal={handleAddGoal}
@@ -728,8 +751,8 @@ function App() {
                 flexShrink: 0,
             }}>
                 {[
-                    { id: 'calendar', label: '日历' },
-                    { id: 'decade',   label: '十年计划' },
+                    { id: 'calendar', label: t('tabs.calendar') },
+                    { id: 'decade',   label: t('tabs.decade') },
                 ].map(tab => (
                     <button
                         key={tab.id}

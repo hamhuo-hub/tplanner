@@ -1,14 +1,22 @@
 import { useState, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { marked } from 'marked';
 
 import { GOAL_PALETTE as PALETTE } from '../utils/goalUtils';
 
 export default function GoalEditor({ goal, onSave }) {
+    const { t } = useTranslation();
     const [title,   setTitle]   = useState(goal?.title ?? '');
     const [color,   setColor]   = useState(goal?.color ?? PALETTE[0]);
     const [note,    setNote]    = useState(goal?.note  ?? '');
     const [editing, setEditing] = useState(false);
     const textareaRef           = useRef(null);
+    const noteTimerRef          = useRef(null);
+
+    const saveNote = (value) => {
+        clearTimeout(noteTimerRef.current);
+        noteTimerRef.current = setTimeout(() => onSave?.({ note: value }), 1000);
+    };
 
     const rendered = useMemo(() => {
         const result = marked.parse(note || '', { async: false, breaks: true });
@@ -30,7 +38,7 @@ export default function GoalEditor({ goal, onSave }) {
             <input
                 value={title}
                 onChange={e => { setTitle(e.target.value); onSave?.({ title: e.target.value }); }}
-                placeholder="目标标题…"
+                placeholder={t('decade.titlePlaceholder')}
                 style={{
                     background:    'transparent',
                     border:        'none',
@@ -96,7 +104,7 @@ export default function GoalEditor({ goal, onSave }) {
                         ref={textareaRef}
                         autoFocus
                         value={note}
-                        onChange={e => { setNote(e.target.value); onSave?.({ note: e.target.value }); }}
+                        onChange={e => { setNote(e.target.value); saveNote(e.target.value); }}
                         onBlur={() => setEditing(false)}
                         spellCheck={false}
                         style={{
@@ -123,7 +131,7 @@ export default function GoalEditor({ goal, onSave }) {
                             setEditing(true);
                         }}
                         dangerouslySetInnerHTML={{
-                            __html: rendered || '<span style="color:rgba(255,255,255,0.18)">点击开始写作…</span>',
+                            __html: rendered || `<span style="color:rgba(255,255,255,0.18)">${t('decade.notePlaceholder')}</span>`,
                         }}
                         style={{
                             height:     '100%',

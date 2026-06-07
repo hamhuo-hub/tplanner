@@ -1,8 +1,10 @@
 import { useState, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Languages, Printer, Download, Upload, MoreHorizontal } from 'lucide-react';
 import ZoomControl from './ZoomControl';
 
 export default function DecadeFab({ onToggleLanguage, lang, onPrint, onExport, onImport }) {
+    const { t } = useTranslation();
     const [open, setOpen] = useState(false);
     const fileRef = useRef(null);
 
@@ -58,17 +60,17 @@ export default function DecadeFab({ onToggleLanguage, lang, onPrint, onExport, o
             }}>
                 {/* topIdx 0 — Import (farthest, last to appear) */}
                 <button style={pill(0)} onClick={() => fileRef.current?.click()}>
-                    <Upload size={13} /> 导入
+                    <Upload size={13} /> {t('actions.import')}
                 </button>
 
                 {/* topIdx 1 — Export */}
                 <button style={pill(1)} onClick={onExport}>
-                    <Download size={13} /> 导出
+                    <Download size={13} /> {t('actions.export')}
                 </button>
 
                 {/* topIdx 2 — Print */}
                 <button style={pill(2)} onClick={onPrint}>
-                    <Printer size={13} /> 打印
+                    <Printer size={13} /> {t('actions.print')}
                 </button>
 
                 {/* topIdx 3 — Language */}

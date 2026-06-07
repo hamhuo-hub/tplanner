@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Layout, Hexagon } from 'react-hexgrid';
 import { Trash2 } from 'lucide-react';
 import GoalEditor from './GoalEditor';
@@ -284,6 +285,7 @@ export default function DecadePlan({ goals = [], selectedId, onSelect, onAddGoal
 }
 
 function GoalContextMenu({ x, y, onClose, onDelete }) {
+    const { t } = useTranslation();
     const ref = useRef(null);
 
     useEffect(() => {
@@ -325,7 +327,7 @@ function GoalContextMenu({ x, y, onClose, onDelete }) {
                 onMouseLeave={e => e.currentTarget.style.background = 'none'}
             >
                 <Trash2 size={14} />
-                删除目标
+                {t('decade.deleteGoal')}
             </button>
         </div>
     );

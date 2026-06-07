@@ -131,6 +131,17 @@
         "message_plural": "You have {{count}} overlaps in your schedule.",
         "jump": "Jump to"
     },
+    "tabs": {
+        "calendar": "Calendar",
+        "decade": "Decade Plan"
+    },
+    "decade": {
+        "titlePlaceholder": "Goal title…",
+        "notePlaceholder": "Click to start writing…",
+        "deleteGoal": "Delete Goal",
+        "defaultTitle": "New Goal",
+        "goalFallback": "Goal {{n}}"
+    },
     "messages": {
         "importSuccess": "Data imported successfully!",
         "importError": "Invalid data format.",
