@@ -295,8 +295,11 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                     const hStart = max([highlight.start, dayStart]);
                     const hEnd   = min([highlight.end,   dayEnd]);
                     if (hEnd <= hStart) return null;
-                    const startMins = hStart.getHours() * 60 + hStart.getMinutes();
-                    const endMins   = hEnd.getTime() === dayEnd.getTime() + 1 ? 1440 : hEnd.getHours() * 60 + hEnd.getMinutes();
+                    // 同样必须相对 dayStart（已按 displayTimezone 锚定）做纯毫秒偏移，
+                    // 不能用 getHours()/getMinutes()（本地时区 getter）——否则冲突高亮
+                    // 会和真实色块错位，见幽灵预览同款 bug。
+                    const startMins = (hStart.getTime() - dayStart.getTime()) / 60000;
+                    const endMins   = (hEnd.getTime()   - dayStart.getTime()) / 60000;
                     return (
                         <div className="highlight-clash"
                             style={{ position: 'absolute', left: `${(startMins / 1440) * 100}%`, width: `${((endMins - startMins) / 1440) * 100}%`, top: '15%', bottom: 0, background: 'rgba(192,57,43,0.12)', zIndex: 10, pointerEvents: 'none' }}
@@ -342,8 +345,11 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                     if (!areIntervalsOverlapping({ start: dayStart, end: dayEnd }, { start: dragState.snapStart, end: dragState.snapEnd })) return null;
                     const rangeStart = max([dayStart, dragState.snapStart]);
                     const rangeEnd   = min([dayEnd,   dragState.snapEnd]);
-                    const startMins  = rangeStart.getHours() * 60 + rangeStart.getMinutes();
-                    let   endMins    = rangeEnd.getHours()   * 60 + rangeEnd.getMinutes();
+                    // 必须相对 dayStart（已按 displayTimezone 锚定）做纯毫秒偏移计算，
+                    // 不能用 getHours()/getMinutes()——那是浏览器本地时区的 getter，
+                    // 当 displayTimezone 与本地时区不同时，幽灵预览会和真实色块错位。
+                    const startMins  = (rangeStart.getTime() - dayStart.getTime()) / 60000;
+                    let   endMins    = (rangeEnd.getTime()   - dayStart.getTime()) / 60000;
                     if (endMins === 0 && rangeEnd > rangeStart) endMins = 1440;
                     return (
                         <EventBlock

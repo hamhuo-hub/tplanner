@@ -1,5 +1,5 @@
 import { eachDayOfInterval, format } from 'date-fns';
-import { formatInTimeZone } from 'date-fns-tz';
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
 import EventRow from './EventRow';
 import { useRef, useEffect, useLayoutEffect, useState } from 'react';
 
@@ -49,7 +49,10 @@ export default function Timeline({ startDate, endDate, events, onEventClick, onA
         const dayRow = targetElement?.closest('[id^="row-"]');
         if (!dayRow) return null;
         const dateStr = dayRow.id.replace('row-', '');
-        const rowDate = new Date(dateStr);
+        // 必须用与 EventBlock 渲染时相同的 displayTimezone 计算「行起点」，
+        // 否则拖拽落点会相对于渲染位置偏移一个时区差（例如 UTC+8 vs UTC+12 → 偏移 4 小时）。
+        const tz = travelTimezone || 'Asia/Shanghai';
+        const rowDate = fromZonedTime(`${dateStr}T00:00:00`, tz);
         const gridContainer = dayRow.querySelector('.event-row-grid');
         if (!gridContainer) return null;
         const gridRect = gridContainer.getBoundingClientRect();
