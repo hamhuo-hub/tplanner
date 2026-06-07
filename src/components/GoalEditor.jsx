@@ -1,10 +1,9 @@
 import { useState, useMemo, useRef } from 'react';
 import { marked } from 'marked';
-import { Plus } from 'lucide-react';
 
 import { GOAL_PALETTE as PALETTE } from '../utils/goalUtils';
 
-export default function GoalEditor({ goal, onChange }) {
+export default function GoalEditor({ goal, onSave }) {
     const [title,   setTitle]   = useState(goal?.title ?? '');
     const [color,   setColor]   = useState(goal?.color ?? PALETTE[0]);
     const [note,    setNote]    = useState(goal?.note  ?? '');
@@ -30,7 +29,7 @@ export default function GoalEditor({ goal, onChange }) {
             {/* ── Title ──────────────────────────────────────────────────── */}
             <input
                 value={title}
-                onChange={e => { setTitle(e.target.value); onChange?.({ title: e.target.value }); }}
+                onChange={e => { setTitle(e.target.value); onSave?.({ title: e.target.value }); }}
                 placeholder="目标标题…"
                 style={{
                     background:    'transparent',
@@ -56,7 +55,7 @@ export default function GoalEditor({ goal, onChange }) {
                 {PALETTE.map(c => (
                     <button
                         key={c}
-                        onClick={() => { setColor(c); onChange?.({ color: c }); }}
+                        onClick={() => { setColor(c); onSave?.({ color: c }); }}
                         style={{
                             width:        28,
                             height:       28,
@@ -76,33 +75,6 @@ export default function GoalEditor({ goal, onChange }) {
                     />
                 ))}
 
-                {/* Upload placeholder */}
-                <button style={{
-                    width:          28,
-                    height:         28,
-                    borderRadius:   6,
-                    background:     'rgba(255,255,255,0.05)',
-                    border:         '1.5px dashed rgba(255,255,255,0.2)',
-                    cursor:         'pointer',
-                    display:        'flex',
-                    alignItems:     'center',
-                    justifyContent: 'center',
-                    color:          'rgba(255,255,255,0.3)',
-                    flexShrink:     0,
-                    transition:     'border-color 150ms, color 150ms',
-                    padding:        0,
-                }}
-                    onMouseEnter={e => {
-                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.5)';
-                        e.currentTarget.style.color = 'rgba(255,255,255,0.7)';
-                    }}
-                    onMouseLeave={e => {
-                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)';
-                        e.currentTarget.style.color = 'rgba(255,255,255,0.3)';
-                    }}
-                >
-                    <Plus size={14} />
-                </button>
             </div>
 
             {/* ── Divider ────────────────────────────────────────────────── */}
@@ -124,7 +96,7 @@ export default function GoalEditor({ goal, onChange }) {
                         ref={textareaRef}
                         autoFocus
                         value={note}
-                        onChange={e => { setNote(e.target.value); onChange?.({ note: e.target.value }); }}
+                        onChange={e => { setNote(e.target.value); onSave?.({ note: e.target.value }); }}
                         onBlur={() => setEditing(false)}
                         spellCheck={false}
                         style={{

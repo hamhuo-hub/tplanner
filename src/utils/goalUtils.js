@@ -1,5 +1,3 @@
-import { GridGenerator } from 'react-hexgrid';
-
 export const GOAL_PALETTE = [
     '#5B8FCC', // Steel Blue
     '#C9A84C', // Antique Gold
@@ -11,21 +9,34 @@ export const GOAL_PALETTE = [
     '#8A8A8A', // Stone Grey
 ];
 
-// Default 4×3 rectangle grid positions (matches DecadePlan canvas layout)
-export const DEFAULT_HEX_POSITIONS = GridGenerator.rectangle(4, 3);
+// Round fractional hex coordinates to nearest integer hex
+function roundHex(q, r, s) {
+    let rq = Math.round(q), rr = Math.round(r), rs = Math.round(s);
+    const dq = Math.abs(rq - q), dr = Math.abs(rr - r), ds = Math.abs(rs - s);
+    if      (dq > dr && dq > ds) rq = -rr - rs;
+    else if (dr > ds)             rr = -rq - rs;
+    else                          rs = -rq - rr;
+    return { q: rq, r: rr, s: rs };
+}
 
-export function makeGoal({ title = '新目标', color, order, q, r, s } = {}) {
-    const pos = DEFAULT_HEX_POSITIONS[order] ?? { q: 0, r: 0, s: 0 };
+// Convert SVG viewBox-space pixel coords → hex grid coords (pointy-top layout)
+export function pixelToHex(x, y, size) {
+    const q = (Math.sqrt(3) / 3 * x - 1 / 3 * y) / size;
+    const r = (2 / 3 * y) / size;
+    return roundHex(q, r, -q - r);
+}
+
+export function makeGoal({ title = '新目标', color, order = 0, q = 0, r = 0, s } = {}) {
     return {
         id:        crypto.randomUUID(),
         title,
         color:     color ?? GOAL_PALETTE[order % GOAL_PALETTE.length],
         note:      '',
         icon:      '',
-        q:         q ?? pos.q,
-        r:         r ?? pos.r,
-        s:         s ?? pos.s,
-        order:     order ?? 0,
+        q,
+        r,
+        s:         s ?? -q - r,
+        order,
         updatedAt: Date.now(),
         deletedAt: 0,
     };

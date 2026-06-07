@@ -19,6 +19,7 @@ import { checkForClashes } from './utils/dateUtils'
 import { TIMEZONES } from './utils/constants'
 import { Plus, Languages, Printer, Globe, Download, Upload, Power } from 'lucide-react'
 import { getDatabase } from './database/db'
+import { makeGoal } from './utils/goalUtils'
 
 function App() {
     const { t, i18n } = useTranslation();
@@ -36,6 +37,10 @@ function App() {
     const [isLoaded, setIsLoaded] = useState(false);
     const [db, setDb] = useState(null);
     const [activeTab, setActiveTab] = useState('calendar');
+
+    // ── Decade Plan ───────────────────────────────────────────────────────
+    const [goals, setGoals] = useState([]);
+    const [selectedGoalId, setSelectedGoalId] = useState(null);
 
     // Detect Electron environment
     const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
@@ -115,6 +120,43 @@ function App() {
         });
         return () => { if (typeof off === 'function') off(); };
     }, [db, isElectron]);
+
+    // ── Goals subscription ───────────────────────────────────────────────
+    useEffect(() => {
+        if (!db) return;
+        const sub = db.goals.find().$.pipe(debounceTime(50)).subscribe(docs => {
+            setGoals(docs.filter(d => !d.get('deletedAt')).map(d => d.toJSON()));
+        });
+        return () => sub.unsubscribe();
+    }, [db]);
+
+    const handleAddGoal = async ({ q, r, s }) => {
+        if (!db) return;
+        const goal = makeGoal({ order: goals.length, q, r, s });
+        await db.goals.insert(goal);
+        setSelectedGoalId(goal.id);
+    };
+
+    const handleUpdateGoal = async (id, patch) => {
+        if (!db) return;
+        try {
+            const doc = await db.goals.findOne(id).exec();
+            if (doc) await doc.update({ $set: { ...patch, updatedAt: Date.now() } });
+        } catch (err) {
+            console.error('Update goal failed', err);
+        }
+    };
+
+    const handleDeleteGoal = async (id) => {
+        if (!db) return;
+        try {
+            const doc = await db.goals.findOne(id).exec();
+            if (doc) await doc.update({ $set: { deletedAt: Date.now(), updatedAt: Date.now() } });
+        } catch (err) {
+            console.error('Delete goal failed', err);
+        }
+        if (selectedGoalId === id) setSelectedGoalId(null);
+    };
 
     // ── Journal (随笔) ────────────────────────────────────────────────────
     const [journals, setJournals] = useState({});
@@ -638,7 +680,16 @@ function App() {
                         onSaveJournal={handleSaveJournal}
                     />
                 </>}
-                {activeTab === 'decade' && <DecadePlan />}
+                {activeTab === 'decade' && (
+                    <DecadePlan
+                        goals={goals}
+                        selectedId={selectedGoalId}
+                        onSelect={setSelectedGoalId}
+                        onAddGoal={handleAddGoal}
+                        onUpdateGoal={handleUpdateGoal}
+                        onDeleteGoal={handleDeleteGoal}
+                    />
+                )}
             </main>
 
             {activeTab === 'decade' && (

@@ -387,6 +387,15 @@ input[type="number"] {
     color: var(--clr-text);
 }
 
+/* ── Decade Plan — hex goal nodes ──────────────────────────────────── */
+.hexagon-goal polygon {
+    filter: drop-shadow(0px 8px 16px rgba(0,0,0,0.4));
+    transition: filter 0.2s ease;
+}
+.hexagon-goal:hover polygon {
+    filter: drop-shadow(0px 12px 22px rgba(0,0,0,0.6)) brightness(1.18);
+}
+
 /* ── Timeline ───────────────────────────────────────────────────────────── */
 .timeline-root {
     display: flex;
