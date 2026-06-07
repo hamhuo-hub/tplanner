@@ -241,8 +241,8 @@ fun NotesHeader(syncStatus: String, onPanelToggle: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("随手记", color = GOLD, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            Text(today, color = DIM, fontSize = 11.sp)
+            Text("随手记", color = GOLD, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text(today, color = DIM, fontSize = 14.sp)
         }
         IconButton(onClick = onPanelToggle) {
             Text("⇄", color = iconColor, fontSize = 17.sp)
@@ -475,14 +475,14 @@ fun TaskWidget(events: List<TaskEvent>, onToggle: (String, Boolean) -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("今日任务", color = GOLD, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text("今日任务", color = GOLD, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Text(
                     today.format(DateTimeFormatter.ofPattern("M月d日 · E")),
-                    color = DIM, fontSize = 11.sp
+                    color = DIM, fontSize = 15.sp
                 )
             }
             if (taskTotal > 0) {
-                Text("$taskDone/$taskTotal", color = DIM, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                Text("$taskDone/$taskTotal", color = DIM, fontSize = 15.sp, fontFamily = FontFamily.Monospace)
             }
         }
 
@@ -490,7 +490,7 @@ fun TaskWidget(events: List<TaskEvent>, onToggle: (String, Boolean) -> Unit) {
 
         if (todayEvents.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("今日空闲", color = Color(0xFF3A342A), fontSize = 12.sp)
+                Text("今日空闲", color = Color(0xFF3A342A), fontSize = 16.sp)
             }
         } else {
             LazyColumn(Modifier.fillMaxSize().padding(vertical = 4.dp)) {
@@ -502,13 +502,13 @@ fun TaskWidget(events: List<TaskEvent>, onToggle: (String, Boolean) -> Unit) {
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text(label, color = Color(0xFF6B5928), fontSize = 9.sp, letterSpacing = 0.12.sp)
+                            Text(label, color = Color(0xFF6B5928), fontSize = 13.sp, letterSpacing = 0.12.sp)
                             Box(
                                 Modifier
                                     .background(Color(0x1FC9A84C), RoundedCornerShape(2.dp))
                                     .padding(horizontal = 4.dp, vertical = 1.dp)
                             ) {
-                                Text("${list.size}", color = Color(0xFF6B5928), fontSize = 9.sp)
+                                Text("${list.size}", color = Color(0xFF6B5928), fontSize = 13.sp)
                             }
                         }
                     }
@@ -563,7 +563,7 @@ fun TaskItem(
         if (event.type == "task") {
             Box(
                 modifier = Modifier
-                    .size(11.dp)
+                    .size(15.dp)
                     .background(
                         if (isDone) GOLD else Color.Transparent,
                         RoundedCornerShape(2.dp)
@@ -572,7 +572,7 @@ fun TaskItem(
                     .clickable { onToggle(event.id, !event.completed) },
                 contentAlignment = Alignment.Center
             ) {
-                if (isDone) Text("✓", color = Color.Black, fontSize = 7.sp, lineHeight = 7.sp)
+                if (isDone) Text("✓", color = Color.Black, fontSize = 9.sp, lineHeight = 9.sp)
             }
         } else {
             Box(
@@ -591,15 +591,15 @@ fun TaskItem(
                 Text(
                     text       = event.title.ifBlank { "(无标题)" },
                     color      = if (isDone) DIM else Color(0xFFE0D8C8),
-                    fontSize   = 11.sp,
+                    fontSize   = 15.sp,
                     fontWeight = FontWeight.Medium,
                     maxLines   = 1,
                     modifier   = Modifier.weight(1f, fill = false),
                     style      = if (isDone) TextStyle(
                         color          = DIM,
-                        fontSize       = 11.sp,
+                        fontSize       = 15.sp,
                         textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough
-                    ) else TextStyle(color = Color(0xFFE0D8C8), fontSize = 11.sp)
+                    ) else TextStyle(color = Color(0xFFE0D8C8), fontSize = 15.sp)
                 )
                 if (totalCheck > 0) {
                     val allDone = doneCount == totalCheck
@@ -614,19 +614,19 @@ fun TaskItem(
                         Text(
                             "$doneCount/$totalCheck",
                             color    = if (allDone) Color(0xFF4A7C59) else Color(0xFF6B5928),
-                            fontSize = 9.sp,
+                            fontSize = 13.sp,
                             fontFamily = FontFamily.Monospace
                         )
                     }
                 }
-                if (isNow) Text("现在", color = Color(0xFF8BB8E8), fontSize = 8.sp)
-                else if (status == "soon") Text("即将", color = GOLD, fontSize = 8.sp)
+                if (isNow) Text("现在", color = Color(0xFF8BB8E8), fontSize = 11.sp)
+                else if (status == "soon") Text("即将", color = GOLD, fontSize = 11.sp)
             }
             val startFmt = event.start.atZone(zone).format(fmt)
             val endFmt   = event.end.atZone(zone).format(fmt)
             Text(
                 "$startFmt – $endFmt",
-                color = DIM, fontSize = 10.sp, fontFamily = FontFamily.Monospace
+                color = DIM, fontSize = 14.sp, fontFamily = FontFamily.Monospace
             )
         }
     }
