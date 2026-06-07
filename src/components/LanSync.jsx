@@ -227,7 +227,7 @@ function saveHistory(peer) {
 }
 
 // ── 主组件 ────────────────────────────────────────────────────────────────────
-export default function LanSync({ events, onMergeEvents, journals, onMergeJournals }) {
+export default function LanSync({ events, onMergeEvents, journals, onMergeJournals, goals, onMergeGoals }) {
     const { t } = useTranslation();
     const [open, setOpen]           = useState(false);
     const [config, setConfig]       = useState(DEFAULT_CONFIG);
@@ -249,10 +249,12 @@ export default function LanSync({ events, onMergeEvents, journals, onMergeJourna
     const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
 
     // Always-current refs — avoids stale closures in async callbacks and timers
-    const eventsRef  = useRef(events);
+    const eventsRef   = useRef(events);
     const journalsRef = useRef(journals);
-    useEffect(() => { eventsRef.current  = events;  }, [events]);
+    const goalsRef    = useRef(goals);
+    useEffect(() => { eventsRef.current   = events;   }, [events]);
     useEffect(() => { journalsRef.current = journals; }, [journals]);
+    useEffect(() => { goalsRef.current    = goals;    }, [goals]);
 
     // Load config + local IP
     useEffect(() => {
@@ -352,10 +354,10 @@ export default function LanSync({ events, onMergeEvents, journals, onMergeJourna
 
     const executeMerge = useCallback(async (peer, remoteEvents) => {
         const base = `http://${peer.ip}:${peer.port}`;
-        // Read from refs to always get the latest events/journals, even if called
-        // from a stale closure (e.g. ConflictModal confirm button)
-        const localEvents  = eventsRef.current;
+        // Read from refs to always get the latest data, even if called from a stale closure
+        const localEvents   = eventsRef.current;
         const localJournals = journalsRef.current;
+        const localGoals    = goalsRef.current;
 
         // ── Events ──────────────────────────────────────────────────────────
         const mergedEvents = mergeEvents(localEvents, remoteEvents);
@@ -383,11 +385,27 @@ export default function LanSync({ events, onMergeEvents, journals, onMergeJourna
             }
         } catch (_) { /* journals sync failure is non-fatal */ }
 
+        // ── Goals ────────────────────────────────────────────────────────────
+        try {
+            const gRes = await fetch(`${base}/tplanner/goals`, { method: 'GET', signal: AbortSignal.timeout(5000) });
+            if (gRes.ok) {
+                const remoteGoals  = await gRes.json();
+                const mergedGoals  = mergeEvents(localGoals, remoteGoals); // same updatedAt-wins logic
+                await fetch(`${base}/tplanner/goals`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(mergedGoals),
+                    signal: AbortSignal.timeout(5000),
+                });
+                onMergeGoals?.(mergedGoals);
+            }
+        } catch (_) { /* goals sync failure is non-fatal */ }
+
         saveHistory(peer);
         setStatus('success');
         setStatusMsg(`已同步 ${mergedEvents.length} 条事件`);
         setPreview(null);
-    }, [onMergeEvents, onMergeJournals]);  // refs are stable, no need as deps
+    }, [onMergeEvents, onMergeJournals, onMergeGoals]);  // refs are stable, no need as deps
 
     const activePeer = selected ?? (config.peerIp ? { ip: config.peerIp, port: config.port, name: config.peerIp } : null);
     const statusColor = { idle: 'var(--clr-text-dim)', syncing: 'var(--clr-gold)', success: '#4A9DA8', error: 'var(--clr-red,#C0392B)' }[status];

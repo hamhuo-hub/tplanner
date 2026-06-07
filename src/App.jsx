@@ -583,6 +583,7 @@ function App() {
                         <LanSync
                             events={events}
                             journals={journals}
+                            goals={goals}
                             onMergeEvents={async (merged) => {
                                 if (!db) return;
                                 try {
@@ -614,6 +615,20 @@ function App() {
                                         if (text?.trim()) localStorage.setItem(`tplanner_journal_${date}`, text);
                                         else localStorage.removeItem(`tplanner_journal_${date}`);
                                     });
+                                }
+                            }}
+                            onMergeGoals={async (merged) => {
+                                if (!db) return;
+                                try {
+                                    await db.goals.bulkUpsert(merged.map(g => ({
+                                        ...g,
+                                        updatedAt: g.updatedAt || Date.now(),
+                                        note:      g.note  ?? '',
+                                        icon:      g.icon  ?? '',
+                                        deletedAt: g.deletedAt ?? 0,
+                                    })));
+                                } catch (err) {
+                                    console.error('LAN goals merge failed', err);
                                 }
                             }}
                         />
