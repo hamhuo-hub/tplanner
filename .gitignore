@@ -3,3 +3,8 @@
 /.gradle
 /.idea
 /app/build
+/dist-electron
+/dist
+/node_modules
+/release
+package-lock.json
