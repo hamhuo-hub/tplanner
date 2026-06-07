@@ -1,55 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import { Wifi, RefreshCw, Server, Search, AlertTriangle, CheckCircle, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { format } from 'date-fns';
-
-const DEFAULT_CONFIG = { peerIp: '', port: 37401, serverEnabled: false, autoSync: false, interval: 60 };
-
-// ── 冲突分析（tombstone 感知）────────────────────────────────────────────────
-function isAlive(e) { return !e.deletedAt; }
-
-function analyzeConflict(local, remote) {
-    const localMap  = new Map(local.map(e  => [e.id, e]));
-    const remoteMap = new Map(remote.map(e => [e.id, e]));
-
-    const results = { added: [], removed: [], updated: [], deleted: [], synced: [], conflicted: [] };
-
-    for (const [id, re] of remoteMap) {
-        const le = localMap.get(id);
-        if (!le) {
-            if (isAlive(re)) results.added.push(re);
-            // else: remote tombstone for unknown id — no-op
-        } else if ((re.updatedAt || 0) > (le.updatedAt || 0)) {
-            if (!isAlive(re) && isAlive(le)) {
-                results.deleted.push({ local: le, remote: re }); // remote deleted it
-            } else {
-                results.updated.push({ local: le, remote: re });
-            }
-        } else if ((re.updatedAt || 0) < (le.updatedAt || 0)) {
-            if (!isAlive(le) && isAlive(re)) {
-                results.deleted.push({ local: le, remote: re }); // local deleted it (local wins)
-            } else {
-                results.conflicted.push({ local: le, remote: re });
-            }
-        } else {
-            results.synced.push(le);
-        }
-    }
-    for (const [id, le] of localMap) {
-        if (!remoteMap.has(id) && isAlive(le)) results.removed.push(le);
-    }
-    return results;
-}
-
-function mergeEvents(local, remote) {
-    const map = new Map();
-    for (const e of local)  map.set(e.id, e);
-    for (const e of remote) {
-        const ex = map.get(e.id);
-        if (!ex || (e.updatedAt || 0) > (ex.updatedAt || 0)) map.set(e.id, e);
-    }
-    return Array.from(map.values());
-}
+import useLanSync from '../hooks/useLanSync';
+import { countSubtaskChanges } from '../utils/syncLogic';
 
 // ── 子组件：已发现的服务器卡片 ────────────────────────────────────────────────
 function ServerCard({ server, selected, onSelect }) {
@@ -81,10 +35,94 @@ function ServerCard({ server, selected, onSelect }) {
 }
 
 // ── 子组件：冲突预览弹窗 ──────────────────────────────────────────────────────
-function ConflictModal({ analysis, peer, onConfirm, onCancel }) {
+const fmtTime = (ts) => ts ? format(new Date(ts), 'MM-dd HH:mm') : '';
+
+// 通用冲突分组展示：事件/目标用 .title，日志用 .date + 文本片段
+function titleLabel(item) { return item?.title ?? ''; }
+function journalLabel(item) {
+    const text = item?.text || '';
+    const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 20);
+    return snippet ? `${item.date} · ${snippet}${text.length > 20 ? '…' : ''}` : item?.date ?? '';
+}
+
+function ConflictSection({ title, itemLabel, unit, analysis, extra }) {
     const [showDetail, setShowDetail] = useState(false);
     const { added, removed, updated, deleted, conflicted, synced } = analysis;
     const hasChanges = added.length + removed.length + updated.length + deleted.length > 0;
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 12, borderTop: '1px solid var(--clr-border,#333)' }}>
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--clr-text-dim)' }}>
+                {title}
+            </span>
+
+            {!hasChanges ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#4A9DA8' }}>
+                    <CheckCircle size={14} />
+                    <span style={{ fontSize: 12 }}>{synced.length > 0 ? `${synced.length} ${unit}已同步，无需合并` : '数据完全一致，无需合并'}</span>
+                </div>
+            ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {added.length > 0      && <StatRow icon="↓" color="#5B8FCC" label={`从对端拉取 ${added.length} ${unit}`} />}
+                    {removed.length > 0    && <StatRow icon="↑" color="#4A9DA8" label={`推送本地独有 ${removed.length} ${unit}`} />}
+                    {deleted.length > 0    && <StatRow icon="🗑" color="#A04040" label={`${deleted.length} ${unit}将被删除（已在其中一端删除）`} />}
+                    {updated.length > 0    && <StatRow icon="↻" color="#C9A84C" label={`${updated.length} ${unit}将被对端较新版本覆盖`} />}
+                    {conflicted.length > 0 && <StatRow icon="!" color="#C0392B" label={`${conflicted.length} ${unit}本地版本更新（保留本地）`} />}
+                    {synced.length > 0     && <StatRow icon="✓" color="#4A7C59" label={`${synced.length} ${unit}已同步无变化`} />}
+                </div>
+            )}
+
+            {extra}
+
+            {hasChanges && (
+                <>
+                    <button onClick={() => setShowDetail(v => !v)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, color: 'var(--clr-text-dim)', fontSize: 11, padding: 0 }}>
+                        {showDetail ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                        {showDetail ? '收起详情' : '查看详情'}
+                    </button>
+
+                    {showDetail && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 220, overflow: 'auto' }}>
+                            <EventGroup title="将从对端拉取" color="#5B8FCC" items={added} renderItem={itemLabel} />
+                            <EventGroup title="将推送到对端" color="#4A9DA8" items={removed} renderItem={itemLabel} />
+                            <EventGroup title="将被删除（tombstone 传播）" color="#A04040" items={deleted}
+                                renderItem={({ local: l, remote: r }) => (
+                                    <span style={{ textDecoration: 'line-through', color: 'var(--clr-text-dim)' }}>
+                                        {itemLabel(l)}
+                                        <span style={{ fontSize: 9, marginLeft: 6 }}>
+                                            {fmtTime(r.deletedAt || l.deletedAt) && `${fmtTime(r.deletedAt || l.deletedAt)} 删除`}
+                                        </span>
+                                    </span>
+                                )}
+                            />
+                            <EventGroup title="将被对端版本覆盖" color="#C9A84C" items={updated}
+                                renderItem={({ local: l, remote: r }) => (
+                                    <span>
+                                        <span style={{ textDecoration: 'line-through', color: 'var(--clr-text-dim)', marginRight: 6 }}>{itemLabel(l)}</span>
+                                        → {itemLabel(r)}
+                                        <span style={{ fontSize: 9, color: 'var(--clr-text-dim)', marginLeft: 6 }}>{fmtTime(r.updatedAt)}</span>
+                                    </span>
+                                )}
+                            />
+                            <EventGroup title="本地版本更新（保留）" color="#C0392B" items={conflicted}
+                                renderItem={({ local: l }) => itemLabel(l)}
+                            />
+                        </div>
+                    )}
+                </>
+            )}
+        </div>
+    );
+}
+
+function ConflictModal({ analysis, journalAnalysis, goalAnalysis, peer, onConfirm, onCancel }) {
+    const { added, removed, updated, deleted } = analysis;
+    const hasEventChanges = added.length + removed.length + updated.length + deleted.length > 0;
+    const hasJournalChanges = ['added', 'removed', 'updated', 'deleted'].some(k => journalAnalysis[k].length > 0);
+    const hasGoalChanges    = ['added', 'removed', 'updated', 'deleted'].some(k => goalAnalysis[k].length > 0);
+    const hasChanges = hasEventChanges || hasJournalChanges || hasGoalChanges;
+    const subtaskStats = useMemo(() => countSubtaskChanges(updated), [updated]);
 
     return (
         <div style={{
@@ -92,10 +130,10 @@ function ConflictModal({ analysis, peer, onConfirm, onCancel }) {
             background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
             <div style={{
-                width: 420, maxHeight: '80vh', overflow: 'auto',
+                width: 440, maxHeight: '85vh', overflow: 'auto',
                 background: 'var(--clr-surface,#1e1e1e)',
                 border: '1px solid var(--clr-border,#333)', borderRadius: 10,
-                padding: 20, display: 'flex', flexDirection: 'column', gap: 16,
+                padding: 20, display: 'flex', flexDirection: 'column', gap: 12,
                 boxShadow: '0 16px 48px rgba(0,0,0,0.6)',
             }}>
                 {/* Header */}
@@ -113,64 +151,24 @@ function ConflictModal({ analysis, peer, onConfirm, onCancel }) {
                     {peer.name} · {peer.ip}:{peer.port} · {peer.events} 条事件
                 </div>
 
-                {/* Summary */}
-                {!hasChanges ? (
+                {!hasChanges && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#4A9DA8' }}>
                         <CheckCircle size={15} />
                         <span style={{ fontSize: 13 }}>数据完全一致，无需合并</span>
                     </div>
-                ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {added.length > 0      && <StatRow icon="↓" color="#5B8FCC" label={`从对端拉取 ${added.length} 条新事件`} />}
-                        {removed.length > 0    && <StatRow icon="↑" color="#4A9DA8" label={`推送本地独有 ${removed.length} 条事件`} />}
-                        {deleted.length > 0    && <StatRow icon="🗑" color="#A04040" label={`${deleted.length} 条事件将被删除（已在其中一端删除）`} />}
-                        {updated.length > 0    && <StatRow icon="↻" color="#C9A84C" label={`${updated.length} 条事件将被对端较新版本覆盖`} />}
-                        {conflicted.length > 0 && <StatRow icon="!" color="#C0392B" label={`${conflicted.length} 条事件本地版本更新（保留本地）`} />}
-                        {synced.length > 0     && <StatRow icon="✓" color="#4A7C59" label={`${synced.length} 条已同步无变化`} />}
-                    </div>
                 )}
 
-                {/* Detail toggle */}
-                {hasChanges && (
-                    <>
-                        <button onClick={() => setShowDetail(v => !v)}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, color: 'var(--clr-text-dim)', fontSize: 11, padding: 0 }}>
-                            {showDetail ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                            {showDetail ? '收起详情' : '查看详情'}
-                        </button>
-
-                        {showDetail && (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 260, overflow: 'auto' }}>
-                                <EventGroup title="将从对端拉取" color="#5B8FCC" items={added} renderItem={e => e.title} />
-                                <EventGroup title="将推送到对端" color="#4A9DA8" items={removed} renderItem={e => e.title} />
-                                <EventGroup title="将被删除（tombstone 传播）" color="#A04040" items={deleted}
-                                    renderItem={({ local: l, remote: r }) => (
-                                        <span style={{ textDecoration: 'line-through', color: 'var(--clr-text-dim)' }}>
-                                            {l.title}
-                                            <span style={{ fontSize: 9, marginLeft: 6 }}>
-                                                {(r.deletedAt || l.deletedAt) ? format(new Date(r.deletedAt || l.deletedAt), 'MM-dd HH:mm') + ' 删除' : ''}
-                                            </span>
-                                        </span>
-                                    )}
-                                />
-                                <EventGroup title="将被对端版本覆盖" color="#C9A84C" items={updated}
-                                    renderItem={({ local: l, remote: r }) => (
-                                        <span>
-                                            <span style={{ textDecoration: 'line-through', color: 'var(--clr-text-dim)', marginRight: 6 }}>{l.title}</span>
-                                            → {r.title}
-                                            <span style={{ fontSize: 9, color: 'var(--clr-text-dim)', marginLeft: 6 }}>
-                                                {r.updatedAt ? format(new Date(r.updatedAt), 'MM-dd HH:mm') : ''}
-                                            </span>
-                                        </span>
-                                    )}
-                                />
-                                <EventGroup title="本地版本更新（保留）" color="#C0392B" items={conflicted}
-                                    renderItem={({ local: l }) => l.title}
-                                />
-                            </div>
-                        )}
-                    </>
-                )}
+                <ConflictSection
+                    title="事件"
+                    unit="条"
+                    itemLabel={titleLabel}
+                    analysis={analysis}
+                    extra={subtaskStats.events > 0 && (
+                        <StatRow icon="☑" color="#9B7EBD" label={`其中 ${subtaskStats.events} 条事件的子任务有变化（共 ${subtaskStats.items} 项）`} />
+                    )}
+                />
+                <ConflictSection title="日志" unit="篇" itemLabel={journalLabel} analysis={journalAnalysis} />
+                <ConflictSection title="目标" unit="个" itemLabel={titleLabel} analysis={goalAnalysis} />
 
                 {/* Actions */}
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', paddingTop: 4 }}>
@@ -215,203 +213,21 @@ function EventGroup({ title, color, items, renderItem }) {
     );
 }
 
-// ── 连接历史（localStorage）────────────────────────────────────────────────
-function getHistory() {
-    try { return JSON.parse(localStorage.getItem('tplanner_sync_history') || '[]'); }
-    catch { return []; }
-}
-function saveHistory(peer) {
-    const list = getHistory().filter(h => !(h.ip === peer.ip && h.port === peer.port));
-    list.unshift({ name: peer.name || peer.ip, ip: peer.ip, port: peer.port });
-    localStorage.setItem('tplanner_sync_history', JSON.stringify(list.slice(0, 5)));
-}
-
 // ── 主组件 ────────────────────────────────────────────────────────────────────
 export default function LanSync({ events, onMergeEvents, journals, onMergeJournals, goals, onMergeGoals }) {
     const { t } = useTranslation();
-    const [open, setOpen]           = useState(false);
-    const [config, setConfig]       = useState(DEFAULT_CONFIG);
-    const [localIp, setLocalIp]     = useState('');
-
-    // Discovery
-    const [scanning, setScanning]   = useState(false);
-    const [peers, setPeers]         = useState([]);      // discovered servers
-    const [selected, setSelected]   = useState(null);    // chosen server
-
-    // Sync state
-    const [status, setStatus]       = useState('idle');  // idle|syncing|success|error
-    const [statusMsg, setStatusMsg] = useState('');
-
-    // Conflict preview
-    const [preview, setPreview]     = useState(null);    // { analysis, remoteEvents }
-
-    const autoTimerRef = useRef(null);
-    const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
-
-    // Always-current refs — avoids stale closures in async callbacks and timers
-    const eventsRef   = useRef(events);
-    const journalsRef = useRef(journals);
-    const goalsRef    = useRef(goals);
-    useEffect(() => { eventsRef.current   = events;   }, [events]);
-    useEffect(() => { journalsRef.current = journals; }, [journals]);
-    useEffect(() => { goalsRef.current    = goals;    }, [goals]);
-
-    // Load config + local IP
-    useEffect(() => {
-        if (!isElectron) return;
-        window.electronAPI.getLanConfig?.().then(cfg => { if (cfg) setConfig(c => ({ ...c, ...cfg })); });
-        window.electronAPI.getLocalIp?.().then(ip => setLocalIp(ip || ''));
-        const off1 = window.electronAPI.onLanEventsUpdated?.(raw => { onMergeEvents?.(raw); });
-        const off2 = window.electronAPI.onLanServerError?.(msg => { setStatus('error'); setStatusMsg(msg); });
-        return () => { off1?.(); off2?.(); };
-    }, [isElectron]);
-
-    // Auto-sync timer — uses ref so it always sees the latest doSync/events
-    const doSyncRef = useRef(null);
-    useEffect(() => {
-        clearInterval(autoTimerRef.current);
-        const peer = selected || (config.peerIp ? { ip: config.peerIp, port: config.port } : null);
-        if (config.autoSync && peer) {
-            autoTimerRef.current = setInterval(() => doSyncRef.current?.(peer, true), (config.interval || 60) * 1000);
-        }
-        return () => clearInterval(autoTimerRef.current);
-    }, [config.autoSync, config.interval, selected]);
-
-    const saveConfig = useCallback((next) => {
-        setConfig(next);
-        if (isElectron) window.electronAPI.saveLanConfig?.(next);
-    }, [isElectron]);
-
-    // ── 局域网扫描 ───────────────────────────────────────────────────────────
-    const scan = useCallback(async () => {
-        if (!isElectron) return;
-        setScanning(true);
-        setPeers([]);
-        setSelected(null);
-        try {
-            const found = await window.electronAPI.discoverLan?.() ?? [];
-            setPeers(found);
-            if (found.length === 1) setSelected(found[0]); // 只有一个时自动选中
-        } catch (e) {
-            setStatusMsg(e.message);
-        } finally {
-            setScanning(false);
-        }
-    }, [isElectron]);
-
-    // ── journals 合并：与 mergeEvents 相同的 updatedAt-wins + tombstone 策略 ──
-    // 条目格式 { text, updatedAt, deletedAt }；删除会写入 deletedAt+updatedAt，
-    // 因此删除记录在合并时会和"更早"的存活记录正常竞争，不会被回环恢复。
-    function mergeJournals(local, remote) {
-        const result = { ...(local || {}) };
-        for (const [date, entry] of Object.entries(remote || {})) {
-            const existing = result[date];
-            if (!existing || (entry?.updatedAt || 0) > (existing?.updatedAt || 0)) {
-                result[date] = entry;
-            }
-        }
-        return result;
-    }
-
-    // ── 同步（含冲突预览） ────────────────────────────────────────────────────
-    const doSync = useCallback(async (peer, skipPreview = false) => {
-        if (!peer?.ip || !peer?.port) {
-            setStatus('error'); setStatusMsg('未选择同步目标'); return;
-        }
-        setStatus('syncing'); setStatusMsg('');
-        const base = `http://${peer.ip}:${peer.port}`;
-        try {
-            const res = await fetch(`${base}/tplanner/events`, { method: 'GET', signal: AbortSignal.timeout(5000) });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const remoteEvents = await res.json();
-
-            if (!skipPreview) {
-                // Use ref for latest events to avoid stale analysis
-                const analysis = analyzeConflict(eventsRef.current, remoteEvents);
-                setPreview({ analysis, remoteEvents, peer });
-                setStatus('idle');
-                return;
-            }
-
-            await executeMerge(peer, remoteEvents);
-        } catch (e) {
-            setStatus('error'); setStatusMsg(e.message);
-        }
-    }, []);  // no deps — always reads from refs
-
-    // Keep doSyncRef current so the auto-sync timer always uses the latest version
-    useEffect(() => { doSyncRef.current = doSync; }, [doSync]);
-
-    // 启动时后台自动连接历史服务器
-    useEffect(() => {
-        if (!isElectron) return;
-        const historyKeys = new Set(getHistory().map(h => `${h.ip}:${h.port}`));
-        window.electronAPI.discoverLan?.().then(found => {
-            if (!found?.length) return;
-            const target = found.find(p => historyKeys.size === 0 || historyKeys.has(`${p.ip}:${p.port}`));
-            if (!target) return;
-            setSelected(target);
-            doSyncRef.current?.(target, true);
-        }).catch(() => {});
-    }, [isElectron]);
-
-    const executeMerge = useCallback(async (peer, remoteEvents) => {
-        const base = `http://${peer.ip}:${peer.port}`;
-        // Read from refs to always get the latest data, even if called from a stale closure
-        const localEvents   = eventsRef.current;
-        const localJournals = journalsRef.current;
-        const localGoals    = goalsRef.current;
-
-        // ── Events ──────────────────────────────────────────────────────────
-        const mergedEvents = mergeEvents(localEvents, remoteEvents);
-        await fetch(`${base}/tplanner/events`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(mergedEvents),
-            signal: AbortSignal.timeout(5000),
-        });
-        onMergeEvents?.(mergedEvents);
-
-        // ── Journals ─────────────────────────────────────────────────────────
-        try {
-            const jRes = await fetch(`${base}/tplanner/journals`, { method: 'GET', signal: AbortSignal.timeout(5000) });
-            if (jRes.ok) {
-                const remoteJournals = await jRes.json();
-                const mergedJournals = mergeJournals(localJournals, remoteJournals);
-                await fetch(`${base}/tplanner/journals`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(mergedJournals),
-                    signal: AbortSignal.timeout(5000),
-                });
-                onMergeJournals?.(mergedJournals);
-            }
-        } catch (_) { /* journals sync failure is non-fatal */ }
-
-        // ── Goals ────────────────────────────────────────────────────────────
-        try {
-            const gRes = await fetch(`${base}/tplanner/goals`, { method: 'GET', signal: AbortSignal.timeout(5000) });
-            if (gRes.ok) {
-                const remoteGoals  = await gRes.json();
-                const mergedGoals  = mergeEvents(localGoals, remoteGoals); // same updatedAt-wins logic
-                await fetch(`${base}/tplanner/goals`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(mergedGoals),
-                    signal: AbortSignal.timeout(5000),
-                });
-                onMergeGoals?.(mergedGoals);
-            }
-        } catch (_) { /* goals sync failure is non-fatal */ }
-
-        saveHistory(peer);
-        setStatus('success');
-        setStatusMsg(`已同步 ${mergedEvents.length} 条事件`);
-        setPreview(null);
-    }, [onMergeEvents, onMergeJournals, onMergeGoals]);  // refs are stable, no need as deps
-
-    const activePeer = selected ?? (config.peerIp ? { ip: config.peerIp, port: config.port, name: config.peerIp } : null);
-    const statusColor = { idle: 'var(--clr-text-dim)', syncing: 'var(--clr-gold)', success: '#4A9DA8', error: 'var(--clr-red,#C0392B)' }[status];
+    const sync = useLanSync({ events, onMergeEvents, journals, onMergeJournals, goals, onMergeGoals });
+    const {
+        isElectron,
+        open, setOpen,
+        config, setConfig, saveConfig,
+        localIp,
+        scanning, peers, selected, setSelected, scan,
+        status, statusMsg, statusColor,
+        preview, setPreview,
+        doSync, executeMerge,
+        activePeer,
+    } = sync;
 
     return (
         <>
@@ -541,6 +357,8 @@ export default function LanSync({ events, onMergeEvents, journals, onMergeJourna
             {preview && (
                 <ConflictModal
                     analysis={preview.analysis}
+                    journalAnalysis={preview.journalAnalysis}
+                    goalAnalysis={preview.goalAnalysis}
                     peer={preview.peer}
                     onConfirm={() => executeMerge(preview.peer, preview.remoteEvents)}
                     onCancel={() => setPreview(null)}

@@ -20,6 +20,7 @@ import { TIMEZONES } from './utils/constants'
 import { Plus, Languages, Printer, Globe, Download, Upload, Power } from 'lucide-react'
 import { getDatabase } from './database/db'
 import { makeGoal } from './utils/goalUtils'
+import { now as clockNow } from './utils/clock'
 
 function App() {
     const { t, i18n } = useTranslation();
@@ -110,7 +111,7 @@ function App() {
             try {
                 const doc = await db.events.findOne(id).exec();
                 if (doc) {
-                    const patch = { completed, updatedAt: Date.now() };
+                    const patch = { completed, updatedAt: clockNow() };
                     if (checklist !== undefined) patch.checklist = checklist;
                     await doc.update({ $set: patch });
                 }
@@ -143,7 +144,7 @@ function App() {
         if (!db) return;
         try {
             const doc = await db.goals.findOne(id).exec();
-            if (doc) await doc.incrementalPatch({ ...patch, updatedAt: Date.now() });
+            if (doc) await doc.incrementalPatch({ ...patch, updatedAt: clockNow() });
         } catch (err) {
             console.error('Update goal failed', err);
         }
@@ -153,7 +154,7 @@ function App() {
         if (!db) return;
         try {
             const doc = await db.goals.findOne(id).exec();
-            if (doc) await doc.update({ $set: { deletedAt: Date.now(), updatedAt: Date.now() } });
+            if (doc) await doc.update({ $set: { deletedAt: clockNow(), updatedAt: clockNow() } });
         } catch (err) {
             console.error('Delete goal failed', err);
         }
@@ -174,8 +175,8 @@ function App() {
                     return !dead && note === '' && (title === '' || title === '新目标' || title === 'New Goal');
                 });
                 if (!empty.length) { console.log('[tplanner] 没有空目标'); return; }
-                const now = Date.now();
-                await Promise.all(empty.map(d => d.incrementalPatch({ deletedAt: now, updatedAt: now })));
+                const ts = clockNow();
+                await Promise.all(empty.map(d => d.incrementalPatch({ deletedAt: ts, updatedAt: ts })));
                 console.log(`[tplanner] 已清除 ${empty.length} 个空目标`);
             },
         };
@@ -240,10 +241,10 @@ function App() {
     }, [isElectron]);
 
     const handleSaveJournal = (dateStr, text) => {
-        const now = Date.now();
+        const ts = clockNow();
         const entry = text?.trim()
-            ? { text, updatedAt: now, deletedAt: null }
-            : { text: '', updatedAt: now, deletedAt: now };
+            ? { text, updatedAt: ts, deletedAt: null }
+            : { text: '', updatedAt: ts, deletedAt: ts };
         setJournals(prev => ({ ...prev, [dateStr]: entry }));
         if (isElectron && window.electronAPI?.saveJournal) {
             window.electronAPI.saveJournal(dateStr, entry);
@@ -343,7 +344,7 @@ function App() {
         try {
             const doc = await db.events.findOne(eventId).exec();
             if (doc) {
-                await doc.update({ $set: { completed: completedStatus, updatedAt: Date.now() } });
+                await doc.update({ $set: { completed: completedStatus, updatedAt: clockNow() } });
             }
         } catch (err) {
             console.error('Update failed', err);
@@ -367,7 +368,7 @@ function App() {
                 const cleanUpdate = { ...update };
                 cleanUpdate.start = new Date(cleanUpdate.start).toISOString();
                 cleanUpdate.end = new Date(cleanUpdate.end).toISOString();
-                cleanUpdate.updatedAt = Date.now();
+                cleanUpdate.updatedAt = clockNow();
                 return cleanUpdate;
             });
             await db.events.bulkUpsert(upserts);
@@ -386,13 +387,13 @@ function App() {
     // Soft-delete: stamp deletedAt instead of physically removing,
     // so the tombstone propagates to peers during the next LAN sync.
     const softDelete = async (doc) => {
-        await doc.update({ $set: { deletedAt: Date.now(), updatedAt: Date.now() } });
+        await doc.update({ $set: { deletedAt: clockNow(), updatedAt: clockNow() } });
     };
 
     const handleDeleteEvent = async (id, scope = 'single', event = null) => {
         if (!db) return;
         try {
-            const now = Date.now();
+            const now = clockNow();
             if (scope === 'all' && event?.groupId) {
                 const docsObj = await db.events.find({ selector: { groupId: event.groupId } }).exec();
                 // bulkUpsert fires a single batch write → single subscription emission
@@ -437,7 +438,7 @@ function App() {
                 end:   new Date(start.getTime() + duration).toISOString(),
                 completed: false,
                 deletedAt: 0,
-                updatedAt: Date.now(),
+                updatedAt: clockNow(),
                 checklist: (clipboard.checklist || []).map(i => ({ ...i, id: crypto.randomUUID(), completed: false })),
             };
             await db.events.insert(copy);
@@ -514,7 +515,7 @@ function App() {
                         const cleanUpdate = { ...event };
                         cleanUpdate.start = new Date(cleanUpdate.start).toISOString();
                         cleanUpdate.end = new Date(cleanUpdate.end).toISOString();
-                        cleanUpdate.updatedAt = Date.now();
+                        cleanUpdate.updatedAt = clockNow();
                         if (!cleanUpdate.note) cleanUpdate.note = "";
                         if (!cleanUpdate.timezone) cleanUpdate.timezone = "";
                         if (!cleanUpdate.groupId) cleanUpdate.groupId = "";
@@ -645,7 +646,7 @@ function App() {
                                         ...e,
                                         start: e.start instanceof Date ? e.start.toISOString() : e.start,
                                         end:   e.end   instanceof Date ? e.end.toISOString()   : e.end,
-                                        updatedAt: e.updatedAt || Date.now(),
+                                        updatedAt: e.updatedAt || clockNow(),
                                         note: e.note || '',
                                         timezone: e.timezone || '',
                                         groupId: e.groupId || '',
@@ -676,7 +677,7 @@ function App() {
                                 try {
                                     await db.goals.bulkUpsert(merged.map(g => ({
                                         ...g,
-                                        updatedAt: g.updatedAt || Date.now(),
+                                        updatedAt: g.updatedAt || clockNow(),
                                         note:      g.note  ?? '',
                                         icon:      g.icon  ?? '',
                                         deletedAt: g.deletedAt ?? 0,

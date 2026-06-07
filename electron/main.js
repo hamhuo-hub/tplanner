@@ -878,7 +878,19 @@ ipcMain.handle('journal:getAll', () => loadJournals());
 
 ipcMain.on('journal:save', (_e, date, entry) => {
     const data = loadJournals();
-    data[date] = normalizeJournalEntry(entry);
+    // 随手记 widget 传入的是裸字符串（非 {text,updatedAt,deletedAt} 对象）。
+    // normalizeJournalEntry 对裸字符串会归一化为 updatedAt:0（这是为了迁移磁盘上
+    // 的旧格式数据），如果直接复用会让 widget 的每次编辑都带着 updatedAt:0 落盘——
+    // 在 LWW 合并中永远输给任何带真实时间戳的版本，导致 widget 的修改"无法同步"
+    // （实际是写入时就已带着必输的时间戳，与同步逻辑无关）。因此裸字符串在这里
+    // 必须当作"新的本地编辑"处理，赋予真实的当前时间戳。
+    if (entry && typeof entry === 'object') {
+        data[date] = normalizeJournalEntry(entry);
+    } else {
+        const text = entry || '';
+        const ts = Date.now();
+        data[date] = text.trim() ? { text, updatedAt: ts, deletedAt: null } : { text: '', updatedAt: ts, deletedAt: ts };
+    }
     saveJournals(data);
     const sid = _e.sender.id;
     BrowserWindow.getAllWindows().forEach(win => {
