@@ -2,7 +2,7 @@ import { createRxDatabase, addRxPlugin } from 'rxdb';
 import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
 import { RxDBUpdatePlugin } from 'rxdb/plugins/update';
 import { RxDBMigrationSchemaPlugin } from 'rxdb/plugins/migration-schema';
-import { eventSchema } from './schema';
+import { eventSchema, goalSchema } from './schema';
 
 addRxPlugin(RxDBUpdatePlugin);
 addRxPlugin(RxDBMigrationSchemaPlugin);
@@ -34,6 +34,9 @@ export const getDatabase = async () => {
                     // v0 → v1: add deletedAt field (0 = alive)
                     1: (oldDoc) => ({ ...oldDoc, deletedAt: 0 }),
                 },
+            },
+            goals: {
+                schema: goalSchema,
             },
         });
 
