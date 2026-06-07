@@ -93,23 +93,7 @@ export default function DebugPanel() {
         ? logs.filter(l => l.msg.toLowerCase().includes(filter.toLowerCase()) || l.level.includes(filter))
         : logs;
 
-    if (!open) {
-        return (
-            <button
-                onClick={() => setOpen(true)}
-                style={{
-                    position: 'fixed', bottom: 16, right: 16, zIndex: 9000,
-                    width: 32, height: 32, borderRadius: '50%',
-                    background: 'rgba(30,30,30,0.85)', border: '1px solid #444',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    cursor: 'pointer', color: '#666',
-                }}
-                title="调试面板 (F12)"
-            >
-                <Terminal size={14} />
-            </button>
-        );
-    }
+    if (!open) return null;
 
     return (
         <div style={{

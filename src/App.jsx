@@ -3,6 +3,8 @@ import { debounceTime } from 'rxjs'
 import { format } from 'date-fns'
 import { useTranslation } from 'react-i18next'
 import Timeline from './components/Timeline'
+import DecadePlan from './components/DecadePlan'
+import DecadeFab from './components/DecadeFab'
 import AddEventModal from './components/AddEventModal'
 import EventDetailsModal from './components/EventDetailsModal'
 import ClashBanner from './components/ClashBanner'
@@ -33,6 +35,7 @@ function App() {
     const [editingEvent, setEditingEvent] = useState(null);
     const [isLoaded, setIsLoaded] = useState(false);
     const [db, setDb] = useState(null);
+    const [activeTab, setActiveTab] = useState('calendar');
 
     // Detect Electron environment
     const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
@@ -450,8 +453,8 @@ function App() {
             {/* Custom Title Bar (Electron only) */}
             {isElectron && <TitleBar />}
 
-            {/* App Header */}
-            <header className="app-header">
+            {/* App Header — hidden on decade tab */}
+            {activeTab !== 'decade' && <header className="app-header">
                 <div className="app-header-left">
                     {/* App title — only show if NOT in electron (TitleBar already shows it) */}
                     {!isElectron && (
@@ -534,7 +537,7 @@ function App() {
                     <ZoomControl />
 
                     {/* LAN Sync */}
-                    {isElectron && (
+                    {isElectron  && (
                         <LanSync
                             events={events}
                             journals={journals}
@@ -584,56 +587,109 @@ function App() {
                         {t('actions.addEvent')}
                     </button>
                 </div>
-            </header>
+            </header>}
 
             {/* Main Content */}
             <main style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '12px', minHeight: 0, gap: '8px' }}>
-                <ReminderBanner
-                    events={visibleEvents}
-                    travelTimezone={travelTimezone}
-                    onHighlight={(h) => {
-                        setHighlight(h);
-                        handleJumpToDate(h.start);
-                        setTimeout(() => setHighlight(null), 3000);
-                    }}
-                />
-                <OverdueBanner
-                    events={visibleEvents}
-                    travelTimezone={travelTimezone}
-                    onHighlight={(h) => {
-                        setHighlight(h);
-                        if (h.type === 'overdue') handleJumpToDate(h.start);
-                        setTimeout(() => setHighlight(null), 3000);
-                    }}
-                />
-                <ClashBanner
-                    clashes={clashes}
-                    events={visibleEvents}
-                    travelTimezone={travelTimezone}
-                    onHighlight={(h) => {
-                        setHighlight(h);
-                        if (h.type === 'clash') handleJumpToDate(h.start);
-                        setTimeout(() => setHighlight(null), 3000);
-                    }}
-                />
-                <Timeline
-                    startDate={viewRange.start || new Date()}
-                    endDate={viewRange.end || new Date()}
-                    events={visibleEvents}
-                    clashes={clashes}
-                    onEventClick={setSelectedEvent}
-                    onAddEvent={handleTimelineClick}
-                    highlight={highlight}
-                    onLoadPrev={handleLoadMorePrev}
-                    onLoadNext={handleLoadMoreNext}
-                    onUpdateEvent={handleSaveEvent}
-                    onToggleTaskComplete={handleToggleTaskComplete}
-                    onContextMenu={(e, ev) => setContextMenu({ x: e.clientX, y: e.clientY, event: ev })}
-                    travelTimezone={travelTimezone}
-                    journals={journals}
-                    onSaveJournal={handleSaveJournal}
-                />
+                {activeTab === 'calendar' && <>
+                    <ReminderBanner
+                        events={visibleEvents}
+                        travelTimezone={travelTimezone}
+                        onHighlight={(h) => {
+                            setHighlight(h);
+                            handleJumpToDate(h.start);
+                            setTimeout(() => setHighlight(null), 3000);
+                        }}
+                    />
+                    <OverdueBanner
+                        events={visibleEvents}
+                        travelTimezone={travelTimezone}
+                        onHighlight={(h) => {
+                            setHighlight(h);
+                            if (h.type === 'overdue') handleJumpToDate(h.start);
+                            setTimeout(() => setHighlight(null), 3000);
+                        }}
+                    />
+                    <ClashBanner
+                        clashes={clashes}
+                        events={visibleEvents}
+                        travelTimezone={travelTimezone}
+                        onHighlight={(h) => {
+                            setHighlight(h);
+                            if (h.type === 'clash') handleJumpToDate(h.start);
+                            setTimeout(() => setHighlight(null), 3000);
+                        }}
+                    />
+                    <Timeline
+                        startDate={viewRange.start || new Date()}
+                        endDate={viewRange.end || new Date()}
+                        events={visibleEvents}
+                        clashes={clashes}
+                        onEventClick={setSelectedEvent}
+                        onAddEvent={handleTimelineClick}
+                        highlight={highlight}
+                        onLoadPrev={handleLoadMorePrev}
+                        onLoadNext={handleLoadMoreNext}
+                        onUpdateEvent={handleSaveEvent}
+                        onToggleTaskComplete={handleToggleTaskComplete}
+                        onContextMenu={(e, ev) => setContextMenu({ x: e.clientX, y: e.clientY, event: ev })}
+                        travelTimezone={travelTimezone}
+                        journals={journals}
+                        onSaveJournal={handleSaveJournal}
+                    />
+                </>}
+                {activeTab === 'decade' && <DecadePlan />}
             </main>
+
+            {activeTab === 'decade' && (
+                <DecadeFab
+                    lang={i18n.language}
+                    onToggleLanguage={toggleLanguage}
+                    onPrint={handlePrint}
+                    onExport={handleExport}
+                    onImport={handleImport}
+                />
+            )}
+
+            {/* Bottom Tab Bar */}
+            <div style={{
+                display: 'flex',
+                alignItems: 'flex-end',
+                gap: 2,
+                padding: '0 12px',
+                background: 'var(--clr-void)',
+                borderTop: '1px solid var(--clr-border)',
+                flexShrink: 0,
+            }}>
+                {[
+                    { id: 'calendar', label: '日历' },
+                    { id: 'decade',   label: '十年计划' },
+                ].map(tab => (
+                    <button
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id)}
+                        style={{
+                            padding: '5px 16px',
+                            fontSize: 11,
+                            fontFamily: 'var(--font-display)',
+                            letterSpacing: '0.08em',
+                            textTransform: 'uppercase',
+                            cursor: 'pointer',
+                            border: '1px solid var(--clr-border)',
+                            borderBottom: 'none',
+                            borderRadius: '3px 3px 0 0',
+                            background: activeTab === tab.id ? 'var(--clr-surface)' : 'var(--clr-void)',
+                            color: activeTab === tab.id ? 'var(--clr-gold)' : 'var(--clr-text-dim)',
+                            borderColor: activeTab === tab.id ? 'var(--clr-gold-dim)' : 'var(--clr-border)',
+                            transition: 'color 120ms ease, background 120ms ease',
+                            position: 'relative',
+                            bottom: activeTab === tab.id ? -1 : 0,
+                        }}
+                    >
+                        {tab.label}
+                    </button>
+                ))}
+            </div>
 
             <AddEventModal
                 isOpen={isAddModalOpen}
