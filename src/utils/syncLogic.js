@@ -4,45 +4,64 @@ import { setClockOffset } from './clock';
 
 export const DEFAULT_CONFIG = { peerIp: '', port: 37401, serverEnabled: false, autoSync: false, interval: 60 };
 
-// ── 冲突分析（tombstone 感知）────────────────────────────────────────────────
+// ── 统一实体抽象（Unified Entity）────────────────────────────────────────────
+// events / goals / journals 底层结构不同（数组 vs 以日期为键的对象，字段名也不同），
+// 但同步真正关心的只是同一组属性：唯一标识、净荷内容、最后修改时间、软删除标记。
+// 把三者统一映射成 { id, payload, updatedAt, deletedAt } 后，可以共用同一套
+// 比较 / 合并 / 冲突分析核心——不必再为每种数据各写一份、且要求彼此保持一致的
+// 合并代码（这正是早先 journals/goals 漏同步、合并逻辑各自实现却又必须"逐字
+// 一致"这整类 bug 的根源）。
+//
+// pickEntity / mergeEntities / analyzeEntities 是跨设备共享的核心比较逻辑，
+// 必须与 sync-server/server.js 中的同名实现逐字一致：否则两端在"打破平局"时
+// 可能选出不同的胜者，导致永远收敛不到同一结果（死锁式分歧）。
+
 export function isAlive(e) { return !e.deletedAt; }
 
-// 在 updatedAt 相同（尤其是两端都为 0 的旧版迁移记录）时，
+// updatedAt 相同时（典型情况：旧版迁移记录、或两端在同一毫秒各自独立创建/编辑），
 // 用与"谁是 local/remote"无关的确定性方式选出胜者，保证两端最终收敛一致。
-// 必须与 sync-server/server.js 中的同名实现保持逐字一致。
-export function pickJournalEntry(a, b) {
+export function pickEntity(a, b) {
     const au = a?.updatedAt || 0, bu = b?.updatedAt || 0;
     if (au !== bu) return au > bu ? a : b;
-    const ak = JSON.stringify({ text: a?.text || '', deletedAt: a?.deletedAt || null });
-    const bk = JSON.stringify({ text: b?.text || '', deletedAt: b?.deletedAt || null });
+    const ak = JSON.stringify({ payload: a?.payload, deletedAt: a?.deletedAt ?? null });
+    const bk = JSON.stringify({ payload: b?.payload, deletedAt: b?.deletedAt ?? null });
     return ak >= bk ? a : b;
 }
 
-export function analyzeConflict(local, remote) {
+export function mergeEntities(local, remote) {
+    const map = new Map(local.map(e => [e.id, e]));
+    for (const e of remote) {
+        const ex = map.get(e.id);
+        map.set(e.id, ex ? pickEntity(ex, e) : e);
+    }
+    return Array.from(map.values());
+}
+
+// 冲突分析（updatedAt-wins + tombstone 感知 + 平局打破，与 mergeEntities 共用
+// 同一套胜负判定，保证"预览看到的结果"与"实际合并的结果"完全一致）。
+export function analyzeEntities(local, remote) {
     const localMap  = new Map(local.map(e  => [e.id, e]));
     const remoteMap = new Map(remote.map(e => [e.id, e]));
-
     const results = { added: [], removed: [], updated: [], deleted: [], synced: [], conflicted: [] };
 
     for (const [id, re] of remoteMap) {
         const le = localMap.get(id);
         if (!le) {
             if (isAlive(re)) results.added.push(re);
-            // else: remote tombstone for unknown id — no-op
-        } else if ((re.updatedAt || 0) > (le.updatedAt || 0)) {
-            if (!isAlive(re) && isAlive(le)) {
-                results.deleted.push({ local: le, remote: re }); // remote deleted it
-            } else {
-                results.updated.push({ local: le, remote: re });
-            }
-        } else if ((re.updatedAt || 0) < (le.updatedAt || 0)) {
-            if (!isAlive(le) && isAlive(re)) {
-                results.deleted.push({ local: le, remote: re }); // local deleted it (local wins)
-            } else {
-                results.conflicted.push({ local: le, remote: re });
-            }
+            continue; // remote tombstone for unknown id — no-op
+        }
+        const lu = le.updatedAt || 0, ru = re.updatedAt || 0;
+        if (lu === ru) {
+            const sameContent = JSON.stringify({ payload: le.payload, deletedAt: le.deletedAt ?? null })
+                             === JSON.stringify({ payload: re.payload, deletedAt: re.deletedAt ?? null });
+            if (sameContent) { results.synced.push(le); continue; }
+        }
+        if (pickEntity(le, re) === re) {
+            if (!isAlive(re) && isAlive(le)) results.deleted.push({ local: le, remote: re }); // remote deleted it
+            else results.updated.push({ local: le, remote: re });
         } else {
-            results.synced.push(le);
+            if (!isAlive(le) && isAlive(re)) results.deleted.push({ local: le, remote: re }); // local deleted it (local wins)
+            else results.conflicted.push({ local: le, remote: re });
         }
     }
     for (const [id, le] of localMap) {
@@ -51,38 +70,36 @@ export function analyzeConflict(local, remote) {
     return results;
 }
 
-// journals 用日期作为主键，条目为 { text, updatedAt, deletedAt }；
-// 分析逻辑与 analyzeConflict 相同（updatedAt-wins + tombstone 感知 + 平局打破),
-// 只是把 id 换成 date，把 title 换成 text。
-export function analyzeJournalConflict(local, remote) {
-    const localMap  = new Map(Object.entries(local || {}));
-    const remoteMap = new Map(Object.entries(remote || {}));
-    const results = { added: [], removed: [], updated: [], deleted: [], synced: [], conflicted: [] };
-    const withDate = (date, e) => ({ date, ...e });
+// ── 各数据类型 ↔ 统一实体 的适配层 ───────────────────────────────────────────
+// events/goals 本身已是 { id, updatedAt, deletedAt, ... } 的数组，整条记录即 payload；
+// journals 以日期为键、条目为 { text, updatedAt, deletedAt }，日期本身就是 id。
+// fromEntity 对 events/goals 直接还原原始对象；journalFromEntity 额外把 id 还原成 date 字段。
+const toEventEntity   = e => ({ id: e.id, payload: e, updatedAt: e.updatedAt || 0, deletedAt: e.deletedAt ?? null });
+const toJournalEntity = (date, entry) => ({ id: date, payload: entry || {}, updatedAt: entry?.updatedAt || 0, deletedAt: entry?.deletedAt ?? null });
+const journalEntries  = obj => Object.entries(obj || {}).map(([date, entry]) => toJournalEntity(date, entry));
+const fromEntity        = e => e.payload;
+const journalFromEntity = e => ({ date: e.id, ...e.payload });
 
-    for (const [date, re] of remoteMap) {
-        const le = localMap.get(date);
-        const r = withDate(date, re);
-        if (!le) {
-            if (isAlive(re)) results.added.push(r);
-        } else {
-            const l = withDate(date, le);
-            const sameContent = (re.text || '') === (le.text || '') && !!re.deletedAt === !!le.deletedAt;
-            if (sameContent) {
-                results.synced.push(l);
-            } else if (pickJournalEntry(le, re) === re) {
-                if (!isAlive(re) && isAlive(le)) results.deleted.push({ local: l, remote: r });
-                else results.updated.push({ local: l, remote: r });
-            } else {
-                if (!isAlive(le) && isAlive(re)) results.deleted.push({ local: l, remote: r });
-                else results.conflicted.push({ local: l, remote: r });
-            }
-        }
-    }
-    for (const [date, le] of localMap) {
-        if (!remoteMap.has(date) && isAlive(le)) results.removed.push(withDate(date, le));
-    }
-    return results;
+// 把 analyzeEntities 返回的统一实体结果，还原成各数据类型原本的展示形状
+// （UI 需要读取 .title / .text / .date 等字段，详见 LanSync.jsx）。
+function convertResults(results, toDisplay) {
+    const pair = p => ({ local: toDisplay(p.local), remote: toDisplay(p.remote) });
+    return {
+        added:      results.added.map(toDisplay),
+        removed:    results.removed.map(toDisplay),
+        synced:     results.synced.map(toDisplay),
+        updated:    results.updated.map(pair),
+        deleted:    results.deleted.map(pair),
+        conflicted: results.conflicted.map(pair),
+    };
+}
+
+export function analyzeConflict(local, remote) {
+    return convertResults(analyzeEntities(local.map(toEventEntity), remote.map(toEventEntity)), fromEntity);
+}
+
+export function analyzeJournalConflict(local, remote) {
+    return convertResults(analyzeEntities(journalEntries(local), journalEntries(remote)), journalFromEntity);
 }
 
 // 统计「将被对端覆盖」的事件中，子任务（checklist）发生变化的数量 —— 仅计数，不展开列表
@@ -101,33 +118,18 @@ export function countSubtaskChanges(updated) {
     return { events, items };
 }
 
-// ── 合并算法（updatedAt-wins + tombstone 感知）──────────────────────────────
+// ── 合并算法（updatedAt-wins + tombstone 感知 + 平局打破）────────────────────
+// events/goals/journals 三者现在都通过统一实体走同一条 mergeEntities 路径，
+// 删除会写入 deletedAt+updatedAt，因此删除记录在合并时会和"更早"的存活记录
+// 正常竞争，不会被回环恢复。
 export function mergeEvents(local, remote) {
-    const map = new Map();
-    for (const e of local)  map.set(e.id, e);
-    for (const e of remote) {
-        const ex = map.get(e.id);
-        if (!ex || (e.updatedAt || 0) > (ex.updatedAt || 0)) map.set(e.id, e);
-    }
-    return Array.from(map.values());
+    return mergeEntities(local.map(toEventEntity), remote.map(toEventEntity)).map(fromEntity);
 }
 
-// journals 合并：与 mergeEvents 相同的 updatedAt-wins + tombstone 策略。
-// 条目格式 { text, updatedAt, deletedAt }；删除会写入 deletedAt+updatedAt，
-// 因此删除记录在合并时会和"更早"的存活记录正常竞争，不会被回环恢复。
-//
-// updatedAt 相同时（典型情况：两端都是迁移自旧版纯字符串、值为 0 的记录，
-// 但内容已各自独立改动而产生分歧）必须用与"谁是 local/remote"无关的、
-// 两端结果一致的方式打破平局——否则 PC 端合并时偏向 PC 本地内容、
-// server 端合并时偏向 server 本地内容，会导致两边永远收敛不到同一个结果，
-// 形成"死锁式"分歧（这正是 server.js 中 mergeJournals 必须使用同一比较
-// 函数 pickJournalEntry 的原因，必须与本文件保持完全一致）。
 export function mergeJournals(local, remote) {
-    const result = { ...(local || {}) };
-    for (const [date, entry] of Object.entries(remote || {})) {
-        const existing = result[date];
-        result[date] = existing ? pickJournalEntry(existing, entry) : entry;
-    }
+    const merged = mergeEntities(journalEntries(local), journalEntries(remote));
+    const result = {};
+    for (const e of merged) result[e.id] = fromEntity(e);
     return result;
 }
 

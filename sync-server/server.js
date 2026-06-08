@@ -24,6 +24,7 @@ const DISCOVER_PORT = parseInt(process.env.DISCOVER_PORT || '37402', 10);
 const DATA_DIR  = process.env.DATA_DIR  || path.join(__dirname, 'data');
 const DATA_FILE     = path.join(DATA_DIR, 'events.json');
 const JOURNALS_FILE = path.join(DATA_DIR, 'journals.json');
+const GOALS_FILE    = path.join(DATA_DIR, 'goals.json');
 const LOG_FILE      = path.join(DATA_DIR, 'server.log');
 
 // 最多保留多少个备份
@@ -33,6 +34,7 @@ const MAX_BACKUPS = 5;
 if (!fs.existsSync(DATA_DIR))     fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(DATA_FILE))     fs.writeFileSync(DATA_FILE, '[]');
 if (!fs.existsSync(JOURNALS_FILE)) fs.writeFileSync(JOURNALS_FILE, '{}');
+if (!fs.existsSync(GOALS_FILE))    fs.writeFileSync(GOALS_FILE, '[]');
 
 // ── 日志 ──────────────────────────────────────────────────────────────────────
 function log(level, msg) {
@@ -74,46 +76,93 @@ function rotatBackup() {
     }
 }
 
+// ── Goals 持久化 ──────────────────────────────────────────────────────────────
+function readGoals() {
+    try { return JSON.parse(fs.readFileSync(GOALS_FILE, 'utf8')); } catch (_) { return []; }
+}
+
+function writeGoals(goals) {
+    fs.writeFileSync(GOALS_FILE, JSON.stringify(goals, null, 2));
+}
+
+// ── Journals 持久化 ───────────────────────────────────────────────────────────
+// 条目格式：{ text, updatedAt, deletedAt }。旧版纯字符串格式在读取时迁移为
+// { text, updatedAt: 0, deletedAt: null }，时间戳为 0 保证会被任何带时间戳的
+// 写入/删除覆盖，不会再出现"软删除时间戳失效"导致的回环恢复。
+function normalizeJournalEntry(value) {
+    if (value && typeof value === 'object') {
+        return { text: value.text || '', updatedAt: value.updatedAt || 0, deletedAt: value.deletedAt ?? null };
+    }
+    return { text: value || '', updatedAt: 0, deletedAt: null };
+}
+
+function normalizeJournals(map) {
+    const result = {};
+    for (const [date, value] of Object.entries(map || {})) {
+        result[date] = normalizeJournalEntry(value);
+    }
+    return result;
+}
+
+function readJournals() {
+    try { return normalizeJournals(JSON.parse(fs.readFileSync(JOURNALS_FILE, 'utf8'))); } catch (_) { return {}; }
+}
+
+function writeJournals(journals) {
+    fs.writeFileSync(JOURNALS_FILE, JSON.stringify(journals, null, 2));
+}
+
 // ── 合并逻辑：updatedAt 较大的版本胜出；tombstone（deletedAt>0）正常参与竞争 ──
 // 30 天前的 tombstone 在服务端也物理清除，防止无限积累
 const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
-function mergeEvents(local, incoming) {
-    const map = new Map();
-    const now = Date.now();
-    for (const e of local)    map.set(e.id, e);
-    for (const e of incoming) {
-        const exist = map.get(e.id);
-        if (!exist || (e.updatedAt || 0) > (exist.updatedAt || 0)) {
-            map.set(e.id, e);
-        }
+// ── 统一实体合并核心 ──────────────────────────────────────────────────────────
+// events / goals / journals 底层结构不同，但同步关心的属性相同：
+// 唯一标识、净荷内容、最后修改时间、软删除标记。统一映射成
+// { id, payload, updatedAt, deletedAt } 后共用同一套比较/合并逻辑，
+// 不必为每种数据各写一份、又要求彼此"逐字一致"的合并代码。
+//
+// pickEntity / mergeEntities 是跨设备共享的核心比较逻辑，必须与
+// src/utils/syncLogic.js 中的同名实现逐字一致：否则两端在"打破平局"时
+// 可能选出不同的胜者，导致永远收敛不到同一结果（死锁式分歧）。
+function pickEntity(a, b) {
+    const au = a?.updatedAt || 0, bu = b?.updatedAt || 0;
+    if (au !== bu) return au > bu ? a : b;
+    const ak = JSON.stringify({ payload: a?.payload, deletedAt: a?.deletedAt ?? null });
+    const bk = JSON.stringify({ payload: b?.payload, deletedAt: b?.deletedAt ?? null });
+    return ak >= bk ? a : b;
+}
+
+function mergeEntities(local, remote) {
+    const map = new Map(local.map(e => [e.id, e]));
+    for (const e of remote) {
+        const ex = map.get(e.id);
+        map.set(e.id, ex ? pickEntity(ex, e) : e);
     }
-    // Drop tombstones older than TTL — both sides already have them
-    return Array.from(map.values()).filter(e =>
-        !e.deletedAt || (now - e.deletedAt) < TOMBSTONE_TTL_MS
-    );
+    return Array.from(map.values());
 }
 
-// ── Journals 读写与合并 ──────────────────────────────────────────────────────
-function readJournals() {
-    try { return JSON.parse(fs.readFileSync(JOURNALS_FILE, 'utf8')); } catch { return {}; }
-}
+const toEventEntity   = e => ({ id: e.id, payload: e, updatedAt: e.updatedAt || 0, deletedAt: e.deletedAt ?? null });
+const toJournalEntity = (date, entry) => ({ id: date, payload: entry || {}, updatedAt: entry?.updatedAt || 0, deletedAt: entry?.deletedAt ?? null });
+const journalEntries  = obj => Object.entries(obj || {}).map(([date, entry]) => toJournalEntity(date, entry));
+const fromEntity      = e => e.payload;
 
-function writeJournals(data) {
-    fs.writeFile(JOURNALS_FILE, JSON.stringify(data), (err) => {
-        if (err) log('ERROR', 'journals write: ' + err.message);
-    });
-}
-
-// 合并策略：同一天两边都有内容时保留较长的（内容多 = 编辑更多）
 function mergeJournals(local, incoming) {
-    const result = { ...local };
-    for (const [date, text] of Object.entries(incoming)) {
-        if (!result[date] || (text && text.length > result[date].length)) {
-            result[date] = text;
-        }
+    const merged = mergeEntities(journalEntries(local), journalEntries(normalizeJournals(incoming)));
+    const now = Date.now();
+    const result = {};
+    for (const e of merged) {
+        if (e.deletedAt && (now - e.deletedAt) >= TOMBSTONE_TTL_MS) continue;
+        result[e.id] = fromEntity(e);
     }
     return result;
+}
+
+function mergeEvents(local, incoming) {
+    const merged = mergeEntities(local.map(toEventEntity), incoming.map(toEventEntity)).map(fromEntity);
+    const now = Date.now();
+    // Drop tombstones older than TTL — both sides already have them
+    return merged.filter(e => !e.deletedAt || (now - e.deletedAt) < TOMBSTONE_TTL_MS);
 }
 
 // ── HTTP 工具 ─────────────────────────────────────────────────────────────────
@@ -167,13 +216,23 @@ async function handleRequest(req, res) {
     // ── GET /health ──────────────────────────────────────────────────────────
     if (method === 'GET' && url === '/health') {
         const events = readEvents();
+        const goals  = readGoals();
         json(res, 200, {
             status:    'ok',
             events:    events.length,
+            goals:     goals.length,
             uptime:    Math.floor(process.uptime()),
             memory_mb: Math.round(process.memoryUsage().rss / 1024 / 1024),
             time:      new Date().toISOString(),
         });
+        return;
+    }
+
+    // ── GET /tplanner/time ───────────────────────────────────────────────────
+    // 客户端据此校准本机时钟与服务器的偏移量，避免设备间时钟不一致导致
+    // updatedAt-wins 合并失去意义（时钟偏快的设备会永久覆盖偏慢的设备）。
+    if (method === 'GET' && url === '/tplanner/time') {
+        json(res, 200, { now: Date.now() });
         return;
     }
 
@@ -219,7 +278,9 @@ async function handleRequest(req, res) {
 
     // ── GET /tplanner/journals ───────────────────────────────────────────────
     if (method === 'GET' && url === '/tplanner/journals') {
-        json(res, 200, readJournals());
+        const journals = readJournals();
+        log('INFO', `Serving ${Object.keys(journals).length} journal entries`);
+        json(res, 200, journals);
         return;
     }
 
@@ -228,14 +289,38 @@ async function handleRequest(req, res) {
         let body;
         try { body = await readBody(req); } catch (e) { json(res, 413, { error: e.message }); return; }
         let incoming;
-        try { incoming = JSON.parse(body); } catch { json(res, 400, { error: 'Invalid JSON' }); return; }
+        try { incoming = JSON.parse(body); } catch (_) { json(res, 400, { error: 'Invalid JSON' }); return; }
         if (typeof incoming !== 'object' || Array.isArray(incoming)) {
             json(res, 400, { error: 'Expected object' }); return;
         }
-        const merged = mergeJournals(readJournals(), incoming);
+        const local  = readJournals();
+        const merged = mergeJournals(local, incoming);
         writeJournals(merged);
-        log('INFO', `Journals merged: ${Object.keys(merged).length} days`);
-        json(res, 200, merged);
+        log('INFO', `Journals merged: ${Object.keys(merged).length} entries`);
+        json(res, 200, { ok: true, count: Object.keys(merged).length });
+        return;
+    }
+
+    // ── GET /tplanner/goals ──────────────────────────────────────────────────
+    if (method === 'GET' && url === '/tplanner/goals') {
+        const goals = readGoals();
+        log('INFO', `Serving ${goals.length} goals`);
+        json(res, 200, goals);
+        return;
+    }
+
+    // ── PUT /tplanner/goals ──────────────────────────────────────────────────
+    if (method === 'PUT' && url === '/tplanner/goals') {
+        let body;
+        try { body = await readBody(req); } catch (e) { json(res, 413, { error: e.message }); return; }
+        let incoming;
+        try { incoming = JSON.parse(body); } catch (_) { json(res, 400, { error: 'Invalid JSON' }); return; }
+        if (!Array.isArray(incoming)) { json(res, 400, { error: 'Expected array' }); return; }
+        const local  = readGoals();
+        const merged = mergeEvents(local, incoming); // same updatedAt-wins + tombstone logic
+        writeGoals(merged);
+        log('INFO', `Goals merged: local=${local.length} incoming=${incoming.length} result=${merged.length}`);
+        json(res, 200, { ok: true, count: merged.length });
         return;
     }
 
@@ -289,12 +374,16 @@ const udp = dgram.createSocket({ type: 'udp4', reuseAddr: true });
 udp.on('message', (msg, rinfo) => {
     if (msg.toString().trim() !== 'TPLANNER_DISCOVER') return;
     const events   = readEvents();
+    const journals = readJournals();
+    const goals    = readGoals();
     const response = Buffer.from(JSON.stringify({
-        name:    os.hostname(),
-        ip:      getLanIp(),
-        port:    PORT,
-        events:  events.length,
-        version: '1.0',
+        name:     os.hostname(),
+        ip:       getLanIp(),
+        port:     PORT,
+        events:   events.length,
+        journals: Object.keys(journals).length,
+        goals:    goals.length,
+        version:  '1.0',
     }));
     udp.send(response, rinfo.port, rinfo.address, (err) => {
         if (!err) log('INFO', `Discovery reply → ${rinfo.address}:${rinfo.port}`);
