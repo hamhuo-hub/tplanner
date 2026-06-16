@@ -5,14 +5,17 @@ import { useTranslation } from 'react-i18next';
 import { MASSEY_COLORS } from '../utils/constants';
 import { X, CheckCircle2, Circle } from 'lucide-react';
 import { getDateLocale } from '../utils/dateLocale';
+import NoteEditor from './NoteEditor';
 
 export default function EventDetailsModal({ event, travelTimezone, onClose, onDelete, onEdit, onSave }) {
     const { t, i18n } = useTranslation();
     const locale = getDateLocale(i18n.language);
     const [deleteScope, setDeleteScope] = useState('single');
     const [confirmingDelete, setConfirmingDelete] = useState(false);
+    const [localNote, setLocalNote] = useState(event?.note || '');
 
     useEffect(() => { setConfirmingDelete(false); }, [event?.id]);
+    useEffect(() => { setLocalNote(event?.note || ''); }, [event?.id]);
 
     if (!event) return null;
 
@@ -65,12 +68,18 @@ export default function EventDetailsModal({ event, travelTimezone, onClose, onDe
                     </div>
 
                     {/* Note */}
-                    {event.note && (
-                        <div>
-                            <span className="modal-label">{t('event.note')}</span>
-                            <div className="modal-note-box">{event.note}</div>
-                        </div>
-                    )}
+                    <div>
+                        <span className="modal-label">{t('event.note')}</span>
+                        <NoteEditor
+                            value={localNote}
+                            onChange={setLocalNote}
+                            onCommit={val => {
+                                if (val !== (event.note || '')) {
+                                    onSave?.({ ...event, note: val });
+                                }
+                            }}
+                        />
+                    </div>
 
                     {/* Checklist */}
                     {event.checklist?.length > 0 && (

@@ -22,7 +22,8 @@ import {
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import { styled } from '@mui/material/styles';
-import { Maximize2, X, PlusCircle, MinusCircle } from 'lucide-react';
+import { PlusCircle, MinusCircle } from 'lucide-react';
+import NoteEditor from './NoteEditor';
 
 const ColorButton = styled('button')(({ theme, colorSelected }) => ({
     width: 32,
@@ -55,9 +56,9 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
     const [editScope, setEditScope] = useState('single');
 
     const [allDay, setAllDay] = useState(false);
-    const [isLargeNoteOpen, setIsLargeNoteOpen] = useState(false);
 
     useEffect(() => {
+        if (!isOpen) return;
         if (isOpen) {
             if (initialEvent) {
                 // Edit Mode
@@ -421,23 +422,13 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                         </Stack>
 
                         {/* Note */}
-                        <Box position="relative">
-                            <TextField
-                                label={t('event.note')}
-                                multiline
-                                rows={3}
-                                fullWidth
-                                value={note}
-                                onChange={(e) => setNote(e.target.value)}
-                            />
-                            <IconButton
-                                onClick={() => setIsLargeNoteOpen(true)}
-                                size="small"
-                                sx={{ position: 'absolute', right: 8, top: 8, zIndex: 1, backgroundColor: 'rgba(255,255,255,0.8)' }}
-                                title="Expand Note Editor"
+                        <Box>
+                            <Typography variant="caption" color="text.secondary"
+                                sx={{ display: 'block', mb: 0.5, letterSpacing: '0.1em', textTransform: 'uppercase' }}
                             >
-                                <Maximize2 size={16} />
-                            </IconButton>
+                                {t('event.note')}
+                            </Typography>
+                            <NoteEditor value={note} onChange={setNote} />
                         </Box>
 
                         {/* Checklist - Only for Task Type */}
@@ -519,45 +510,6 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                 </DialogActions>
             </Dialog>
 
-            {/* Large Note Editor Dialog */}
-            <Dialog
-                open={isLargeNoteOpen}
-                onClose={() => setIsLargeNoteOpen(false)}
-                fullWidth
-                maxWidth="md"
-                PaperProps={{
-                    sx: { height: '80vh', display: 'flex', flexDirection: 'column' }
-                }}
-            >
-                <DialogTitle sx={{ borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    {t('event.note')}
-                    <IconButton onClick={() => setIsLargeNoteOpen(false)} edge="end">
-                        <X size={20} />
-                    </IconButton>
-                </DialogTitle>
-                <DialogContent sx={{ flexGrow: 1, p: 2, display: 'flex', flexDirection: 'column' }}>
-                    <TextField
-                        multiline
-                        fullWidth
-                        value={note}
-                        onChange={(e) => setNote(e.target.value)}
-                        variant="standard"
-                        InputProps={{ disableUnderline: true }}
-                        placeholder={t('event.notePlaceholder')}
-                        sx={{
-                            flexGrow: 1,
-                            mt: 2,
-                            '& .MuiInputBase-root': { height: '100%', alignItems: 'flex-start', overflow: 'auto' },
-                            '& .MuiInputBase-input': { height: '100% !important', overflow: 'auto !important' }
-                        }}
-                    />
-                </DialogContent>
-                <DialogActions sx={{ borderTop: '1px solid #eee', p: 2 }}>
-                    <Button onClick={() => setIsLargeNoteOpen(false)} variant="contained" color="primary">
-                        {t('actions.save')} & {t('actions.close')}
-                    </Button>
-                </DialogActions>
-            </Dialog>
         </>
     );
 }
