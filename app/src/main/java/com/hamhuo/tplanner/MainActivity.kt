@@ -52,6 +52,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -154,72 +155,139 @@ fun MainScreen(store: JournalStore, eventStore: EventStore, manager: LanSyncMana
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(BG)
-            .windowInsetsPadding(WindowInsets.systemBars)
-            .padding(10.dp)
-    ) {
-        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    // 手机端：屏幕宽度 < 600dp 视为手机，使用单列 + 顶部标签页切换
+    val isPhone = LocalConfiguration.current.screenWidthDp < 600
+    var phoneTab by remember { mutableStateOf(0) }   // 0=随手记, 1=今日任务
 
-            // 左侧面板 — 随手记，黄金比例 61.8%
-            Card(
-                modifier = Modifier.weight(1.618f).fillMaxHeight(),
-                shape    = RoundedCornerShape(20.dp),
-                colors   = CardDefaults.cardColors(containerColor = SURFACE),
-                elevation = CardDefaults.cardElevation(0.dp)
-            ) {
-                Box(Modifier.fillMaxSize()) {
-                    Column(Modifier.fillMaxSize()) {
-                        NotesHeader(
-                            syncStatus = syncStatus,
-                            onPanelToggle = { panelOpen = !panelOpen }
-                        )
-                        HorizontalDivider(color = BORDER, thickness = 1.dp)
-                        MarkdownViewer(content = content, modifier = Modifier.weight(1f))
-                    }
+    // 共用面板构建块（notes card content）
+    val notesCardContent: @Composable () -> Unit = {
+        Box(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize()) {
+                NotesHeader(
+                    syncStatus = syncStatus,
+                    onPanelToggle = { panelOpen = !panelOpen }
+                )
+                HorizontalDivider(color = BORDER, thickness = 1.dp)
+                MarkdownViewer(content = content, modifier = Modifier.weight(1f))
+            }
+            if (panelOpen) {
+                SyncPanel(
+                    modifier    = Modifier.align(Alignment.TopEnd).padding(top = 50.dp, end = 8.dp),
+                    scanning    = scanning,
+                    peers       = peers,
+                    selected    = selected,
+                    manualIp     = manualIp,
+                    manualPort   = manualPort,
+                    syncStatus   = syncStatus,
+                    syncMsg      = syncMsg,
+                    canSync      = activePeer != null && syncStatus != "syncing",
+                    onScan       = onScan,
+                    onSelect     = { selected = it },
+                    onIpChange   = { manualIp = it },
+                    onPortChange = { manualPort = it },
+                    onSync       = onSync,
+                    onClose      = { panelOpen = false }
+                )
+            }
+        }
+    }
 
-                    // 同步面板 overlay
-                    if (panelOpen) {
-                        SyncPanel(
-                            modifier    = Modifier.align(Alignment.TopEnd).padding(top = 50.dp, end = 8.dp),
-                            scanning    = scanning,
-                            peers       = peers,
-                            selected    = selected,
-                            manualIp     = manualIp,
-                            manualPort   = manualPort,
-                            syncStatus   = syncStatus,
-                            syncMsg      = syncMsg,
-                            canSync      = activePeer != null && syncStatus != "syncing",
-                            onScan       = onScan,
-                            onSelect     = { selected = it },
-                            onIpChange   = { manualIp = it },
-                            onPortChange = { manualPort = it },
-                            onSync       = onSync,
-                            onClose      = { panelOpen = false }
-                        )
-                    }
+    val taskCardContent: @Composable () -> Unit = {
+        TaskWidget(
+            events   = events,
+            onToggle = { eventId, completed ->
+                val peer = activePeer ?: return@TaskWidget
+                scope.launch {
+                    manager.toggleTask(peer, eventId, completed)
+                    events = events.map { if (it.id == eventId) it.copy(completed = completed) else it }
+                    eventStore.saveAll(events)
                 }
             }
+        )
+    }
 
-            // 右侧面板 — 任务列表 38.2%
+    if (isPhone) {
+        // ── 手机布局：顶部圆角胶囊标签 + 单面板 ────────────────────────────
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(BG)
+                .windowInsetsPadding(WindowInsets.systemBars)
+        ) {
+            PhoneTabBar(
+                tabs      = listOf("随手记", "今日任务"),
+                selected  = phoneTab,
+                onSelect  = { phoneTab = it }
+            )
             Card(
-                modifier  = Modifier.weight(1.0f).fillMaxHeight(),
+                modifier  = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp).padding(bottom = 10.dp),
                 shape     = RoundedCornerShape(20.dp),
                 colors    = CardDefaults.cardColors(containerColor = SURFACE),
                 elevation = CardDefaults.cardElevation(0.dp)
             ) {
-                TaskWidget(
-                    events   = events,
-                    onToggle = { eventId, completed ->
-                        val peer = activePeer ?: return@TaskWidget
-                        scope.launch {
-                            manager.toggleTask(peer, eventId, completed)
-                            events = events.map { if (it.id == eventId) it.copy(completed = completed) else it }
-                            eventStore.saveAll(events)
-                        }
-                    }
+                if (phoneTab == 0) notesCardContent() else taskCardContent()
+            }
+        }
+    } else {
+        // ── 平板布局：左右双面板 ─────────────────────────────────────────────
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(BG)
+                .windowInsetsPadding(WindowInsets.systemBars)
+                .padding(10.dp)
+        ) {
+            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Card(
+                    modifier  = Modifier.weight(1.618f).fillMaxHeight(),
+                    shape     = RoundedCornerShape(20.dp),
+                    colors    = CardDefaults.cardColors(containerColor = SURFACE),
+                    elevation = CardDefaults.cardElevation(0.dp)
+                ) { notesCardContent() }
+
+                Card(
+                    modifier  = Modifier.weight(1.0f).fillMaxHeight(),
+                    shape     = RoundedCornerShape(20.dp),
+                    colors    = CardDefaults.cardColors(containerColor = SURFACE),
+                    elevation = CardDefaults.cardElevation(0.dp)
+                ) { taskCardContent() }
+            }
+        }
+    }
+}
+
+@Composable
+fun PhoneTabBar(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        tabs.forEachIndexed { index, label ->
+            val isSelected = index == selected
+            Box(
+                modifier = Modifier
+                    .background(
+                        color = if (isSelected) GOLD else Color(0xFF252525),
+                        shape = RoundedCornerShape(50.dp)
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = if (isSelected) GOLD else BORDER,
+                        shape = RoundedCornerShape(50.dp)
+                    )
+                    .clickable { onSelect(index) }
+                    .padding(horizontal = 22.dp, vertical = 9.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text       = label,
+                    color      = if (isSelected) Color(0xFF0E0E0E) else DIM,
+                    fontSize   = 14.sp,
+                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                    letterSpacing = 0.3.sp
                 )
             }
         }
