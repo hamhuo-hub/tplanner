@@ -98,10 +98,56 @@ class LanSyncManager(private val store: JournalStore, private val eventStore: Ev
         conn.disconnect(); ok
     } catch (_: Exception) { false }
 
-    private fun mergeJournals(local: Map<String, String>, remote: Map<String, String>): Map<String, String> {
+    // updatedAt 较大者获胜（与 sync-server / PC 端保持一致）；删除是携带更新
+    // updatedAt 的 tombstone，因此能在合并中正常战胜对端尚存的旧内容，
+    // 不会再出现"软删除时间戳失效"导致的回环恢复。
+    //
+    // updatedAt 相同时（典型情况：三端都持有迁移自旧版纯字符串、值为 0 的
+    // 记录，但内容已分别独立改动而产生分歧）必须用与"谁是 local/remote"
+    // 无关、三端结果一致的方式打破平局——否则 PC/服务端/Android 各自偏向
+    // 自己的本地内容，永远收敛不到同一结果，形成死锁式分歧。
+    // pickEntry 的比较键必须与 src/utils/syncLogic.js 的 pickEntity
+    // （对 journal 而言 payload = { text, updatedAt, deletedAt }）逐字一致。
+    private fun pickEntry(a: JournalEntry, b: JournalEntry): JournalEntry {
+        if (a.updatedAt != b.updatedAt) return if (a.updatedAt > b.updatedAt) a else b
+        return if (a.tieKey() >= b.tieKey()) a else b
+    }
+
+    // 等价于 JS 端 JSON.stringify({ payload: { text, updatedAt, deletedAt }, deletedAt })。
+    // 不借助 org.json（其 quote() 会把 '/' 转义成 '\/'，与 JS 的 JSON.stringify
+    // 不一致，导致同一段含 '/' 的文本在两端产生不同的比较键），改为手写、
+    // 逐字符匹配 JS JSON.stringify 字符串转义规则的最小实现。
+    // 存活时 deletedAt 序列化为 null，与线格式（见 toJson）保持一致。
+    private fun JournalEntry.tieKey(): String {
+        val d = if (deletedAt == 0L) "null" else deletedAt.toString()
+        val t = jsonQuote(text)
+        return "{\"payload\":{\"text\":$t,\"updatedAt\":$updatedAt,\"deletedAt\":$d},\"deletedAt\":$d}"
+    }
+
+    private fun jsonQuote(s: String): String {
+        val sb = StringBuilder(s.length + 2)
+        sb.append('"')
+        for (c in s) {
+            when (c) {
+                '"'  -> sb.append("\\\"")
+                '\\' -> sb.append("\\\\")
+                '\n' -> sb.append("\\n")
+                '\r' -> sb.append("\\r")
+                '\t' -> sb.append("\\t")
+                '\b' -> sb.append("\\b")
+                '' -> sb.append("\\f")
+                else -> if (c < ' ') sb.append("\\u%04x".format(c.code)) else sb.append(c)
+            }
+        }
+        sb.append('"')
+        return sb.toString()
+    }
+
+    private fun mergeJournals(local: Map<String, JournalEntry>, remote: Map<String, JournalEntry>): Map<String, JournalEntry> {
         val result = local.toMutableMap()
-        remote.forEach { (date, text) ->
-            if (text.length > (result[date]?.length ?: 0)) result[date] = text
+        remote.forEach { (date, entry) ->
+            val existing = result[date]
+            result[date] = if (existing == null) entry else pickEntry(existing, entry)
         }
         return result
     }
