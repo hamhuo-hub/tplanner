@@ -946,8 +946,11 @@ ipcMain.on('checklist:save', (_e, date, items) => {
 // ── LAN Sync ───────────────────────────────────────────────────────────────
 const LAN_CONFIG_FILE = path.join(app.getPath('userData'), 'lan-sync.json');
 const DEFAULT_LAN_CONFIG = { peerIp: '', port: 37401, serverEnabled: false };
+const DISCOVER_PORT = 37402;
+const DISCOVER_TIMEOUT_MS = 2500;
 
 let lanServer = null;
+let lanDiscoveryResponder = null;
 
 function loadLanConfig() {
     try {
@@ -961,6 +964,59 @@ function saveLanConfig(cfg) {
     writeAsync(LAN_CONFIG_FILE, JSON.stringify(cfg));
 }
 
+// 排除已知虚拟/VPN/代理 TUN 适配器与回环、链路本地地址，避免代理开启 TUN 模式时
+// （如 Clash/Surge/sing-box 等创建的虚拟网卡）把不可被局域网设备访问的地址误判为本机 IP。
+const VIRTUAL_IFACE_PATTERN = /(tun|tap|wintun|vmnet|vmware|virtualbox|vbox|veth|docker|wsl|zerotier|tailscale|wireguard|nordlynx|openvpn|loopback|bridge|clash|v2ray|sing-?box|surge|utun|ppp)/i;
+
+function getBestLocalIp() {
+    const { networkInterfaces } = require('os');
+    const nets = networkInterfaces();
+    const candidates = [];
+    for (const [name, iface] of Object.entries(nets)) {
+        for (const net of iface) {
+            if (net.family !== 'IPv4' || net.internal) continue;
+            if (net.address.startsWith('127.')) continue;        // 防御性排除回环
+            if (net.address.startsWith('169.254.')) continue;    // APIPA 链路本地地址
+            if (VIRTUAL_IFACE_PATTERN.test(name)) continue;      // 已知虚拟/VPN/代理适配器
+            candidates.push(net.address);
+        }
+    }
+    // 优先选择常见私有局域网段；没有命中的候选仍保留作为退路
+    const rank = (ip) =>
+        ip.startsWith('192.168.') ? 0 :
+        ip.startsWith('10.')      ? 1 :
+        /^172\.(1[6-9]|2\d|3[01])\./.test(ip) ? 2 : 3;
+    candidates.sort((a, b) => rank(a) - rank(b));
+    return candidates[0] || '127.0.0.1';
+}
+
+function startDiscoveryResponder(port) {
+    stopDiscoveryResponder();
+    const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+    sock.on('message', (msg, rinfo) => {
+        if (msg.toString().trim() !== 'TPLANNER_DISCOVER') return;
+        const response = Buffer.from(JSON.stringify({
+            name:     require('os').hostname(),
+            ip:       getBestLocalIp(),
+            port,
+            events:   eventsCache.length,
+            journals: Object.keys(loadJournals()).length,
+            version:  '1.0',
+        }));
+        sock.send(response, rinfo.port, rinfo.address);
+    });
+    sock.on('error', (e) => console.error('[LAN Sync] Discovery responder error:', e.message));
+    sock.bind(DISCOVER_PORT, '0.0.0.0');
+    lanDiscoveryResponder = sock;
+}
+
+function stopDiscoveryResponder() {
+    if (lanDiscoveryResponder) {
+        try { lanDiscoveryResponder.close(); } catch (_) {}
+        lanDiscoveryResponder = null;
+    }
+}
+
 function startLanServer(port) {
     if (lanServer) {
         lanServer.close();
@@ -968,11 +1024,19 @@ function startLanServer(port) {
     }
     lanServer = http.createServer((req, res) => {
         res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, OPTIONS');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, PATCH, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
         if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
-        if (req.url === '/tplanner/events') {
+        if (req.url === '/health') {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ status: 'ok', events: eventsCache.length, time: new Date().toISOString() }));
+
+        } else if (req.url === '/tplanner/time') {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ now: Date.now() }));
+
+        } else if (req.url === '/tplanner/events') {
             if (req.method === 'GET') {
                 const data = JSON.stringify(serializeEvents(eventsCache));
                 res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1010,6 +1074,67 @@ function startLanServer(port) {
             } else {
                 res.writeHead(405); res.end();
             }
+
+        // 单个事件的增量更新（如安卓端勾选任务完成），避免必须整表 PUT 才能改一条状态
+        } else if (req.method === 'PATCH' && req.url.startsWith('/tplanner/events/')) {
+            const eventId = decodeURIComponent(req.url.slice('/tplanner/events/'.length));
+            let body = '';
+            req.on('data', c => body += c);
+            req.on('end', () => {
+                try {
+                    const patch = JSON.parse(body);
+                    const idx = eventsCache.findIndex(e => e.id === eventId);
+                    if (idx < 0) { res.writeHead(404); res.end(JSON.stringify({ error: 'not found' })); return; }
+                    const ev = eventsCache[idx];
+                    if (typeof patch.completed === 'boolean') ev.completed = patch.completed;
+                    ev.updatedAt = Date.now();
+                    if (mainWindow && !mainWindow.isDestroyed()) {
+                        mainWindow.webContents.send('events:remoteUpdate', { id: eventId, completed: ev.completed });
+                    }
+                    broadcastEventsToWidget();
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ ok: true }));
+                } catch (e) {
+                    res.writeHead(400); res.end(JSON.stringify({ error: 'bad json' }));
+                }
+            });
+
+        } else if (req.url === '/tplanner/journals') {
+            if (req.method === 'GET') {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(loadJournals()));
+            } else if (req.method === 'PUT') {
+                let body = '';
+                req.on('data', c => body += c);
+                req.on('end', () => {
+                    try {
+                        const incoming = JSON.parse(body);
+                        if (incoming && typeof incoming === 'object' && !Array.isArray(incoming)) {
+                            const local = loadJournals();
+                            const incomingNorm = normalizeJournals(incoming);
+                            for (const [date, entry] of Object.entries(incomingNorm)) {
+                                const existing = local[date];
+                                if (!existing || (entry.updatedAt || 0) > (existing.updatedAt || 0)) {
+                                    local[date] = entry;
+                                }
+                            }
+                            saveJournals(local);
+                            if (mainWindow && !mainWindow.isDestroyed()) {
+                                mainWindow.webContents.send('journal:allUpdated', local);
+                            }
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ ok: true, count: Object.keys(local).length }));
+                        } else {
+                            res.writeHead(400); res.end(JSON.stringify({ error: 'expected object' }));
+                        }
+                    } catch (e) {
+                        res.writeHead(400); res.end(JSON.stringify({ error: 'bad json' }));
+                    }
+                });
+            } else {
+                res.writeHead(405); res.end();
+            }
+
         } else {
             res.writeHead(404); res.end();
         }
@@ -1022,10 +1147,8 @@ function startLanServer(port) {
         if (mainWindow && !mainWindow.isDestroyed())
             mainWindow.webContents.send('lan:serverError', e.message);
     });
+    startDiscoveryResponder(port);
 }
-
-const DISCOVER_PORT = 37402;
-const DISCOVER_TIMEOUT_MS = 2500;
 
 ipcMain.handle('lan:discover', () => new Promise((resolve) => {
     const found = new Map();
@@ -1074,18 +1197,10 @@ ipcMain.on('lan:saveConfig', (_e, cfg) => {
     } else if (lanServer) {
         lanServer.close();
         lanServer = null;
+        stopDiscoveryResponder();
     }
 });
-ipcMain.handle('lan:getLocalIp', () => {
-    const { networkInterfaces } = require('os');
-    const nets = networkInterfaces();
-    for (const name of Object.keys(nets)) {
-        for (const net of nets[name]) {
-            if (net.family === 'IPv4' && !net.internal) return net.address;
-        }
-    }
-    return '127.0.0.1';
-});
+ipcMain.handle('lan:getLocalIp', () => getBestLocalIp());
 
 // ── App Lifecycle ─────────────────────────────────────────────────────────
 app.whenReady().then(() => {
