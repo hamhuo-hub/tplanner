@@ -1,3 +1,67 @@
 <resources>
     <string name="app_name">tPlanner</string>
+
+    <!-- 通用操作 -->
+    <string name="action_cancel">取消</string>
+    <string name="action_create">创建</string>
+    <string name="action_done">完成</string>
+    <string name="action_change">更改</string>
+    <string name="action_add_item">添加项</string>
+    <string name="label_new">新建</string>
+
+    <!-- 标签 / 区块标题 -->
+    <string name="tab_journal">随手记</string>
+    <string name="tab_tasks">今日任务</string>
+    <string name="section_time">时间</string>
+    <string name="section_checklist">清单</string>
+    <string name="section_note">备注</string>
+    <string name="section_color">颜色</string>
+    <string name="label_start">开始</string>
+    <string name="label_end">结束</string>
+
+    <!-- 任务分组 -->
+    <string name="group_now">进行中</string>
+    <string name="group_later">稍后</string>
+    <string name="group_past">已过</string>
+    <string name="group_done">已完成</string>
+    <string name="task_empty">今日空闲</string>
+    <string name="untitled_event">(无标题)</string>
+    <string name="status_now">现在</string>
+    <string name="status_soon">即将</string>
+
+    <!-- 事件类型 -->
+    <string name="type_task">任务</string>
+    <string name="type_event">事件</string>
+    <string name="type_reminder">提醒</string>
+    <string name="type_generic">项目</string>
+    <string name="desc_task">创建可勾选的待办任务</string>
+    <string name="desc_event">添加日程或会议安排</string>
+    <string name="desc_reminder">在指定时间发送提醒</string>
+
+    <!-- 命名面板 / 详情页 -->
+    <string name="default_name_template">新建%1$s</string>
+    <string name="name_prompt_template">为你的%1$s命名</string>
+    <string name="untitled_placeholder">未命名</string>
+    <string name="note_placeholder">添加备注…</string>
+
+    <!-- 无障碍内容描述 -->
+    <string name="cd_back">返回</string>
+    <string name="cd_delete">删除</string>
+
+    <!-- 局域网同步 -->
+    <string name="peer_manual">手动</string>
+    <string name="sync_success_with_name">已同步 · %1$s</string>
+    <string name="lan_sync_title">局域网同步</string>
+    <string name="scanning_label">扫描中…</string>
+    <string name="scan_lan_label">⌕  扫描局域网</string>
+    <string name="journal_count_template">%1$d条</string>
+    <string name="no_devices_found">未发现设备，可手动填写 IP</string>
+    <string name="syncing_label">同步中…</string>
+    <string name="sync_now_label">立即同步</string>
+    <string name="unknown_error">未知错误</string>
+
+    <!-- 日期格式（DateTimeFormatter 模式） -->
+    <string name="date_pattern_full">yyyy年M月d日</string>
+    <string name="date_pattern_month_day_weekday">M月d日 · E</string>
+    <string name="date_pattern_month_day_time">M月d日 HH:mm</string>
 </resources>

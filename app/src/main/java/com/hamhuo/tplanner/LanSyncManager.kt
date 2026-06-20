@@ -1,5 +1,6 @@
 package com.hamhuo.tplanner
 
+import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -10,7 +11,11 @@ import java.net.InetAddress
 import java.net.SocketTimeoutException
 import java.net.URL
 
-class LanSyncManager(private val store: JournalStore, private val eventStore: EventStore? = null) {
+class LanSyncManager(
+    private val context: Context,
+    private val store: JournalStore,
+    private val eventStore: EventStore? = null,
+) {
 
     data class Peer(val name: String, val ip: String, val port: Int, val journalCount: Int)
 
@@ -58,10 +63,13 @@ class LanSyncManager(private val store: JournalStore, private val eventStore: Ev
 
     suspend fun fetchEvents(peer: Peer): List<TaskEvent> = withContext(Dispatchers.IO) {
         try {
-            val json = httpGet("http://${peer.ip}:${peer.port}/tplanner/events")
-            val events = eventStore?.fromJson(json) ?: emptyList()
-            eventStore?.saveAll(events)
-            events
+            val base         = "http://${peer.ip}:${peer.port}"
+            val store_       = eventStore ?: return@withContext emptyList()
+            val remoteEvents = store_.fromJson(httpGet("$base/tplanner/events"))
+            val merged       = mergeEvents(store_.getAll(), remoteEvents)
+            httpPut("$base/tplanner/events", store_.toJson(merged))
+            store_.saveAll(merged)
+            merged
         } catch (_: Exception) {
             eventStore?.getAll() ?: emptyList()
         }
@@ -87,7 +95,7 @@ class LanSyncManager(private val store: JournalStore, private val eventStore: Ev
             store.saveAll(merged)
             SyncResult.Success(store.getToday())
         } catch (e: Exception) {
-            SyncResult.Error(e.message ?: "未知错误")
+            SyncResult.Error(e.message ?: context.getString(R.string.unknown_error))
         }
     }
 
@@ -150,6 +158,19 @@ class LanSyncManager(private val store: JournalStore, private val eventStore: Ev
             result[date] = if (existing == null) entry else pickEntry(existing, entry)
         }
         return result
+    }
+
+    // updatedAt 较大者获胜，时间戳相同时保留已存在的版本——与 electron/main.js
+    // 嵌入式局域网服务端对 /tplanner/events 的合并语义保持一致。
+    private fun mergeEvents(local: List<TaskEvent>, remote: List<TaskEvent>): List<TaskEvent> {
+        val map = local.associateByTo(LinkedHashMap()) { it.id }
+        remote.forEach { e ->
+            val existing = map[e.id]
+            if (existing == null || e.updatedAt > existing.updatedAt) {
+                map[e.id] = e
+            }
+        }
+        return map.values.toList()
     }
 
     private fun parsePeer(json: String): Peer? = try {

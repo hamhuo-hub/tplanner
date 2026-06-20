@@ -20,6 +20,7 @@ data class TaskEvent(
     val colorId: Int,
     val note: String,
     val deletedAt: Long,
+    val updatedAt: Long = 0L,
 )
 
 class EventStore(ctx: Context) {
@@ -69,6 +70,7 @@ class EventStore(ctx: Context) {
             colorId   = optInt("colorId", 0),
             note      = optString("note", ""),
             deletedAt = optLong("deletedAt", 0L),
+            updatedAt = optLong("updatedAt", 0L),
         )
     }
 
@@ -83,6 +85,7 @@ class EventStore(ctx: Context) {
         obj.put("colorId", colorId)
         obj.put("note", note)
         obj.put("deletedAt", deletedAt)
+        obj.put("updatedAt", updatedAt)
         val arr = JSONArray()
         checklist.forEach { item ->
             val o = JSONObject()

@@ -1,0 +1,67 @@
+<resources>
+    <string name="app_name">tPlanner</string>
+
+    <!-- General actions -->
+    <string name="action_cancel">Cancel</string>
+    <string name="action_create">Create</string>
+    <string name="action_done">Done</string>
+    <string name="action_change">Change</string>
+    <string name="action_add_item">Add Item</string>
+    <string name="label_new">New</string>
+
+    <!-- Tabs / section titles -->
+    <string name="tab_journal">Notes</string>
+    <string name="tab_tasks">Tasks</string>
+    <string name="section_time">Time</string>
+    <string name="section_checklist">Checklist</string>
+    <string name="section_note">Note</string>
+    <string name="section_color">Color</string>
+    <string name="label_start">Start</string>
+    <string name="label_end">End</string>
+
+    <!-- Task groups -->
+    <string name="group_now">In Progress</string>
+    <string name="group_later">Later</string>
+    <string name="group_past">Past</string>
+    <string name="group_done">Done</string>
+    <string name="task_empty">Free today</string>
+    <string name="untitled_event">(Untitled)</string>
+    <string name="status_now">Now</string>
+    <string name="status_soon">Soon</string>
+
+    <!-- Event types -->
+    <string name="type_task">Task</string>
+    <string name="type_event">Event</string>
+    <string name="type_reminder">Reminder</string>
+    <string name="type_generic">Item</string>
+    <string name="desc_task">Create a checkable to-do task</string>
+    <string name="desc_event">Add a schedule or meeting</string>
+    <string name="desc_reminder">Send a reminder at a specific time</string>
+
+    <!-- Naming sheet / detail screen -->
+    <string name="default_name_template">New %1$s</string>
+    <string name="name_prompt_template">Name your %1$s</string>
+    <string name="untitled_placeholder">Untitled</string>
+    <string name="note_placeholder">Add a note…</string>
+
+    <!-- Accessibility content descriptions -->
+    <string name="cd_back">Back</string>
+    <string name="cd_delete">Delete</string>
+
+    <!-- LAN sync -->
+    <string name="peer_manual">Manual</string>
+    <string name="sync_success_with_name">Synced · %1$s</string>
+    <string name="lan_sync_title">LAN Sync</string>
+    <string name="scanning_label">Scanning…</string>
+    <string name="scan_lan_label">⌕  Scan LAN</string>
+    <string name="journal_count_template">%1$d entries</string>
+    <string name="no_devices_found">No devices found. Enter IP manually.</string>
+    <string name="syncing_label">Syncing…</string>
+    <string name="sync_now_label">Sync Now</string>
+    <string name="unknown_error">Unknown error</string>
+
+    <!-- Date patterns (DateTimeFormatter pattern syntax) -->
+    <string name="date_pattern_full">MMMM d, yyyy</string>
+    <string name="date_pattern_month_day_weekday">MMM d · E</string>
+    <string name="date_pattern_month_day_time">MMM d, HH:mm</string>
+</resources>
