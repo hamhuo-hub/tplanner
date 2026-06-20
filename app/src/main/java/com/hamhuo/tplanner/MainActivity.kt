@@ -28,13 +28,24 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Alarm
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -155,8 +166,9 @@ fun MainScreen(store: JournalStore, eventStore: EventStore, manager: LanSyncMana
         }
     }
 
-    // 手机端：屏幕宽度 < 600dp 视为手机，使用单列 + 顶部标签页切换
-    val isPhone = LocalConfiguration.current.screenWidthDp < 600
+    // 宽度 < 840dp（Material3 Expanded 断点）视为紧凑布局：单列 + 顶部标签页切换。
+    // 平板竖屏宽度通常 700-840dp，仍不足以舒展两栏，需与手机横屏一样走单栏。
+    val isPhone = LocalConfiguration.current.screenWidthDp < 840
     var phoneTab by remember { mutableStateOf(0) }   // 0=随手记, 1=今日任务
 
     // 共用面板构建块（notes card content）
@@ -192,6 +204,8 @@ fun MainScreen(store: JournalStore, eventStore: EventStore, manager: LanSyncMana
         }
     }
 
+    var pendingAddType by remember { mutableStateOf<String?>(null) }
+
     val taskCardContent: @Composable () -> Unit = {
         TaskWidget(
             events   = events,
@@ -202,7 +216,8 @@ fun MainScreen(store: JournalStore, eventStore: EventStore, manager: LanSyncMana
                     events = events.map { if (it.id == eventId) it.copy(completed = completed) else it }
                     eventStore.saveAll(events)
                 }
-            }
+            },
+            onAddEvent = { type -> pendingAddType = type }
         )
     }
 
@@ -506,12 +521,16 @@ private fun taskStatus(e: TaskEvent, now: Instant): String {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TaskWidget(events: List<TaskEvent>, onToggle: (String, Boolean) -> Unit) {
+fun TaskWidget(events: List<TaskEvent>, onToggle: (String, Boolean) -> Unit, onAddEvent: (String) -> Unit) {
     val now    = remember { Instant.now() }
     val today  = remember { LocalDate.now() }
     val zone   = remember { ZoneId.systemDefault() }
     val fmt    = remember { DateTimeFormatter.ofPattern("HH:mm") }
+
+    var showTypeSheet by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val todayEvents = remember(events) { events.forToday() }
 
@@ -538,7 +557,7 @@ fun TaskWidget(events: List<TaskEvent>, onToggle: (String, Boolean) -> Unit) {
     Column(Modifier.fillMaxSize()) {
         // 标题行
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -549,8 +568,21 @@ fun TaskWidget(events: List<TaskEvent>, onToggle: (String, Boolean) -> Unit) {
                     color = DIM, fontSize = 15.sp
                 )
             }
-            if (taskTotal > 0) {
-                Text("$taskDone/$taskTotal", color = DIM, fontSize = 15.sp, fontFamily = FontFamily.Monospace)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (taskTotal > 0) {
+                    Text("$taskDone/$taskTotal", color = DIM, fontSize = 15.sp, fontFamily = FontFamily.Monospace)
+                }
+                // 右侧 + 按钮
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .background(Color(0xFF252525), CircleShape)
+                        .border(1.dp, BORDER, CircleShape)
+                        .clickable { showTypeSheet = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "新建", tint = GOLD, modifier = Modifier.size(20.dp))
+                }
             }
         }
 
@@ -591,6 +623,102 @@ fun TaskWidget(events: List<TaskEvent>, onToggle: (String, Boolean) -> Unit) {
                     }
                 }
             }
+        }
+    }
+
+    // 底部弹出面板 — 选择新建类型
+    if (showTypeSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showTypeSheet = false },
+            sheetState       = sheetState,
+            containerColor   = Color(0xFF1A1A1A),
+            dragHandle       = null,
+        ) {
+            AddEventTypeSheet(
+                onSelect = { type ->
+                    showTypeSheet = false
+                    onAddEvent(type)
+                },
+                onDismiss = { showTypeSheet = false }
+            )
+        }
+    }
+}
+
+@Composable
+fun AddEventTypeSheet(onSelect: (String) -> Unit, onDismiss: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 32.dp)
+    ) {
+        // 拖拽把手
+        Box(
+            modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 18.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                Modifier
+                    .width(36.dp).height(4.dp)
+                    .background(Color(0xFF444444), RoundedCornerShape(2.dp))
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 20.dp, end = 20.dp, bottom = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("新建", color = Color(0xFFE0D8C8), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text("✕", color = DIM, fontSize = 16.sp, modifier = Modifier.clickable { onDismiss() })
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        AddTypeItem(
+            icon   = Icons.Outlined.CheckCircle,
+            title  = "任务",
+            desc   = "创建可勾选的待办任务",
+            onClick = { onSelect("task") }
+        )
+        AddTypeItem(
+            icon   = Icons.Outlined.CalendarMonth,
+            title  = "事件",
+            desc   = "添加日程或会议安排",
+            onClick = { onSelect("event") }
+        )
+        AddTypeItem(
+            icon   = Icons.Outlined.Alarm,
+            title  = "提醒",
+            desc   = "在指定时间发送提醒",
+            onClick = { onSelect("reminder") }
+        )
+    }
+}
+
+@Composable
+private fun AddTypeItem(icon: ImageVector, title: String, desc: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .background(Color(0xFF2E2E2E), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = null, tint = Color(0xFFE0D8C8), modifier = Modifier.size(26.dp))
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(title, color = Color(0xFFE0D8C8), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            Text(desc, color = DIM, fontSize = 13.sp)
         }
     }
 }
