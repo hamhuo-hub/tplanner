@@ -1,0 +1,86 @@
+name: Build & Release
+
+# 触发条件：
+#   1. 推送 v 开头的 tag（如 v3.3.1）→ 构建各平台产物，并自动创建 GitHub Release
+#   2. 手动触发（Actions 页面点 "Run workflow"）→ 只构建、上传产物，便于测试
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+# 创建 Release 需要写权限；放在 workflow 级即可覆盖所有 job
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false          # 某个平台失败不影响其它平台继续
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win        # 产出 nsis 安装包 + portable 便携版
+          - os: ubuntu-latest
+            platform: linux      # 产出 AppImage + deb
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22       # 与你本地 nvm use 22 保持一致；需要的话改 24
+          cache: npm             # 缓存 ~/.npm，加速后续 npm ci
+
+      # deb 打包在部分环境需要 fakeroot；AppImage 由 electron-builder 自动处理
+      - name: Install Linux build deps
+        if: matrix.platform == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y fakeroot
+
+      - name: Install dependencies
+        run: npm ci             # 依赖 package-lock.json，确保已提交到仓库
+
+      - name: Build renderer & main
+        run: npm run build      # tsc -b && vite build，产出 dist/ 与 dist-electron/
+
+      - name: Package (Windows)
+        if: matrix.platform == 'win'
+        run: npx electron-builder --win --publish never
+
+      - name: Package (Linux)
+        if: matrix.platform == 'linux'
+        run: npx electron-builder --linux --publish never
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tplanner-${{ matrix.platform }}
+          path: |
+            release/*.exe
+            release/*.AppImage
+            release/*.deb
+          if-no-files-found: ignore
+          retention-days: 7
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')   # 仅在 tag 触发时发布
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          generate_release_notes: true        # 根据 commit / PR 自动生成更新说明
+          files: artifacts/**/*
+          # 自动使用内置的 GITHUB_TOKEN，无需额外配置 PAT
