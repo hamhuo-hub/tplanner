@@ -122,6 +122,12 @@ export default function EventDetailsModal({ event, travelTimezone, onClose, onDe
                     {onDelete && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginRight: 'auto' }}>
                             {!confirmingDelete ? (
+                                <button id="btn-delete-event" className="btn btn--danger"
+                                    onClick={() => setConfirmingDelete(true)}
+                                >
+                                    {t('actions.delete')}
+                                </button>
+                            ) : (
                                 <>
                                     {event.groupId && (
                                         <select value={deleteScope} onChange={e => setDeleteScope(e.target.value)}
@@ -132,14 +138,6 @@ export default function EventDetailsModal({ event, travelTimezone, onClose, onDe
                                             <option value="all">{t('recurrence.scopeAll')}</option>
                                         </select>
                                     )}
-                                    <button id="btn-delete-event" className="btn btn--danger"
-                                        onClick={() => setConfirmingDelete(true)}
-                                    >
-                                        {t('actions.delete')}
-                                    </button>
-                                </>
-                            ) : (
-                                <>
                                     <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--clr-text-dim)' }}>
                                         {t('messages.deleteConfirmation', '确认删除？')}
                                     </span>

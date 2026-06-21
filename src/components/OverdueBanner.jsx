@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AlertCircle, Clock, ChevronDown, ChevronUp } from 'lucide-react';
 import { formatInTimeZone } from 'date-fns-tz';
-import { differenceInCalendarDays, differenceInHours } from 'date-fns';
+import { differenceInCalendarDays, differenceInHours, addDays, endOfDay } from 'date-fns';
 import { useTranslation } from 'react-i18next';
 
 // deadline time: tasks use .end, reminders/events use .start
@@ -31,11 +31,14 @@ export default function OverdueBanner({ events, onHighlight, travelTimezone }) {
         .filter(e => e.type === 'task' && !e.completed && e.end < now)
         .sort((a, b) => a.end - b.end);
 
-    // Upcoming: tasks (not yet expired) + reminders/events (not yet started)
-    // Both sorted by their deadline time
+    // Upcoming: tasks (not yet expired) + reminders/events (not yet started)，
+    // 只看明后两天（今天剩余 + 明天），不应该把所有未来事项都列进来。
+    const upcomingCutoff = endOfDay(addDays(now, 1));
     const upcomingTasks = events
         .filter(e => {
             if (e.type === 'status') return false;
+            const d = deadline(e);
+            if (d > upcomingCutoff) return false;
             if (e.type === 'task') return !e.completed && e.end >= now;
             // event/reminder: show if start is in the future
             return e.start >= now;
