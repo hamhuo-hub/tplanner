@@ -28,10 +28,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22       # 与你本地 nvm use 22 保持一致；需要的话改 24
           cache: npm             # 缓存 ~/.npm，加速后续 npm ci
