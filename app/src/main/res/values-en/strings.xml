@@ -5,7 +5,6 @@
     <string name="action_cancel">Cancel</string>
     <string name="action_create">Create</string>
     <string name="action_done">Done</string>
-    <string name="action_change">Change</string>
     <string name="action_add_item">Add Item</string>
     <string name="label_new">New</string>
 
@@ -24,6 +23,7 @@
     <string name="group_later">Later</string>
     <string name="group_past">Past</string>
     <string name="group_done">Done</string>
+    <string name="group_tomorrow">Tomorrow</string>
     <string name="task_empty">Free today</string>
     <string name="untitled_event">(Untitled)</string>
     <string name="status_now">Now</string>

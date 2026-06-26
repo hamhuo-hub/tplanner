@@ -5,7 +5,6 @@
     <string name="action_cancel">取消</string>
     <string name="action_create">创建</string>
     <string name="action_done">完成</string>
-    <string name="action_change">更改</string>
     <string name="action_add_item">添加项</string>
     <string name="label_new">新建</string>
 
@@ -25,6 +24,7 @@
     <string name="group_later">稍后</string>
     <string name="group_past">已过</string>
     <string name="group_done">已完成</string>
+    <string name="group_tomorrow">明天</string>
     <string name="task_empty">今日空闲</string>
     <string name="untitled_event">(无标题)</string>
     <string name="status_now">现在</string>

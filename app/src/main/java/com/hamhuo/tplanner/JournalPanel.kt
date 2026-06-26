@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -241,14 +242,24 @@ fun MarkdownViewer(content: String, modifier: Modifier = Modifier) {
     )
 }
 
-// 与 PC 端同一套思路：编辑态渲染原始文本输入框，查看态渲染 Markdown 预览
-// （WebView），点击切换两种渲染代码，而不是做单一控件内的实时叠加 WYSIWYG。
+// 编辑态渲染原始文本输入框，查看态渲染 Markdown 预览（WebView），点击切换两种渲染代码，
+// 而不是做单一控件内的实时叠加 WYSIWYG。随手记和任务详情页的备注共用这一套组件——
+// 安卓端手动输入不需要 MD 工具栏，但同步过来的内容可能携带 PC 端写的 MD，查看时要能正确渲染。
 @Composable
-fun JournalEditor(content: String, onSave: (String) -> Unit, modifier: Modifier = Modifier) {
+fun MarkdownField(
+    content: String,
+    onSave: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(start = 26.dp, end = 26.dp, top = 22.dp, bottom = 32.dp),
+) {
     var isEditing by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf(content) }
 
-    Box(modifier.fillMaxSize()) {
+    // 不在这里再追加 fillMaxSize()——调用方的 modifier 必须自带确定的尺寸
+    // （weight()/明确的 height()），否则在可滚动的无限高度父级里会测不出尺寸，
+    // 导致内部 BasicTextField 实际可点区域为零，看起来像“点了没反应、打不了字”。
+    Box(modifier) {
         if (isEditing) {
             val focusRequester = remember { FocusRequester() }
             BasicTextField(
@@ -262,10 +273,10 @@ fun JournalEditor(content: String, onSave: (String) -> Unit, modifier: Modifier 
                 modifier = Modifier
                     .fillMaxSize()
                     .focusRequester(focusRequester)
-                    .padding(start = 26.dp, end = 26.dp, top = 22.dp, bottom = 32.dp),
+                    .padding(contentPadding),
                 decorationBox = { inner ->
                     if (draft.isEmpty()) {
-                        Text(stringResource(R.string.journal_edit_hint), color = DIM, fontSize = 15.sp, lineHeight = 26.sp)
+                        Text(placeholder, color = DIM, fontSize = 15.sp, lineHeight = 26.sp)
                     }
                     inner()
                 }
@@ -285,7 +296,7 @@ fun JournalEditor(content: String, onSave: (String) -> Unit, modifier: Modifier 
                 content = content,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(start = 26.dp, end = 26.dp, top = 22.dp, bottom = 32.dp)
+                    .padding(contentPadding)
             )
             // WebView 会吞掉点击事件，叠一层透明可点层用来进入编辑态（整卡可点，不受内边距影响）
             Box(

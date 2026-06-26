@@ -68,6 +68,7 @@ fun TaskWidget(
     onToggle: (String, Boolean) -> Unit,
     onAddEvent: (String) -> Unit,
     onDelete: (String) -> Unit,
+    onItemClick: (TaskEvent) -> Unit,
 ) {
     val now    = remember { Instant.now() }
     val today  = remember { LocalDate.now() }
@@ -77,12 +78,15 @@ fun TaskWidget(
     var showTypeSheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    val todayEvents = remember(events) { events.forToday() }
+    val todayEvents    = remember(events) { events.forToday() }
+    val tomorrowEvents = remember(events) { events.forDate(LocalDate.now().plusDays(1)) }
+    var tomorrowExpanded by remember { mutableStateOf(false) }
 
     val groupNowLabel   = stringResource(R.string.group_now)
     val groupLaterLabel = stringResource(R.string.group_later)
     val groupPastLabel  = stringResource(R.string.group_past)
     val groupDoneLabel  = stringResource(R.string.group_done)
+    val groupTomorrowLabel = stringResource(R.string.group_tomorrow)
 
     val groups = remember(todayEvents, groupNowLabel, groupLaterLabel, groupPastLabel, groupDoneLabel) {
         val current  = mutableListOf<TaskEvent>()
@@ -138,72 +142,47 @@ fun TaskWidget(
 
         HorizontalDivider(color = BORDER, thickness = 1.dp)
 
-        if (todayEvents.isEmpty()) {
+        if (todayEvents.isEmpty() && tomorrowEvents.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(stringResource(R.string.task_empty), color = Color(0xFF3A342A), fontSize = 16.sp)
             }
         } else {
             LazyColumn(Modifier.fillMaxSize().padding(vertical = 4.dp)) {
-                groups.forEach { (label, list) ->
-                    if (list.isEmpty()) return@forEach
+                if (todayEvents.isEmpty()) {
                     item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text(label, color = Color(0xFF6B5928), fontSize = 13.sp, letterSpacing = 0.12.sp)
-                            Box(
-                                Modifier
-                                    .background(Color(0x1FC9A84C), RoundedCornerShape(2.dp))
-                                    .padding(horizontal = 4.dp, vertical = 1.dp)
-                            ) {
-                                Text("${list.size}", color = Color(0xFF6B5928), fontSize = 13.sp)
-                            }
+                        Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 16.dp)) {
+                            Text(stringResource(R.string.task_empty), color = Color(0xFF3A342A), fontSize = 14.sp)
                         }
                     }
+                }
+                groups.forEach { (label, list) ->
+                    if (list.isEmpty()) return@forEach
+                    item { GroupHeader(label = label, count = list.size) }
                     items(list, key = { it.id }) { e ->
-                        val dismissState = rememberSwipeToDismissBoxState(
-                            confirmValueChange = { value ->
-                                if (value == SwipeToDismissBoxValue.EndToStart) onDelete(e.id)
-                                true
-                            }
+                        SwipeableTaskRow(
+                            event = e, fmt = fmt, zone = zone, now = now,
+                            onToggle = onToggle, onDelete = onDelete, onItemClick = onItemClick
                         )
-                        SwipeToDismissBox(
-                            state = dismissState,
-                            enableDismissFromStartToEnd = false,
-                            enableDismissFromEndToStart = true,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
-                            backgroundContent = {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(RED),
-                                    contentAlignment = Alignment.CenterEnd
-                                ) {
-                                    Icon(
-                                        Icons.Default.Delete,
-                                        contentDescription = stringResource(R.string.cd_delete),
-                                        tint = Color.White,
-                                        modifier = Modifier.padding(end = 20.dp)
-                                    )
-                                }
-                            }
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(SURFACE2)
-                            ) {
-                                TaskItem(
-                                    event  = e,
-                                    fmt    = fmt,
-                                    zone   = zone,
-                                    now    = now,
-                                    onToggle = onToggle
-                                )
-                            }
+                    }
+                }
+
+                // 明天预览——默认折叠，点击标题展开/收起，避免把今天的清单挤得太靠下。
+                if (tomorrowEvents.isNotEmpty()) {
+                    item {
+                        GroupHeader(
+                            label = groupTomorrowLabel,
+                            count = tomorrowEvents.size,
+                            collapsible = true,
+                            expanded = tomorrowExpanded,
+                            onToggleExpanded = { tomorrowExpanded = !tomorrowExpanded }
+                        )
+                    }
+                    if (tomorrowExpanded) {
+                        items(tomorrowEvents, key = { "tomorrow-${it.id}" }) { e ->
+                            SwipeableTaskRow(
+                                event = e, fmt = fmt, zone = zone, now = now,
+                                onToggle = onToggle, onDelete = onDelete, onItemClick = onItemClick
+                            )
                         }
                     }
                 }
@@ -225,6 +204,92 @@ fun TaskWidget(
                     onAddEvent(type)
                 },
                 onDismiss = { showTypeSheet = false }
+            )
+        }
+    }
+}
+
+@Composable
+private fun GroupHeader(
+    label: String,
+    count: Int,
+    collapsible: Boolean = false,
+    expanded: Boolean = false,
+    onToggleExpanded: () -> Unit = {},
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (collapsible) Modifier.clickable { onToggleExpanded() } else Modifier)
+            .padding(horizontal = 14.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        if (collapsible) {
+            Text(if (expanded) "▾" else "▸", color = Color(0xFF6B5928), fontSize = 13.sp)
+        }
+        Text(label, color = Color(0xFF6B5928), fontSize = 13.sp, letterSpacing = 0.12.sp)
+        Box(
+            Modifier
+                .background(Color(0x1FC9A84C), RoundedCornerShape(2.dp))
+                .padding(horizontal = 4.dp, vertical = 1.dp)
+        ) {
+            Text("$count", color = Color(0xFF6B5928), fontSize = 13.sp)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeableTaskRow(
+    event: TaskEvent,
+    fmt: DateTimeFormatter,
+    zone: ZoneId,
+    now: Instant,
+    onToggle: (String, Boolean) -> Unit,
+    onDelete: (String) -> Unit,
+    onItemClick: (TaskEvent) -> Unit,
+) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) onDelete(event.id)
+            true
+        }
+    )
+    SwipeToDismissBox(
+        state = dismissState,
+        enableDismissFromStartToEnd = false,
+        enableDismissFromEndToStart = true,
+        modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+        backgroundContent = {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(RED),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = stringResource(R.string.cd_delete),
+                    tint = Color.White,
+                    modifier = Modifier.padding(end = 20.dp)
+                )
+            }
+        }
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .background(SURFACE2)
+                .clickable { onItemClick(event) }
+        ) {
+            TaskItem(
+                event  = event,
+                fmt    = fmt,
+                zone   = zone,
+                now    = now,
+                onToggle = onToggle
             )
         }
     }

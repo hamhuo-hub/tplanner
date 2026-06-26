@@ -97,13 +97,14 @@ class EventStore(ctx: Context) {
     }
 }
 
-fun List<TaskEvent>.forToday(): List<TaskEvent> {
-    val today = LocalDate.now()
+fun List<TaskEvent>.forToday(): List<TaskEvent> = forDate(LocalDate.now())
+
+fun List<TaskEvent>.forDate(date: LocalDate): List<TaskEvent> {
     val zone  = ZoneId.systemDefault()
     return filter { e ->
         if (e.deletedAt != 0L) return@filter false
         val s = e.start.atZone(zone).toLocalDate()
         val en = e.end.atZone(zone).toLocalDate()
-        !s.isAfter(today) && !en.isBefore(today)
+        !s.isAfter(date) && !en.isBefore(date)
     }.sortedBy { it.start }
 }

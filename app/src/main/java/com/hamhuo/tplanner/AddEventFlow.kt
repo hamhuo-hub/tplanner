@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -24,6 +25,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -41,12 +44,16 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -56,6 +63,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
@@ -335,6 +343,7 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
                         }
                         Box(Modifier.weight(1f)) {
                             if (renaming) {
+                                val titleFocusRequester = remember { FocusRequester() }
                                 BasicTextField(
                                     value = title,
                                     onValueChange = { title = it },
@@ -343,27 +352,22 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
                                     ),
                                     cursorBrush = SolidColor(GOLD),
                                     singleLine  = true,
-                                    modifier    = Modifier.fillMaxWidth()
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                    keyboardActions = KeyboardActions(onDone = { renaming = false }),
+                                    modifier    = Modifier
+                                        .fillMaxWidth()
+                                        .focusRequester(titleFocusRequester)
+                                        .onFocusChanged { if (!it.isFocused) renaming = false }
                                 )
+                                LaunchedEffect(Unit) { titleFocusRequester.requestFocus() }
                             } else {
                                 Text(
                                     title.ifBlank { stringResource(R.string.untitled_placeholder) },
                                     color = Color(0xFFE0D8C8), fontSize = 22.sp,
-                                    fontWeight = FontWeight.Bold, maxLines = 1
+                                    fontWeight = FontWeight.Bold, maxLines = 1,
+                                    modifier = Modifier.clickable { renaming = true }
                                 )
                             }
-                        }
-                        Box(
-                            modifier = Modifier
-                                .background(Color(0xFF252525), RoundedCornerShape(50.dp))
-                                .border(1.dp, BORDER, RoundedCornerShape(50.dp))
-                                .clickable { renaming = !renaming }
-                                .padding(horizontal = 16.dp, vertical = 7.dp)
-                        ) {
-                            Text(
-                                if (renaming) stringResource(R.string.action_done) else stringResource(R.string.action_change),
-                                color = Color(0xFFE0D8C8), fontSize = 13.sp, fontWeight = FontWeight.SemiBold
-                            )
                         }
                     }
 
@@ -429,21 +433,19 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
                     HorizontalDivider(color = BORDER)
                     Spacer(Modifier.height(20.dp))
 
-                    // 备注
+                    // 备注——手动输入不需要 MD 工具栏，但同步来的内容可能携带 PC 端写的 MD，
+                    // 查看态要渲染，而不是把 "##"/"**" 之类原样显示给用户。
                     DetailSectionLabel(stringResource(R.string.section_note))
                     Spacer(Modifier.height(10.dp))
-                    Box(Modifier.fillMaxWidth().heightIn(min = 60.dp)) {
-                        if (note.isEmpty()) {
-                            Text(stringResource(R.string.note_placeholder), color = DIM, fontSize = 15.sp)
-                        }
-                        BasicTextField(
-                            value = note,
-                            onValueChange = { note = it },
-                            textStyle  = TextStyle(color = Color(0xFFE0D8C8), fontSize = 15.sp),
-                            cursorBrush = SolidColor(GOLD),
-                            modifier   = Modifier.fillMaxWidth()
-                        )
-                    }
+                    MarkdownField(
+                        content = note,
+                        onSave = { newNote -> note = newNote },
+                        placeholder = stringResource(R.string.note_placeholder),
+                        contentPadding = PaddingValues(0.dp),
+                        // 必须给确定的高度——这层外面是 verticalScroll 的无限高度容器，
+                        // heightIn(min=...) 测不出具体尺寸，会导致内部输入框点不进去。
+                        modifier = Modifier.fillMaxWidth().height(160.dp)
+                    )
 
                     Spacer(Modifier.height(24.dp))
                     HorizontalDivider(color = BORDER)

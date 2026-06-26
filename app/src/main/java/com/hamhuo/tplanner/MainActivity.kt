@@ -139,9 +139,10 @@ fun MainScreen(store: JournalStore, eventStore: EventStore, manager: LanSyncMana
                     onPanelToggle = { panelOpen = !panelOpen }
                 )
                 HorizontalDivider(color = BORDER, thickness = 1.dp)
-                JournalEditor(
+                MarkdownField(
                     content = content,
                     onSave = { text -> content = text; store.saveToday(text) },
+                    placeholder = stringResource(R.string.journal_edit_hint),
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -190,7 +191,8 @@ fun MainScreen(store: JournalStore, eventStore: EventStore, manager: LanSyncMana
                     if (it.id == eventId) it.copy(deletedAt = now, updatedAt = now) else it
                 }
                 eventStore.saveAll(events)
-            }
+            },
+            onItemClick = { event -> editingEvent = event }
         )
     }
 
