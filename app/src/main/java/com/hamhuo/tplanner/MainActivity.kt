@@ -128,7 +128,7 @@ fun MainScreen(store: JournalStore, eventStore: EventStore, manager: LanSyncMana
     // 宽度 < 840dp（Material3 Expanded 断点）视为紧凑布局：单列 + 顶部标签页切换。
     // 平板竖屏宽度通常 700-840dp，仍不足以舒展两栏，需与手机横屏一样走单栏。
     val isPhone = LocalConfiguration.current.screenWidthDp < 840
-    var phoneTab by remember { mutableStateOf(0) }   // 0=随手记, 1=今日任务
+    var phoneTab by remember { mutableStateOf(0) }   // 0=随手记, 1=日程
 
     // 共用面板构建块（notes card content）
     val notesCardContent: @Composable () -> Unit = {

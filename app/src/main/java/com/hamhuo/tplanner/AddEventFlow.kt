@@ -385,42 +385,44 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
                         )
                     }
 
-                    Spacer(Modifier.height(24.dp))
-                    HorizontalDivider(color = BORDER)
-                    Spacer(Modifier.height(20.dp))
+                    // 清单只对「任务」类型有意义——事件/提醒不是待办事项，不需要子项打勾。
+                    if (event.type == "task") {
+                        Spacer(Modifier.height(24.dp))
+                        HorizontalDivider(color = BORDER)
+                        Spacer(Modifier.height(20.dp))
 
-                    // 清单
-                    DetailSectionLabel(stringResource(R.string.section_checklist))
-                    Spacer(Modifier.height(10.dp))
-                    checklist.forEachIndexed { idx, item ->
-                        ChecklistRow(
-                            item = item,
-                            onToggle = {
-                                checklist = checklist.toMutableList()
-                                    .also { it[idx] = item.copy(completed = !item.completed) }
-                            },
-                            onTextChange = { newText ->
-                                checklist = checklist.toMutableList()
-                                    .also { it[idx] = item.copy(text = newText) }
-                            },
-                            onDelete = {
-                                checklist = checklist.toMutableList().also { it.removeAt(idx) }
-                            }
-                        )
-                    }
-                    Row(
-                        modifier = Modifier
-                            .padding(top = 6.dp)
-                            .clickable {
-                                checklist = checklist + CheckItem(
-                                    id = UUID.randomUUID().toString(), text = "", completed = false
-                                )
-                            },
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, tint = DIM, modifier = Modifier.size(16.dp))
-                        Text(stringResource(R.string.action_add_item), color = DIM, fontSize = 14.sp)
+                        DetailSectionLabel(stringResource(R.string.section_checklist))
+                        Spacer(Modifier.height(10.dp))
+                        checklist.forEachIndexed { idx, item ->
+                            ChecklistRow(
+                                item = item,
+                                onToggle = {
+                                    checklist = checklist.toMutableList()
+                                        .also { it[idx] = item.copy(completed = !item.completed) }
+                                },
+                                onTextChange = { newText ->
+                                    checklist = checklist.toMutableList()
+                                        .also { it[idx] = item.copy(text = newText) }
+                                },
+                                onDelete = {
+                                    checklist = checklist.toMutableList().also { it.removeAt(idx) }
+                                }
+                            )
+                        }
+                        Row(
+                            modifier = Modifier
+                                .padding(top = 6.dp)
+                                .clickable {
+                                    checklist = checklist + CheckItem(
+                                        id = UUID.randomUUID().toString(), text = "", completed = false
+                                    )
+                                },
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, tint = DIM, modifier = Modifier.size(16.dp))
+                            Text(stringResource(R.string.action_add_item), color = DIM, fontSize = 14.sp)
+                        }
                     }
 
                     Spacer(Modifier.height(24.dp))

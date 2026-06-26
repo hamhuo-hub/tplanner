@@ -11,7 +11,7 @@
 
     <!-- Tabs / section titles -->
     <string name="tab_journal">Notes</string>
-    <string name="tab_tasks">Tasks</string>
+    <string name="tab_tasks">Schedule</string>
     <string name="section_time">Time</string>
     <string name="section_checklist">Checklist</string>
     <string name="section_note">Note</string>
