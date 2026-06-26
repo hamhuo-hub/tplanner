@@ -254,15 +254,18 @@ fun JournalEditor(content: String, onSave: (String) -> Unit, modifier: Modifier 
             BasicTextField(
                 value = draft,
                 onValueChange = { draft = it },
-                textStyle = TextStyle(color = Color(0xFFE8E0D0), fontSize = 14.sp, fontFamily = FontFamily.Monospace),
+                // 字号/行高需要跟 md_viewer.html 的 body 样式（15px、1.75 行高）保持一致，
+                // 内边距统一交给下方 MarkdownViewer 调用处的 Compose padding（同一份数值），
+                // 不再各自在 HTML/Compose 两端分别设置，避免 CSS px 与 dp 没法保证 1:1 对齐。
+                textStyle = TextStyle(color = Color(0xFFE8E0D0), fontSize = 15.sp, lineHeight = 26.sp),
                 cursorBrush = SolidColor(GOLD),
                 modifier = Modifier
                     .fillMaxSize()
                     .focusRequester(focusRequester)
-                    .padding(16.dp),
+                    .padding(start = 26.dp, end = 26.dp, top = 22.dp, bottom = 32.dp),
                 decorationBox = { inner ->
                     if (draft.isEmpty()) {
-                        Text(stringResource(R.string.journal_edit_hint), color = DIM, fontSize = 14.sp)
+                        Text(stringResource(R.string.journal_edit_hint), color = DIM, fontSize = 15.sp, lineHeight = 26.sp)
                     }
                     inner()
                 }
@@ -276,8 +279,15 @@ fun JournalEditor(content: String, onSave: (String) -> Unit, modifier: Modifier 
                 Text("✓", color = GOLD, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             }
         } else {
-            MarkdownViewer(content = content, modifier = Modifier.fillMaxSize())
-            // WebView 会吞掉点击事件，叠一层透明可点层用来进入编辑态
+            // 内边距统一在 Compose 侧加（md_viewer.html 自身不再设 padding），
+            // 否则 WebView 里的 CSS px 和这里的 dp 不保证 1:1，对不齐。
+            MarkdownViewer(
+                content = content,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(start = 26.dp, end = 26.dp, top = 22.dp, bottom = 32.dp)
+            )
+            // WebView 会吞掉点击事件，叠一层透明可点层用来进入编辑态（整卡可点，不受内边距影响）
             Box(
                 modifier = Modifier
                     .fillMaxSize()
