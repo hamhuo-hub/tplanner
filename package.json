@@ -130,7 +130,7 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-i18next": "^16.5.4",
-    "rxdb": "^17.1.0",
+    "rxdb": "^17.3.0",
     "rxjs": "^7.8.2",
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4.1.18",

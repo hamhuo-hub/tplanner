@@ -3,7 +3,7 @@ import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
 import EventRow from './EventRow';
 import { useRef, useEffect, useLayoutEffect, useState } from 'react';
 
-export default function Timeline({ startDate, endDate, events, onEventClick, onAddEvent, highlight, onLoadPrev, onLoadNext, onUpdateEvent, clashes, travelTimezone, onToggleTaskComplete, journals, onSaveJournal, onContextMenu }) {
+export default function Timeline({ startDate, endDate, events, onEventClick, onAddEvent, highlight, onLoadPrev, onLoadNext, onUpdateEvent, clashes, travelTimezone, onToggleTaskComplete, journals, onSaveJournal, onContextMenu, selectedIds, onSelectionChange }) {
     const scrollContainerRef = useRef(null);
     const [days, setDays] = useState([]);
     const prevStartDateRef = useRef(startDate);
@@ -132,6 +132,64 @@ export default function Timeline({ startDate, endDate, events, onEventClick, onA
         window.removeEventListener('mouseup', handleGlobalMouseUp);
     }, []);
 
+    // ── Box selection (rubber-band) ─────────────────────────────────────────
+    // Surface-level patch for batch ops on recurring-task instances that
+    // aren't sync-linked yet — lets users drag a box over several events and
+    // delete them together instead of one at a time. Box is rendered in
+    // viewport (fixed) coords so it stays correct while the row list scrolls.
+    const [selectionBox, setSelectionBox] = useState(null); // {x1,y1,x2,y2}
+    const selectionDataRef = useRef({ active: false, startX: 0, startY: 0 });
+    const SELECT_DRAG_THRESHOLD = 4;
+
+    const handleSelectionMouseDown = (e) => {
+        if (e.button !== 0) return;
+        if (e.target.closest('.event-block')) return;       // let event-drag handle this
+        if (e.target.closest('.event-row-date')) return;    // journal column
+        selectionDataRef.current = { active: false, startX: e.clientX, startY: e.clientY };
+        window.addEventListener('mousemove', handleSelectionMouseMove);
+        window.addEventListener('mouseup', handleSelectionMouseUp);
+    };
+
+    const handleSelectionMouseMove = (e) => {
+        const data = selectionDataRef.current;
+        const dx = e.clientX - data.startX, dy = e.clientY - data.startY;
+        if (!data.active) {
+            if (Math.abs(dx) < SELECT_DRAG_THRESHOLD && Math.abs(dy) < SELECT_DRAG_THRESHOLD) return;
+            data.active = true;
+            document.body.style.userSelect = 'none';
+            window.getSelection()?.removeAllRanges();
+        }
+        data.x2 = e.clientX;
+        data.y2 = e.clientY;
+        setSelectionBox({ x1: data.startX, y1: data.startY, x2: e.clientX, y2: e.clientY });
+    };
+
+    const handleSelectionMouseUp = () => {
+        window.removeEventListener('mousemove', handleSelectionMouseMove);
+        window.removeEventListener('mouseup', handleSelectionMouseUp);
+        document.body.style.userSelect = '';
+        const data = selectionDataRef.current;
+        setSelectionBox(null);
+        if (data.active) {
+            const left = Math.min(data.startX, data.x2), right = Math.max(data.startX, data.x2);
+            const top = Math.min(data.startY, data.y2), bottom = Math.max(data.startY, data.y2);
+            const hitIds = Array.from(document.querySelectorAll('.event-block[data-event-id]')).filter(el => {
+                const r = el.getBoundingClientRect();
+                return r.left < right && r.right > left && r.top < bottom && r.bottom > top;
+            }).map(el => el.dataset.eventId);
+            onSelectionChange?.(new Set(hitIds));
+            dragInteractionRef.current.lastDragTime = Date.now(); // suppress the trailing click-to-add-event
+        } else {
+            onSelectionChange?.(new Set());
+        }
+        selectionDataRef.current = { active: false, startX: 0, startY: 0 };
+    };
+
+    useEffect(() => () => {
+        window.removeEventListener('mousemove', handleSelectionMouseMove);
+        window.removeEventListener('mouseup', handleSelectionMouseUp);
+    }, []);
+
     const handleEventClickProxy = (e) => {
         if (Date.now() - (dragInteractionRef.current.lastDragTime || 0) < 200) return;
         onEventClick(e);
@@ -168,7 +226,7 @@ export default function Timeline({ startDate, endDate, events, onEventClick, onA
             </div>
 
             {/* Scrollable Body */}
-            <div className="timeline-scroll-area" onScroll={handleScroll} ref={scrollContainerRef}>
+            <div className="timeline-scroll-area" onScroll={handleScroll} ref={scrollContainerRef} onMouseDown={handleSelectionMouseDown}>
                 {days.map(day => (
                     <EventRow
                         key={day.toISOString()}
@@ -185,9 +243,25 @@ export default function Timeline({ startDate, endDate, events, onEventClick, onA
                         journalText={journals?.[format(day, 'yyyy-MM-dd')] || ''}
                         onSaveJournal={(text) => onSaveJournal?.(format(day, 'yyyy-MM-dd'), text)}
                         onContextMenu={onContextMenu}
+                        selectedIds={selectedIds}
                     />
                 ))}
             </div>
+
+            {/* Rubber-band selection box overlay */}
+            {selectionBox && (
+                <div style={{
+                    position: 'fixed',
+                    left: Math.min(selectionBox.x1, selectionBox.x2),
+                    top: Math.min(selectionBox.y1, selectionBox.y2),
+                    width: Math.abs(selectionBox.x2 - selectionBox.x1),
+                    height: Math.abs(selectionBox.y2 - selectionBox.y1),
+                    background: 'rgba(201,168,76,0.12)',
+                    border: '1px solid rgba(201,168,76,0.7)',
+                    zIndex: 9999,
+                    pointerEvents: 'none',
+                }} />
+            )}
         </div>
     );
 }

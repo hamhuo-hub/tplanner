@@ -33,6 +33,7 @@ function App() {
     const [autoLaunch, setAutoLaunch] = useState(false);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [selectedEvent, setSelectedEvent] = useState(null);
+    const [selectedIds, setSelectedIds] = useState(() => new Set()); // box-select for batch ops
     const [modalDefaultDate, setModalDefaultDate] = useState(null);
     const [editingEvent, setEditingEvent] = useState(null);
     const [isLoaded, setIsLoaded] = useState(false);
@@ -80,6 +81,14 @@ function App() {
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
     }, [clipboard]);
+
+    // ESC clears box-selection
+    useEffect(() => {
+        if (selectedIds.size === 0) return;
+        const handler = (e) => { if (e.key === 'Escape') setSelectedIds(new Set()); };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [selectedIds]);
 
     // Sync auto-launch state from tray menu changes
     useEffect(() => {
@@ -419,6 +428,24 @@ function App() {
         setSelectedEvent(null);
     };
 
+    // Batch delete: tombstone every box-selected event in one write.
+    // Temporary patch — recurring instances aren't synced as a group yet,
+    // so a multi-select box lets users clear them all without one-by-one deletes.
+    const handleBatchDelete = async (ids) => {
+        if (!db || !ids?.length) return;
+        try {
+            const now = clockNow();
+            const docs = await db.events.findByIds(ids).exec();
+            const upserts = Array.from(docs.values()).map(doc => ({
+                ...doc.toJSON(), deletedAt: now, updatedAt: now,
+            }));
+            if (upserts.length) await db.events.bulkUpsert(upserts);
+        } catch (err) {
+            console.error('Error batch deleting events', err);
+        }
+        setSelectedIds(new Set());
+    };
+
     // Copy: store in clipboard, don't save yet
     const handleCopyEvent = (event) => {
         setClipboard(event);
@@ -737,7 +764,7 @@ function App() {
                         endDate={viewRange.end || new Date()}
                         events={visibleEvents}
                         clashes={clashes}
-                        onEventClick={setSelectedEvent}
+                        onEventClick={(ev) => { setSelectedEvent(ev); setSelectedIds(new Set()); }}
                         onAddEvent={handleTimelineClick}
                         highlight={highlight}
                         onLoadPrev={handleLoadMorePrev}
@@ -748,6 +775,8 @@ function App() {
                         travelTimezone={travelTimezone}
                         journals={visibleJournals}
                         onSaveJournal={handleSaveJournal}
+                        selectedIds={selectedIds}
+                        onSelectionChange={setSelectedIds}
                     />
                 </>}
                 {activeTab === 'decade' && (
@@ -846,6 +875,33 @@ function App() {
                     <span style={{ color: 'var(--clr-text)' }}>「{clipboard.title}」</span>
                     <span style={{ color: 'var(--clr-text-dim)' }}>— 点击时间轴空白处粘贴</span>
                     <button onClick={() => setClipboard(null)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--clr-text-dim)', padding: 0, marginLeft: 4 }}
+                        title="取消 (Esc)"
+                    >✕</button>
+                </div>
+            )}
+
+            {/* Box-selection batch toolbar */}
+            {selectedIds.size > 0 && (
+                <div style={{
+                    position: 'fixed', bottom: 60, left: '50%', transform: 'translateX(-50%)',
+                    zIndex: 9000, background: 'var(--clr-surface,#1e1e1e)',
+                    border: '1px solid var(--clr-gold,#C9A84C)', borderRadius: 8,
+                    padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 12,
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+                    fontFamily: 'var(--font-mono)', fontSize: 12,
+                }}>
+                    <span style={{ color: 'var(--clr-gold)' }}>{t('selection.count', { count: selectedIds.size, defaultValue: `已选中 ${selectedIds.size} 项` })}</span>
+                    <button
+                        onClick={() => handleBatchDelete(Array.from(selectedIds))}
+                        style={{
+                            background: 'none', border: '1px solid var(--clr-red,#C0392B)', borderRadius: 4,
+                            cursor: 'pointer', color: 'var(--clr-red,#C0392B)', padding: '3px 10px', fontSize: 12,
+                        }}
+                    >
+                        {t('selection.delete', { defaultValue: '批量删除' })}
+                    </button>
+                    <button onClick={() => setSelectedIds(new Set())}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--clr-text-dim)', padding: 0, marginLeft: 4 }}
                         title="取消 (Esc)"
                     >✕</button>

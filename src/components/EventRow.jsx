@@ -7,7 +7,7 @@ import { MASSEY_COLORS } from '../utils/constants';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { marked } from 'marked';
 
-export default function EventRow({ date, events, onEventClick, onAddEvent, highlight, onDragStart, dragState, clashes, displayTimezone, onToggleTaskComplete, journalText, onContextMenu }) {
+export default function EventRow({ date, events, onEventClick, onAddEvent, highlight, onDragStart, dragState, clashes, displayTimezone, onToggleTaskComplete, journalText, onContextMenu, selectedIds }) {
     const { t, i18n } = useTranslation();
     const locale = getDateLocale(i18n.language);
 
@@ -323,6 +323,7 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                             event={event}
                             isConflicting={event.isConflicting}
                             isShadow={event.isShadow}
+                            isSelected={selectedIds?.has(event.id)}
                             displayTimezone={displayTimezone}
                             onClick={() => onEventClick(events.find(ev => ev.id === event.id) || event)}
                             onToggleTaskComplete={onToggleTaskComplete}

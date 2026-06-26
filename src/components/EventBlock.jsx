@@ -1,7 +1,7 @@
 import { MASSEY_COLORS } from '../utils/constants';
 import { fromZonedTime, formatInTimeZone } from 'date-fns-tz';
 
-export default function EventBlock({ event, onClick, isConflicting, displayTimezone, onToggleTaskComplete, onDragStart, onContextMenu, isShadow, style }) {
+export default function EventBlock({ event, onClick, isConflicting, displayTimezone, onToggleTaskComplete, onDragStart, onContextMenu, isShadow, isSelected, style }) {
     const tz = displayTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
 
     let dayStartMs;
@@ -41,9 +41,11 @@ export default function EventBlock({ event, onClick, isConflicting, displayTimez
     if (isConflicting) blockClass += ' event-block--conflicting';
     if (isCompleted)   blockClass += ' event-block--completed';
     if (isShadow)      blockClass += ' event-block--shadow';
+    if (isSelected)    blockClass += ' event-block--selected';
 
     return (
         <div
+            data-event-id={event.id}
             onClick={e => { e.stopPropagation(); onClick(event); }}
             onMouseDown={e => { if (e.button !== 0) return; e.stopPropagation(); onDragStart?.(e); }}
             onContextMenu={e => { e.preventDefault(); e.stopPropagation(); onContextMenu?.(e, event); }}
@@ -55,6 +57,7 @@ export default function EventBlock({ event, onClick, isConflicting, displayTimez
                 width: `${widthPercent}%`,
                 zIndex: 10,
                 ...(style || { top: '4px', bottom: '4px' }),
+                ...(isSelected ? { outline: '2px solid var(--clr-gold, #C9A84C)', outlineOffset: '1px' } : null),
             }}
             title={`${event.title} (${formatInTimeZone(event.start, tz, 'HH:mm')} – ${formatInTimeZone(event.end, tz, 'HH:mm')})`}
         >
