@@ -30,6 +30,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
@@ -237,4 +239,50 @@ fun MarkdownViewer(content: String, modifier: Modifier = Modifier) {
         },
         update = { view -> webView = view }
     )
+}
+
+// 与 PC 端同一套思路：编辑态渲染原始文本输入框，查看态渲染 Markdown 预览
+// （WebView），点击切换两种渲染代码，而不是做单一控件内的实时叠加 WYSIWYG。
+@Composable
+fun JournalEditor(content: String, onSave: (String) -> Unit, modifier: Modifier = Modifier) {
+    var isEditing by remember { mutableStateOf(false) }
+    var draft by remember { mutableStateOf(content) }
+
+    Box(modifier.fillMaxSize()) {
+        if (isEditing) {
+            val focusRequester = remember { FocusRequester() }
+            BasicTextField(
+                value = draft,
+                onValueChange = { draft = it },
+                textStyle = TextStyle(color = Color(0xFFE8E0D0), fontSize = 14.sp, fontFamily = FontFamily.Monospace),
+                cursorBrush = SolidColor(GOLD),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .focusRequester(focusRequester)
+                    .padding(16.dp),
+                decorationBox = { inner ->
+                    if (draft.isEmpty()) {
+                        Text(stringResource(R.string.journal_edit_hint), color = DIM, fontSize = 14.sp)
+                    }
+                    inner()
+                }
+            )
+            LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+            IconButton(
+                onClick = { isEditing = false; onSave(draft) },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp)
+            ) {
+                Text("✓", color = GOLD, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+        } else {
+            MarkdownViewer(content = content, modifier = Modifier.fillMaxSize())
+            // WebView 会吞掉点击事件，叠一层透明可点层用来进入编辑态
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable { draft = content; isEditing = true }
+            )
+        }
+    }
 }

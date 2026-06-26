@@ -139,7 +139,11 @@ fun MainScreen(store: JournalStore, eventStore: EventStore, manager: LanSyncMana
                     onPanelToggle = { panelOpen = !panelOpen }
                 )
                 HorizontalDivider(color = BORDER, thickness = 1.dp)
-                MarkdownViewer(content = content, modifier = Modifier.weight(1f))
+                JournalEditor(
+                    content = content,
+                    onSave = { text -> content = text; store.saveToday(text) },
+                    modifier = Modifier.weight(1f)
+                )
             }
             if (panelOpen) {
                 SyncPanel(

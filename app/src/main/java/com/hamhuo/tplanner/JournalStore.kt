@@ -28,6 +28,15 @@ class JournalStore(context: Context) {
         return if (entry == null || entry.deletedAt != 0L) "" else entry.text
     }
 
+    // 只更新今天这一条，其余日期原样保留——saveAll() 会先 clear() 整个 prefs，
+    // 直接调用会丢掉历史记录，所以编辑今日随手记必须走这个方法。
+    fun saveToday(text: String) {
+        val today = LocalDate.now().toString()
+        val updated = getAll().toMutableMap()
+        updated[today] = JournalEntry(text = text, updatedAt = System.currentTimeMillis(), deletedAt = 0L)
+        saveAll(updated)
+    }
+
     fun fromJson(json: String): Map<String, JournalEntry> {
         val obj = JSONObject(json)
         return buildMap { obj.keys().forEach { key -> put(key, parseEntry(obj.get(key))) } }

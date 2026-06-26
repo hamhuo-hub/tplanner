@@ -11,6 +11,7 @@
 
     <!-- 标签 / 区块标题 -->
     <string name="tab_journal">随手记</string>
+    <string name="journal_edit_hint">记录今天的想法、灵感…</string>
     <string name="tab_tasks">今日任务</string>
     <string name="section_time">时间</string>
     <string name="section_checklist">清单</string>
