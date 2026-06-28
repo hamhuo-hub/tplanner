@@ -1,6 +1,7 @@
 package com.hamhuo.tplanner
 
 import android.content.Intent
+import android.util.Log
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.WearableListenerService
 
@@ -10,15 +11,27 @@ import com.google.android.gms.wearable.WearableListenerService
 // 但这是 Wear OS 官方推荐的 WearableListenerService + BIND_LISTENER 标准用法。
 class WearOpenListenerService : WearableListenerService() {
 
+    override fun onCreate() {
+        super.onCreate()
+        Log.d(TAG, "onCreate: service bound")
+    }
+
     override fun onMessageReceived(messageEvent: MessageEvent) {
+        Log.d(TAG, "onMessageReceived: path=${messageEvent.path} sourceNode=${messageEvent.sourceNodeId}")
         if (messageEvent.path != OPEN_APP_PATH) return
         val intent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
-        startActivity(intent)
+        try {
+            startActivity(intent)
+            Log.d(TAG, "startActivity: called successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "startActivity: failed", e)
+        }
     }
 
     companion object {
         const val OPEN_APP_PATH = "/tplanner/open"
+        private const val TAG = "TplannerWearListener"
     }
 }
