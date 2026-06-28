@@ -9,3 +9,4 @@
 /release
 package-lock.json
 /.claude
+/build
