@@ -3,9 +3,21 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <!-- 三星手机的"休眠应用"省电策略可能延迟唤起 WearOpenListenerService，
-         首次启动时申请电池优化豁免以保证手表消息能可靠唤起本 App。 -->
+    <!-- 三星手机的"休眠应用"省电策略可能冻结后台 Service，
+         首次启动时申请电池优化豁免以保证 BluetoothWakeService 能持续运行。 -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- 经典蓝牙 RFCOMM 接收手表端直连信号（绕开国行设备上不可用的
+         Google Wearable Data Layer），以及维持前台服务所需的权限。 -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 直接 startActivity 会被后台启动限制拦截，改用全屏通知 Intent 来唤起
+         App；该权限在 Android 14+ 默认拒绝（非电话/闹钟类应用），需要用户
+         在设置里手动开启，见 MainActivity 里的检测与跳转。 -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <application
         android:allowBackup="true"
@@ -27,14 +39,11 @@
             </intent-filter>
         </activity>
 
-        <!-- 接收手表端 Wearable 消息，唤起本 App -->
+        <!-- 经典蓝牙 RFCOMM 前台服务，接收手表端直连信号来唤起本 App -->
         <service
-            android:name=".WearOpenListenerService"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="com.google.android.gms.wearable.BIND_LISTENER" />
-            </intent-filter>
-        </service>
+            android:name=".BluetoothWakeService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
 
     </application>
 

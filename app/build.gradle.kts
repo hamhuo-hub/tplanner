@@ -45,6 +45,4 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
-    // Wearable Data Layer：接收手表端发来的消息，唤起本 App。
-    implementation(libs.play.services.wearable)
 }
