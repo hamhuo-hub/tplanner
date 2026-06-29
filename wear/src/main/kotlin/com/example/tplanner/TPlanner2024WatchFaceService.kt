@@ -50,6 +50,7 @@ class TPlanner2024WatchFaceService : WatchFaceService() {
                 ) {
                     if (tapType == TapType.UP && renderer.isOnButton(tapEvent.xPos, tapEvent.yPos)) {
                         vibrate3s()
+                        PhoneWaker.wakeUpPhone(applicationContext)
                     }
                 }
             })
