@@ -2,7 +2,6 @@
 <resources>
     <string name="app_name">TPlanner Watch</string>
     <string name="watch_face_name">TPlanner 2024</string>
-    <string name="vibrate_button_text">震动</string>
     <string name="wake_phone_no_node">未找到已配对的手机</string>
     <string name="wake_phone_failed">唤起手机失败</string>
 </resources>

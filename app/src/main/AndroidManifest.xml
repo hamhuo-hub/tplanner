@@ -14,10 +14,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- 直接 startActivity 会被后台启动限制拦截，改用全屏通知 Intent 来唤起
-         App；该权限在 Android 14+ 默认拒绝（非电话/闹钟类应用），需要用户
-         在设置里手动开启，见 MainActivity 里的检测与跳转。 -->
-    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <application
         android:allowBackup="true"
@@ -39,7 +35,7 @@
             </intent-filter>
         </activity>
 
-        <!-- 经典蓝牙 RFCOMM 前台服务，接收手表端直连信号来唤起本 App -->
+        <!-- 经典蓝牙 RFCOMM 前台服务，接收手表表盘直连信号并记录时间戳到随手记 -->
         <service
             android:name=".BluetoothWakeService"
             android:exported="false"

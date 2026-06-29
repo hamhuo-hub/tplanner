@@ -1,7 +1,6 @@
 package com.hamhuo.tplanner
 
 import android.Manifest
-import android.app.NotificationManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -62,16 +61,6 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         requestBatteryOptimizationExemption()
         ensureBluetoothWakeService()
-        ensureFullScreenIntentPermission()
-        // 全屏通知只负责把 Activity 启动进任务栈，不会自动点亮/越过锁屏——
-        // 已用 dumpsys power 实测确认：触发后 Activity 创建了但
-        // mWakefulness 仍是 Dozing。要做到来电界面那种"直接点亮并显示"，
-        // 必须由 Activity 自己声明 setTurnScreenOn/setShowWhenLocked；只在
-        // 手表唤起这条路径打开，避免平时正常打开 App 也意外盖在锁屏上面。
-        if (intent?.getBooleanExtra(EXTRA_WAKE_FROM_WATCH, false) == true) {
-            setShowWhenLocked(true)
-            setTurnScreenOn(true)
-        }
         val store       = JournalStore(this)
         val eventStore  = EventStore(this)
         val manager     = LanSyncManager(this, store, eventStore)
@@ -119,29 +108,6 @@ class MainActivity : ComponentActivity() {
 
     private fun startBluetoothWakeService() {
         ContextCompat.startForegroundService(this, Intent(this, BluetoothWakeService::class.java))
-    }
-
-    // 直接 startActivity 会被系统的后台启动限制拦截，BluetoothWakeService 改用
-    // 全屏通知 Intent 唤起 App。该权限 Android 14+ 对非电话/闹钟类应用默认拒绝，
-    // 只能跳转到系统设置页让用户手动开启——同 requestBatteryOptimizationExemption
-    // 一样，必须在前台 Activity 里触发。
-    private fun ensureFullScreenIntentPermission() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
-        val nm = getSystemService(NotificationManager::class.java)
-        val canUse = nm?.canUseFullScreenIntent() ?: true
-        Log.d("TplannerMain", "ensureFullScreenIntentPermission: canUseFullScreenIntent=$canUse")
-        if (canUse) return
-        try {
-            startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT).apply {
-                data = Uri.parse("package:$packageName")
-            })
-        } catch (e: Exception) {
-            Log.e("TplannerMain", "ensureFullScreenIntentPermission: failed to launch", e)
-        }
-    }
-
-    companion object {
-        const val EXTRA_WAKE_FROM_WATCH = "wake_from_watch"
     }
 }
 
