@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 表盘预览：黑底 + 中央红色震动按钮，呼应实际绘制效果 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="72dp"
+    android:height="72dp"
+    android:viewportWidth="72"
+    android:viewportHeight="72">
+    <path
+        android:fillColor="#000000"
+        android:pathData="M0,0h72v72h-72z" />
+    <path
+        android:fillColor="#FF6B6B"
+        android:pathData="M36,46m-9,0a9,9 0,1 1,18 0a9,9 0,1 1,-18 0" />
+</vector>

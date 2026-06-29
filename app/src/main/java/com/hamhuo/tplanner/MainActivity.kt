@@ -1,6 +1,11 @@
 package com.hamhuo.tplanner
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -40,11 +45,29 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        requestBatteryOptimizationExemption()
         val store       = JournalStore(this)
         val eventStore  = EventStore(this)
         val manager     = LanSyncManager(this, store, eventStore)
         val historyStore = SyncHistoryStore(this)
         setContent { MainScreen(store = store, eventStore = eventStore, manager = manager, historyStore = historyStore) }
+    }
+
+    // 三星手机的"休眠应用"省电策略会延迟系统唤起 WearOpenListenerService，
+    // 导致手表发来的消息收不到响应。只能在前台 Activity 里弹出系统授权弹窗，
+    // 所以放在这里（用户打开 App 时）申请一次，而不是在后台 Service 里申请。
+    private fun requestBatteryOptimizationExemption() {
+        val powerManager = getSystemService(PowerManager::class.java)
+        val alreadyIgnoring = powerManager?.isIgnoringBatteryOptimizations(packageName) ?: true
+        Log.d("TplannerMain", "requestBatteryOptimizationExemption: alreadyIgnoring=$alreadyIgnoring")
+        if (alreadyIgnoring) return
+        try {
+            startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.parse("package:$packageName")
+            })
+        } catch (e: Exception) {
+            Log.e("TplannerMain", "requestBatteryOptimizationExemption: failed to launch", e)
+        }
     }
 }
 

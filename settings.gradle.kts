@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "tplanner"
 include(":app")
+include(":wear")

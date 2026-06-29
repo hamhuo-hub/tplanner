@@ -3,6 +3,9 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- 三星手机的"休眠应用"省电策略可能延迟唤起 WearOpenListenerService，
+         首次启动时申请电池优化豁免以保证手表消息能可靠唤起本 App。 -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
         android:allowBackup="true"
