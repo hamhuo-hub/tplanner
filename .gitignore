@@ -61,7 +61,7 @@ src/assets/react.svg
 /.claude
 /staging-linux
 /.gradle
-/app
+/app/build
 /capacitor-cordova-android-plugins
 local.properties
 package-lock.json

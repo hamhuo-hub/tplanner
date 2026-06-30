@@ -13,7 +13,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -59,8 +58,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        requestBatteryOptimizationExemption()
+        handleWakeIntent(intent)
         ensureBluetoothWakeService()
+        requestWakeSetup()
         val store       = JournalStore(this)
         val eventStore  = EventStore(this)
         val manager     = LanSyncManager(this, store, eventStore)
@@ -68,36 +68,101 @@ class MainActivity : ComponentActivity() {
         setContent { MainScreen(store = store, eventStore = eventStore, manager = manager, historyStore = historyStore) }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleWakeIntent(intent)
+    }
+
+    private fun handleWakeIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_WAKE_FROM_WATCH, false) == true) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        }
+    }
+
+    private fun requestWakeSetup() {
+        if (requestBatteryOptimizationExemption()) return
+        if (requestSamsungNeverSleepingAppExemption()) return
+        requestOverlayPermission()
+    }
+
     // 三星手机的"休眠应用"省电策略会冻结后台 Service，导致手表发来的连接
     // 收不到响应。只能在前台 Activity 里弹出系统授权弹窗，所以放在这里
     // （用户打开 App 时）申请一次，而不是在后台 Service 里申请。
-    private fun requestBatteryOptimizationExemption() {
+    private fun requestBatteryOptimizationExemption(): Boolean {
         val powerManager = getSystemService(PowerManager::class.java)
         val alreadyIgnoring = powerManager?.isIgnoringBatteryOptimizations(packageName) ?: true
         Log.d("TplannerMain", "requestBatteryOptimizationExemption: alreadyIgnoring=$alreadyIgnoring")
-        if (alreadyIgnoring) return
+        if (alreadyIgnoring) return false
+        val prefs = getSharedPreferences(WAKE_SETUP_PREFS, MODE_PRIVATE)
+        if (prefs.getBoolean(PREF_BATTERY_PROMPTED, false)) return false
         try {
             startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
                 data = Uri.parse("package:$packageName")
             })
+            prefs.edit().putBoolean(PREF_BATTERY_PROMPTED, true).apply()
+            return true
         } catch (e: Exception) {
             Log.e("TplannerMain", "requestBatteryOptimizationExemption: failed to launch", e)
+            return false
+        }
+    }
+
+    private fun requestSamsungNeverSleepingAppExemption(): Boolean {
+        if (!Build.MANUFACTURER.equals("samsung", ignoreCase = true)) return false
+
+        val prefs = getSharedPreferences(WAKE_SETUP_PREFS, MODE_PRIVATE)
+        if (prefs.getBoolean(PREF_SAMSUNG_NEVER_SLEEP_PROMPTED, false)) return false
+
+        val opened = listOf("com.samsung.android.lool", "com.samsung.android.sm", null)
+            .any { settingsPackage -> openSamsungNeverSleepingApps(settingsPackage) }
+        if (opened) {
+            prefs.edit().putBoolean(PREF_SAMSUNG_NEVER_SLEEP_PROMPTED, true).apply()
+        }
+        return opened
+    }
+
+    private fun openSamsungNeverSleepingApps(settingsPackage: String?): Boolean {
+        val intent = Intent("com.samsung.android.sm.ACTION_OPEN_CHECKABLE_LISTACTIVITY").apply {
+            settingsPackage?.let { setPackage(it) }
+            putExtra("activity_type", 2)
+        }
+        return try {
+            startActivity(intent)
+            true
+        } catch (e: Exception) {
+            Log.d("TplannerMain", "openSamsungNeverSleepingApps: failed for package=$settingsPackage", e)
+            false
+        }
+    }
+
+    private fun requestOverlayPermission(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)) return false
+
+        val prefs = getSharedPreferences(WAKE_SETUP_PREFS, MODE_PRIVATE)
+        if (prefs.getBoolean(PREF_OVERLAY_PROMPTED, false)) return false
+
+        return try {
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                data = Uri.parse("package:$packageName")
+            })
+            prefs.edit().putBoolean(PREF_OVERLAY_PROMPTED, true).apply()
+            true
+        } catch (e: Exception) {
+            Log.e("TplannerMain", "requestOverlayPermission: failed to launch", e)
+            false
         }
     }
 
     // BluetoothWakeService 接收手表端直连的蓝牙信号来唤起本 App（见该类注释：
     // 国行设备上 Google Wearable Data Layer 的跨设备消息中继不可用，改为
     // 应用自己管理的经典蓝牙连接）。BLUETOOTH_CONNECT 是运行时权限，必须先
-    // 申请到才能启动监听；POST_NOTIFICATIONS 用于显示前台服务通知。
+    // 申请到才能启动监听。
     private fun ensureBluetoothWakeService() {
         val needed = mutableListOf<String>()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
             needed += Manifest.permission.BLUETOOTH_CONNECT
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            needed += Manifest.permission.POST_NOTIFICATIONS
         }
         if (needed.isEmpty()) {
             startBluetoothWakeService()
@@ -108,6 +173,14 @@ class MainActivity : ComponentActivity() {
 
     private fun startBluetoothWakeService() {
         ContextCompat.startForegroundService(this, Intent(this, BluetoothWakeService::class.java))
+    }
+
+    companion object {
+        const val EXTRA_WAKE_FROM_WATCH = "wake_from_watch"
+        private const val WAKE_SETUP_PREFS = "wake_setup"
+        private const val PREF_BATTERY_PROMPTED = "battery_prompted"
+        private const val PREF_SAMSUNG_NEVER_SLEEP_PROMPTED = "samsung_never_sleep_prompted"
+        private const val PREF_OVERLAY_PROMPTED = "overlay_prompted"
     }
 }
 
