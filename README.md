@@ -1,6 +1,6 @@
 # tPlanner
 
-> 轻量级本地时间线规划工具，支持跨平台桌面运行与局域网实时同步
+> 轻量级本地时间线规划工具，支持跨平台桌面运行与多设备同步
 
 ![Version](https://img.shields.io/badge/version-2.0.0-gold)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue)
@@ -51,12 +51,11 @@
 - 有内容的日期显示金色小圆点指示
 - 数据通过 IPC 持久化，便签窗口与主界面同步
 
-### 局域网同步
-- 一键**扫描局域网**，自动发现运行同步服务器的设备
-- 点选设备后显示**冲突预览**：新增 / 推送 / 覆盖 / 保留各类事件数量及详情
+### 多设备同步
+- 固定服务器地址（默认 `https://sync.hamhuo.top`，Cloudflare Tunnel），无需扫描发现
+- 同步前显示**冲突预览**：新增 / 推送 / 覆盖 / 保留各类事件数量及详情
 - 按 `updatedAt` 自动合并，较新版本胜出
 - 支持**自动同步**（可配置间隔）
-- 可同时开启本机服务，接受其他设备推送
 
 ### 主题系统
 - 支持 `.tptheme` 主题包（JSON 格式）
@@ -118,7 +117,7 @@ npm run package:linux
 
 ---
 
-## 局域网同步服务器（树莓派 / Linux）
+## 同步服务器（树莓派 / Linux）
 
 适用于树莓派 3B 及以上，内存占用约 46 MB。
 
@@ -132,21 +131,27 @@ sudo bash ~/tplanner-sync/install.sh
 ```
 
 安装后：
-- 服务默认端口：`37401`（HTTP 同步）、`37402`（UDP 发现）
+- 服务默认端口：`37401`（仅监听本机，公网入口由 Cloudflare Tunnel 提供）
 - 开机自动启动，崩溃自动重启
+
+公网访问通过 Cloudflare Tunnel（`cloudflared` systemd 服务，隧道 `pi-sync`）映射到
+`https://sync.hamhuo.top` —— 自带 HTTPS、标准 443 端口，不依赖公网 IP/IPv6/端口映射，
+运营商轮换 IPv6 前缀也不受影响。
 
 ```bash
 # 查看状态
 sudo systemctl status tplanner-sync
+sudo systemctl status cloudflared
 
 # 实时日志
 sudo journalctl -u tplanner-sync -f
 
 # 健康检查
-curl http://localhost:37401/health
+curl http://localhost:37401/health          # 本机
+curl https://sync.hamhuo.top/health         # 公网
 ```
 
-客户端在**局域网同步**面板点击「扫描局域网」即可自动发现。
+客户端默认连接 `https://sync.hamhuo.top`，无需扫描或手动配置。
 
 ---
 
@@ -159,7 +164,7 @@ curl http://localhost:37401/health
 | 随手记 | `userData/journals.json` |
 | 窗口状态 | `userData/window-state.json` |
 | 主题 | `userData/themes/` |
-| 局域网配置 | `userData/lan-sync.json` |
+| 同步配置 | `userData/lan-sync.json` |
 
 > `userData` 路径：Windows `%APPDATA%\tPlanner`，Linux `~/.config/tPlanner`
 
@@ -208,13 +213,13 @@ tplanner/
 │   │   ├── OverdueBanner.jsx  逾期+倒计时横幅
 │   │   ├── ClashBanner.jsx    冲突横幅
 │   │   ├── ReminderBanner.jsx 提醒横幅
-│   │   ├── LanSync.jsx     局域网同步 UI
+│   │   ├── LanSync.jsx     同步 UI（固定服务器地址）
 │   │   └── DebugPanel.jsx  调试面板（F12）
 │   ├── database/           RxDB 初始化与 Schema
 │   ├── utils/              工具函数
 │   └── locales/            i18n 语言包（zh / en）
 ├── sync-server/            树莓派同步服务器
-│   ├── server.js           HTTP + UDP 服务（零依赖）
+│   ├── server.js           HTTP 同步服务（零依赖）
 │   ├── install.sh          一键部署脚本
 │   └── tplanner-sync.service  systemd 模板
 └── themes/                 内置主题包

@@ -96,20 +96,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getPerfInfo:    () => ipcRenderer.invoke('devtools:getPerfInfo'),
 
     // ── LAN Sync ───────────────────────────────────────────────────────────
-    discoverLan:   () => ipcRenderer.invoke('lan:discover'),
     getLanConfig:  () => ipcRenderer.invoke('lan:getConfig'),
     saveLanConfig: (cfg) => ipcRenderer.send('lan:saveConfig', cfg),
-    getLocalIp:    () => ipcRenderer.invoke('lan:getLocalIp'),
-    onLanEventsUpdated: (cb) => {
-        const h = (_e, events) => cb(events);
-        ipcRenderer.on('lan:eventsUpdated', h);
-        return () => ipcRenderer.removeListener('lan:eventsUpdated', h);
-    },
-    onLanServerError: (cb) => {
-        const h = (_e, msg) => cb(msg);
-        ipcRenderer.on('lan:serverError', h);
-        return () => ipcRenderer.removeListener('lan:serverError', h);
-    },
 
     // ── Daily Checklist ────────────────────────────────────────────────────
     getChecklists:  () => ipcRenderer.invoke('checklist:getAll'),

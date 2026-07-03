@@ -1,30 +1,24 @@
-// LAN 同步的状态与流程：发现、连接、冲突预览、合并执行、自动同步、配置持久化。
+// 同步的状态与流程：连接固定服务器、冲突预览、合并执行、自动同步、配置持久化。
 // 抽离自 components/LanSync.jsx，使 UI 组件可以只关心渲染。
+// 同步目标是固定地址的服务器（Cloudflare Tunnel），不再做局域网扫描/发现。
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
-    DEFAULT_CONFIG,
+    DEFAULT_CONFIG, DEFAULT_SERVER_URL, normalizeServerUrl,
     analyzeConflict, analyzeJournalConflict,
     mergeEvents, mergeJournals,
     syncClockOffset,
-    getHistory, saveHistory,
 } from '../utils/syncLogic';
 
 export default function useLanSync({ events, onMergeEvents, journals, onMergeJournals, goals, onMergeGoals }) {
     const [open, setOpen]           = useState(false);
     const [config, setConfig]       = useState(DEFAULT_CONFIG);
-    const [localIp, setLocalIp]     = useState('');
-
-    // Discovery
-    const [scanning, setScanning]   = useState(false);
-    const [peers, setPeers]         = useState([]);      // discovered servers
-    const [selected, setSelected]   = useState(null);    // chosen server
 
     // Sync state
     const [status, setStatus]       = useState('idle');  // idle|syncing|success|error
     const [statusMsg, setStatusMsg] = useState('');
 
     // Conflict preview
-    const [preview, setPreview]     = useState(null);    // { analysis, journalAnalysis, goalAnalysis, remoteEvents, peer }
+    const [preview, setPreview]     = useState(null);    // { analysis, journalAnalysis, goalAnalysis, remoteEvents, serverUrl }
 
     const autoTimerRef = useRef(null);
     const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
@@ -37,60 +31,44 @@ export default function useLanSync({ events, onMergeEvents, journals, onMergeJou
     useEffect(() => { journalsRef.current = journals; }, [journals]);
     useEffect(() => { goalsRef.current    = goals;    }, [goals]);
 
-    // Load config + local IP
+    // Load config, then sync with the configured server once on startup
     useEffect(() => {
         if (!isElectron) return;
-        window.electronAPI.getLanConfig?.().then(cfg => { if (cfg) setConfig(c => ({ ...c, ...cfg })); });
-        window.electronAPI.getLocalIp?.().then(ip => setLocalIp(ip || ''));
-        const off1 = window.electronAPI.onLanEventsUpdated?.(raw => { onMergeEvents?.(raw); });
-        const off2 = window.electronAPI.onLanServerError?.(msg => { setStatus('error'); setStatusMsg(msg); });
-        return () => { off1?.(); off2?.(); };
+        window.electronAPI.getLanConfig?.().then(cfg => {
+            // 旧版配置只有 peerIp/port（IPv6 直连时代），统一迁移到固定服务器地址
+            const serverUrl = normalizeServerUrl(cfg?.serverUrl) || DEFAULT_SERVER_URL;
+            setConfig(c => ({ ...c, ...cfg, serverUrl }));
+            doSyncRef.current?.(serverUrl, true);
+        });
     }, [isElectron]);
 
     // Auto-sync timer — uses ref so it always sees the latest doSync/events
     const doSyncRef = useRef(null);
     useEffect(() => {
         clearInterval(autoTimerRef.current);
-        const peer = selected || (config.peerIp ? { ip: config.peerIp, port: config.port } : null);
-        if (config.autoSync && peer) {
-            autoTimerRef.current = setInterval(() => doSyncRef.current?.(peer, true), (config.interval || 60) * 1000);
+        const serverUrl = normalizeServerUrl(config.serverUrl);
+        if (config.autoSync && serverUrl) {
+            autoTimerRef.current = setInterval(() => doSyncRef.current?.(serverUrl, true), (config.interval || 60) * 1000);
         }
         return () => clearInterval(autoTimerRef.current);
-    }, [config.autoSync, config.interval, selected]);
+    }, [config.autoSync, config.interval, config.serverUrl]);
 
     const saveConfig = useCallback((next) => {
         setConfig(next);
         if (isElectron) window.electronAPI.saveLanConfig?.(next);
     }, [isElectron]);
 
-    // ── 局域网扫描 ───────────────────────────────────────────────────────────
-    const scan = useCallback(async () => {
-        if (!isElectron) return;
-        setScanning(true);
-        setPeers([]);
-        setSelected(null);
-        try {
-            const found = await window.electronAPI.discoverLan?.() ?? [];
-            setPeers(found);
-            if (found.length === 1) setSelected(found[0]); // 只有一个时自动选中
-        } catch (e) {
-            setStatusMsg(e.message);
-        } finally {
-            setScanning(false);
-        }
-    }, [isElectron]);
-
     // ── 同步（含冲突预览） ────────────────────────────────────────────────────
-    const doSync = useCallback(async (peer, skipPreview = false) => {
-        if (!peer?.ip || !peer?.port) {
-            setStatus('error'); setStatusMsg('未选择同步目标'); return;
+    const doSync = useCallback(async (serverUrl, skipPreview = false) => {
+        const base = normalizeServerUrl(serverUrl);
+        if (!base) {
+            setStatus('error'); setStatusMsg('未配置服务器地址'); return;
         }
         setStatus('syncing'); setStatusMsg('');
-        const base = `http://${peer.ip}:${peer.port}`;
         try {
             await syncClockOffset(base);
 
-            const res = await fetch(`${base}/tplanner/events`, { method: 'GET', signal: AbortSignal.timeout(5000) });
+            const res = await fetch(`${base}/tplanner/events`, { method: 'GET', signal: AbortSignal.timeout(10000) });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const remoteEvents = await res.json();
 
@@ -99,11 +77,11 @@ export default function useLanSync({ events, onMergeEvents, journals, onMergeJou
                 let remoteJournals = {};
                 let remoteGoals = [];
                 try {
-                    const jRes = await fetch(`${base}/tplanner/journals`, { method: 'GET', signal: AbortSignal.timeout(5000) });
+                    const jRes = await fetch(`${base}/tplanner/journals`, { method: 'GET', signal: AbortSignal.timeout(10000) });
                     if (jRes.ok) remoteJournals = await jRes.json();
                 } catch (_) { /* journals preview is best-effort */ }
                 try {
-                    const gRes = await fetch(`${base}/tplanner/goals`, { method: 'GET', signal: AbortSignal.timeout(5000) });
+                    const gRes = await fetch(`${base}/tplanner/goals`, { method: 'GET', signal: AbortSignal.timeout(10000) });
                     if (gRes.ok) remoteGoals = await gRes.json();
                 } catch (_) { /* goals preview is best-effort */ }
 
@@ -111,12 +89,12 @@ export default function useLanSync({ events, onMergeEvents, journals, onMergeJou
                 const analysis        = analyzeConflict(eventsRef.current, remoteEvents);
                 const journalAnalysis = analyzeJournalConflict(journalsRef.current, remoteJournals);
                 const goalAnalysis    = analyzeConflict(goalsRef.current, remoteGoals);
-                setPreview({ analysis, journalAnalysis, goalAnalysis, remoteEvents, peer });
+                setPreview({ analysis, journalAnalysis, goalAnalysis, remoteEvents, serverUrl: base });
                 setStatus('idle');
                 return;
             }
 
-            await executeMerge(peer, remoteEvents);
+            await executeMerge(base, remoteEvents);
         } catch (e) {
             setStatus('error'); setStatusMsg(e.message);
         }
@@ -125,21 +103,8 @@ export default function useLanSync({ events, onMergeEvents, journals, onMergeJou
     // Keep doSyncRef current so the auto-sync timer always uses the latest version
     useEffect(() => { doSyncRef.current = doSync; }, [doSync]);
 
-    // 启动时后台自动连接历史服务器
-    useEffect(() => {
-        if (!isElectron) return;
-        const historyKeys = new Set(getHistory().map(h => `${h.ip}:${h.port}`));
-        window.electronAPI.discoverLan?.().then(found => {
-            if (!found?.length) return;
-            const target = found.find(p => historyKeys.size === 0 || historyKeys.has(`${p.ip}:${p.port}`));
-            if (!target) return;
-            setSelected(target);
-            doSyncRef.current?.(target, true);
-        }).catch(() => {});
-    }, [isElectron]);
-
-    const executeMerge = useCallback(async (peer, remoteEvents) => {
-        const base = `http://${peer.ip}:${peer.port}`;
+    const executeMerge = useCallback(async (serverUrl, remoteEvents) => {
+        const base = normalizeServerUrl(serverUrl);
         // Read from refs to always get the latest data, even if called from a stale closure
         const localEvents   = eventsRef.current;
         const localJournals = journalsRef.current;
@@ -151,13 +116,13 @@ export default function useLanSync({ events, onMergeEvents, journals, onMergeJou
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(mergedEvents),
-            signal: AbortSignal.timeout(5000),
+            signal: AbortSignal.timeout(10000),
         });
         onMergeEvents?.(mergedEvents);
 
         // ── Journals ─────────────────────────────────────────────────────────
         try {
-            const jRes = await fetch(`${base}/tplanner/journals`, { method: 'GET', signal: AbortSignal.timeout(5000) });
+            const jRes = await fetch(`${base}/tplanner/journals`, { method: 'GET', signal: AbortSignal.timeout(10000) });
             if (jRes.ok) {
                 const remoteJournals = await jRes.json();
                 const mergedJournals = mergeJournals(localJournals, remoteJournals);
@@ -165,7 +130,7 @@ export default function useLanSync({ events, onMergeEvents, journals, onMergeJou
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(mergedJournals),
-                    signal: AbortSignal.timeout(5000),
+                    signal: AbortSignal.timeout(10000),
                 });
                 onMergeJournals?.(mergedJournals);
             }
@@ -173,7 +138,7 @@ export default function useLanSync({ events, onMergeEvents, journals, onMergeJou
 
         // ── Goals ────────────────────────────────────────────────────────────
         try {
-            const gRes = await fetch(`${base}/tplanner/goals`, { method: 'GET', signal: AbortSignal.timeout(5000) });
+            const gRes = await fetch(`${base}/tplanner/goals`, { method: 'GET', signal: AbortSignal.timeout(10000) });
             if (gRes.ok) {
                 const remoteGoals  = await gRes.json();
                 const mergedGoals  = mergeEvents(localGoals, remoteGoals); // same updatedAt-wins logic
@@ -181,30 +146,27 @@ export default function useLanSync({ events, onMergeEvents, journals, onMergeJou
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(mergedGoals),
-                    signal: AbortSignal.timeout(5000),
+                    signal: AbortSignal.timeout(10000),
                 });
                 onMergeGoals?.(mergedGoals);
             }
         } catch (_) { /* goals sync failure is non-fatal */ }
 
-        saveHistory(peer);
         setStatus('success');
         setStatusMsg(`已同步 ${mergedEvents.length} 条事件`);
         setPreview(null);
     }, [onMergeEvents, onMergeJournals, onMergeGoals]);  // refs are stable, no need as deps
 
-    const activePeer = selected ?? (config.peerIp ? { ip: config.peerIp, port: config.port, name: config.peerIp } : null);
+    const serverUrl = normalizeServerUrl(config.serverUrl);
     const statusColor = { idle: 'var(--clr-text-dim)', syncing: 'var(--clr-gold)', success: '#4A9DA8', error: 'var(--clr-red,#C0392B)' }[status];
 
     return {
         isElectron,
         open, setOpen,
         config, setConfig, saveConfig,
-        localIp,
-        scanning, peers, selected, setSelected, scan,
         status, statusMsg, statusColor,
         preview, setPreview,
         doSync, executeMerge,
-        activePeer,
+        serverUrl,
     };
 }

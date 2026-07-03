@@ -1,8 +1,20 @@
-// LAN 同步的纯逻辑层：冲突分析、合并算法、时钟校准、连接历史持久化。
+// 同步的纯逻辑层：冲突分析、合并算法、时钟校准。
 // 抽离自 components/LanSync.jsx，使其可独立于 React/UI 进行单元测试。
 import { setClockOffset } from './clock';
 
-export const DEFAULT_CONFIG = { peerIp: '', port: 37401, serverEnabled: false, autoSync: false, interval: 60 };
+// 同步服务器为固定地址（树莓派上的 Cloudflare Tunnel），HTTPS + 标准 443 端口，
+// 不依赖公网 IP/IPv6/端口映射，运营商轮换前缀也不受影响。
+export const DEFAULT_SERVER_URL = 'https://sync.hamhuo.top';
+
+export const DEFAULT_CONFIG = { serverUrl: DEFAULT_SERVER_URL, autoSync: false, interval: 60 };
+
+// 归一化服务器地址：补全协议、去掉末尾斜杠。裸主机名默认按 https 处理。
+export function normalizeServerUrl(url) {
+    const trimmed = (url || '').trim();
+    if (!trimmed) return '';
+    const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    return withScheme.replace(/\/+$/, '');
+}
 
 // ── 统一实体抽象（Unified Entity）────────────────────────────────────────────
 // events / goals / journals 底层结构不同（数组 vs 以日期为键的对象，字段名也不同），
@@ -151,15 +163,4 @@ export async function syncClockOffset(base) {
         // 假设请求/响应耗时对称，对端收到响应时的时钟约为 peerNow + rtt/2
         setClockOffset((peerNow + rtt / 2) - t1);
     } catch (_) { /* clock sync is best-effort; fall back to local clock (offset 0) */ }
-}
-
-// ── 连接历史（localStorage）──────────────────────────────────────────────────
-export function getHistory() {
-    try { return JSON.parse(localStorage.getItem('tplanner_sync_history') || '[]'); }
-    catch { return []; }
-}
-export function saveHistory(peer) {
-    const list = getHistory().filter(h => !(h.ip === peer.ip && h.port === peer.port));
-    list.unshift({ name: peer.name || peer.ip, ip: peer.ip, port: peer.port });
-    localStorage.setItem('tplanner_sync_history', JSON.stringify(list.slice(0, 5)));
 }

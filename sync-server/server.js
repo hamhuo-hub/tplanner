@@ -13,14 +13,13 @@
 'use strict';
 
 const http  = require('http');
-const dgram = require('dgram');
 const fs    = require('fs');
 const path  = require('path');
-const os    = require('os');
 
 // ── 配置 ──────────────────────────────────────────────────────────────────────
-const PORT         = parseInt(process.env.PORT          || '37401', 10);
-const DISCOVER_PORT = parseInt(process.env.DISCOVER_PORT || '37402', 10);
+// 公网入口是 Cloudflare Tunnel（https://sync.hamhuo.top → localhost:37401），
+// 本服务只需监听本机端口，不再需要局域网发现。
+const PORT = parseInt(process.env.PORT || '37401', 10);
 const DATA_DIR  = process.env.DATA_DIR  || path.join(__dirname, 'data');
 const DATA_FILE     = path.join(DATA_DIR, 'events.json');
 const JOURNALS_FILE = path.join(DATA_DIR, 'journals.json');
@@ -336,21 +335,11 @@ const server = http.createServer((req, res) => {
     });
 });
 
-server.listen(PORT, '0.0.0.0', () => {
-    // 显示本机所有 IPv4 地址，方便配置客户端
-    const nets = os.networkInterfaces();
-    const ips  = [];
-    for (const name of Object.keys(nets)) {
-        for (const net of nets[name]) {
-            if (net.family === 'IPv4' && !net.internal) ips.push(net.address);
-        }
-    }
-
+server.listen(PORT, '::', () => {
     log('INFO', `tPlanner Sync Server started`);
     log('INFO', `Port     : ${PORT}`);
     log('INFO', `Data dir : ${DATA_DIR}`);
-    log('INFO', `LAN IPs  : ${ips.join(', ') || '(none detected)'}`);
-    log('INFO', `Endpoint : http://<IP>:${PORT}/tplanner/events`);
+    log('INFO', `Endpoint : http://localhost:${PORT}/tplanner/events (public: Cloudflare Tunnel)`);
 });
 
 server.on('error', err => {
@@ -358,44 +347,6 @@ server.on('error', err => {
     process.exit(1);
 });
 
-// ── UDP 局域网发现响应 ────────────────────────────────────────────────────────
-function getLanIp() {
-    const nets = os.networkInterfaces();
-    for (const name of Object.keys(nets)) {
-        for (const net of nets[name]) {
-            if (net.family === 'IPv4' && !net.internal) return net.address;
-        }
-    }
-    return '127.0.0.1';
-}
-
-const udp = dgram.createSocket({ type: 'udp4', reuseAddr: true });
-
-udp.on('message', (msg, rinfo) => {
-    if (msg.toString().trim() !== 'TPLANNER_DISCOVER') return;
-    const events   = readEvents();
-    const journals = readJournals();
-    const goals    = readGoals();
-    const response = Buffer.from(JSON.stringify({
-        name:     os.hostname(),
-        ip:       getLanIp(),
-        port:     PORT,
-        events:   events.length,
-        journals: Object.keys(journals).length,
-        goals:    goals.length,
-        version:  '1.0',
-    }));
-    udp.send(response, rinfo.port, rinfo.address, (err) => {
-        if (!err) log('INFO', `Discovery reply → ${rinfo.address}:${rinfo.port}`);
-    });
-});
-
-udp.on('error', (err) => log('WARN', `UDP error: ${err.message}`));
-
-udp.bind(DISCOVER_PORT, '0.0.0.0', () => {
-    log('INFO', `UDP discovery listening on port ${DISCOVER_PORT}`);
-});
-
 // 平滑关闭
-process.on('SIGTERM', () => { log('INFO', 'SIGTERM received, shutting down'); udp.close(); server.close(() => process.exit(0)); });
-process.on('SIGINT',  () => { log('INFO', 'SIGINT received, shutting down');  udp.close(); server.close(() => process.exit(0)); });
+process.on('SIGTERM', () => { log('INFO', 'SIGTERM received, shutting down'); server.close(() => process.exit(0)); });
+process.on('SIGINT',  () => { log('INFO', 'SIGINT received, shutting down');  server.close(() => process.exit(0)); });

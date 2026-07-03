@@ -1,38 +1,9 @@
 import { useState, useMemo } from 'react';
-import { Wifi, RefreshCw, Server, Search, AlertTriangle, CheckCircle, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { Wifi, RefreshCw, AlertTriangle, CheckCircle, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { format } from 'date-fns';
 import useLanSync from '../hooks/useLanSync';
 import { countSubtaskChanges } from '../utils/syncLogic';
-
-// ── 子组件：已发现的服务器卡片 ────────────────────────────────────────────────
-function ServerCard({ server, selected, onSelect }) {
-    return (
-        <button
-            onClick={() => onSelect(server)}
-            style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: '8px 10px', borderRadius: 6, width: '100%',
-                background: selected ? 'rgba(91,143,204,0.15)' : 'rgba(255,255,255,0.03)',
-                border: `1px solid ${selected ? 'rgba(91,143,204,0.5)' : 'var(--clr-border,#333)'}`,
-                cursor: 'pointer', textAlign: 'left', transition: 'all 120ms',
-            }}
-        >
-            <Server size={14} style={{ color: selected ? 'var(--clr-blue,#5B8FCC)' : 'var(--clr-text-dim)', flexShrink: 0 }} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 12, color: 'var(--clr-text)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {server.name}
-                </div>
-                <div style={{ fontSize: 10, color: 'var(--clr-text-dim)', fontFamily: 'var(--font-mono)' }}>
-                    {server.ip}:{server.port}
-                </div>
-            </div>
-            <span style={{ fontSize: 10, color: 'var(--clr-text-dim)', flexShrink: 0 }}>
-                {server.events} 条
-            </span>
-        </button>
-    );
-}
 
 // ── 子组件：冲突预览弹窗 ──────────────────────────────────────────────────────
 const fmtTime = (ts) => ts ? format(new Date(ts), 'MM-dd HH:mm') : '';
@@ -116,7 +87,7 @@ function ConflictSection({ title, itemLabel, unit, analysis, extra }) {
     );
 }
 
-function ConflictModal({ analysis, journalAnalysis, goalAnalysis, peer, onConfirm, onCancel }) {
+function ConflictModal({ analysis, journalAnalysis, goalAnalysis, serverUrl, onConfirm, onCancel }) {
     const { added, removed, updated, deleted } = analysis;
     const hasEventChanges = added.length + removed.length + updated.length + deleted.length > 0;
     const hasJournalChanges = ['added', 'removed', 'updated', 'deleted'].some(k => journalAnalysis[k].length > 0);
@@ -146,9 +117,9 @@ function ConflictModal({ analysis, journalAnalysis, goalAnalysis, peer, onConfir
                     </button>
                 </div>
 
-                {/* Peer info */}
+                {/* Server info */}
                 <div style={{ fontSize: 11, color: 'var(--clr-text-dim)', fontFamily: 'var(--font-mono)', padding: '6px 10px', background: 'rgba(255,255,255,0.04)', borderRadius: 4 }}>
-                    {peer.name} · {peer.ip}:{peer.port} · {peer.events} 条事件
+                    {serverUrl}
                 </div>
 
                 {!hasChanges && (
@@ -221,12 +192,10 @@ export default function LanSync({ events, onMergeEvents, journals, onMergeJourna
         isElectron,
         open, setOpen,
         config, setConfig, saveConfig,
-        localIp,
-        scanning, peers, selected, setSelected, scan,
         status, statusMsg, statusColor,
         preview, setPreview,
         doSync, executeMerge,
-        activePeer,
+        serverUrl,
     } = sync;
 
     return (
@@ -236,10 +205,10 @@ export default function LanSync({ events, onMergeEvents, journals, onMergeJourna
                 <button
                     className="btn btn--ghost"
                     onClick={() => setOpen(v => !v)}
-                    title="局域网同步"
+                    title="同步"
                     style={{ color: status === 'success' ? '#4A9DA8' : status === 'error' ? 'var(--clr-red,#C0392B)' : undefined }}
                 >
-                    {config.serverEnabled ? <Server size={13} /> : <Wifi size={13} />}
+                    <Wifi size={13} />
                 </button>
 
                 {open && (
@@ -253,71 +222,22 @@ export default function LanSync({ events, onMergeEvents, journals, onMergeJourna
                         {/* 标题行 */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <span style={{ fontFamily: 'var(--font-display)', fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--clr-text-dim)' }}>
-                                局域网同步
+                                同步服务器
                             </span>
-                            {localIp && (
-                                <span style={{ fontSize: 10, color: 'var(--clr-text-dim)', fontFamily: 'var(--font-mono)' }}>
-                                    本机 {localIp}
-                                </span>
-                            )}
                         </div>
 
-                        {/* 扫描区域 */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                            <button
-                                className="btn btn--ghost"
-                                onClick={scan}
-                                disabled={scanning}
-                                style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center', width: '100%' }}
-                            >
-                                {scanning
-                                    ? <><RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> 扫描中…</>
-                                    : <><Search size={12} /> 扫描局域网</>
-                                }
-                            </button>
-
-                            {peers.length > 0 && (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                    {peers.map(p => (
-                                        <ServerCard
-                                            key={`${p.ip}:${p.port}`}
-                                            server={p}
-                                            selected={selected?.ip === p.ip && selected?.port === p.port}
-                                            onSelect={setSelected}
-                                        />
-                                    ))}
-                                </div>
-                            )}
-
-                            {!scanning && peers.length === 0 && (
-                                <div style={{ fontSize: 11, color: 'var(--clr-text-dim)', textAlign: 'center', padding: '4px 0' }}>
-                                    未发现设备，可手动填写 IP
-                                </div>
-                            )}
-                        </div>
-
-                        {/* 手动 IP（备用） */}
-                        <div style={{ display: 'flex', gap: 6 }}>
-                            <input
-                                type="text"
-                                placeholder="192.168.x.x"
-                                value={config.peerIp}
-                                onChange={e => setConfig(c => ({ ...c, peerIp: e.target.value }))}
-                                onBlur={() => saveConfig(config)}
-                                style={{ ...inputStyle, flex: 1 }}
-                            />
-                            <input
-                                type="number"
-                                value={config.port}
-                                onChange={e => setConfig(c => ({ ...c, port: Number(e.target.value) }))}
-                                onBlur={() => saveConfig(config)}
-                                style={{ ...inputStyle, width: 70 }}
-                            />
-                        </div>
+                        {/* 同步服务器地址 */}
+                        <input
+                            type="text"
+                            placeholder="https://sync.hamhuo.top"
+                            value={config.serverUrl}
+                            onChange={e => setConfig(c => ({ ...c, serverUrl: e.target.value }))}
+                            onBlur={() => saveConfig(config)}
+                            style={inputStyle}
+                        />
 
                         {/* 开关 */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            <Toggle label="开启本机服务" checked={config.serverEnabled} onChange={v => saveConfig({ ...config, serverEnabled: v })} />
                             <Toggle label="自动同步" checked={config.autoSync} onChange={v => saveConfig({ ...config, autoSync: v })} />
                             {config.autoSync && (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--clr-text-dim)', paddingLeft: 4 }}>
@@ -342,12 +262,12 @@ export default function LanSync({ events, onMergeEvents, journals, onMergeJourna
                         {/* 同步按钮 */}
                         <button
                             className="btn btn--primary"
-                            onClick={() => doSync(activePeer)}
-                            disabled={status === 'syncing' || !activePeer}
+                            onClick={() => doSync(serverUrl)}
+                            disabled={status === 'syncing' || !serverUrl}
                             style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center' }}
                         >
                             <RefreshCw size={12} style={status === 'syncing' ? { animation: 'spin 1s linear infinite' } : {}} />
-                            {selected ? `同步 · ${selected.name}` : '立即同步'}
+                            立即同步
                         </button>
                     </div>
                 )}
@@ -359,8 +279,8 @@ export default function LanSync({ events, onMergeEvents, journals, onMergeJourna
                     analysis={preview.analysis}
                     journalAnalysis={preview.journalAnalysis}
                     goalAnalysis={preview.goalAnalysis}
-                    peer={preview.peer}
-                    onConfirm={() => executeMerge(preview.peer, preview.remoteEvents)}
+                    serverUrl={preview.serverUrl}
+                    onConfirm={() => executeMerge(preview.serverUrl, preview.remoteEvents)}
                     onCancel={() => setPreview(null)}
                 />
             )}
