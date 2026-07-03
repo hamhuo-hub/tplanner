@@ -50,14 +50,9 @@
     <string name="cd_back">返回</string>
     <string name="cd_delete">删除</string>
 
-    <!-- 局域网同步 -->
-    <string name="peer_manual">手动</string>
+    <!-- 同步 -->
     <string name="sync_success_with_name">已同步 · %1$s</string>
-    <string name="lan_sync_title">局域网同步</string>
-    <string name="scanning_label">扫描中…</string>
-    <string name="scan_lan_label">⌕  扫描局域网</string>
-    <string name="journal_count_template">%1$d条</string>
-    <string name="no_devices_found">未发现设备，可手动填写 IP</string>
+    <string name="sync_server_title">同步服务器</string>
     <string name="syncing_label">同步中…</string>
     <string name="sync_now_label">立即同步</string>
     <string name="unknown_error">未知错误</string>

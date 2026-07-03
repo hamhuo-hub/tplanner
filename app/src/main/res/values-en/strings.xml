@@ -49,14 +49,9 @@
     <string name="cd_back">Back</string>
     <string name="cd_delete">Delete</string>
 
-    <!-- LAN sync -->
-    <string name="peer_manual">Manual</string>
+    <!-- Sync -->
     <string name="sync_success_with_name">Synced · %1$s</string>
-    <string name="lan_sync_title">LAN Sync</string>
-    <string name="scanning_label">Scanning…</string>
-    <string name="scan_lan_label">⌕  Scan LAN</string>
-    <string name="journal_count_template">%1$d entries</string>
-    <string name="no_devices_found">No devices found. Enter IP manually.</string>
+    <string name="sync_server_title">Sync Server</string>
     <string name="syncing_label">Syncing…</string>
     <string name="sync_now_label">Sync Now</string>
     <string name="unknown_error">Unknown error</string>

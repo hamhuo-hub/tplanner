@@ -73,18 +73,11 @@ fun NotesHeader(syncStatus: String, onPanelToggle: () -> Unit) {
 @Composable
 fun SyncPanel(
     modifier: Modifier,
-    scanning: Boolean,
-    peers: List<LanSyncManager.Peer>,
-    selected: LanSyncManager.Peer?,
-    manualIp: String,
-    manualPort: String,
+    serverUrl: String,
     syncStatus: String,
     syncMsg: String,
     canSync: Boolean,
-    onScan: () -> Unit,
-    onSelect: (LanSyncManager.Peer) -> Unit,
-    onIpChange: (String) -> Unit,
-    onPortChange: (String) -> Unit,
+    onUrlChange: (String) -> Unit,
     onSync: () -> Unit,
     onClose: () -> Unit,
 ) {
@@ -102,71 +95,17 @@ fun SyncPanel(
 
             // 标题行
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.lan_sync_title), color = DIM, fontSize = 10.sp, letterSpacing = 0.1.sp)
+                Text(stringResource(R.string.sync_server_title), color = DIM, fontSize = 10.sp, letterSpacing = 0.1.sp)
                 Text("✕", color = DIM, fontSize = 12.sp, modifier = Modifier.clickable { onClose() })
             }
 
-            // 扫描按钮
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFF2A2A2A), RoundedCornerShape(5.dp))
-                    .clickable(enabled = !scanning) { onScan() }
-                    .padding(vertical = 8.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = if (scanning) stringResource(R.string.scanning_label) else stringResource(R.string.scan_lan_label),
-                    color = if (scanning) DIM else Color(0xFFE0D8C8),
-                    fontSize = 11.sp
-                )
-            }
-
-            // 发现的服务器列表
-            if (peers.isNotEmpty()) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    peers.forEach { peer ->
-                        val isSelected = selected?.ip == peer.ip && selected?.port == peer.port
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    if (isSelected) Color(0x265B8FCC) else Color(0x08FFFFFF),
-                                    RoundedCornerShape(5.dp)
-                                )
-                                .border(1.dp, if (isSelected) Color(0x805B8FCC) else BORDER, RoundedCornerShape(5.dp))
-                                .clickable { onSelect(peer) }
-                                .padding(horizontal = 10.dp, vertical = 7.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text(peer.name, color = Color(0xFFE0D8C8), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                                Text("${peer.ip}:${peer.port}", color = DIM, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
-                            }
-                            Text(stringResource(R.string.journal_count_template, peer.journalCount), color = DIM, fontSize = 9.sp)
-                        }
-                    }
-                }
-            } else if (!scanning) {
-                Text(stringResource(R.string.no_devices_found), color = DIM, fontSize = 10.sp)
-            }
-
-            // 手动 IP 输入
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                MonoInput(
-                    value       = manualIp,
-                    placeholder = "192.168.x.x",
-                    onValue     = onIpChange,
-                    modifier    = Modifier.weight(1f)
-                )
-                MonoInput(
-                    value       = manualPort,
-                    placeholder = "37401",
-                    onValue     = onPortChange,
-                    modifier    = Modifier.width(60.dp)
-                )
-            }
+            // 服务器地址
+            MonoInput(
+                value       = serverUrl,
+                placeholder = LanSyncManager.DEFAULT_SERVER_URL,
+                onValue     = onUrlChange,
+                modifier    = Modifier.fillMaxWidth()
+            )
 
             // 状态
             if (syncMsg.isNotBlank()) {

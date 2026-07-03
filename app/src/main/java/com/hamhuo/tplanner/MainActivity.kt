@@ -64,8 +64,7 @@ class MainActivity : ComponentActivity() {
         val store       = JournalStore(this)
         val eventStore  = EventStore(this)
         val manager     = LanSyncManager(this, store, eventStore)
-        val historyStore = SyncHistoryStore(this)
-        setContent { MainScreen(store = store, eventStore = eventStore, manager = manager, historyStore = historyStore) }
+        setContent { MainScreen(store = store, eventStore = eventStore, manager = manager) }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -185,53 +184,33 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun MainScreen(store: JournalStore, eventStore: EventStore, manager: LanSyncManager, historyStore: SyncHistoryStore) {
+fun MainScreen(store: JournalStore, eventStore: EventStore, manager: LanSyncManager) {
     val scope  = rememberCoroutineScope()
     var content    by remember { mutableStateOf(store.getToday()) }
     var panelOpen  by remember { mutableStateOf(false) }
     var events     by remember { mutableStateOf(eventStore.getAll()) }
 
-    // ── 扫描状态 ──────────────────────────────────────────────────────────────
-    var scanning      by remember { mutableStateOf(false) }
-    var peers         by remember { mutableStateOf<List<LanSyncManager.Peer>>(emptyList()) }
-    var selected      by remember { mutableStateOf<LanSyncManager.Peer?>(null) }
-    var manualIp   by remember { mutableStateOf("") }
-    var manualPort by remember { mutableStateOf("37401") }
-
-    // ── 同步状态 ──────────────────────────────────────────────────────────────
+    // ── 同步状态（固定服务器地址，无扫描） ────────────────────────────────────
+    var serverUrl  by remember { mutableStateOf(manager.getServerUrl()) }
     var syncStatus by remember { mutableStateOf("idle") }   // idle|syncing|success|error
     var syncMsg    by remember { mutableStateOf("") }
 
     // stringResource() 只能在 composition 中调用，不能在 coroutine/launch 回调里调用，
     // 所以提前在这里解析好，再在回调里用 .format() 套用参数。
-    val peerManualName  = stringResource(R.string.peer_manual)
     val syncedTemplate  = stringResource(R.string.sync_success_with_name)
 
-    val onScan: () -> Unit = {
-        scope.launch {
-            scanning = true; peers = emptyList(); selected = null
-            val found = manager.discoverPeers()
-            peers   = found
-            selected = if (found.size == 1) found.first() else null
-            scanning = false
-        }
-    }
-
-    val activePeer: LanSyncManager.Peer? = selected
-        ?: manualIp.trim().takeIf { it.isNotBlank() }?.let {
-            LanSyncManager.Peer(peerManualName, it, manualPort.toIntOrNull() ?: 37401, 0)
-        }
+    fun serverHost(url: String): String =
+        try { java.net.URL(LanSyncManager.normalizeServerUrl(url)).host } catch (_: Exception) { url }
 
     val onSync: () -> Unit = {
-        val peer = activePeer
-        if (peer != null) scope.launch {
+        scope.launch {
             syncStatus = "syncing"; syncMsg = ""
-            when (val r = manager.syncJournals(peer)) {
+            manager.saveServerUrl(serverUrl)
+            when (val r = manager.syncJournals(serverUrl)) {
                 is LanSyncManager.SyncResult.Success -> {
                     content = r.todayText
-                    syncStatus = "success"; syncMsg = syncedTemplate.format(peer.name)
-                    historyStore.saveSuccess(peer)
-                    events = manager.fetchEvents(peer)
+                    syncStatus = "success"; syncMsg = syncedTemplate.format(serverHost(serverUrl))
+                    events = manager.fetchEvents(serverUrl)
                 }
                 is LanSyncManager.SyncResult.Error -> {
                     syncStatus = "error"; syncMsg = r.message
@@ -240,20 +219,14 @@ fun MainScreen(store: JournalStore, eventStore: EventStore, manager: LanSyncMana
         }
     }
 
-    // 启动时后台自动连接历史服务器
+    // 启动时后台自动与固定服务器同步
     LaunchedEffect(Unit) {
-        val historyKeys = historyStore.getHistory().map { "${it.ip}:${it.port}" }.toHashSet()
-        val found = manager.discoverPeers()
-        val target = found.firstOrNull { historyKeys.isEmpty() || "${it.ip}:${it.port}" in historyKeys }
-            ?: return@LaunchedEffect
         syncStatus = "syncing"; syncMsg = ""
-        when (val r = manager.syncJournals(target)) {
+        when (val r = manager.syncJournals(serverUrl)) {
             is LanSyncManager.SyncResult.Success -> {
                 content = r.todayText
-                selected = target
-                syncStatus = "success"; syncMsg = syncedTemplate.format(target.name)
-                historyStore.saveSuccess(target)
-                events = manager.fetchEvents(target)
+                syncStatus = "success"; syncMsg = syncedTemplate.format(serverHost(serverUrl))
+                events = manager.fetchEvents(serverUrl)
             }
             is LanSyncManager.SyncResult.Error -> {
                 syncStatus = "idle"
@@ -285,20 +258,13 @@ fun MainScreen(store: JournalStore, eventStore: EventStore, manager: LanSyncMana
             if (panelOpen) {
                 SyncPanel(
                     modifier    = Modifier.align(Alignment.TopEnd).padding(top = 50.dp, end = 8.dp),
-                    scanning    = scanning,
-                    peers       = peers,
-                    selected    = selected,
-                    manualIp     = manualIp,
-                    manualPort   = manualPort,
-                    syncStatus   = syncStatus,
-                    syncMsg      = syncMsg,
-                    canSync      = activePeer != null && syncStatus != "syncing",
-                    onScan       = onScan,
-                    onSelect     = { selected = it },
-                    onIpChange   = { manualIp = it },
-                    onPortChange = { manualPort = it },
-                    onSync       = onSync,
-                    onClose      = { panelOpen = false }
+                    serverUrl   = serverUrl,
+                    syncStatus  = syncStatus,
+                    syncMsg     = syncMsg,
+                    canSync     = serverUrl.isNotBlank() && syncStatus != "syncing",
+                    onUrlChange = { serverUrl = it },
+                    onSync      = onSync,
+                    onClose     = { panelOpen = false }
                 )
             }
         }
@@ -311,14 +277,13 @@ fun MainScreen(store: JournalStore, eventStore: EventStore, manager: LanSyncMana
         TaskWidget(
             events   = events,
             onToggle = { eventId, completed ->
-                // 本地优先：先落盘，再尽力推送给已连接的对端；不要求必须有 peer 才能勾选。
+                // 本地优先：先落盘，再尽力做一次全量事件同步把改动推给服务器
+                //（本地改动带着更新的 updatedAt，合并时获胜；失败则留待下次同步）。
                 events = events.map {
                     if (it.id == eventId) it.copy(completed = completed, updatedAt = System.currentTimeMillis()) else it
                 }
                 eventStore.saveAll(events)
-                activePeer?.let { peer ->
-                    scope.launch { manager.toggleTask(peer, eventId, completed) }
-                }
+                scope.launch { events = manager.fetchEvents(serverUrl) }
             },
             onAddEvent = { type -> pendingAddType = type },
             onDelete = { eventId ->
@@ -327,6 +292,7 @@ fun MainScreen(store: JournalStore, eventStore: EventStore, manager: LanSyncMana
                     if (it.id == eventId) it.copy(deletedAt = now, updatedAt = now) else it
                 }
                 eventStore.saveAll(events)
+                scope.launch { events = manager.fetchEvents(serverUrl) }
             },
             onItemClick = { event -> editingEvent = event }
         )

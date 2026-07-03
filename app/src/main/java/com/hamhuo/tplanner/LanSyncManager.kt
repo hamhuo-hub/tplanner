@@ -3,67 +3,38 @@ package com.hamhuo.tplanner
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import java.net.DatagramPacket
-import java.net.DatagramSocket
 import java.net.HttpURLConnection
-import java.net.InetAddress
-import java.net.SocketTimeoutException
 import java.net.URL
 
+// 同步管理器：目标是固定地址的服务器（树莓派 + Cloudflare Tunnel），
+// 不再做 UDP 局域网扫描/发现——与 PC 端（src/hooks/useLanSync.js）保持一致。
 class LanSyncManager(
     private val context: Context,
     private val store: JournalStore,
     private val eventStore: EventStore? = null,
 ) {
 
-    data class Peer(val name: String, val ip: String, val port: Int, val journalCount: Int)
-
     sealed class SyncResult {
         data class Success(val todayText: String) : SyncResult()
         data class Error(val message: String) : SyncResult()
     }
 
-    private val fallbackPeers = listOf(
-        Peer("sync-server", "192.168.5.4", 37401, 0)
-    )
+    private val prefs = context.getSharedPreferences("tplanner_sync_config", Context.MODE_PRIVATE)
 
-    suspend fun discoverPeers(): List<Peer> = withContext(Dispatchers.IO) {
-        val peers = mutableListOf<Peer>()
-        try {
-            val socket = DatagramSocket()
-            try {
-                socket.broadcast = true
-                socket.soTimeout = 400
-                val probe = "TPLANNER_DISCOVER".toByteArray(Charsets.UTF_8)
-                socket.send(DatagramPacket(probe, probe.size, InetAddress.getByName("255.255.255.255"), 37402))
-                val buf      = ByteArray(1024)
-                val deadline = System.currentTimeMillis() + 2500
-                val seen     = mutableSetOf<String>()
-                while (System.currentTimeMillis() < deadline) {
-                    try {
-                        val pkt = DatagramPacket(buf, buf.size)
-                        socket.receive(pkt)
-                        val peer = parsePeer(String(buf, 0, pkt.length, Charsets.UTF_8)) ?: continue
-                        if (seen.add("${peer.ip}:${peer.port}")) peers.add(peer)
-                    } catch (_: SocketTimeoutException) {}
-                }
-            } finally {
-                socket.close()
-            }
-        } catch (_: Exception) {
-            // UDP blocked — fall through to HTTP probe
-        }
+    fun getServerUrl(): String =
+        prefs.getString(KEY_SERVER_URL, DEFAULT_SERVER_URL)?.takeIf { it.isNotBlank() } ?: DEFAULT_SERVER_URL
 
-        if (peers.isEmpty()) {
-            for (p in fallbackPeers) { if (probeHttp(p)) peers.add(p) }
-        }
-        peers
+    fun saveServerUrl(url: String) {
+        val normalized = normalizeServerUrl(url)
+        prefs.edit().putString(KEY_SERVER_URL, normalized.ifBlank { DEFAULT_SERVER_URL }).apply()
     }
 
-    suspend fun fetchEvents(peer: Peer): List<TaskEvent> = withContext(Dispatchers.IO) {
+    // 拉取远端事件、与本地合并（updatedAt-wins）、把合并结果推回并落盘。
+    // 勾选/删除等本地改动也通过这条全量合并路径传播（本地改动带着更新的
+    // updatedAt，合并时获胜），服务端只需要 GET/PUT 两个端点。
+    suspend fun fetchEvents(serverUrl: String): List<TaskEvent> = withContext(Dispatchers.IO) {
         try {
-            val base         = "http://${peer.ip}:${peer.port}"
+            val base         = normalizeServerUrl(serverUrl)
             val store_       = eventStore ?: return@withContext emptyList()
             val remoteEvents = store_.fromJson(httpGet("$base/tplanner/events"))
             val merged       = mergeEvents(store_.getAll(), remoteEvents)
@@ -75,20 +46,9 @@ class LanSyncManager(
         }
     }
 
-    suspend fun toggleTask(peer: Peer, eventId: String, completed: Boolean): Boolean =
-        withContext(Dispatchers.IO) {
-            try {
-                val body = org.json.JSONObject().apply {
-                    put("completed", completed)
-                }.toString()
-                httpPatch("http://${peer.ip}:${peer.port}/tplanner/events/$eventId", body)
-                true
-            } catch (_: Exception) { false }
-        }
-
-    suspend fun syncJournals(peer: Peer): SyncResult = withContext(Dispatchers.IO) {
+    suspend fun syncJournals(serverUrl: String): SyncResult = withContext(Dispatchers.IO) {
         try {
-            val base           = "http://${peer.ip}:${peer.port}"
+            val base           = normalizeServerUrl(serverUrl)
             val remoteJournals = store.fromJson(httpGet("$base/tplanner/journals"))
             val merged         = mergeJournals(store.getAll(), remoteJournals)
             httpPut("$base/tplanner/journals", store.toJson(merged))
@@ -98,13 +58,6 @@ class LanSyncManager(
             SyncResult.Error(e.message ?: context.getString(R.string.unknown_error))
         }
     }
-
-    private fun probeHttp(peer: Peer): Boolean = try {
-        val conn = URL("http://${peer.ip}:${peer.port}/health").openConnection() as HttpURLConnection
-        conn.requestMethod = "GET"; conn.connectTimeout = 2000; conn.readTimeout = 2000
-        val ok = conn.responseCode in 200..299
-        conn.disconnect(); ok
-    } catch (_: Exception) { false }
 
     // updatedAt 较大者获胜（与 sync-server / PC 端保持一致）；删除是携带更新
     // updatedAt 的 tombstone，因此能在合并中正常战胜对端尚存的旧内容，
@@ -160,8 +113,8 @@ class LanSyncManager(
         return result
     }
 
-    // updatedAt 较大者获胜，时间戳相同时保留已存在的版本——与 electron/main.js
-    // 嵌入式局域网服务端对 /tplanner/events 的合并语义保持一致。
+    // updatedAt 较大者获胜，时间戳相同时保留已存在的版本——与 sync-server
+    // 对 /tplanner/events 的合并语义保持一致。
     private fun mergeEvents(local: List<TaskEvent>, remote: List<TaskEvent>): List<TaskEvent> {
         val map = local.associateByTo(LinkedHashMap()) { it.id }
         remote.forEach { e ->
@@ -173,30 +126,18 @@ class LanSyncManager(
         return map.values.toList()
     }
 
-    private fun parsePeer(json: String): Peer? = try {
-        val obj = JSONObject(json)
-        val ip  = obj.optString("ip", "")
-        if (ip.isBlank()) null
-        else Peer(
-            name         = obj.optString("name", ip),
-            ip           = ip,
-            port         = obj.optInt("port", 37401),
-            journalCount = obj.optInt("journals", 0)
-        )
-    } catch (_: Exception) { null }
-
     private fun httpGet(url: String): String {
         val conn = URL(url).openConnection() as HttpURLConnection
-        conn.requestMethod = "GET"; conn.connectTimeout = 5000; conn.readTimeout = 5000
+        conn.requestMethod = "GET"; conn.connectTimeout = 10000; conn.readTimeout = 10000
         return try {
             if (conn.responseCode != 200) throw Exception("HTTP ${conn.responseCode}")
             conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
         } finally { conn.disconnect() }
     }
 
-    private fun httpPatch(url: String, body: String) {
+    private fun httpPut(url: String, body: String) {
         val conn = URL(url).openConnection() as HttpURLConnection
-        conn.requestMethod = "PATCH"; conn.connectTimeout = 5000; conn.readTimeout = 5000
+        conn.requestMethod = "PUT"; conn.connectTimeout = 10000; conn.readTimeout = 10000
         conn.doOutput = true
         conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
         try {
@@ -205,14 +146,18 @@ class LanSyncManager(
         } finally { conn.disconnect() }
     }
 
-    private fun httpPut(url: String, body: String) {
-        val conn = URL(url).openConnection() as HttpURLConnection
-        conn.requestMethod = "PUT"; conn.connectTimeout = 5000; conn.readTimeout = 5000
-        conn.doOutput = true
-        conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-        try {
-            conn.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(body) }
-            if (conn.responseCode !in 200..299) throw Exception("HTTP ${conn.responseCode}")
-        } finally { conn.disconnect() }
+    companion object {
+        const val DEFAULT_SERVER_URL = "https://sync.hamhuo.top"
+        private const val KEY_SERVER_URL = "serverUrl"
+
+        // 归一化服务器地址：补全协议、去掉末尾斜杠。裸主机名默认按 https 处理。
+        // 与 src/utils/syncLogic.js 的 normalizeServerUrl 保持一致。
+        fun normalizeServerUrl(url: String): String {
+            val trimmed = url.trim()
+            if (trimmed.isBlank()) return ""
+            val withScheme = if (Regex("^https?://", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)) trimmed
+                             else "https://$trimmed"
+            return withScheme.trimEnd('/')
+        }
     }
 }
