@@ -89,6 +89,18 @@ export default function useLanSync({ events, onMergeEvents, journals, onMergeJou
                 const analysis        = analyzeConflict(eventsRef.current, remoteEvents);
                 const journalAnalysis = analyzeJournalConflict(journalsRef.current, remoteJournals);
                 const goalAnalysis    = analyzeGoalConflict(goalsRef.current, remoteGoals);
+
+                // 三类数据都没有任何待合并的变更（含待推送的本地独有/本地更新项）
+                // 时，弹预览没有信息量——直接报成功，不打断用户。
+                const hasChanges = [analysis, journalAnalysis, goalAnalysis].some(a =>
+                    a.added.length + a.removed.length + a.updated.length +
+                    a.deleted.length + a.conflicted.length > 0);
+                if (!hasChanges) {
+                    setStatus('success');
+                    setStatusMsg('数据完全一致，无需合并');
+                    return;
+                }
+
                 setPreview({ analysis, journalAnalysis, goalAnalysis, remoteEvents, serverUrl: base });
                 setStatus('idle');
                 return;
