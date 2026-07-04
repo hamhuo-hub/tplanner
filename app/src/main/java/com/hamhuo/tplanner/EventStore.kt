@@ -6,6 +6,8 @@ import org.json.JSONObject
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 data class CheckItem(val id: String, val text: String, val completed: Boolean)
 
@@ -21,6 +23,11 @@ data class TaskEvent(
     val note: String,
     val deletedAt: Long,
     val updatedAt: Long = 0L,
+    // 桌面端/服务器的其余字段（timezone/groupId/recurrence* 等）原样透传。
+    // 安卓端不理解的字段不代表可以丢弃——早先回写时丢字段 + 时间戳丢毫秒，
+    // 会把服务器上的副本改写成与桌面端"内容相同但字节不同"的形态，导致
+    // 桌面端同步预览里同一批事件反复出现、永不收敛。
+    val extras: Map<String, Any?> = emptyMap(),
 )
 
 class EventStore(ctx: Context) {
@@ -59,6 +66,8 @@ class EventStore(ctx: Context) {
                 completed = o.optBoolean("completed", false)
             )
         }
+        val extras = mutableMapOf<String, Any?>()
+        keys().forEach { k -> if (k !in KNOWN_KEYS) extras[k] = get(k) }
         return TaskEvent(
             id        = getString("id"),
             title     = optString("title", ""),
@@ -71,16 +80,21 @@ class EventStore(ctx: Context) {
             note      = optString("note", ""),
             deletedAt = optLong("deletedAt", 0L),
             updatedAt = optLong("updatedAt", 0L),
+            extras    = extras,
         )
     }
 
     private fun TaskEvent.toJson(): JSONObject {
         val obj = JSONObject()
+        extras.forEach { (k, v) -> obj.put(k, v) }
         obj.put("id", id)
         obj.put("title", title)
         obj.put("type", type)
-        obj.put("start", start.toString())
-        obj.put("end", end.toString())
+        // 与桌面端 Date.toISOString() 逐字一致：恒带毫秒的 UTC ISO。
+        // Instant.toString() 在毫秒为零时会省略小数部分，两端字节不一致
+        // 会被同步比较判为"内容不同"，是同步永不收敛的根源之一。
+        obj.put("start", ISO_MS.format(start))
+        obj.put("end", ISO_MS.format(end))
         obj.put("completed", completed)
         obj.put("colorId", colorId)
         obj.put("note", note)
@@ -94,6 +108,15 @@ class EventStore(ctx: Context) {
         }
         obj.put("checklist", arr)
         return obj
+    }
+
+    companion object {
+        private val KNOWN_KEYS = setOf(
+            "id", "title", "type", "start", "end", "completed",
+            "checklist", "colorId", "note", "deletedAt", "updatedAt",
+        )
+        private val ISO_MS: DateTimeFormatter =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC)
     }
 }
 

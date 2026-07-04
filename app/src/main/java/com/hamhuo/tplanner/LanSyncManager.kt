@@ -74,15 +74,16 @@ class LanSyncManager(
         return if (a.tieKey() >= b.tieKey()) a else b
     }
 
-    // 等价于 JS 端 JSON.stringify({ payload: { text, updatedAt, deletedAt }, deletedAt })。
-    // 不借助 org.json（其 quote() 会把 '/' 转义成 '\/'，与 JS 的 JSON.stringify
-    // 不一致，导致同一段含 '/' 的文本在两端产生不同的比较键），改为手写、
-    // 逐字符匹配 JS JSON.stringify 字符串转义规则的最小实现。
+    // 等价于 JS 端 stableStringify({ payload: { text, updatedAt, deletedAt }, deletedAt })
+    // （见 src/utils/syncLogic.js —— 键按字典序排序：deletedAt < payload；
+    // payload 内 deletedAt < text < updatedAt）。不借助 org.json（其 quote()
+    // 会把 '/' 转义成 '\/'，与 JS 不一致，导致同一段含 '/' 的文本在两端产生
+    // 不同的比较键），改为手写、逐字符匹配 JS 字符串转义规则的最小实现。
     // 存活时 deletedAt 序列化为 null，与线格式（见 toJson）保持一致。
     private fun JournalEntry.tieKey(): String {
         val d = if (deletedAt == 0L) "null" else deletedAt.toString()
         val t = jsonQuote(text)
-        return "{\"payload\":{\"text\":$t,\"updatedAt\":$updatedAt,\"deletedAt\":$d},\"deletedAt\":$d}"
+        return "{\"deletedAt\":$d,\"payload\":{\"deletedAt\":$d,\"text\":$t,\"updatedAt\":$updatedAt}}"
     }
 
     private fun jsonQuote(s: String): String {
@@ -113,13 +114,14 @@ class LanSyncManager(
         return result
     }
 
-    // updatedAt 较大者获胜，时间戳相同时保留已存在的版本——与 sync-server
-    // 对 /tplanner/events 的合并语义保持一致。
+    // updatedAt 较大者获胜；时间戳相同时取远端（服务器）版本——服务器端对
+    // 平局按规范形内容做确定性裁决（见 sync-server/server.js pickEntity），
+    // 安卓端不重复实现那套序列化，直接跟随服务器已选定的胜者，保证三端收敛。
     private fun mergeEvents(local: List<TaskEvent>, remote: List<TaskEvent>): List<TaskEvent> {
         val map = local.associateByTo(LinkedHashMap()) { it.id }
         remote.forEach { e ->
             val existing = map[e.id]
-            if (existing == null || e.updatedAt > existing.updatedAt) {
+            if (existing == null || e.updatedAt >= existing.updatedAt) {
                 map[e.id] = e
             }
         }
