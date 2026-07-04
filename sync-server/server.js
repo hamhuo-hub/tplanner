@@ -121,15 +121,69 @@ const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 // { id, payload, updatedAt, deletedAt } 后共用同一套比较/合并逻辑，
 // 不必为每种数据各写一份、又要求彼此"逐字一致"的合并代码。
 //
-// pickEntity / mergeEntities 是跨设备共享的核心比较逻辑，必须与
-// src/utils/syncLogic.js 中的同名实现逐字一致：否则两端在"打破平局"时
-// 可能选出不同的胜者，导致永远收敛不到同一结果（死锁式分歧）。
+// stableStringify / canonicalEvent / canonicalGoal / pickEntity / mergeEntities
+// 是跨设备共享的核心比较逻辑，必须与 src/utils/syncLogic.js 中的同名实现
+// 逐字一致：否则两端在"打破平局"时可能选出不同的胜者，导致永远收敛不到
+// 同一结果（死锁式分歧）。安卓端 LanSyncManager.tieKey 也依赖此序列化格式。
+function stableStringify(v) {
+    if (v === undefined) return undefined;
+    if (v === null || typeof v !== 'object') return JSON.stringify(v);
+    if (v instanceof Date) return JSON.stringify(v);
+    if (Array.isArray(v)) return '[' + v.map(x => stableStringify(x) ?? 'null').join(',') + ']';
+    const parts = [];
+    for (const k of Object.keys(v).sort()) {
+        const s = stableStringify(v[k]);
+        if (s !== undefined) parts.push(JSON.stringify(k) + ':' + s);
+    }
+    return '{' + parts.join(',') + '}';
+}
+
+// 规范形：时间统一为带毫秒的 ISO、可选字段统一补默认值，消除各端表示差异
+//（毫秒有无、字段缺省、键序）造成的"内容相同却字节不同"。合并输出即规范形，
+// 磁盘上的旧格式副本会在下一次合并时被自然替换（自愈）。
+const toIsoMs = (v) => {
+    const t = new Date(v).getTime();
+    return Number.isFinite(t) ? new Date(t).toISOString() : v;
+};
+
+function canonicalEvent(e) {
+    return {
+        ...e,
+        type:            e.type || 'event',
+        start:           toIsoMs(e.start),
+        end:             toIsoMs(e.end),
+        note:            e.note || '',
+        timezone:        e.timezone || '',
+        groupId:         e.groupId || '',
+        colorId:         e.colorId ?? 0,
+        completed:       e.completed ?? false,
+        checklist:       e.checklist ?? [],
+        recurrenceType:  e.recurrenceType || 'none',
+        recurrenceCount: e.recurrenceCount || 1,
+        updatedAt:       e.updatedAt || 0,
+        deletedAt:       e.deletedAt ?? 0,
+    };
+}
+
+function canonicalGoal(g) {
+    return {
+        ...g,
+        note:      g.note ?? '',
+        icon:      g.icon ?? '',
+        order:     g.order ?? 0,
+        updatedAt: g.updatedAt || 0,
+        deletedAt: g.deletedAt ?? 0,
+    };
+}
+
+function contentKey(e) {
+    return stableStringify({ payload: e?.payload, deletedAt: e?.deletedAt ?? null });
+}
+
 function pickEntity(a, b) {
     const au = a?.updatedAt || 0, bu = b?.updatedAt || 0;
     if (au !== bu) return au > bu ? a : b;
-    const ak = JSON.stringify({ payload: a?.payload, deletedAt: a?.deletedAt ?? null });
-    const bk = JSON.stringify({ payload: b?.payload, deletedAt: b?.deletedAt ?? null });
-    return ak >= bk ? a : b;
+    return contentKey(a) >= contentKey(b) ? a : b;
 }
 
 function mergeEntities(local, remote) {
@@ -141,7 +195,8 @@ function mergeEntities(local, remote) {
     return Array.from(map.values());
 }
 
-const toEventEntity   = e => ({ id: e.id, payload: e, updatedAt: e.updatedAt || 0, deletedAt: e.deletedAt ?? null });
+const toEventEntity   = e => ({ id: e.id, payload: canonicalEvent(e), updatedAt: e.updatedAt || 0, deletedAt: e.deletedAt || null });
+const toGoalEntity    = g => ({ id: g.id, payload: canonicalGoal(g),  updatedAt: g.updatedAt || 0, deletedAt: g.deletedAt || null });
 const toJournalEntity = (date, entry) => ({ id: date, payload: entry || {}, updatedAt: entry?.updatedAt || 0, deletedAt: entry?.deletedAt ?? null });
 const journalEntries  = obj => Object.entries(obj || {}).map(([date, entry]) => toJournalEntity(date, entry));
 const fromEntity      = e => e.payload;
@@ -162,6 +217,12 @@ function mergeEvents(local, incoming) {
     const now = Date.now();
     // Drop tombstones older than TTL — both sides already have them
     return merged.filter(e => !e.deletedAt || (now - e.deletedAt) < TOMBSTONE_TTL_MS);
+}
+
+function mergeGoals(local, incoming) {
+    const merged = mergeEntities(local.map(toGoalEntity), incoming.map(toGoalEntity)).map(fromEntity);
+    const now = Date.now();
+    return merged.filter(g => !g.deletedAt || (now - g.deletedAt) < TOMBSTONE_TTL_MS);
 }
 
 // ── HTTP 工具 ─────────────────────────────────────────────────────────────────
@@ -316,7 +377,7 @@ async function handleRequest(req, res) {
         try { incoming = JSON.parse(body); } catch (_) { json(res, 400, { error: 'Invalid JSON' }); return; }
         if (!Array.isArray(incoming)) { json(res, 400, { error: 'Expected array' }); return; }
         const local  = readGoals();
-        const merged = mergeEvents(local, incoming); // same updatedAt-wins + tombstone logic
+        const merged = mergeGoals(local, incoming);
         writeGoals(merged);
         log('INFO', `Goals merged: local=${local.length} incoming=${incoming.length} result=${merged.length}`);
         json(res, 200, { ok: true, count: merged.length });

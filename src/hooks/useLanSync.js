@@ -4,8 +4,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
     DEFAULT_CONFIG, DEFAULT_SERVER_URL, normalizeServerUrl,
-    analyzeConflict, analyzeJournalConflict,
-    mergeEvents, mergeJournals,
+    analyzeConflict, analyzeGoalConflict, analyzeJournalConflict,
+    mergeEvents, mergeGoals, mergeJournals,
     syncClockOffset,
 } from '../utils/syncLogic';
 
@@ -88,7 +88,7 @@ export default function useLanSync({ events, onMergeEvents, journals, onMergeJou
                 // Use refs for latest local data to avoid stale analysis
                 const analysis        = analyzeConflict(eventsRef.current, remoteEvents);
                 const journalAnalysis = analyzeJournalConflict(journalsRef.current, remoteJournals);
-                const goalAnalysis    = analyzeConflict(goalsRef.current, remoteGoals);
+                const goalAnalysis    = analyzeGoalConflict(goalsRef.current, remoteGoals);
                 setPreview({ analysis, journalAnalysis, goalAnalysis, remoteEvents, serverUrl: base });
                 setStatus('idle');
                 return;
@@ -141,7 +141,7 @@ export default function useLanSync({ events, onMergeEvents, journals, onMergeJou
             const gRes = await fetch(`${base}/tplanner/goals`, { method: 'GET', signal: AbortSignal.timeout(10000) });
             if (gRes.ok) {
                 const remoteGoals  = await gRes.json();
-                const mergedGoals  = mergeEvents(localGoals, remoteGoals); // same updatedAt-wins logic
+                const mergedGoals  = mergeGoals(localGoals, remoteGoals);
                 await fetch(`${base}/tplanner/goals`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },

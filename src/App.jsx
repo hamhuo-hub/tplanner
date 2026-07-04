@@ -669,20 +669,11 @@ function App() {
                             onMergeEvents={async (merged) => {
                                 if (!db) return;
                                 try {
-                                    const upserts = merged.map(e => ({
-                                        ...e,
-                                        start: e.start instanceof Date ? e.start.toISOString() : e.start,
-                                        end:   e.end   instanceof Date ? e.end.toISOString()   : e.end,
-                                        updatedAt: e.updatedAt || clockNow(),
-                                        note: e.note || '',
-                                        timezone: e.timezone || '',
-                                        groupId: e.groupId || '',
-                                        completed: e.completed ?? false,
-                                        checklist: e.checklist ?? [],
-                                        recurrenceType: e.recurrenceType || 'none',
-                                        recurrenceCount: e.recurrenceCount || 1,
-                                    }));
-                                    await db.events.bulkUpsert(upserts);
+                                    // merged 已是规范形（syncLogic.js canonicalEvent）：start/end 为
+                                    // 带毫秒的 ISO 字符串、可选字段已补默认值。落盘的与推送给服务器
+                                    // 的必须是同一份数据——在这里再改写任何字段都会让本地和服务器
+                                    // 的副本漂移，同一批记录会在每次同步预览里反复出现。
+                                    await db.events.bulkUpsert(merged);
                                 } catch (err) {
                                     console.error('LAN merge failed', err);
                                 }
@@ -702,13 +693,8 @@ function App() {
                             onMergeGoals={async (merged) => {
                                 if (!db) return;
                                 try {
-                                    await db.goals.bulkUpsert(merged.map(g => ({
-                                        ...g,
-                                        updatedAt: g.updatedAt || clockNow(),
-                                        note:      g.note  ?? '',
-                                        icon:      g.icon  ?? '',
-                                        deletedAt: g.deletedAt ?? 0,
-                                    })));
+                                    // merged 已是规范形（syncLogic.js canonicalGoal），直接落盘。
+                                    await db.goals.bulkUpsert(merged);
                                 } catch (err) {
                                     console.error('LAN goals merge failed', err);
                                 }

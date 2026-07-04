@@ -30,14 +30,81 @@ export function normalizeServerUrl(url) {
 
 export function isAlive(e) { return !e.deletedAt; }
 
+// ── 稳定序列化（内容比较专用）────────────────────────────────────────────────
+// JSON.stringify 的输出依赖对象键的插入顺序：同一条记录，本地（RxDB 读出）和
+// 远端（安卓端 org.json 写出）的键序不同，字节串就不同——即使内容完全一致。
+// 内容比较必须用键按字典序排序的稳定序列化，否则"相同内容"永远判不相等。
+// 安卓端 LanSyncManager.tieKey 手工拼出与此逐字一致的字符串，改这里必须同步改那里。
+export function stableStringify(v) {
+    if (v === undefined) return undefined;
+    if (v === null || typeof v !== 'object') return JSON.stringify(v);
+    if (v instanceof Date) return JSON.stringify(v);
+    if (Array.isArray(v)) return '[' + v.map(x => stableStringify(x) ?? 'null').join(',') + ']';
+    const parts = [];
+    for (const k of Object.keys(v).sort()) {
+        const s = stableStringify(v[k]);
+        if (s !== undefined) parts.push(JSON.stringify(k) + ':' + s);
+    }
+    return '{' + parts.join(',') + '}';
+}
+
+// ── 事件/目标的规范形（canonical form）──────────────────────────────────────
+// 同一条记录在不同端的表示会漂移：桌面端 Date.toISOString() 带毫秒而安卓端
+// Instant.toString() 不带；安卓端不认识的可选字段会被丢掉；桌面端落盘时又会
+// 补默认值。这些"表示差异"在字节比较下全是"内容不同"——updatedAt 相同、内容
+// 也相同的记录被判为冲突，平局裁决永远选中对端版本，而本地落盘后又变回自己
+// 的表示，于是同一批记录每次同步都显示"将被覆盖"，永不收敛。
+// 因此进入比较/合并前先统一成规范形：时间统一为带毫秒的 ISO、可选字段统一补
+// 默认值。合并输出也是规范形——推给服务器和写入本地的是同一份数据，服务器上
+// 的旧格式副本会在下一次合并时被规范形自然替换（自愈）。
+// 注意：这里的默认值必须与 App.jsx onMergeEvents/onMergeGoals 落盘时补的默认值
+// 保持一致，否则"落盘的"和"比较的"又会漂移出新的差异。
+const toIsoMs = (v) => {
+    const t = new Date(v).getTime();
+    return Number.isFinite(t) ? new Date(t).toISOString() : v;
+};
+
+export function canonicalEvent(e) {
+    return {
+        ...e,
+        type:            e.type || 'event',
+        start:           toIsoMs(e.start),
+        end:             toIsoMs(e.end),
+        note:            e.note || '',
+        timezone:        e.timezone || '',
+        groupId:         e.groupId || '',
+        colorId:         e.colorId ?? 0,
+        completed:       e.completed ?? false,
+        checklist:       e.checklist ?? [],
+        recurrenceType:  e.recurrenceType || 'none',
+        recurrenceCount: e.recurrenceCount || 1,
+        updatedAt:       e.updatedAt || 0,
+        deletedAt:       e.deletedAt ?? 0,
+    };
+}
+
+export function canonicalGoal(g) {
+    return {
+        ...g,
+        note:      g.note ?? '',
+        icon:      g.icon ?? '',
+        order:     g.order ?? 0,
+        updatedAt: g.updatedAt || 0,
+        deletedAt: g.deletedAt ?? 0,
+    };
+}
+
+// 内容比较键：payload 应已是规范形，稳定序列化后即可字节比较。
+function contentKey(e) {
+    return stableStringify({ payload: e?.payload, deletedAt: e?.deletedAt ?? null });
+}
+
 // updatedAt 相同时（典型情况：旧版迁移记录、或两端在同一毫秒各自独立创建/编辑），
 // 用与"谁是 local/remote"无关的确定性方式选出胜者，保证两端最终收敛一致。
 export function pickEntity(a, b) {
     const au = a?.updatedAt || 0, bu = b?.updatedAt || 0;
     if (au !== bu) return au > bu ? a : b;
-    const ak = JSON.stringify({ payload: a?.payload, deletedAt: a?.deletedAt ?? null });
-    const bk = JSON.stringify({ payload: b?.payload, deletedAt: b?.deletedAt ?? null });
-    return ak >= bk ? a : b;
+    return contentKey(a) >= contentKey(b) ? a : b;
 }
 
 export function mergeEntities(local, remote) {
@@ -64,9 +131,7 @@ export function analyzeEntities(local, remote) {
         }
         const lu = le.updatedAt || 0, ru = re.updatedAt || 0;
         if (lu === ru) {
-            const sameContent = JSON.stringify({ payload: le.payload, deletedAt: le.deletedAt ?? null })
-                             === JSON.stringify({ payload: re.payload, deletedAt: re.deletedAt ?? null });
-            if (sameContent) { results.synced.push(le); continue; }
+            if (contentKey(le) === contentKey(re)) { results.synced.push(le); continue; }
         }
         if (pickEntity(le, re) === re) {
             if (!isAlive(re) && isAlive(le)) results.deleted.push({ local: le, remote: re }); // remote deleted it
@@ -83,10 +148,12 @@ export function analyzeEntities(local, remote) {
 }
 
 // ── 各数据类型 ↔ 统一实体 的适配层 ───────────────────────────────────────────
-// events/goals 本身已是 { id, updatedAt, deletedAt, ... } 的数组，整条记录即 payload；
-// journals 以日期为键、条目为 { text, updatedAt, deletedAt }，日期本身就是 id。
-// fromEntity 对 events/goals 直接还原原始对象；journalFromEntity 额外把 id 还原成 date 字段。
-const toEventEntity   = e => ({ id: e.id, payload: e, updatedAt: e.updatedAt || 0, deletedAt: e.deletedAt ?? null });
+// events/goals 本身已是 { id, updatedAt, deletedAt, ... } 的数组，规范形整条记录
+// 即 payload；journals 以日期为键、条目为 { text, updatedAt, deletedAt }，日期本身
+// 就是 id。fromEntity 对 events/goals 直接还原（规范形）对象；journalFromEntity
+// 额外把 id 还原成 date 字段。
+const toEventEntity   = e => ({ id: e.id, payload: canonicalEvent(e), updatedAt: e.updatedAt || 0, deletedAt: e.deletedAt || null });
+const toGoalEntity    = g => ({ id: g.id, payload: canonicalGoal(g),  updatedAt: g.updatedAt || 0, deletedAt: g.deletedAt || null });
 const toJournalEntity = (date, entry) => ({ id: date, payload: entry || {}, updatedAt: entry?.updatedAt || 0, deletedAt: entry?.deletedAt ?? null });
 const journalEntries  = obj => Object.entries(obj || {}).map(([date, entry]) => toJournalEntity(date, entry));
 const fromEntity        = e => e.payload;
@@ -108,6 +175,10 @@ function convertResults(results, toDisplay) {
 
 export function analyzeConflict(local, remote) {
     return convertResults(analyzeEntities(local.map(toEventEntity), remote.map(toEventEntity)), fromEntity);
+}
+
+export function analyzeGoalConflict(local, remote) {
+    return convertResults(analyzeEntities(local.map(toGoalEntity), remote.map(toGoalEntity)), fromEntity);
 }
 
 export function analyzeJournalConflict(local, remote) {
@@ -136,6 +207,10 @@ export function countSubtaskChanges(updated) {
 // 正常竞争，不会被回环恢复。
 export function mergeEvents(local, remote) {
     return mergeEntities(local.map(toEventEntity), remote.map(toEventEntity)).map(fromEntity);
+}
+
+export function mergeGoals(local, remote) {
+    return mergeEntities(local.map(toGoalEntity), remote.map(toGoalEntity)).map(fromEntity);
 }
 
 export function mergeJournals(local, remote) {
