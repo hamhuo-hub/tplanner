@@ -31,8 +31,10 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -48,11 +50,24 @@ import java.util.UUID
 
 class MainActivity : ComponentActivity() {
 
+    // 手表触发计数器：每次手表唤醒 +1，MainScreen 观察变化弹出焦虑面板
+    var anxietyTriggerCount by mutableIntStateOf(0)
+
     private val requestBtPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
         Log.d("TplannerMain", "requestBtPermissions result: $results")
+        if (isFinishing || isDestroyed) return@registerForActivityResult
         if (results[Manifest.permission.BLUETOOTH_CONNECT] == true) startBluetoothWakeService()
+        if (results[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            results[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        ) maybeRequestBackgroundLocation()
+    }
+
+    private val requestBgLocation = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        Log.d("TplannerMain", "background location granted=$granted")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -63,8 +78,18 @@ class MainActivity : ComponentActivity() {
         requestWakeSetup()
         val store       = JournalStore(this)
         val eventStore  = EventStore(this)
+        val insightStore = InsightStore(this)
         val manager     = LanSyncManager(this, store, eventStore)
-        setContent { MainScreen(store = store, eventStore = eventStore, manager = manager) }
+        // 个人使用，直接写死。发布前记得移除。
+        val deepseekKey = "sk-f96de0cfd34d4f4c95ee2e004c4c800f"
+        val amapKey     = "d7201bb04a81eb33da8d7f8e7d6ed523"
+        AmapGeocoder.setApiKey(amapKey)
+        val deepseekService = DeepSeekAnalysisService(deepseekKey)
+        setContent { MainScreen(
+            store = store, eventStore = eventStore, manager = manager,
+            insightStore = insightStore, deepseekService = deepseekService,
+            amapApiKey = amapKey, anxietyTriggerCount = anxietyTriggerCount,
+        ) }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -75,6 +100,7 @@ class MainActivity : ComponentActivity() {
 
     private fun handleWakeIntent(intent: Intent?) {
         if (intent?.getBooleanExtra(EXTRA_WAKE_FROM_WATCH, false) == true) {
+            anxietyTriggerCount++
             setShowWhenLocked(true)
             setTurnScreenOn(true)
         }
@@ -83,12 +109,42 @@ class MainActivity : ComponentActivity() {
     private fun requestWakeSetup() {
         if (requestBatteryOptimizationExemption()) return
         if (requestSamsungNeverSleepingAppExemption()) return
-        requestOverlayPermission()
+        if (requestOverlayPermission()) return
+        requestDisableAppHibernation()
     }
 
-    // 三星手机的"休眠应用"省电策略会冻结后台 Service，导致手表发来的连接
-    // 收不到响应。只能在前台 Activity 里弹出系统授权弹窗，所以放在这里
-    // （用户打开 App 时）申请一次，而不是在后台 Service 里申请。
+    private fun requestDisableAppHibernation() {
+        val prefs = getSharedPreferences(WAKE_SETUP_PREFS, MODE_PRIVATE)
+        if (prefs.getBoolean(PREF_HIBERNATION_PROMPTED, false)) return
+        try {
+            val future = androidx.core.content.PackageManagerCompat
+                .getUnusedAppRestrictionsStatus(this)
+            future.addListener({
+                try {
+                    val status = future.get()
+                    val enabled = status == androidx.core.content.UnusedAppRestrictionsConstants.API_30_BACKPORT ||
+                        status == androidx.core.content.UnusedAppRestrictionsConstants.API_30 ||
+                        status == androidx.core.content.UnusedAppRestrictionsConstants.API_31
+                    if (enabled) {
+                        prefs.edit().putBoolean(PREF_HIBERNATION_PROMPTED, true).apply()
+                        if (isFinishing || isDestroyed) {
+                            Log.d("TplannerMain", "hibernation: activity destroyed, skipping startActivity")
+                            return@addListener
+                        }
+                        startActivity(
+                            androidx.core.content.IntentCompat
+                                .createManageUnusedAppRestrictionsIntent(this, packageName)
+                        )
+                    }
+                } catch (e: Exception) {
+                    Log.d("TplannerMain", "hibernation status check failed", e)
+                }
+            }, ContextCompat.getMainExecutor(this))
+        } catch (e: Exception) {
+            Log.d("TplannerMain", "hibernation API unavailable", e)
+        }
+    }
+
     private fun requestBatteryOptimizationExemption(): Boolean {
         val powerManager = getSystemService(PowerManager::class.java)
         val alreadyIgnoring = powerManager?.isIgnoringBatteryOptimizations(packageName) ?: true
@@ -96,6 +152,7 @@ class MainActivity : ComponentActivity() {
         if (alreadyIgnoring) return false
         val prefs = getSharedPreferences(WAKE_SETUP_PREFS, MODE_PRIVATE)
         if (prefs.getBoolean(PREF_BATTERY_PROMPTED, false)) return false
+        if (isFinishing || isDestroyed) return false
         try {
             startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
                 data = Uri.parse("package:$packageName")
@@ -123,6 +180,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openSamsungNeverSleepingApps(settingsPackage: String?): Boolean {
+        if (isFinishing || isDestroyed) return false
         val intent = Intent("com.samsung.android.sm.ACTION_OPEN_CHECKABLE_LISTACTIVITY").apply {
             settingsPackage?.let { setPackage(it) }
             putExtra("activity_type", 2)
@@ -141,6 +199,7 @@ class MainActivity : ComponentActivity() {
 
         val prefs = getSharedPreferences(WAKE_SETUP_PREFS, MODE_PRIVATE)
         if (prefs.getBoolean(PREF_OVERLAY_PROMPTED, false)) return false
+        if (isFinishing || isDestroyed) return false
 
         return try {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
@@ -154,23 +213,35 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // BluetoothWakeService 接收手表端直连的蓝牙信号来唤起本 App（见该类注释：
-    // 国行设备上 Google Wearable Data Layer 的跨设备消息中继不可用，改为
-    // 应用自己管理的经典蓝牙连接）。BLUETOOTH_CONNECT 是运行时权限，必须先
-    // 申请到才能启动监听。
     private fun ensureBluetoothWakeService() {
         val needed = mutableListOf<String>()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
             needed += Manifest.permission.BLUETOOTH_CONNECT
         }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            needed += Manifest.permission.ACCESS_FINE_LOCATION
+            needed += Manifest.permission.ACCESS_COARSE_LOCATION
+        }
         if (needed.isEmpty()) {
             startBluetoothWakeService()
+            maybeRequestBackgroundLocation()
         } else {
             requestBtPermissions.launch(needed.toTypedArray())
         }
     }
 
+    private fun maybeRequestBackgroundLocation() {
+        if (isFinishing || isDestroyed) return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED) return
+        val prefs = getSharedPreferences(WAKE_SETUP_PREFS, MODE_PRIVATE)
+        if (prefs.getBoolean(PREF_BG_LOCATION_PROMPTED, false)) return
+        prefs.edit().putBoolean(PREF_BG_LOCATION_PROMPTED, true).apply()
+        requestBgLocation.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+    }
+
     private fun startBluetoothWakeService() {
+        if (isFinishing || isDestroyed) return
         ContextCompat.startForegroundService(this, Intent(this, BluetoothWakeService::class.java))
     }
 
@@ -180,23 +251,40 @@ class MainActivity : ComponentActivity() {
         private const val PREF_BATTERY_PROMPTED = "battery_prompted"
         private const val PREF_SAMSUNG_NEVER_SLEEP_PROMPTED = "samsung_never_sleep_prompted"
         private const val PREF_OVERLAY_PROMPTED = "overlay_prompted"
+        private const val PREF_BG_LOCATION_PROMPTED = "bg_location_prompted"
+        private const val PREF_HIBERNATION_PROMPTED = "hibernation_prompted"
     }
 }
 
 @Composable
-fun MainScreen(store: JournalStore, eventStore: EventStore, manager: LanSyncManager) {
+fun MainScreen(
+    store: JournalStore,
+    eventStore: EventStore,
+    manager: LanSyncManager,
+    insightStore: InsightStore,
+    deepseekService: DeepSeekAnalysisService?,
+    amapApiKey: String,
+    anxietyTriggerCount: Int,
+) {
     val scope  = rememberCoroutineScope()
     var content    by remember { mutableStateOf(store.getToday()) }
     var panelOpen  by remember { mutableStateOf(false) }
     var events     by remember { mutableStateOf(eventStore.getAll()) }
 
-    // ── 同步状态（固定服务器地址，无扫描） ────────────────────────────────────
+    DisposableEffect(Unit) {
+        val todayKey = java.time.LocalDate.now().toString()
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == todayKey) content = store.getToday()
+        }
+        store.registerListener(listener)
+        onDispose { store.unregisterListener(listener) }
+    }
+
+    // ── 同步状态 ──────────────────────────────────────────────────────────
     var serverUrl  by remember { mutableStateOf(manager.getServerUrl()) }
-    var syncStatus by remember { mutableStateOf("idle") }   // idle|syncing|success|error
+    var syncStatus by remember { mutableStateOf("idle") }
     var syncMsg    by remember { mutableStateOf("") }
 
-    // stringResource() 只能在 composition 中调用，不能在 coroutine/launch 回调里调用，
-    // 所以提前在这里解析好，再在回调里用 .format() 套用参数。
     val syncedTemplate  = stringResource(R.string.sync_success_with_name)
 
     fun serverHost(url: String): String =
@@ -219,7 +307,6 @@ fun MainScreen(store: JournalStore, eventStore: EventStore, manager: LanSyncMana
         }
     }
 
-    // 启动时后台自动与固定服务器同步
     LaunchedEffect(Unit) {
         syncStatus = "syncing"; syncMsg = ""
         when (val r = manager.syncJournals(serverUrl)) {
@@ -234,12 +321,43 @@ fun MainScreen(store: JournalStore, eventStore: EventStore, manager: LanSyncMana
         }
     }
 
-    // 宽度 < 840dp（Material3 Expanded 断点）视为紧凑布局：单列 + 顶部标签页切换。
-    // 平板竖屏宽度通常 700-840dp，仍不足以舒展两栏，需与手机横屏一样走单栏。
     val isPhone = LocalConfiguration.current.screenWidthDp < 840
-    var phoneTab by remember { mutableStateOf(0) }   // 0=随手记, 1=日程
+    var phoneTab by remember { mutableStateOf(0) }   // 0=随手记, 1=日程, 2=洞察
 
-    // 共用面板构建块（notes card content）
+    // ── 手表触发焦虑记录 ──────────────────────────────────────────────────
+    var showAnxietySheet by remember { mutableStateOf(false) }
+    var prefillLocation by remember { mutableStateOf("") }
+    var insightRefreshTrigger by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(anxietyTriggerCount) {
+        if (anxietyTriggerCount > 0) {
+            showAnxietySheet = true
+            val latestContent = store.getToday()
+            val lastLine = latestContent.lines().lastOrNull { it.contains("📍") } ?: ""
+            val coords = Regex("📍([0-9.]+),([0-9.]+)").find(lastLine)
+            if (coords != null && amapApiKey.isNotBlank()) {
+                val lat = coords.groupValues[1].toDoubleOrNull() ?: 0.0
+                val lng = coords.groupValues[2].toDoubleOrNull() ?: 0.0
+                prefillLocation = AmapGeocoder.reverseGeocode(lat, lng, amapApiKey)
+            }
+        }
+    }
+
+    // 日终自动分析
+    LaunchedEffect(content) {
+        val today = java.time.LocalDate.now().toString()
+        val existingReport = insightStore.getDayReport(today)
+        if (existingReport == null) {
+            val dayEntries = insightStore.getTodayEvents()
+            if (dayEntries.isNotEmpty() && deepseekService != null) {
+                val report = deepseekService.synthesizeDay(dayEntries, today)
+                if (report != null) insightStore.saveDayReport(report)
+                insightRefreshTrigger++
+            }
+        }
+    }
+
+    // ── 面板构建块 ────────────────────────────────────────────────────────
     val notesCardContent: @Composable () -> Unit = {
         Box(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize()) {
@@ -277,8 +395,6 @@ fun MainScreen(store: JournalStore, eventStore: EventStore, manager: LanSyncMana
         TaskWidget(
             events   = events,
             onToggle = { eventId, completed ->
-                // 本地优先：先落盘，再尽力做一次全量事件同步把改动推给服务器
-                //（本地改动带着更新的 updatedAt，合并时获胜；失败则留待下次同步）。
                 events = events.map {
                     if (it.id == eventId) it.copy(completed = completed, updatedAt = System.currentTimeMillis()) else it
                 }
@@ -298,56 +414,134 @@ fun MainScreen(store: JournalStore, eventStore: EventStore, manager: LanSyncMana
         )
     }
 
-    if (isPhone) {
-        // ── 手机布局：顶部圆角胶囊标签 + 单面板 ────────────────────────────
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(BG)
-                .windowInsetsPadding(WindowInsets.systemBars)
-        ) {
-            PhoneTabBar(
-                tabs      = listOf(stringResource(R.string.tab_journal), stringResource(R.string.tab_tasks)),
-                selected  = phoneTab,
-                onSelect  = { phoneTab = it }
-            )
-            Card(
-                modifier  = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp).padding(bottom = 10.dp),
-                shape     = RoundedCornerShape(20.dp),
-                colors    = CardDefaults.cardColors(containerColor = SURFACE),
-                elevation = CardDefaults.cardElevation(0.dp)
-            ) {
-                if (phoneTab == 0) notesCardContent() else taskCardContent()
-            }
-        }
-    } else {
-        // ── 平板布局：左右双面板 ─────────────────────────────────────────────
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(BG)
-                .windowInsetsPadding(WindowInsets.systemBars)
-                .padding(10.dp)
-        ) {
-            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Card(
-                    modifier  = Modifier.weight(1.618f).fillMaxHeight(),
-                    shape     = RoundedCornerShape(20.dp),
-                    colors    = CardDefaults.cardColors(containerColor = SURFACE),
-                    elevation = CardDefaults.cardElevation(0.dp)
-                ) { notesCardContent() }
+    // ── 主布局 ────────────────────────────────────────────────────────────
+    Box(Modifier.fillMaxSize().background(BG).windowInsetsPadding(WindowInsets.systemBars)) {
+        if (showAnxietySheet) {
+            // 焦虑记录面板全屏覆盖
+            val submitAnxiety: (String, Int, List<String>, List<String>) -> Unit =
+                { text, intensity, emotions, symptoms ->
+                    val now = System.currentTimeMillis()
+                    val entryLine = buildString {
+                        append("\n\n---\n\n### ")
+                        append(java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date()))
+                        append(" · ").append(prefillLocation.ifBlank { "未知地点" })
+                        if (intensity > 0) append("\n*焦虑强度 ${intensity}%*")
+                        if (emotions.isNotEmpty()) append("\n*情绪: ${emotions.joinToString(" · ")}*")
+                        if (symptoms.isNotEmpty()) append("\n*身体: ${symptoms.joinToString(" · ")}*")
+                        append("\n\n").append(text)
+                    }
+                    val updated = content + entryLine
+                    content = updated
+                    store.saveToday(updated)
+                    showAnxietySheet = false
 
+                    if (deepseekService != null && text.isNotBlank()) {
+                        scope.launch {
+                            val result = deepseekService.restructureEntry(
+                                text = text,
+                                timestamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US)
+                                    .format(java.util.Date(now)),
+                                location = prefillLocation.ifBlank { "未知" },
+                            )
+                            if (result != null) {
+                                val threeColumnBlock = buildString {
+                                    append("\n\n> **自动思维**\n> ${result.autoThought}（相信度 ${result.thoughtConfidence}%）\n>\n")
+                                    append("> **思维钢印**\n> ${result.distortions.joinToString(" · ")}\n>\n")
+                                    append("> **理智反思**\n> ${result.rationalResponse}")
+                                }
+                                val final = store.getToday() + threeColumnBlock
+                                store.saveToday(final)
+                                content = final
+
+                                val todayText = store.getToday()
+                                val coordMatch = Regex("📍([0-9.]+),([0-9.]+)").find(todayText)
+                                val lat = coordMatch?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
+                                val lng = coordMatch?.groupValues?.get(2)?.toDoubleOrNull() ?: 0.0
+                                insightStore.addEvent(StructuredEntry(
+                                    id = UUID.randomUUID().toString(),
+                                    timestamp = now,
+                                    text = text,
+                                    location = prefillLocation.ifBlank { "未知" },
+                                    lat = lat, lng = lng,
+                                    intensity = if (result.intensity > 0) result.intensity else intensity,
+                                    distortions = result.distortions,
+                                    autoThought = result.autoThought,
+                                    thoughtConfidence = result.thoughtConfidence,
+                                    rationalResponse = result.rationalResponse,
+                                    emotion = result.emotion.ifBlank { emotions.firstOrNull() ?: "" },
+                                ))
+                            } else {
+                                val todayText = store.getToday()
+                                val coordMatch = Regex("📍([0-9.]+),([0-9.]+)").find(todayText)
+                                val lat = coordMatch?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
+                                val lng = coordMatch?.groupValues?.get(2)?.toDoubleOrNull() ?: 0.0
+                                insightStore.addEvent(StructuredEntry(
+                                    id = UUID.randomUUID().toString(),
+                                    timestamp = now,
+                                    text = text,
+                                    location = prefillLocation.ifBlank { "未知" },
+                                    lat = lat, lng = lng,
+                                    intensity = intensity,
+                                    distortions = emptyList(),
+                                    autoThought = "", thoughtConfidence = 0,
+                                    rationalResponse = "",
+                                    emotion = emotions.firstOrNull() ?: "",
+                                ))
+                            }
+                            insightRefreshTrigger++
+                        }
+                    }
+                }
+
+            AnxietyInputSheet(
+                prefillLocation = prefillLocation,
+                onDismiss = { showAnxietySheet = false },
+                onSubmit = submitAnxiety,
+            )
+        } else if (isPhone) {
+            Column(Modifier.fillMaxSize()) {
+                PhoneTabBar(
+                    tabs      = listOf(
+                        stringResource(R.string.tab_journal),
+                        stringResource(R.string.tab_tasks),
+                        "洞察"
+                    ),
+                    selected  = phoneTab,
+                    onSelect  = { phoneTab = it }
+                )
                 Card(
-                    modifier  = Modifier.weight(1.0f).fillMaxHeight(),
+                    modifier  = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp).padding(bottom = 10.dp),
                     shape     = RoundedCornerShape(20.dp),
                     colors    = CardDefaults.cardColors(containerColor = SURFACE),
                     elevation = CardDefaults.cardElevation(0.dp)
-                ) { taskCardContent() }
+                ) {
+                    if (phoneTab == 0) notesCardContent()
+                    else if (phoneTab == 1) taskCardContent()
+                    else InsightPanel(store = insightStore, onRefresh = { insightRefreshTrigger++ })
+                }
+            }
+        } else {
+            Box(Modifier.fillMaxSize().padding(10.dp)) {
+                Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Card(
+                        modifier  = Modifier.weight(1.618f).fillMaxHeight(),
+                        shape     = RoundedCornerShape(20.dp),
+                        colors    = CardDefaults.cardColors(containerColor = SURFACE),
+                        elevation = CardDefaults.cardElevation(0.dp)
+                    ) { notesCardContent() }
+
+                    Card(
+                        modifier  = Modifier.weight(1.0f).fillMaxHeight(),
+                        shape     = RoundedCornerShape(20.dp),
+                        colors    = CardDefaults.cardColors(containerColor = SURFACE),
+                        elevation = CardDefaults.cardElevation(0.dp)
+                    ) { taskCardContent() }
+                }
             }
         }
     }
 
-    // 命名半屏面板 — 选完类型后先命名，再进入详情页
+    // ── 叠加面板 ──────────────────────────────────────────────────────────
     pendingAddType?.let { type ->
         NameInputSheet(
             type = type,
@@ -372,7 +566,6 @@ fun MainScreen(store: JournalStore, eventStore: EventStore, manager: LanSyncMana
         )
     }
 
-    // 详情页 — 时间/清单/备注/颜色
     editingEvent?.let { ev ->
         EventDetailScreen(
             event = ev,

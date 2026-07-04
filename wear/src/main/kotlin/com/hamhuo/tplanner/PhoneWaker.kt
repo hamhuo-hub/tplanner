@@ -1,4 +1,4 @@
-package com.example.tplanner
+package com.hamhuo.tplanner
 
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
@@ -28,7 +28,10 @@ object PhoneWaker {
 
     fun wakeUpPhone(context: Context) {
         if (ActivityCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            // Wear OS 4/5 上 BLUETOOTH_CONNECT 是运行时权限——静默失败会让用户
+            // 以为"点了没反应"，必须给出可见提示并指向授权入口（打开本 App 一次）。
             Log.e(TAG, "wakeUpPhone: missing BLUETOOTH_CONNECT permission")
+            toast(context, context.getString(R.string.wake_phone_no_permission))
             return
         }
         val adapter = BluetoothAdapter.getDefaultAdapter()
@@ -47,20 +50,28 @@ object PhoneWaker {
         }
 
         Thread {
-            var socket: BluetoothSocket? = null
-            try {
-                Log.d(TAG, "wakeUpPhone: connecting to ${phone.name}")
-                socket = phone.createRfcommSocketToServiceRecord(SERVICE_UUID)
-                socket.connect()
-                socket.outputStream.write(1)
-                socket.outputStream.flush()
-                Log.d(TAG, "wakeUpPhone: signal sent successfully")
-            } catch (e: IOException) {
-                Log.e(TAG, "wakeUpPhone: bluetooth connect failed", e)
-                toast(context, context.getString(R.string.wake_phone_failed))
-            } finally {
-                try { socket?.close() } catch (_: IOException) {}
+            // 手机端服务在 accept 循环重建 socket 的窗口期、或蓝牙刚恢复时，
+            // 第一次 SDP 查询/连接可能瞬时失败——间隔 800ms 重试一次再报错。
+            var lastError: IOException? = null
+            for (attempt in 1..2) {
+                var socket: BluetoothSocket? = null
+                try {
+                    Log.d(TAG, "wakeUpPhone: connecting to ${phone.name} (attempt $attempt)")
+                    socket = phone.createRfcommSocketToServiceRecord(SERVICE_UUID)
+                    socket.connect()
+                    socket.outputStream.write(1)
+                    socket.outputStream.flush()
+                    Log.d(TAG, "wakeUpPhone: signal sent successfully")
+                    return@Thread
+                } catch (e: IOException) {
+                    Log.e(TAG, "wakeUpPhone: bluetooth connect failed (attempt $attempt)", e)
+                    lastError = e
+                } finally {
+                    try { socket?.close() } catch (_: IOException) {}
+                }
+                if (attempt == 1) try { Thread.sleep(800) } catch (_: InterruptedException) { return@Thread }
             }
+            if (lastError != null) toast(context, context.getString(R.string.wake_phone_failed))
         }.start()
     }
 

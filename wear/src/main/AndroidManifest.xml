@@ -1,13 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- 声明为 Wear 应用，表盘才能出现在手表的表盘选择器中 -->
     <uses-feature android:name="android.hardware.type.watch" android:required="false" />
 
     <uses-permission android:name="android.permission.VIBRATE" />
-    <uses-permission android:name="android.permission.BODY_SENSORS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <!-- 经典蓝牙 RFCOMM 直连手机端 BluetoothWakeService（绕开 Google Wearable Data Layer） -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
@@ -18,36 +15,56 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.DeviceDefault">
 
-        <!-- Wear 运行时库；标记为独立应用，可直接安装到手表而无需手机伴侣应用 -->
         <uses-library android:name="com.google.android.wearable" android:required="false" />
         <meta-data
             android:name="com.google.android.wearable.standalone"
             android:value="true" />
 
-        <service
-            android:name=".TPlanner2024WatchFaceService"
-            android:exported="true"
-            android:label="@string/watch_face_name"
-            android:permission="android.permission.BIND_WALLPAPER">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- ── tPlanner 三款表盘：时环 / 星轨 / 余烬 ── -->
+
+        <service android:name=".WatchFaceRingService" android:exported="true"
+            android:label="@string/wf_ring" android:permission="android.permission.BIND_WALLPAPER">
             <intent-filter>
                 <action android:name="android.service.wallpaper.WallpaperService" />
                 <category android:name="com.google.android.wearable.watchface.category.WATCH_FACE" />
             </intent-filter>
-            <!-- WallpaperService 必须的描述文件 -->
-            <meta-data
-                android:name="android.service.wallpaper"
-                android:resource="@xml/watch_face" />
-            <!-- 表盘选择器里显示的预览图 -->
-            <meta-data
-                android:name="com.google.android.wearable.watchface.preview"
-                android:resource="@drawable/preview_tplanner" />
-            <meta-data
-                android:name="com.google.android.wearable.watchface.preview_circular"
-                android:resource="@drawable/preview_tplanner" />
-            <!-- androidx.wear.watchface 要求声明是否允许多实例 -->
-            <meta-data
-                android:name="androidx.wear.watchface.MULTIPLE_INSTANCES_ALLOWED"
-                android:value="false" />
+            <meta-data android:name="android.service.wallpaper" android:resource="@xml/watch_face" />
+            <meta-data android:name="com.google.android.wearable.watchface.preview" android:resource="@drawable/preview_ring" />
+            <meta-data android:name="com.google.android.wearable.watchface.preview_circular" android:resource="@drawable/preview_ring" />
+            <meta-data android:name="androidx.wear.watchface.MULTIPLE_INSTANCES_ALLOWED" android:value="false" />
+        </service>
+
+        <service android:name=".WatchFaceOrbitService" android:exported="true"
+            android:label="@string/wf_orbit" android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService" />
+                <category android:name="com.google.android.wearable.watchface.category.WATCH_FACE" />
+            </intent-filter>
+            <meta-data android:name="android.service.wallpaper" android:resource="@xml/watch_face" />
+            <meta-data android:name="com.google.android.wearable.watchface.preview" android:resource="@drawable/preview_orbit" />
+            <meta-data android:name="com.google.android.wearable.watchface.preview_circular" android:resource="@drawable/preview_orbit" />
+            <meta-data android:name="androidx.wear.watchface.MULTIPLE_INSTANCES_ALLOWED" android:value="false" />
+        </service>
+
+        <service android:name=".WatchFaceEmberService" android:exported="true"
+            android:label="@string/wf_ember" android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService" />
+                <category android:name="com.google.android.wearable.watchface.category.WATCH_FACE" />
+            </intent-filter>
+            <meta-data android:name="android.service.wallpaper" android:resource="@xml/watch_face" />
+            <meta-data android:name="com.google.android.wearable.watchface.preview" android:resource="@drawable/preview_ember" />
+            <meta-data android:name="com.google.android.wearable.watchface.preview_circular" android:resource="@drawable/preview_ember" />
+            <meta-data android:name="androidx.wear.watchface.MULTIPLE_INSTANCES_ALLOWED" android:value="false" />
         </service>
 
     </application>

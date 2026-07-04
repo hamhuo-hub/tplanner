@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">TPlanner Watch</string>
-    <string name="watch_face_name">TPlanner 2024</string>
+    <string name="app_name">TPlanner</string>
+    <string name="wf_ring">tPlanner 时环</string>
+    <string name="wf_orbit">tPlanner 星轨</string>
+    <string name="wf_ember">tPlanner 余烬</string>
     <string name="wake_phone_no_node">未找到已配对的手机</string>
     <string name="wake_phone_failed">唤起手机失败</string>
+    <string name="wake_phone_no_permission">缺少蓝牙权限，请打开 TPlanner 应用授权</string>
+    <string name="bt_permission_ok">蓝牙权限已就绪，表盘可以唤醒手机了</string>
+    <string name="bt_permission_denied">未授予蓝牙权限，表盘无法唤醒手机</string>
 </resources>

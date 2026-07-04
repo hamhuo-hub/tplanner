@@ -1,6 +1,7 @@
 package com.hamhuo.tplanner
 
 import android.content.Context
+import android.content.SharedPreferences
 import org.json.JSONObject
 import java.time.LocalDate
 
@@ -13,14 +14,22 @@ class JournalStore(context: Context) {
 
     private val prefs = context.getSharedPreferences("tplanner_journals", Context.MODE_PRIVATE)
 
+    // 同步锁：appendToday / replaceInToday 读-改-写序列为原子操作，
+    // 防止 BluetoothWakeService 后台线程与 UI 主线并发写入丢失数据。
+    private val lock = Any()
+
     fun getAll(): Map<String, JournalEntry> =
         prefs.all.mapNotNull { (date, value) -> value?.let { date to parseEntry(it) } }.toMap()
 
+    // saveAll 做全量覆写（clear + repopulate）。apply() 是异步的——进程
+    // 在 apply() 排队后、磁盘写入前被 kill 会导致全部日记永久丢失。
+    // commit() 同步写盘，杜绝这个窗口。调用方已在 Dispatchers.IO 上执行
+    //（LanSyncManager.syncJournals），不阻塞主线程。
     fun saveAll(journals: Map<String, JournalEntry>) {
         prefs.edit().apply {
             clear()
             journals.forEach { (date, entry) -> putString(date, entry.toJson().toString()) }
-        }.apply()
+        }.commit()
     }
 
     fun getToday(): String {
@@ -28,14 +37,54 @@ class JournalStore(context: Context) {
         return if (entry == null || entry.deletedAt != 0L) "" else entry.text
     }
 
-    // 只更新今天这一条，其余日期原样保留——saveAll() 会先 clear() 整个 prefs，
-    // 直接调用会丢掉历史记录，所以编辑今日随手记必须走这个方法。
+    // 只更新今天这一条。直接 putString 单个 key，不做全量读-改-写：
+    //   1) 避免 saveAll 先 clear 再 repopulate 时丢失其他线程的并发写入；
+    //   2) eliminated 全量 getAll() 的读放大。
+    // 与 appendToday / replaceInToday 共用同一把锁，防止 UI 主线写入与
+    // 蓝牙后台线程的 read-modify-write 交错（丢失用户编辑）。
+    // synchronized 在 JVM 上是可重入的，从 appendToday 等同步块内调用安全。
     fun saveToday(text: String) {
-        val today = LocalDate.now().toString()
-        val updated = getAll().toMutableMap()
-        updated[today] = JournalEntry(text = text, updatedAt = System.currentTimeMillis(), deletedAt = 0L)
-        saveAll(updated)
+        synchronized(lock) {
+            val today = LocalDate.now().toString()
+            val entry = JournalEntry(text = text, updatedAt = System.currentTimeMillis(), deletedAt = 0L)
+            prefs.edit().putString(today, entry.toJson().toString()).apply()
+        }
     }
+
+    // 手表唤醒打点：向今日随笔末尾追加一行，保留已有内容。
+    // 同步锁保证读-改-写序列不被打断，避免蓝牙线程和 UI 主线并发导致丢失。
+    fun appendToday(line: String) {
+        synchronized(lock) {
+            val current = getToday()
+            val newText = if (current.isBlank()) line else current.trimEnd() + "\n" + line
+            saveToday(newText)
+        }
+    }
+
+    // 定位异步到达后补充打点行：只在 target 仍以"整行"存在时替换其最后一次
+    // 出现（同一分钟两次打点会产生相同的行，位置归属最新那次）。用户在这
+    // 期间改动了该行则放弃替换，不覆盖用户编辑。
+    // 同步锁保证 read-modify-write 原子性。
+    fun replaceInToday(target: String, replacement: String) {
+        synchronized(lock) {
+            val current = getToday()
+            val idx = current.lastIndexOf(target)
+            if (idx < 0) return
+            // 确认 target 位于行首：必须是文本开头，或前一个字符是换行符
+            if (idx > 0 && current[idx - 1] != '\n') return
+            // 确认 target 位于行尾：必须是文本结尾，或后一个字符是换行符
+            val end = idx + target.length
+            if (end < current.length && current[end] != '\n') return
+            saveToday(current.substring(0, idx) + replacement + current.substring(end))
+        }
+    }
+
+    // 同进程内（如 BluetoothWakeService 的打点写入）监听随笔变化，界面据此实时刷新。
+    fun registerListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) =
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+
+    fun unregisterListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) =
+        prefs.unregisterOnSharedPreferenceChangeListener(listener)
 
     fun fromJson(json: String): Map<String, JournalEntry> {
         val obj = JSONObject(json)

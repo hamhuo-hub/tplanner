@@ -1,2 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<wallpaper xmlns:android="http://schemas.android.com/apk/res/android" />
+<!-- WallpaperService 必需的描述文件；缩略图统一用时环预览，
+     各表盘在选择器里的真实预览由 manifest 的 watchface.preview meta-data 提供。 -->
+<wallpaper xmlns:android="http://schemas.android.com/apk/res/android"
+    android:thumbnail="@drawable/preview_ring"
+    android:description="@string/app_name" />

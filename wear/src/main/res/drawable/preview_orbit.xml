@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 星轨预览：方位刻度 + 事件星座连线 + 金色单针 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="466dp" android:height="466dp"
+    android:viewportWidth="466" android:viewportHeight="466">
+    <path android:fillColor="#0D0D0D"
+        android:pathData="M0,233 a233,233 0 1,0 466,0 a233,233 0 1,0 -466,0 z" />
+    <path android:strokeColor="#2E2E2E" android:strokeWidth="2.5" android:fillColor="#00000000"
+        android:pathData="M233,22 L233,7.4 M382.2,83.8 L392.5,73.5 M444,233 L458.6,233 M382.2,382.2 L392.5,392.5 M233,444 L233,458.6 M83.8,382.2 L73.5,392.5 M22,233 L7.4,233 M83.8,83.8 L73.5,73.5" />
+    <path android:strokeColor="#3A362B" android:strokeWidth="1.9" android:fillColor="#00000000"
+        android:pathData="M137.3,67.3 L368.3,368.3 L183.5,417.8 L48.2,282.5" />
+    <path android:fillColor="#4A9DA8"
+        android:pathData="M360.9,368.3 a7.4,7.4 0 1,0 14.8,0 a7.4,7.4 0 1,0 -14.8,0 z" />
+    <path android:fillColor="#4A9DA8"
+        android:pathData="M176.1,417.8 a7.4,7.4 0 1,0 14.8,0 a7.4,7.4 0 1,0 -14.8,0 z" />
+    <path android:fillColor="#4A9DA8"
+        android:pathData="M129.9,67.3 a7.4,7.4 0 1,0 14.8,0 a7.4,7.4 0 1,0 -14.8,0 z" />
+    <path android:fillColor="#C9A84C"
+        android:pathData="M38.4,282.5 a9.8,9.8 0 1,0 19.6,0 a9.8,9.8 0 1,0 -19.6,0 z" />
+    <path android:strokeColor="#C9A84C" android:strokeWidth="3.7" android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M233,233 L77.4,305.6" />
+    <path android:fillColor="#C9A84C"
+        android:pathData="M225.6,233 a7.4,7.4 0 1,0 14.8,0 a7.4,7.4 0 1,0 -14.8,0 z" />
+    <path android:fillColor="#E8E0D0"
+        android:pathData="M181,175 h104 v9 h-104 z" />
+    <path android:fillColor="#857F6E"
+        android:pathData="M199,145 h68 v5 h-68 z" />
+</vector>

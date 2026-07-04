@@ -3,11 +3,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.tplanner"
+    namespace = "com.hamhuo.tplanner"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.tplanner"
+        applicationId = "com.hamhuo.tplanner"
         // VibrationEffect.createOneShot 需要 API 26，故 minSdk 提到 26。
         minSdk = 26
         targetSdk = 35

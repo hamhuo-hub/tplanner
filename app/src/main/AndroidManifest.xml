@@ -2,6 +2,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 开机自启动前台服务（BootReceiver），实现三星健康式的无感知常驻 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- 手表唤醒打点时记录手机当前位置；服务在后台收到信号时取一次定位，
+         需要"始终允许"（背景定位）才能在息屏/后台状态下拿到坐标 -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <!-- 三星手机的"休眠应用"省电策略可能冻结后台 Service，
          首次启动时申请电池优化豁免以保证 BluetoothWakeService 能持续运行。 -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
@@ -40,6 +47,19 @@
             android:name=".BluetoothWakeService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+
+        <!-- 开机/应用更新后自启。exported 必须为 true：官方指引要求监听系统广播的
+             receiver 显式导出，部分 Android 12+ 设备上 false 会收不到 BOOT_COMPLETED；
+             这两个都是受保护广播，只有系统能发送，导出无安全风险。 -->
+        <receiver
+            android:name=".BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
     </application>
 
