@@ -19,6 +19,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -39,19 +42,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// ── 情绪快速标签 ──────────────────────────────────────────────────────────
 private val EMOTION_TAGS = listOf(
-    "焦虑", "恐惧", "羞耻", "愤怒", "悲伤", "无助",
-    "内疚", "孤独", "绝望", "烦躁", "麻木", "紧张",
+    "Anxiety", "Fear", "Shame", "Anger", "Sadness", "Helpless",
+    "Guilt", "Lonely", "Despair", "Irritable", "Numb", "Tense",
 )
 
-// ── 身体症状快速标签 ─────────────────────────────────────────────────────
 private val SYMPTOM_TAGS = listOf(
-    "心慌", "胸闷", "手抖", "出汗", "头晕",
-    "呼吸困难", "胃紧", "发冷", "发热", "发抖",
+    "Palpitation", "Chest tight", "Tremor", "Sweating", "Dizzy",
+    "Short breath", "Stomach knot", "Chills", "Hot flush", "Shaking",
 )
 
-// ── 思维钢印全量列表（用于芯片行展示）─────────────────────────────────────
 private val DISTORTION_LABELS = DistortionType.entries.map { it.label }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -66,9 +66,7 @@ fun AnxietyInputSheet(
     var selectedEmotions by remember { mutableStateOf<List<String>>(emptyList()) }
     var selectedSymptoms by remember { mutableStateOf<List<String>>(emptyList()) }
 
-    // 实时本地关键词检测
     val distortionHits = remember(text) { CognitiveDistortionDetector.detect(text) }
-    val hitLabels = distortionHits.flatMap { it.matchedKeywords }.toSet()
 
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
@@ -79,33 +77,33 @@ fun AnxietyInputSheet(
             .background(BG)
             .padding(horizontal = 20.dp)
     ) {
-        // ── 顶栏 ──────────────────────────────────────────────────────────
+        // ── Top bar ────────────────────────────────────────────────────
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("📋", fontSize = 20.sp)
-                Text("焦虑记录", color = GOLD, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("Anxiety Log", color = GOLD, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("提交", color = GOLD, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                Text("Submit", color = GOLD, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.clickable {
                         if (text.isNotBlank()) onSubmit(text, intensity, selectedEmotions, selectedSymptoms)
                     })
-                Text("✕", color = DIM, fontSize = 16.sp, modifier = Modifier.clickable { onDismiss() })
+                Icon(Icons.Default.Close, contentDescription = "Close", tint = DIM,
+                    modifier = Modifier.size(18.dp).clickable { onDismiss() })
             }
         }
 
-        // 地点 + 时间（预填）
+        // Location + time
         Text(
-            text = prefillLocation.ifBlank { "📍 位置获取中..." },
+            text = prefillLocation.ifBlank { "Locating..." },
             color = DIM, fontSize = 13.sp,
             modifier = Modifier.padding(bottom = 12.dp)
         )
 
-        // ── 输入区 ────────────────────────────────────────────────────────
+        // ── Text input ─────────────────────────────────────────────────
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -127,7 +125,7 @@ fun AnxietyInputSheet(
                 decorationBox = { inner ->
                     if (text.isEmpty()) {
                         Text(
-                            "此刻发生了什么？你在想什么？",
+                            "What's happening right now? What are you thinking?",
                             color = DIM, fontSize = 17.sp, lineHeight = 28.sp,
                         )
                     }
@@ -138,9 +136,9 @@ fun AnxietyInputSheet(
 
         Spacer(Modifier.height(10.dp))
 
-        // ── 思维钢印芯片行（实时高亮）──────────────────────────────────────
+        // ── Distortion chips ───────────────────────────────────────────
         if (text.isNotBlank()) {
-            Text("思维钢印", color = DIM, fontSize = 11.sp, modifier = Modifier.padding(bottom = 6.dp))
+            Text("Distortions", color = DIM, fontSize = 11.sp, modifier = Modifier.padding(bottom = 6.dp))
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -148,19 +146,15 @@ fun AnxietyInputSheet(
             ) {
                 DISTORTION_LABELS.forEach { label ->
                     val isHit = DistortionType.fromLabel(label)?.keywords?.any { text.contains(it) } == true
-                    Chip(
-                        label = label,
-                        active = isHit,
-                        onClick = { /* 仅供参考，不可点击 */ }
-                    )
+                    Chip(label = label, active = isHit, onClick = {})
                 }
             }
         }
 
         Spacer(Modifier.height(10.dp))
 
-        // ── 情绪标签 ──────────────────────────────────────────────────────
-        Text("情绪", color = DIM, fontSize = 11.sp, modifier = Modifier.padding(bottom = 6.dp))
+        // ── Emotion tags ───────────────────────────────────────────────
+        Text("Emotions", color = DIM, fontSize = 11.sp, modifier = Modifier.padding(bottom = 6.dp))
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -168,20 +162,15 @@ fun AnxietyInputSheet(
         ) {
             EMOTION_TAGS.forEach { tag ->
                 val selected = tag in selectedEmotions
-                EmotionChip(
-                    label = tag,
-                    selected = selected,
-                    onClick = {
-                        selectedEmotions = if (selected) selectedEmotions - tag else selectedEmotions + tag
-                    }
-                )
+                EmotionChip(label = tag, selected = selected,
+                    onClick = { selectedEmotions = if (selected) selectedEmotions - tag else selectedEmotions + tag })
             }
         }
 
         Spacer(Modifier.height(10.dp))
 
-        // ── 身体症状标签 ──────────────────────────────────────────────────
-        Text("身体症状", color = DIM, fontSize = 11.sp, modifier = Modifier.padding(bottom = 6.dp))
+        // ── Physical symptoms ──────────────────────────────────────────
+        Text("Physical", color = DIM, fontSize = 11.sp, modifier = Modifier.padding(bottom = 6.dp))
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -189,26 +178,20 @@ fun AnxietyInputSheet(
         ) {
             SYMPTOM_TAGS.forEach { tag ->
                 val selected = tag in selectedSymptoms
-                EmotionChip(
-                    label = tag,
-                    selected = selected,
-                    onClick = {
-                        selectedSymptoms = if (selected) selectedSymptoms - tag else selectedSymptoms + tag
-                    }
-                )
+                EmotionChip(label = tag, selected = selected,
+                    onClick = { selectedSymptoms = if (selected) selectedSymptoms - tag else selectedSymptoms + tag })
             }
         }
 
         Spacer(Modifier.height(14.dp))
 
-        // ── 焦虑强度滑块 ──────────────────────────────────────────────────
+        // ── Intensity selector ─────────────────────────────────────────
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("焦虑强度", color = DIM, fontSize = 13.sp)
-            // 简易数字选择器（0/25/50/75/100）
+            Text("Intensity", color = DIM, fontSize = 13.sp)
             listOf(0, 25, 50, 75, 100).forEach { level ->
                 val sel = intensity == level
                 Box(
@@ -233,7 +216,6 @@ fun AnxietyInputSheet(
     }
 }
 
-// ── 思维钢印芯片（不可点击，仅高亮） ──────────────────────────────────────
 @Composable
 private fun Chip(label: String, active: Boolean, onClick: () -> Unit) {
     Box(
@@ -244,15 +226,10 @@ private fun Chip(label: String, active: Boolean, onClick: () -> Unit) {
             .clickable { onClick() }
             .padding(horizontal = 10.dp, vertical = 6.dp),
     ) {
-        Text(
-            label,
-            color = if (active) GOLD else DIM,
-            fontSize = 12.sp,
-        )
+        Text(label, color = if (active) GOLD else DIM, fontSize = 12.sp)
     }
 }
 
-// ── 情绪/症状可选芯片 ─────────────────────────────────────────────────────
 @Composable
 private fun EmotionChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Box(
