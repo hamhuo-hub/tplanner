@@ -1,20 +1,16 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { Wifi, RefreshCw, CheckCircle, X, ChevronDown, ChevronUp } from 'lucide-react';
-import { format } from 'date-fns';
 import useLanSync from '../hooks/useLanSync';
-import { countSubtaskChanges } from '../utils/syncLogic';
 
 // ── 子组件：冲突预览弹窗 ──────────────────────────────────────────────────────
-const fmtTime = (ts) => ts ? format(new Date(ts), 'MM-dd HH:mm') : '';
 
-// 类型名 → 中文 UI 标签
 const TYPE_LABELS = { events: '事件', goals: '目标', journals: '日志', insights: '洞察' };
 function adapterTitle(a) { return TYPE_LABELS[a.type] || a.type; }
 
-function ConflictSection({ adapter, analysis, extra }) {
+function ConflictSection({ adapter, analysis }) {
     const [showDetail, setShowDetail] = useState(false);
     const { added, removed, updated, deleted, conflicted, synced } = analysis;
-    const hasChanges = added.length + removed.length + updated.length + deleted.length > 0;
+    const hasChanges = added.length + removed.length + updated.length + deleted.length + conflicted.length > 0;
     const labelFn = adapter.itemLabel || (item => item?.title ?? '');
     const unit = adapter.unitName || '条';
 
@@ -33,14 +29,11 @@ function ConflictSection({ adapter, analysis, extra }) {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {added.length > 0      && <StatRow icon="↓" color="#5B8FCC" label={`从对端拉取 ${added.length} ${unit}`} />}
                     {removed.length > 0    && <StatRow icon="↑" color="#4A9DA8" label={`推送本地独有 ${removed.length} ${unit}`} />}
-                    {deleted.length > 0    && <StatRow icon="🗑" color="#A04040" label={`${deleted.length} ${unit}将被删除`} />}
-                    {updated.length > 0    && <StatRow icon="↻" color="#C9A84C" label={`${updated.length} ${unit}将被对端较新版本覆盖`} />}
-                    {conflicted.length > 0 && <StatRow icon="!" color="#C0392B" label={`${conflicted.length} ${unit}本地版本更新（保留本地）`} />}
-                    {synced.length > 0     && <StatRow icon="✓" color="#4A7C59" label={`${synced.length} ${unit}已同步无变化`} />}
+                    {deleted.length > 0    && <StatRow icon="🗑" color="#A04040" label={`${deleted.length} ${unit}将被删除（一端已删除）`} />}
+                    {conflicted.length > 0 && <StatRow icon="⚡" color="#C0392B" label={`${conflicted.length} ${unit}内容冲突，需手动选择`} />}
+                    {synced.length > 0     && <StatRow icon="✓" color="#4A7C59" label={`${synced.length} ${unit}已同步`} />}
                 </div>
             )}
-
-            {extra}
 
             {hasChanges && (
                 <>
@@ -53,23 +46,17 @@ function ConflictSection({ adapter, analysis, extra }) {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 220, overflow: 'auto' }}>
                             <EventGroup title="将从对端拉取" color="#5B8FCC" items={added} renderItem={labelFn} />
                             <EventGroup title="将推送到对端" color="#4A9DA8" items={removed} renderItem={labelFn} />
-                            <EventGroup title="将被删除（tombstone 传播）" color="#A04040" items={deleted}
-                                renderItem={({ local: l, remote: r }) => (
-                                    <span style={{ textDecoration: 'line-through', color: 'var(--clr-text-dim)' }}>
-                                        {labelFn(l)}
-                                        <span style={{ fontSize: 9, marginLeft: 6 }}>{fmtTime(r.deletedAt || l.deletedAt)} 删除</span>
-                                    </span>
+                            <EventGroup title="将被删除（一端已删除）" color="#A04040" items={deleted}
+                                renderItem={({ local: l }) => (
+                                    <span style={{ textDecoration: 'line-through', color: 'var(--clr-text-dim)' }}>{labelFn(l)}</span>
                                 )} />
-                            <EventGroup title="将被对端版本覆盖" color="#C9A84C" items={updated}
+                            <EventGroup title="内容冲突（需手动选择保留哪个版本）" color="#C0392B" items={conflicted}
                                 renderItem={({ local: l, remote: r }) => (
                                     <span>
                                         <span style={{ textDecoration: 'line-through', color: 'var(--clr-text-dim)', marginRight: 6 }}>{labelFn(l)}</span>
                                         → {labelFn(r)}
-                                        <span style={{ fontSize: 9, color: 'var(--clr-text-dim)', marginLeft: 6 }}>{fmtTime(r.updatedAt)}</span>
                                     </span>
                                 )} />
-                            <EventGroup title="本地版本更新（保留）" color="#C0392B" items={conflicted}
-                                renderItem={({ local: l }) => labelFn(l)} />
                         </div>
                     )}
                 </>
@@ -79,14 +66,9 @@ function ConflictSection({ adapter, analysis, extra }) {
 }
 
 function ConflictModal({ results, serverUrl, onConfirm, onCancel }) {
-    const eventsResult = results.find(r => r.adapter.type === 'events');
-    const eventsUpdated = eventsResult?.analysis?.updated || [];
-    const subtaskStats = useMemo(() => countSubtaskChanges(eventsUpdated), [eventsUpdated]);
-
     const hasAnyChanges = results.some(r => {
         const a = r.analysis;
-        return a.added.length + a.removed.length + a.updated.length +
-               a.deleted.length + a.conflicted.length > 0;
+        return a.added.length + a.removed.length + a.deleted.length + a.conflicted.length > 0;
     });
 
     return (
@@ -105,10 +87,7 @@ function ConflictModal({ results, serverUrl, onConfirm, onCancel }) {
                 )}
 
                 {results.map(r => (
-                    <ConflictSection key={r.adapter.type} adapter={r.adapter} analysis={r.analysis}
-                        extra={r.adapter.type === 'events' && subtaskStats.events > 0 && (
-                            <StatRow icon="☑" color="#9B7EBD" label={`其中 ${subtaskStats.events} 条事件的子任务有变化（共 ${subtaskStats.items} 项）`} />
-                        )} />
+                    <ConflictSection key={r.adapter.type} adapter={r.adapter} analysis={r.analysis} />
                 ))}
 
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', paddingTop: 4 }}>
@@ -144,8 +123,6 @@ function EventGroup({ title, color, items, renderItem }) {
 }
 
 // ── 主组件 ────────────────────────────────────────────────────────────────────
-// 新 API: <LanSync adapters={[...]} />
-// 旧 API（向后兼容）: <LanSync events={...} journals={...} goals={...} onMergeXxx={...} />
 export default function LanSync(props) {
     const sync = useLanSync(props);
     const { isElectron, open, setOpen, config, setConfig, saveConfig, status, statusMsg, statusColor, preview, setPreview, doSync, executeMerge, serverUrl } = sync;

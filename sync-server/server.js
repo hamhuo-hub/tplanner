@@ -196,9 +196,9 @@ function contentKey(e) {
     return stableStringify({ payload: e?.payload, deletedAt: e?.deletedAt ?? null });
 }
 
+// Pure content-based — no timestamps. Must stay byte-identical to src/utils/syncLogic.js
 function pickEntity(a, b) {
-    const au = a?.updatedAt || 0, bu = b?.updatedAt || 0;
-    if (au !== bu) return au > bu ? a : b;
+    if (contentKey(a) === contentKey(b)) return a;
     return contentKey(a) >= contentKey(b) ? a : b;
 }
 

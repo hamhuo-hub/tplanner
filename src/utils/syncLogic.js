@@ -20,13 +20,7 @@ export function normalizeServerUrl(url) {
 // events / goals / journals 底层结构不同（数组 vs 以日期为键的对象，字段名也不同），
 // 但同步真正关心的只是同一组属性：唯一标识、净荷内容、最后修改时间、软删除标记。
 // 把三者统一映射成 { id, payload, updatedAt, deletedAt } 后，可以共用同一套
-// 比较 / 合并 / 冲突分析核心——不必再为每种数据各写一份、且要求彼此保持一致的
-// 合并代码（这正是早先 journals/goals 漏同步、合并逻辑各自实现却又必须"逐字
-// 一致"这整类 bug 的根源）。
-//
-// pickEntity / mergeEntities / analyzeEntities 是跨设备共享的核心比较逻辑，
-// 必须与 sync-server/server.js 中的同名实现逐字一致：否则两端在"打破平局"时
-// 可能选出不同的胜者，导致永远收敛不到同一结果（死锁式分歧）。
+// 比较 / 合并 / 冲突分析核心。
 
 export function isAlive(e) { return !e.deletedAt; }
 
@@ -34,7 +28,6 @@ export function isAlive(e) { return !e.deletedAt; }
 // JSON.stringify 的输出依赖对象键的插入顺序：同一条记录，本地（RxDB 读出）和
 // 远端（安卓端 org.json 写出）的键序不同，字节串就不同——即使内容完全一致。
 // 内容比较必须用键按字典序排序的稳定序列化，否则"相同内容"永远判不相等。
-// 安卓端 LanSyncManager.tieKey 手工拼出与此逐字一致的字符串，改这里必须同步改那里。
 export function stableStringify(v) {
     if (v === undefined) return undefined;
     if (v === null || typeof v !== 'object') return JSON.stringify(v);
@@ -48,17 +41,7 @@ export function stableStringify(v) {
     return '{' + parts.join(',') + '}';
 }
 
-// ── 事件/目标的规范形（canonical form）──────────────────────────────────────
-// 同一条记录在不同端的表示会漂移：桌面端 Date.toISOString() 带毫秒而安卓端
-// Instant.toString() 不带；安卓端不认识的可选字段会被丢掉；桌面端落盘时又会
-// 补默认值。这些"表示差异"在字节比较下全是"内容不同"——updatedAt 相同、内容
-// 也相同的记录被判为冲突，平局裁决永远选中对端版本，而本地落盘后又变回自己
-// 的表示，于是同一批记录每次同步都显示"将被覆盖"，永不收敛。
-// 因此进入比较/合并前先统一成规范形：时间统一为带毫秒的 ISO、可选字段统一补
-// 默认值。合并输出也是规范形——推给服务器和写入本地的是同一份数据，服务器上
-// 的旧格式副本会在下一次合并时被规范形自然替换（自愈）。
-// 注意：这里的默认值必须与 App.jsx onMergeEvents/onMergeGoals 落盘时补的默认值
-// 保持一致，否则"落盘的"和"比较的"又会漂移出新的差异。
+// ── 规范形（canonical form）──────────────────────────────────────────────────
 const toIsoMs = (v) => {
     const t = new Date(v).getTime();
     return Number.isFinite(t) ? new Date(t).toISOString() : v;
@@ -99,11 +82,11 @@ function contentKey(e) {
     return stableStringify({ payload: e?.payload, deletedAt: e?.deletedAt ?? null });
 }
 
-// updatedAt 相同时（典型情况：旧版迁移记录、或两端在同一毫秒各自独立创建/编辑），
-// 用与"谁是 local/remote"无关的确定性方式选出胜者，保证两端最终收敛一致。
+// ── 纯内容裁决 —— 不依赖壁钟（updatedAt）─────────────────────────────────────
+// 内容相同即同一版本；内容不同时用确定性 content-key 打破平局，
+// 保证所有端独立得出相同结论。必须与 sync-server/server.js 中的同名实现逐字一致。
 export function pickEntity(a, b) {
-    const au = a?.updatedAt || 0, bu = b?.updatedAt || 0;
-    if (au !== bu) return au > bu ? a : b;
+    if (contentKey(a) === contentKey(b)) return a;
     return contentKey(a) >= contentKey(b) ? a : b;
 }
 
@@ -116,8 +99,10 @@ export function mergeEntities(local, remote) {
     return Array.from(map.values());
 }
 
-// 冲突分析（updatedAt-wins + tombstone 感知 + 平局打破，与 mergeEntities 共用
-// 同一套胜负判定，保证"预览看到的结果"与"实际合并的结果"完全一致）。
+// ── 冲突分析（content-first + tombstone 感知）────────────────────────────────
+// 内容相同 → synced。内容不同时：
+//   - 一端已删除 → deleted（tombstone 自动传播，删除意图明确）
+//   - 两端都存活 → conflicted（用户手动裁决，不做时间戳自动覆盖）
 export function analyzeEntities(local, remote) {
     const localMap  = new Map(local.map(e  => [e.id, e]));
     const remoteMap = new Map(remote.map(e => [e.id, e]));
@@ -127,18 +112,17 @@ export function analyzeEntities(local, remote) {
         const le = localMap.get(id);
         if (!le) {
             if (isAlive(re)) results.added.push(re);
-            continue; // remote tombstone for unknown id — no-op
+            continue;
         }
-        const lu = le.updatedAt || 0, ru = re.updatedAt || 0;
-        if (lu === ru) {
-            if (contentKey(le) === contentKey(re)) { results.synced.push(le); continue; }
-        }
-        if (pickEntity(le, re) === re) {
-            if (!isAlive(re) && isAlive(le)) results.deleted.push({ local: le, remote: re }); // remote deleted it
-            else results.updated.push({ local: le, remote: re });
+        // 内容相同 → 已同步（不依赖 updatedAt）
+        if (contentKey(le) === contentKey(re)) { results.synced.push(le); continue; }
+        // 内容不同 → tombstone 自动传播，其余交用户裁决
+        if (!isAlive(re) && isAlive(le)) {
+            results.deleted.push({ local: le, remote: re });
+        } else if (!isAlive(le) && isAlive(re)) {
+            results.deleted.push({ local: le, remote: re });
         } else {
-            if (!isAlive(le) && isAlive(re)) results.deleted.push({ local: le, remote: re }); // local deleted it (local wins)
-            else results.conflicted.push({ local: le, remote: re });
+            results.conflicted.push({ local: le, remote: re });
         }
     }
     for (const [id, le] of localMap) {
@@ -148,10 +132,6 @@ export function analyzeEntities(local, remote) {
 }
 
 // ── 各数据类型 ↔ 统一实体 的适配层 ───────────────────────────────────────────
-// events/goals 本身已是 { id, updatedAt, deletedAt, ... } 的数组，规范形整条记录
-// 即 payload；journals 以日期为键、条目为 { text, updatedAt, deletedAt }，日期本身
-// 就是 id。fromEntity 对 events/goals 直接还原（规范形）对象；journalFromEntity
-// 额外把 id 还原成 date 字段。
 const toEventEntity   = e => ({ id: e.id, payload: canonicalEvent(e), updatedAt: e.updatedAt || 0, deletedAt: e.deletedAt || null });
 const toGoalEntity    = g => ({ id: g.id, payload: canonicalGoal(g),  updatedAt: g.updatedAt || 0, deletedAt: g.deletedAt || null });
 const toJournalEntity = (date, entry) => ({ id: date, payload: entry || {}, updatedAt: entry?.updatedAt || 0, deletedAt: entry?.deletedAt ?? null });
@@ -171,26 +151,7 @@ export function analyzeJournalConflict(local, remote) {
     return convertResults(analyzeEntities(journalEntries(local), journalEntries(remote)), journalFromEntity);
 }
 
-// 统计「将被对端覆盖」的事件中，子任务（checklist）发生变化的数量 —— 仅计数，不展开列表
-export function countSubtaskChanges(updated) {
-    let events = 0, items = 0;
-    for (const { local: l, remote: r } of updated) {
-        const lm = new Map((l.checklist || []).map(i => [i.id, i]));
-        const rm = new Map((r.checklist || []).map(i => [i.id, i]));
-        let changed = 0;
-        for (const id of new Set([...lm.keys(), ...rm.keys()])) {
-            const li = lm.get(id), ri = rm.get(id);
-            if (!li || !ri || li.text !== ri.text || li.completed !== ri.completed) changed++;
-        }
-        if (changed > 0) { events++; items += changed; }
-    }
-    return { events, items };
-}
-
-// ── 合并算法（updatedAt-wins + tombstone 感知 + 平局打破）────────────────────
-// events/goals/journals 三者现在都通过统一实体走同一条 mergeEntities 路径，
-// 删除会写入 deletedAt+updatedAt，因此删除记录在合并时会和"更早"的存活记录
-// 正常竞争，不会被回环恢复。
+// ── 合并算法（纯内容裁决）────────────────────────────────────────────────────
 export function mergeEvents(local, remote) {
     return mergeEntities(local.map(toEventEntity), remote.map(toEventEntity)).map(fromEntity);
 }
@@ -207,11 +168,6 @@ export function mergeJournals(local, remote) {
 }
 
 // ── 时钟校准 ─────────────────────────────────────────────────────────────────
-// 设备间时钟不一致会让 updatedAt-wins 合并失去意义——时钟偏快的设备能
-// 永久覆盖偏慢的设备，与编辑的实际先后顺序无关。每次同步前向对端请求
-// 当前时间，估算本机时钟相对对端的偏移量并写入共享的 clock 模块；
-// 之后所有新建的 updatedAt/deletedAt 改用 now()，得到的时间戳就近似
-// 对端（同步服务器）的时钟，使跨设备时间戳重新具备可比性。
 export async function syncClockOffset(base) {
     try {
         const t0 = Date.now();
@@ -222,18 +178,11 @@ export async function syncClockOffset(base) {
         if (!Number.isFinite(peerNow)) return;
         const rtt = t1 - t0;
         setClockOffset((peerNow + rtt / 2) - t1);
-    } catch (_) { /* clock sync is best-effort; fall back to local clock (offset 0) */ }
+    } catch (_) { /* clock sync is best-effort */ }
 }
 
 // ── SyncAdapter — 可组合的同步数据源抽象 ─────────────────────────────────────
-// 每种需要同步的数据类型只需提供一个 adapter（实现 toEntity / fromEntity /
-// localToEntities / entitiesToLocal），sync 引擎不关心数据形状。
-// 核心的 compare / merge / analyze 全部复用已有的统一实体引擎。
-//
-// 旧函数 analyzeConflict / mergeEvents 等仍导出以维持向后兼容，
-// 新代码应直接使用 createSyncAdapter + fetchAndAnalyze + syncAndPush。
 
-/** 把 analyzeEntities 的结果通过 toDisplay 还原为本地展示形状 */
 export function convertResults(results, toDisplay) {
     const pair = p => ({ local: toDisplay(p.local), remote: toDisplay(p.remote) });
     return {
@@ -246,28 +195,17 @@ export function convertResults(results, toDisplay) {
     };
 }
 
-/**
- * createSyncAdapter(config) — 构建一个同步数据源描述符。
- *
- * @param {Object} config
- * @param {string} config.type         - 类型名，如 'events' / 'goals' / 'journals' / 'insights'
- * @param {string} config.endpoint     - 服务端路径，如 '/tplanner/events'
- * @param {boolean}[config.isRequired] - 核心数据（失败阻断），默认 false
- * @param {string}[config.unitName]    - UI 量词，如 '条' / '篇' / '个'
- * @param {(item)=>Entity} config.toEntity       - 单条 → 统一实体
- * @param {(entity)=>item} config.fromEntity     - 统一实体 → 单条
- * @param {(local)=>Entity[]}[config.localToEntities]  - 本地数据 → 统一实体数组
- * @param {(Entity[])=>local}[config.entitiesToLocal]  - 统一实体数组 → 本地数据
- * @param {(item)=>string}[config.itemLabel]     - 冲突预览中的单条描述
- */
 export function createSyncAdapter(config) {
     const { type, endpoint, isRequired = false, unitName = '条',
-            toEntity, fromEntity, localToEntities, entitiesToLocal, itemLabel } = config;
+            toEntity, fromEntity, localToEntities, entitiesToLocal, itemLabel,
+            remoteToEntities } = config;
 
     const _localToEntities = localToEntities || (local =>
         (Array.isArray(local) ? local : []).map(toEntity));
     const _entitiesToLocal = entitiesToLocal || (entities =>
         entities.map(fromEntity));
+    const _remoteToEntities = remoteToEntities || (remote =>
+        (Array.isArray(remote) ? remote : []).map(toEntity));
 
     return {
         type, endpoint, isRequired, unitName,
@@ -276,26 +214,20 @@ export function createSyncAdapter(config) {
         entitiesToLocal: _entitiesToLocal,
         itemLabel: itemLabel || (item => item?.title ?? item?.text ?? ''),
 
-        /** 冲突分析：返回 { added, removed, updated, deleted, synced, conflicted } */
         analyze(local, remote) {
             const locs = _localToEntities(local);
-            const rems = (Array.isArray(remote) ? remote : []).map(toEntity);
+            const rems = _remoteToEntities(remote);
             return convertResults(analyzeEntities(locs, rems), fromEntity);
         },
 
-        /** 合并：返回合并后的本地格式数据 */
         merge(local, remote) {
             const locs = _localToEntities(local);
-            const rems = (Array.isArray(remote) ? remote : []).map(toEntity);
+            const rems = _remoteToEntities(remote);
             return _entitiesToLocal(mergeEntities(locs, rems));
         },
     };
 }
 
-/**
- * 对单个 adapter 执行同步预览：拉取远端 + 冲突分析（不合并，不写本地）。
- * @returns {{ adapter, remoteData, analysis } | null}
- */
 export async function fetchAndAnalyze(adapter, serverUrl, localData) {
     try {
         const res = await fetch(`${serverUrl}${adapter.endpoint}`, {
@@ -308,10 +240,6 @@ export async function fetchAndAnalyze(adapter, serverUrl, localData) {
     } catch (_) { return null; }
 }
 
-/**
- * 对单个 adapter 执行完整同步合并：拉取 → 合并 → 推送 → 返回本地格式数据。
- * @returns {any | null} 合并后的本地格式数据；失败返回 null
- */
 export async function syncAndPush(adapter, serverUrl, localData) {
     const base = normalizeServerUrl(serverUrl);
     try {
@@ -331,8 +259,7 @@ export async function syncAndPush(adapter, serverUrl, localData) {
     } catch (_) { return null; }
 }
 
-// ── 内联 fallback adapters（供旧调用路径 resolveAdapters 使用）──────────────
-// 新代码应从 src/sync/*Adapter.js import 并在 App.jsx 中组装 adapters[]。
+// ── 内联 fallback adapters ──────────────────────────────────────────────────
 
 const _eventsAdapter = createSyncAdapter({
     type: 'events', endpoint: '/tplanner/events', isRequired: true, unitName: '条',
@@ -353,6 +280,10 @@ const _journalsAdapter = createSyncAdapter({
     toEntity:   ([date, entry]) => ({ id: date, payload: entry || {}, updatedAt: entry?.updatedAt || 0, deletedAt: entry?.deletedAt ?? null }),
     fromEntity: e => ({ date: e.id, ...e.payload }),
     localToEntities(obj) {
+        return Object.entries(obj || {}).map(([date, entry]) =>
+            ({ id: date, payload: entry || {}, updatedAt: entry?.updatedAt || 0, deletedAt: entry?.deletedAt ?? null }));
+    },
+    remoteToEntities(obj) {
         return Object.entries(obj || {}).map(([date, entry]) =>
             ({ id: date, payload: entry || {}, updatedAt: entry?.updatedAt || 0, deletedAt: entry?.deletedAt ?? null }));
     },
