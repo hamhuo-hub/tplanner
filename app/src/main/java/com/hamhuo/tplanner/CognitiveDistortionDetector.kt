@@ -1,13 +1,13 @@
 package com.hamhuo.tplanner
 
-// 本地关键词规则引擎：纯本地运算，零延迟，零网络。
-// 基于 SocialCD-3K 数据集 + Burns 12 类认知扭曲的中文特征词。
-// 用于 AnxietyInputSheet 中的实时芯片高亮提示，不作为最终分类结果。
+// Local keyword rule engine: pure local computation, zero latency, zero network.
+// Based on SocialCD-3K dataset + Burns 12 cognitive distortion types with Chinese feature words.
+// Used for real-time chip highlight hints in AnxietyInputSheet, not as the final classification result.
 object CognitiveDistortionDetector {
 
     data class DistortionCandidate(
         val type: DistortionType,
-        val matchCount: Int,          // 匹配到的关键词数
+        val matchCount: Int,          // Number of matched keywords
         val matchedKeywords: List<String>,
     )
 
@@ -23,7 +23,7 @@ object CognitiveDistortionDetector {
                 matchedKeywords = matched,
             )
         }
-        // 按匹配数降序，至少匹配一个关键词才返回
+        // Sort by match count descending, only return if at least one keyword matched
         return results.filter { it.matchCount > 0 }
             .sortedByDescending { it.matchCount }
     }

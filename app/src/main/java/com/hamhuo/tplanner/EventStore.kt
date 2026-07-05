@@ -84,40 +84,41 @@ class EventStore(ctx: Context) {
         )
     }
 
-    private fun TaskEvent.toJson(): JSONObject {
-        val obj = JSONObject()
-        extras.forEach { (k, v) -> obj.put(k, v) }
-        obj.put("id", id)
-        obj.put("title", title)
-        obj.put("type", type)
-        // 与桌面端 Date.toISOString() 逐字一致：恒带毫秒的 UTC ISO。
-        // Instant.toString() 在毫秒为零时会省略小数部分，两端字节不一致
-        // 会被同步比较判为"内容不同"，是同步永不收敛的根源之一。
-        obj.put("start", ISO_MS.format(start))
-        obj.put("end", ISO_MS.format(end))
-        obj.put("completed", completed)
-        obj.put("colorId", colorId)
-        obj.put("note", note)
-        obj.put("deletedAt", deletedAt)
-        obj.put("updatedAt", updatedAt)
-        val arr = JSONArray()
-        checklist.forEach { item ->
-            val o = JSONObject()
-            o.put("id", item.id); o.put("text", item.text); o.put("completed", item.completed)
-            arr.put(o)
-        }
-        obj.put("checklist", arr)
-        return obj
-    }
-
     companion object {
         private val KNOWN_KEYS = setOf(
             "id", "title", "type", "start", "end", "completed",
             "checklist", "colorId", "note", "deletedAt", "updatedAt",
         )
-        private val ISO_MS: DateTimeFormatter =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC)
     }
+}
+
+internal val ISO_MS: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC)
+
+// 与桌面端 Date.toISOString() 逐字一致：恒带毫秒的 UTC ISO。
+// Instant.toString() 在毫秒为零时会省略小数部分，两端字节不一致
+// 会被同步比较判为"内容不同"，是同步永不收敛的根源之一。
+internal fun TaskEvent.toJson(): JSONObject {
+    val obj = JSONObject()
+    extras.forEach { (k, v) -> obj.put(k, v) }
+    obj.put("id", id)
+    obj.put("title", title)
+    obj.put("type", type)
+    obj.put("start", ISO_MS.format(start))
+    obj.put("end", ISO_MS.format(end))
+    obj.put("completed", completed)
+    obj.put("colorId", colorId)
+    obj.put("note", note)
+    obj.put("deletedAt", deletedAt)
+    obj.put("updatedAt", updatedAt)
+    val arr = JSONArray()
+    checklist.forEach { item ->
+        val o = JSONObject()
+        o.put("id", item.id); o.put("text", item.text); o.put("completed", item.completed)
+        arr.put(o)
+    }
+    obj.put("checklist", arr)
+    return obj
 }
 
 fun List<TaskEvent>.forToday(): List<TaskEvent> = forDate(LocalDate.now())

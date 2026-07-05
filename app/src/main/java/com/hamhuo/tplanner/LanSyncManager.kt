@@ -3,6 +3,7 @@ package com.hamhuo.tplanner
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -12,6 +13,7 @@ class LanSyncManager(
     private val context: Context,
     private val store: JournalStore,
     private val eventStore: EventStore? = null,
+    private val insightStore: InsightStore? = null,
 ) {
 
     sealed class SyncResult {
@@ -29,17 +31,50 @@ class LanSyncManager(
         prefs.edit().putString(KEY_SERVER_URL, normalized.ifBlank { DEFAULT_SERVER_URL }).apply()
     }
 
-    // 拉取远端事件、与本地合并（updatedAt-wins）、把合并结果推回并落盘。
-    // 勾选/删除等本地改动也通过这条全量合并路径传播（本地改动带着更新的
-    // updatedAt，合并时获胜），服务端只需要 GET/PUT 两个端点。
+    // ── base 快照持久化（id → contentKey）─────────────────────────────────
+    // 每次成功同步后保存合并结果的 contentKey；下次同步时据此做三方对比
+    //（本地 vs base vs 远端），区分"只有一边改了"与"两边都改了"。
+    // 与 PC 端 src/hooks/useLanSync.js 的 loadBaseKeys / saveBaseKeys 一致。
+    private fun loadBaseKeys(type: String): Map<String, String>? {
+        val json = prefs.getString("sync_base_$type", null) ?: return null
+        return try {
+            val obj = JSONObject(json)
+            buildMap { obj.keys().forEach { k -> put(k, obj.getString(k)) } }
+        } catch (_: Exception) { null }
+    }
+
+    private fun saveBaseKeys(type: String, keys: Map<String, String>) {
+        val obj = JSONObject()
+        keys.forEach { (k, v) -> obj.put(k, v) }
+        prefs.edit().putString("sync_base_$type", obj.toString()).apply()
+    }
+
+    // ── 内容比较键（base 快照用；需与服务器/PC 端 contentKey 同义）────────
+    // 各类型的 contentKey 只需对相同内容产生相同字符串即可，不必与 JS 端
+    // stableStringify 逐字一致——Android 只跟自己的快照比较，不跨端比较。
+
+    private fun TaskEvent.contentKey(): String = toJson().toString()
+
+    private fun JournalEntry.contentKey(): String = tieKey()
+
+    private fun StructuredEntry.contentKey(): String = toJson().toString()
+
+    private fun DayReport.contentKey(): String = toJson().toString()
+
+    // 拉取远端事件、与本地做三方合并（本地 vs base 快照 vs 远端）、
+    // 把合并结果推回并落盘。勾选/删除等本地改动也通过这条全量合并路径传播
+    //（本地改动带着更新的 updatedAt，合并时获胜），服务端只需要 GET/PUT。
     suspend fun fetchEvents(serverUrl: String): List<TaskEvent> = withContext(Dispatchers.IO) {
         try {
             val base         = normalizeServerUrl(serverUrl)
             val store_       = eventStore ?: return@withContext emptyList()
+            val localEvents  = store_.getAll()
             val remoteEvents = store_.fromJson(httpGet("$base/tplanner/events"))
-            val merged       = mergeEvents(store_.getAll(), remoteEvents)
+            val baseKeys     = loadBaseKeys("events")
+            val merged       = mergeEventsWithBase(localEvents, remoteEvents, baseKeys)
             httpPut("$base/tplanner/events", store_.toJson(merged))
             store_.saveAll(merged)
+            saveBaseKeys("events", merged.associate { it.id to it.contentKey() })
             merged
         } catch (_: Exception) {
             eventStore?.getAll() ?: emptyList()
@@ -49,14 +84,59 @@ class LanSyncManager(
     suspend fun syncJournals(serverUrl: String): SyncResult = withContext(Dispatchers.IO) {
         try {
             val base           = normalizeServerUrl(serverUrl)
+            val localJournals  = store.getAll()
             val remoteJournals = store.fromJson(httpGet("$base/tplanner/journals"))
-            val merged         = mergeJournals(store.getAll(), remoteJournals)
+            val baseKeys       = loadBaseKeys("journals")
+            val merged         = mergeJournalsWithBase(localJournals, remoteJournals, baseKeys)
             httpPut("$base/tplanner/journals", store.toJson(merged))
             store.saveAll(merged)
+            saveBaseKeys("journals", merged.mapValues { it.value.contentKey() })
             SyncResult.Success(store.getToday())
         } catch (e: Exception) {
             SyncResult.Error(e.message ?: context.getString(R.string.unknown_error))
         }
+    }
+
+    // ── 洞察数据同步 ──────────────────────────────────────────────────────
+    // 焦虑记录（StructuredEntry，按 id 合并）+ 日终报告（DayReport，按日期合并），
+    // 线格式 { entries: [...], reports: {date: {...}} }，与服务器/桌面端一致。
+    // 三方合并（base 快照）：有基线时按"仅本地改/仅远端改/两边都改"裁决；
+    // 无基线时回退 updatedAt LWW + 内容键平局。失败静默。
+    suspend fun syncInsights(serverUrl: String): Boolean = withContext(Dispatchers.IO) {
+        val ist = insightStore ?: return@withContext true
+        try {
+            val base = normalizeServerUrl(serverUrl)
+            val remote = JSONObject(httpGet("$base/tplanner/insights"))
+
+            val remoteEntries = mutableListOf<StructuredEntry>()
+            remote.optJSONArray("entries")?.let { arr ->
+                for (i in 0 until arr.length()) arr.getJSONObject(i).toStructuredEntry()?.let { remoteEntries += it }
+            }
+            val remoteReports = mutableMapOf<String, DayReport>()
+            remote.optJSONObject("reports")?.let { obj ->
+                obj.keys().forEach { d ->
+                    obj.optJSONObject(d)?.toDayReport()?.let { remoteReports[d] = it }
+                }
+            }
+
+            val localEntries = ist.getAllEventsRaw()
+            val localReports = ist.getAllReportsRaw()
+            val entryBaseKeys = loadBaseKeys("insights_entries")
+            val reportBaseKeys = loadBaseKeys("insights_reports")
+
+            val mergedEntries = mergeEntriesWithBase(localEntries, remoteEntries, entryBaseKeys)
+            val mergedReports = mergeReportsWithBase(localReports, remoteReports, reportBaseKeys)
+
+            val body = JSONObject().apply {
+                put("entries", org.json.JSONArray().apply { mergedEntries.forEach { put(it.toJson()) } })
+                put("reports", JSONObject().apply { mergedReports.forEach { (d, r) -> put(d, r.toJson()) } })
+            }.toString()
+            httpPut("$base/tplanner/insights", body)
+            ist.replaceAllFromSync(mergedEntries, mergedReports)
+            saveBaseKeys("insights_entries", mergedEntries.associate { it.id to it.contentKey() })
+            saveBaseKeys("insights_reports", mergedReports.mapValues { it.value.contentKey() })
+            true
+        } catch (_: Exception) { false }
     }
 
     // updatedAt 较大者获胜（与 sync-server / PC 端保持一致）；删除是携带更新
@@ -105,27 +185,117 @@ class LanSyncManager(
         return sb.toString()
     }
 
-    private fun mergeJournals(local: Map<String, JournalEntry>, remote: Map<String, JournalEntry>): Map<String, JournalEntry> {
-        val result = local.toMutableMap()
-        remote.forEach { (date, entry) ->
-            val existing = result[date]
-            result[date] = if (existing == null) entry else pickEntry(existing, entry)
+    // ── 三方合并（事件）──────────────────────────────────────────────────
+    // baseKeys: 上次同步后的 { id → contentKey } 快照；null 时回退纯 LWW。
+    private fun mergeEventsWithBase(
+        local: List<TaskEvent>, remote: List<TaskEvent>, baseKeys: Map<String, String>?
+    ): List<TaskEvent> {
+        val localMap  = local.associateBy { it.id }
+        val remoteMap = remote.associateBy { it.id }
+        val allIds    = LinkedHashSet(localMap.keys).apply { addAll(remoteMap.keys) }
+        return allIds.map { id ->
+            val le = localMap[id]; val re = remoteMap[id]
+            when {
+                le == null -> re!!
+                re == null -> le
+                else -> pickEventWithBase(le, re, baseKeys?.get(id))
+            }
+        }
+    }
+
+    // updatedAt 较大者胜；时间戳相同时按内容键做确定性裁决。
+    // 有基线时：仅本地改 → 保留本地；仅远端改 → 采用远端；两边都改 → LWW。
+    // 这与 PC 端 mergeEntitiesWithBase 的无人工裁决路径等价。
+    private fun pickEventWithBase(a: TaskEvent, b: TaskEvent, baseKey: String?): TaskEvent {
+        val ak = a.contentKey(); val bk = b.contentKey()
+        if (ak == bk) return a
+        if (baseKey != null) {
+            if (ak == baseKey) return b   // 仅远端改
+            if (bk == baseKey) return a   // 仅本地改
+            // 两边都改 → 回退 LWW
+        }
+        if (a.updatedAt != b.updatedAt) return if (a.updatedAt > b.updatedAt) a else b
+        // 平局：取远端（服务器已做确定性裁决）；若远端即本地（同源）则无所谓
+        return b
+    }
+
+    // ── 三方合并（日志）──────────────────────────────────────────────────
+    private fun mergeJournalsWithBase(
+        local: Map<String, JournalEntry>, remote: Map<String, JournalEntry>,
+        baseKeys: Map<String, String>?
+    ): Map<String, JournalEntry> {
+        val allKeys = LinkedHashSet(local.keys).apply { addAll(remote.keys) }
+        val result = LinkedHashMap<String, JournalEntry>()
+        for (date in allKeys) {
+            val le = local[date]; val re = remote[date]
+            result[date] = when {
+                le == null -> re!!
+                re == null -> le
+                else -> pickJournalWithBase(le, re, baseKeys?.get(date))
+            }
         }
         return result
     }
 
-    // updatedAt 较大者获胜；时间戳相同时取远端（服务器）版本——服务器端对
-    // 平局按规范形内容做确定性裁决（见 sync-server/server.js pickEntity），
-    // 安卓端不重复实现那套序列化，直接跟随服务器已选定的胜者，保证三端收敛。
-    private fun mergeEvents(local: List<TaskEvent>, remote: List<TaskEvent>): List<TaskEvent> {
-        val map = local.associateByTo(LinkedHashMap()) { it.id }
-        remote.forEach { e ->
-            val existing = map[e.id]
-            if (existing == null || e.updatedAt >= existing.updatedAt) {
-                map[e.id] = e
+    // 对日志而言 contentKey 即 tieKey()，已与 JS 端 stableStringify 逐字一致。
+    private fun pickJournalWithBase(a: JournalEntry, b: JournalEntry, baseKey: String?): JournalEntry {
+        val ak = a.contentKey(); val bk = b.contentKey()
+        if (ak == bk) return a
+        if (baseKey != null) {
+            if (ak == baseKey) return b   // 仅远端改
+            if (bk == baseKey) return a   // 仅本地改
+        }
+        return pickEntry(a, b)  // 两边都改（或无基线）→ LWW + 确定性平局
+    }
+
+    // ── 三方合并（洞察条目 / 报告）────────────────────────────────────────
+    private fun mergeEntriesWithBase(
+        local: List<StructuredEntry>, remote: List<StructuredEntry>,
+        baseKeys: Map<String, String>?
+    ): List<StructuredEntry> {
+        val localMap  = local.associateBy { it.id }
+        val remoteMap = remote.associateBy { it.id }
+        val allIds    = LinkedHashSet(localMap.keys).apply { addAll(remoteMap.keys) }
+        return allIds.map { id ->
+            val le = localMap[id]; val re = remoteMap[id]
+            when {
+                le == null -> re!!
+                re == null -> le
+                else -> pickInsightWithBase(le, re, baseKeys?.get(id))
             }
         }
-        return map.values.toList()
+    }
+
+    private fun mergeReportsWithBase(
+        local: Map<String, DayReport>, remote: Map<String, DayReport>,
+        baseKeys: Map<String, String>?
+    ): Map<String, DayReport> {
+        val allKeys = LinkedHashSet(local.keys).apply { addAll(remote.keys) }
+        val result = LinkedHashMap<String, DayReport>()
+        for (date in allKeys) {
+            val le = local[date]; val re = remote[date]
+            result[date] = when {
+                le == null -> re!!
+                re == null -> le
+                else -> pickInsightWithBase(le, re, baseKeys?.get(date))
+            }
+        }
+        return result
+    }
+
+    private fun <T> pickInsightWithBase(a: T, b: T, baseKey: String?) where T : Any {
+        val ak = when (a) { is StructuredEntry -> a.contentKey(); is DayReport -> a.contentKey(); else -> null } ?: return b
+        val bk = when (b) { is StructuredEntry -> b.contentKey(); is DayReport -> b.contentKey(); else -> null } ?: return a
+        if (ak == bk) return a
+        if (baseKey != null) {
+            if (ak == baseKey) return b   // 仅远端改
+            if (bk == baseKey) return a   // 仅本地改
+        }
+        // 回退 LWW：updatedAt 较大者胜；平局取远端（服务器确定性裁决）
+        val au = when (a) { is StructuredEntry -> a.updatedAt; is DayReport -> a.updatedAt; else -> 0L }
+        val bu = when (b) { is StructuredEntry -> b.updatedAt; is DayReport -> b.updatedAt; else -> 0L }
+        if (au != bu) return if (au > bu) a else b
+        return b
     }
 
     private fun httpGet(url: String): String {

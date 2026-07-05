@@ -8,24 +8,31 @@ import java.time.LocalDate
 import java.util.UUID
 import kotlin.math.roundToInt
 
-// 统计存储：独立于 JournalStore，用独立的 SharedPreferences 文件。
-// 存两类数据：
-//   1) 每个焦虑事件的结构化记录（思维钢印标签、强度、时间、位置）
-//   2) 每日日终报告
+// Statistics store: independent of JournalStore, uses a separate SharedPreferences file.
+// Stores two types of data:
+//   1) Structured records for each anxiety event (distortion labels, intensity, time, location)
+//   2) End-of-day reports
 //
-// 数据结构：
+// Data structure:
 //   KEY_EVENTS_dd → JSONArray of StructuredEntry
 //   KEY_REPORT_dd → JSONObject DayReport
 class InsightStore(context: Context) {
 
     private val prefs = context.getSharedPreferences("tplanner_insights", Context.MODE_PRIVATE)
 
-    // ── 事件存取 ──────────────────────────────────────────────────────────
+    // Atomicity guard for read-modify-write sequences (UI main thread writes vs sync thread full replacements)
+    private val lock = Any()
+
+    // ── Event access ─────────────────────────────────────────────────────
+    // getEvents returns only live records (for UI/stats); sync uses getAllEventsRaw to get everything including tombstones.
 
     fun getTodayEvents(): List<StructuredEntry> =
         getEvents(LocalDate.now().toString())
 
-    fun getEvents(date: String): List<StructuredEntry> {
+    fun getEvents(date: String): List<StructuredEntry> =
+        getEventsRaw(date).filter { it.deletedAt == 0L }
+
+    private fun getEventsRaw(date: String): List<StructuredEntry> {
         val json = prefs.getString("$KEY_EVENTS$date", null) ?: return emptyList()
         return try {
             val arr = JSONArray(json)
@@ -36,21 +43,27 @@ class InsightStore(context: Context) {
     }
 
     fun addEvent(entry: StructuredEntry) {
-        val date = epochToDate(entry.timestamp)
-        val existing = getEvents(date).toMutableList()
-        // 防止重复：同 id 不重复添加
-        if (existing.any { it.id == entry.id }) return
-        existing.add(entry)
-        saveEvents(date, existing)
+        synchronized(lock) {
+            val date = epochToDate(entry.timestamp)
+            val existing = getEventsRaw(date).toMutableList()
+            // Prevent duplicates: skip if id already exists
+            if (existing.any { it.id == entry.id }) return
+            // Stamp modification time: basis for LWW merge win/loss
+            existing.add(if (entry.updatedAt == 0L) entry.copy(updatedAt = System.currentTimeMillis()) else entry)
+            saveEvents(date, existing)
+        }
     }
 
     fun updateEvent(updated: StructuredEntry) {
-        val date = epochToDate(updated.timestamp)
-        val list = getEvents(date).map { if (it.id == updated.id) updated else it }
-        saveEvents(date, list)
+        synchronized(lock) {
+            val date = epochToDate(updated.timestamp)
+            val stamped = updated.copy(updatedAt = System.currentTimeMillis())
+            val list = getEventsRaw(date).map { if (it.id == updated.id) stamped else it }
+            saveEvents(date, list)
+        }
     }
 
-    // ── 统计查询 ──────────────────────────────────────────────────────────
+    // ── Statistics queries ───────────────────────────────────────────────
 
     fun getDistortionCounts(date: String): Map<String, Int> {
         val events = getEvents(date)
@@ -91,7 +104,7 @@ class InsightStore(context: Context) {
         return slots.maxByOrNull { it.value.size }?.key ?: ""
     }
 
-    // 最近 N 天某个地点的焦虑事件次数
+    // Anxiety event count at a specific location in the last N days
     fun getLocationFrequency(location: String, days: Int = 7): Int {
         var count = 0
         val today = LocalDate.now()
@@ -102,20 +115,55 @@ class InsightStore(context: Context) {
         return count
     }
 
-    // ── 日终报告 ──────────────────────────────────────────────────────────
+    // ── End-of-day report ────────────────────────────────────────────────
 
     fun getDayReport(date: String): DayReport? {
         val json = prefs.getString("$KEY_REPORT$date", null) ?: return null
-        return try { JSONObject(json).toDayReport() } catch (_: Exception) { null }
+        return try { JSONObject(json).toDayReport()?.takeIf { it.deletedAt == 0L } } catch (_: Exception) { null }
     }
 
     fun saveDayReport(report: DayReport) {
-        prefs.edit().putString("$KEY_REPORT${report.date}", report.toJson().toString()).apply()
+        synchronized(lock) {
+            val stamped = report.copy(updatedAt = System.currentTimeMillis())
+            prefs.edit().putString("$KEY_REPORT${report.date}", stamped.toJson().toString()).apply()
+        }
     }
 
     fun getTodayReport(): DayReport? = getDayReport(LocalDate.now().toString())
 
-    // ── 监听器（复用 JournalStore 的模式） ─────────────────────────────────
+    // ── Sync API (used by LanSyncManager) ────────────────────────────────
+    // Full dump including tombstones; writes use commit() (sync is a full overwrite, data loss on process kill is unacceptable).
+
+    fun getAllEventsRaw(): List<StructuredEntry> = synchronized(lock) {
+        prefs.all.keys.filter { it.startsWith(KEY_EVENTS) }
+            .flatMap { key -> getEventsRaw(key.removePrefix(KEY_EVENTS)) }
+    }
+
+    fun getAllReportsRaw(): Map<String, DayReport> = synchronized(lock) {
+        buildMap {
+            prefs.all.keys.filter { it.startsWith(KEY_REPORT) }.forEach { key ->
+                val json = prefs.getString(key, null) ?: return@forEach
+                try { JSONObject(json).toDayReport()?.let { put(it.date, it) } } catch (_: Exception) {}
+            }
+        }
+    }
+
+    fun replaceAllFromSync(entries: List<StructuredEntry>, reports: Map<String, DayReport>) {
+        synchronized(lock) {
+            val editor = prefs.edit()
+            prefs.all.keys.filter { it.startsWith(KEY_EVENTS) || it.startsWith(KEY_REPORT) }
+                .forEach { editor.remove(it) }
+            entries.groupBy { epochToDate(it.timestamp) }.forEach { (date, list) ->
+                val arr = JSONArray()
+                list.forEach { arr.put(it.toJson()) }
+                editor.putString("$KEY_EVENTS$date", arr.toString())
+            }
+            reports.forEach { (date, r) -> editor.putString("$KEY_REPORT$date", r.toJson().toString()) }
+            editor.commit()
+        }
+    }
+
+    // ── Listeners (reusing JournalStore's pattern) ───────────────────────
 
     fun registerListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) =
         prefs.registerOnSharedPreferenceChangeListener(listener)
@@ -123,7 +171,7 @@ class InsightStore(context: Context) {
     fun unregisterListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) =
         prefs.unregisterOnSharedPreferenceChangeListener(listener)
 
-    // ── 内部 ──────────────────────────────────────────────────────────────
+    // ── Internal ─────────────────────────────────────────────────────────
 
     private fun saveEvents(date: String, entries: List<StructuredEntry>) {
         val arr = JSONArray()

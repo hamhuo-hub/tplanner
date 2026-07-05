@@ -50,7 +50,7 @@ import java.util.UUID
 
 class MainActivity : ComponentActivity() {
 
-    // 手表触发计数器：每次手表唤醒 +1，MainScreen 观察变化弹出焦虑面板
+    // Watch trigger counter: increments on each watch wake-up, MainScreen observes changes to show the anxiety panel
     var anxietyTriggerCount by mutableIntStateOf(0)
 
     private val requestBtPermissions = registerForActivityResult(
@@ -80,7 +80,7 @@ class MainActivity : ComponentActivity() {
         val eventStore  = EventStore(this)
         val insightStore = InsightStore(this)
         val manager     = LanSyncManager(this, store, eventStore)
-        // 个人使用，直接写死。发布前记得移除。
+        // Personal use, hardcoded. Remember to remove before publishing.
         val deepseekKey = "sk-f96de0cfd34d4f4c95ee2e004c4c800f"
         val amapKey     = "d7201bb04a81eb33da8d7f8e7d6ed523"
         AmapGeocoder.setApiKey(amapKey)
@@ -280,7 +280,7 @@ fun MainScreen(
         onDispose { store.unregisterListener(listener) }
     }
 
-    // ── 同步状态 ──────────────────────────────────────────────────────────
+    // ── Sync state ───────────────────────────────────────────────────────
     var serverUrl  by remember { mutableStateOf(manager.getServerUrl()) }
     var syncStatus by remember { mutableStateOf("idle") }
     var syncMsg    by remember { mutableStateOf("") }
@@ -322,9 +322,9 @@ fun MainScreen(
     }
 
     val isPhone = LocalConfiguration.current.screenWidthDp < 840
-    var phoneTab by remember { mutableStateOf(0) }   // 0=随手记, 1=日程, 2=洞察
+    var phoneTab by remember { mutableStateOf(0) }   // 0=Journal, 1=Tasks, 2=Insights
 
-    // ── 手表触发焦虑记录 ──────────────────────────────────────────────────
+    // ── Watch-triggered anxiety recording ─────────────────────────────────
     var showAnxietySheet by remember { mutableStateOf(false) }
     var prefillLocation by remember { mutableStateOf("") }
     var insightRefreshTrigger by remember { mutableIntStateOf(0) }
@@ -343,7 +343,7 @@ fun MainScreen(
         }
     }
 
-    // 日终自动分析
+    // End-of-day auto analysis
     LaunchedEffect(content) {
         val today = java.time.LocalDate.now().toString()
         val existingReport = insightStore.getDayReport(today)
@@ -357,7 +357,7 @@ fun MainScreen(
         }
     }
 
-    // ── 面板构建块 ────────────────────────────────────────────────────────
+    // ── Panel building blocks ────────────────────────────────────────────
     val notesCardContent: @Composable () -> Unit = {
         Box(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize()) {
@@ -414,10 +414,10 @@ fun MainScreen(
         )
     }
 
-    // ── 主布局 ────────────────────────────────────────────────────────────
+    // ── Main layout ──────────────────────────────────────────────────────
     Box(Modifier.fillMaxSize().background(BG).windowInsetsPadding(WindowInsets.systemBars)) {
         if (showAnxietySheet) {
-            // 焦虑记录面板全屏覆盖
+            // Anxiety log panel fullscreen overlay
             val submitAnxiety: (String, Int, List<String>, List<String>) -> Unit =
                 { text, intensity, emotions, symptoms ->
                     val now = System.currentTimeMillis()
@@ -541,7 +541,7 @@ fun MainScreen(
         }
     }
 
-    // ── 叠加面板 ──────────────────────────────────────────────────────────
+    // ── Overlay panels ───────────────────────────────────────────────────
     pendingAddType?.let { type ->
         NameInputSheet(
             type = type,

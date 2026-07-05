@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @Composable
 fun InsightPanel(store: InsightStore, onRefresh: () -> Unit) {
@@ -52,7 +53,7 @@ fun InsightPanel(store: InsightStore, onRefresh: () -> Unit) {
             0 -> "Today"
             -1 -> "Yesterday"
             else -> date.format(
-                DateTimeFormatter.ofPattern("MMM d  E")
+                DateTimeFormatter.ofPattern("MMM d  E", Locale.US)
             )
         }
     }

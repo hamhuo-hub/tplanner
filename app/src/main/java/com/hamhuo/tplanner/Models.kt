@@ -3,7 +3,7 @@ package com.hamhuo.tplanner
 import org.json.JSONArray
 import org.json.JSONObject
 
-// ── 伯恩斯 10 种认知扭曲（扩展为 12 类，对齐 SocialCD-3K） ──────────────
+// ── Burns 10 cognitive distortions (extended to 12 types, aligned with SocialCD-3K) ──
 enum class DistortionType(val label: String, val keywords: List<String>) {
     ALL_OR_NOTHING("All-or-Nothing", listOf(
         "完全", "绝对", "永远", "从来", "总是", "从不", "一点都", "彻底",
@@ -60,44 +60,52 @@ enum class DistortionType(val label: String, val keywords: List<String>) {
     }
 }
 
-// ── 单事件 LLM 分析结果 ────────────────────────────────────────────────────
+// ── Single-event LLM analysis result ────────────────────────────────────
 data class ThreeColumnResult(
-    val autoThought: String,        // 自动思维
-    val thoughtConfidence: Int,     // 相信度 0-100
-    val distortions: List<String>,  // 思维钢印标签列表
-    val rationalResponse: String,   // 理智反思
-    val emotion: String = "",       // 主导情绪
-    val intensity: Int = 0,         // 焦虑强度 0-100
+    val autoThought: String,        // Automatic thought
+    val thoughtConfidence: Int,     // Belief level 0-100
+    val distortions: List<String>,  // Distortion label list
+    val rationalResponse: String,   // Rational response
+    val emotion: String = "",       // Dominant emotion
+    val intensity: Int = 0,         // Anxiety intensity 0-100
 )
 
-// ── 结构化事件（存入 InsightStore） ─────────────────────────────────────────
+// ── Structured event (stored in InsightStore) ────────────────────────────
+// updatedAt/deletedAt: participate in multi-device sync LWW merging and tombstone soft-delete propagation,
+// semantics consistent with JournalEntry (deletedAt == 0L means alive).
 data class StructuredEntry(
     val id: String,                 // UUID
     val timestamp: Long,            // epoch ms
-    val text: String,               // 原始文本
-    val location: String,           // 位置名（GPS 反查结果）
-    val lat: Double,                // 纬度
-    val lng: Double,                // 经度
-    val intensity: Int,             // 焦虑强度 0-100
-    val distortions: List<String>,  // 思维钢印标签
-    val autoThought: String,        // 自动思维
-    val thoughtConfidence: Int,     // 相信度
-    val rationalResponse: String,   // 理智反思
-    val emotion: String,            // 主导情绪
+    val text: String,               // Raw text
+    val location: String,           // Location name (reverse geocoded from GPS)
+    val lat: Double,                // Latitude
+    val lng: Double,                // Longitude
+    val intensity: Int,             // Anxiety intensity 0-100
+    val distortions: List<String>,  // Distortion labels
+    val autoThought: String,        // Automatic thought
+    val thoughtConfidence: Int,     // Belief level
+    val rationalResponse: String,   // Rational response
+    val emotion: String,            // Dominant emotion
+    val updatedAt: Long = 0L,       // Last modification time (LWW merge basis)
+    val deletedAt: Long = 0L,       // tombstone; 0 = alive
 )
 
-// ── 日终报告 ────────────────────────────────────────────────────────────────
+// ── End-of-day report ───────────────────────────────────────────────────
 data class DayReport(
     val date: String,               // yyyy-MM-dd
     val totalEvents: Int,
     val avgIntensity: Int,
-    val distortionCounts: Map<String, Int>,  // 思维钢印 → 次数
-    val topLocation: String,                  // 今日高发地点
-    val topTimeSlot: String,                  // 今日高发时段
-    val narrative: String,                    // LLM 生成的自然语言总结
+    val distortionCounts: Map<String, Int>,  // Distortion → count
+    val topLocation: String,                  // Top location today
+    val topTimeSlot: String,                  // Top time slot today
+    val narrative: String,                    // LLM-generated natural language summary
+    val updatedAt: Long = 0L,                 // Last modification time (LWW merge basis)
+    val deletedAt: Long = 0L,                 // tombstone; 0 = alive
 )
 
-// ── JSON 序列化辅助 ─────────────────────────────────────────────────────────
+// ── JSON serialization helpers ───────────────────────────────────────────
+// Wire format is consistent with server/desktop spec: deletedAt serialized as JSON null when alive
+// (Kotlin internally uses 0L for alive, same as JournalEntry handling).
 internal fun StructuredEntry.toJson(): JSONObject = JSONObject().apply {
     put("id", id)
     put("timestamp", timestamp)
@@ -111,6 +119,8 @@ internal fun StructuredEntry.toJson(): JSONObject = JSONObject().apply {
     put("thoughtConfidence", thoughtConfidence)
     put("rationalResponse", rationalResponse)
     put("emotion", emotion)
+    put("updatedAt", updatedAt)
+    put("deletedAt", if (deletedAt == 0L) JSONObject.NULL else deletedAt)
 }
 
 internal fun JSONObject.toStructuredEntry(): StructuredEntry? = try {
@@ -131,6 +141,8 @@ internal fun JSONObject.toStructuredEntry(): StructuredEntry? = try {
         thoughtConfidence = optInt("thoughtConfidence", 0),
         rationalResponse = optString("rationalResponse", ""),
         emotion = optString("emotion", ""),
+        updatedAt = optLong("updatedAt", 0L),
+        deletedAt = if (isNull("deletedAt")) 0L else optLong("deletedAt", 0L),
     )
 } catch (_: Exception) { null }
 
@@ -142,6 +154,8 @@ internal fun DayReport.toJson(): JSONObject = JSONObject().apply {
     put("topLocation", topLocation)
     put("topTimeSlot", topTimeSlot)
     put("narrative", narrative)
+    put("updatedAt", updatedAt)
+    put("deletedAt", if (deletedAt == 0L) JSONObject.NULL else deletedAt)
 }
 
 internal fun JSONObject.toDayReport(): DayReport? = try {
@@ -157,5 +171,7 @@ internal fun JSONObject.toDayReport(): DayReport? = try {
         topLocation = optString("topLocation", ""),
         topTimeSlot = optString("topTimeSlot", ""),
         narrative = optString("narrative", ""),
+        updatedAt = optLong("updatedAt", 0L),
+        deletedAt = if (isNull("deletedAt")) 0L else optLong("deletedAt", 0L),
     )
 } catch (_: Exception) { null }
