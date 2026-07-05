@@ -34,8 +34,29 @@ export function release(bumpType) {
 
     // ── master / Electron ───────────────────────────────────────────────
     if (branch === 'master') {
-        console.log(`[master] npm version ${bumpType} ...`);
-        run(`npm version ${bumpType}`);
+        // root package.json
+        const rootPkg = JSON.parse(readFileSync('package.json', 'utf8'));
+        const newVer = bumpVer(rootPkg.version, bumpType);
+        console.log(`[master] ${rootPkg.version} → ${newVer}`);
+
+        rootPkg.version = newVer;
+        writeFileSync('package.json', JSON.stringify(rootPkg, null, 2) + '\n');
+
+        // sync-server package.json (keep in sync)
+        const ssPath = 'sync-server/package.json';
+        try {
+            const ssPkg = JSON.parse(readFileSync(ssPath, 'utf8'));
+            const oldSS = ssPkg.version;
+            ssPkg.version = bumpVer(ssPkg.version, bumpType);
+            writeFileSync(ssPath, JSON.stringify(ssPkg, null, 2) + '\n');
+            console.log(`[sync-server] ${oldSS} → ${ssPkg.version}`);
+            run(`git add "${ssPath}"`);
+        } catch { /* sync-server not present — skip */ }
+
+        run('git add package.json');
+        run(`git commit -m "${newVer}"`);
+        run(`git tag v${newVer}`);
+        console.log(`✓ Tag v${newVer}. git push --follow-tags to push.`);
 
     // ── mobile_andorid / Android ────────────────────────────────────────
     } else if (branch === 'mobile_andorid') {
