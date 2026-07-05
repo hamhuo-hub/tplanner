@@ -1,5 +1,8 @@
 package com.hamhuo.tplanner
 
+import android.webkit.JavascriptInterface
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -31,12 +35,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import org.json.JSONArray
+import org.json.JSONObject
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @Composable
-fun InsightPanel(store: InsightStore, onRefresh: () -> Unit) {
+fun InsightPanel(store: InsightStore, amapApiKey: String, onRefresh: () -> Unit) {
     val scrollState = rememberScrollState()
     var dateOffset by remember { mutableIntStateOf(0) }
     val date = remember(dateOffset) {
@@ -120,6 +127,16 @@ fun InsightPanel(store: InsightStore, onRefresh: () -> Unit) {
                 }
         }
 
+        // ── Location scatter map ─────────────────────────────────────────
+        val todayEntries = remember(dateStr) { store.getEvents(dateStr) }
+        AmapScatterMap(
+            entries = todayEntries,
+            amapApiKey = amapApiKey,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp),
+        )
+
         // ── Top location / time slot ────────────────────────────────────
         val topLocation = report?.topLocation ?: store.getTopLocation(dateStr)
         val topTimeSlot = report?.topTimeSlot ?: store.getTopTimeSlot(dateStr)
@@ -174,6 +191,114 @@ private fun StatCard(label: String, value: String, accent: Color, modifier: Modi
         Spacer(Modifier.height(4.dp))
         Text(value, color = accent, fontSize = 16.sp, fontWeight = FontWeight.Bold)
     }
+}
+
+// ── Amap scatter map (WebView + Amap JS API) ──────────────────────────────
+// Uses a WebView with the Amap JS API v2.0 to avoid native .so 16 KB alignment
+// issues. Location data is serialised to JSON and passed to JS via evaluateJavascript.
+
+private class AmapJsBridge {
+    var onReady: (() -> Unit)? = null
+    @JavascriptInterface fun onMapReady() { onReady?.invoke() }
+}
+
+private fun buildPointsJson(points: List<StructuredEntry>): String {
+    val arr = JSONArray()
+    for (p in points) {
+        val obj = JSONObject()
+        obj.put("lat", p.lat)
+        obj.put("lng", p.lng)
+        obj.put("location", p.location)
+        obj.put("intensity", p.intensity)
+        arr.put(obj)
+    }
+    return arr.toString()
+}
+
+@Composable
+private fun AmapScatterMap(
+    entries: List<StructuredEntry>,
+    amapApiKey: String,
+    modifier: Modifier = Modifier,
+) {
+    val points = remember(entries) {
+        entries.filter { it.lat != 0.0 || it.lng != 0.0 }
+    }
+    if (points.isEmpty()) return
+
+    var webView by remember { mutableStateOf<WebView?>(null) }
+    val bridge = remember { AmapJsBridge() }
+    bridge.onReady = { webView?.post { pushPoints(webView!!, points) } }
+
+    Box(
+        modifier = modifier
+            .background(SURFACE, RoundedCornerShape(10.dp))
+            .padding(12.dp),
+    ) {
+        Column {
+            Text(
+                "📍 Map",
+                color = Color(0xFFE0D8C0),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+            Text(
+                "${points.size} location${if (points.size > 1) "s" else ""}",
+                color = DIM,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+
+            AndroidView(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(280.dp)
+                    .clip(RoundedCornerShape(8.dp)),
+                factory = { ctx ->
+                    WebView(ctx).apply {
+                        webView = this
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        // 高德瓦片是 https，file:// 页面加载 https 图片不算混合内容；
+                        // 但个别 ROM 的 WebView 默认阻止 file 页面发起的联网请求，
+                        // 显式放开以确保瓦片能加载。
+                        settings.allowContentAccess = true
+                        settings.allowFileAccess = true
+                        settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                        WebView.setWebContentsDebuggingEnabled(true)
+                        addJavascriptInterface(bridge, "AmapBridge")
+                        webViewClient = object : WebViewClient() {
+                            override fun onPageFinished(view: WebView, url: String) {
+                                // #map 用固定 300px 兜底，这里按 WebView 实际高度校准，
+                                // 让地图充满整张卡片。post 确保此时 view 已完成测量。
+                                view.post {
+                                    val h = (view.height / view.resources.displayMetrics.density).toInt()
+                                    if (h > 0) view.evaluateJavascript("setMapHeight($h)", null)
+                                }
+                            }
+                        }
+                        // console.log → logcat（排查地图空白）
+                        webChromeClient = object : android.webkit.WebChromeClient() {
+                            override fun onConsoleMessage(m: android.webkit.ConsoleMessage): Boolean {
+                                android.util.Log.d("TplannerMap", "${m.message()} @${m.lineNumber()}")
+                                return true
+                            }
+                        }
+                        loadUrl("file:///android_asset/insight_map.html")
+                    }
+                },
+                update = { wv -> pushPoints(wv, points) },
+            )
+        }
+    }
+}
+
+private fun pushPoints(wv: WebView, points: List<StructuredEntry>) {
+    val json = buildPointsJson(points)
+    // Compose 每次重组都会调 update → 首帧页面脚本尚未加载，updateMarkers 未定义。
+    // typeof 守卫避免 "updateMarkers is not defined" 抛错（页面就绪后会自动补画）。
+    wv.evaluateJavascript("if(typeof updateMarkers==='function')updateMarkers($json)", null)
 }
 
 @Composable

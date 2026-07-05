@@ -79,7 +79,7 @@ class MainActivity : ComponentActivity() {
         val store       = JournalStore(this)
         val eventStore  = EventStore(this)
         val insightStore = InsightStore(this)
-        val manager     = LanSyncManager(this, store, eventStore)
+        val manager     = LanSyncManager(this, store, eventStore, insightStore)
         // Personal use, hardcoded. Remember to remove before publishing.
         val deepseekKey = "sk-f96de0cfd34d4f4c95ee2e004c4c800f"
         val amapKey     = "d7201bb04a81eb33da8d7f8e7d6ed523"
@@ -267,6 +267,7 @@ fun MainScreen(
     anxietyTriggerCount: Int,
 ) {
     val scope  = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
     var content    by remember { mutableStateOf(store.getToday()) }
     var panelOpen  by remember { mutableStateOf(false) }
     var events     by remember { mutableStateOf(eventStore.getAll()) }
@@ -299,6 +300,7 @@ fun MainScreen(
                     content = r.todayText
                     syncStatus = "success"; syncMsg = syncedTemplate.format(serverHost(serverUrl))
                     events = manager.fetchEvents(serverUrl)
+                    manager.syncInsights(serverUrl)
                 }
                 is LanSyncManager.SyncResult.Error -> {
                     syncStatus = "error"; syncMsg = r.message
@@ -314,6 +316,7 @@ fun MainScreen(
                 content = r.todayText
                 syncStatus = "success"; syncMsg = syncedTemplate.format(serverHost(serverUrl))
                 events = manager.fetchEvents(serverUrl)
+                manager.syncInsights(serverUrl)
             }
             is LanSyncManager.SyncResult.Error -> {
                 syncStatus = "idle"
@@ -327,18 +330,36 @@ fun MainScreen(
     // ── Watch-triggered anxiety recording ─────────────────────────────────
     var showAnxietySheet by remember { mutableStateOf(false) }
     var prefillLocation by remember { mutableStateOf("") }
+    // 手表打点定位（唯一真相源来自 WatchLocationStore，由蓝牙服务异步写入），
+    // submit 时直接用这两个值存进 InsightStore，不再从随笔文本正则抠坐标
+    var watchLat by remember { mutableStateOf(0.0) }
+    var watchLng by remember { mutableStateOf(0.0) }
     var insightRefreshTrigger by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(anxietyTriggerCount) {
         if (anxietyTriggerCount > 0) {
             showAnxietySheet = true
-            val latestContent = store.getToday()
-            val lastLine = latestContent.lines().lastOrNull { it.contains("[WATCH]") } ?: ""
-            val coords = Regex("\\[WATCH\\] \\d{2}:\\d{2} @ ([0-9.]+),([0-9.]+)").find(lastLine)
-            if (coords != null && amapApiKey.isNotBlank()) {
-                val lat = coords.groupValues[1].toDoubleOrNull() ?: 0.0
-                val lng = coords.groupValues[2].toDoubleOrNull() ?: 0.0
-                prefillLocation = AmapGeocoder.reverseGeocode(lat, lng, amapApiKey)
+            prefillLocation = ""; watchLat = 0.0; watchLng = 0.0   // 本次会话重置，面板显示"Locating..."
+
+            // 轮询等待蓝牙服务的异步定位落地（GPS 冷启可达数秒）。savedAt 需晚于
+            // 本次唤醒（留 15s 余量，因取定位在拉起 Activity 之前就已开始），避免
+            // 采用上一次打点的陈旧坐标。最多等 ~12s。
+            val triggerAt = System.currentTimeMillis()
+            var fix: WatchLocationStore.Fix? = null
+            while (System.currentTimeMillis() - triggerAt < 12_000) {
+                val cur = WatchLocationStore.get(context)
+                if (cur != null && cur.savedAt >= triggerAt - 15_000) { fix = cur; break }
+                kotlinx.coroutines.delay(500)
+            }
+            // 超时兜底：即便是陈旧定位也好过没有
+            if (fix == null) fix = WatchLocationStore.get(context)
+
+            fix?.let {
+                watchLat = it.lat; watchLng = it.lng
+                if (amapApiKey.isNotBlank()) {
+                    // 逆地理编码失败会回退坐标串——面板从"Locating..."更新为地名/坐标
+                    prefillLocation = AmapGeocoder.reverseGeocode(it.lat, it.lng, amapApiKey)
+                }
             }
         }
     }
@@ -442,6 +463,9 @@ fun MainScreen(
                                 timestamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US)
                                     .format(java.util.Date(now)),
                                 location = prefillLocation.ifBlank { "Unknown" },
+                                emotions = emotions,
+                                symptoms = symptoms,
+                                userIntensity = intensity,
                             )
                             if (result != null) {
                                 val threeColumnBlock = buildString {
@@ -453,16 +477,12 @@ fun MainScreen(
                                 store.saveToday(final)
                                 content = final
 
-                                val todayText = store.getToday()
-                                val coordMatch = Regex("\\[WATCH\\] \\d{2}:\\d{2} @ ([0-9.]+),([0-9.]+)").find(todayText)
-                                val lat = coordMatch?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
-                                val lng = coordMatch?.groupValues?.get(2)?.toDoubleOrNull() ?: 0.0
                                 insightStore.addEvent(StructuredEntry(
                                     id = UUID.randomUUID().toString(),
                                     timestamp = now,
                                     text = text,
                                     location = prefillLocation.ifBlank { "Unknown" },
-                                    lat = lat, lng = lng,
+                                    lat = watchLat, lng = watchLng,
                                     intensity = if (result.intensity > 0) result.intensity else intensity,
                                     distortions = result.distortions,
                                     autoThought = result.autoThought,
@@ -471,16 +491,12 @@ fun MainScreen(
                                     emotion = result.emotion.ifBlank { emotions.firstOrNull() ?: "" },
                                 ))
                             } else {
-                                val todayText = store.getToday()
-                                val coordMatch = Regex("\\[WATCH\\] \\d{2}:\\d{2} @ ([0-9.]+),([0-9.]+)").find(todayText)
-                                val lat = coordMatch?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
-                                val lng = coordMatch?.groupValues?.get(2)?.toDoubleOrNull() ?: 0.0
                                 insightStore.addEvent(StructuredEntry(
                                     id = UUID.randomUUID().toString(),
                                     timestamp = now,
                                     text = text,
                                     location = prefillLocation.ifBlank { "Unknown" },
-                                    lat = lat, lng = lng,
+                                    lat = watchLat, lng = watchLng,
                                     intensity = intensity,
                                     distortions = emptyList(),
                                     autoThought = "", thoughtConfidence = 0,
@@ -517,7 +533,7 @@ fun MainScreen(
                 ) {
                     if (phoneTab == 0) notesCardContent()
                     else if (phoneTab == 1) taskCardContent()
-                    else InsightPanel(store = insightStore, onRefresh = { insightRefreshTrigger++ })
+                    else InsightPanel(store = insightStore, amapApiKey = amapApiKey, onRefresh = { insightRefreshTrigger++ })
                 }
             }
         } else {

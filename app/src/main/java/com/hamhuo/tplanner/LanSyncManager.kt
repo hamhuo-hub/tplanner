@@ -261,7 +261,7 @@ class LanSyncManager(
             when {
                 le == null -> re!!
                 re == null -> le
-                else -> pickInsightWithBase(le, re, baseKeys?.get(id))
+                else -> pickEntryWithBase(le, re, baseKeys?.get(id))
             }
         }
     }
@@ -277,25 +277,32 @@ class LanSyncManager(
             result[date] = when {
                 le == null -> re!!
                 re == null -> le
-                else -> pickInsightWithBase(le, re, baseKeys?.get(date))
+                else -> pickReportWithBase(le, re, baseKeys?.get(date))
             }
         }
         return result
     }
 
-    private fun <T> pickInsightWithBase(a: T, b: T, baseKey: String?) where T : Any {
-        val ak = when (a) { is StructuredEntry -> a.contentKey(); is DayReport -> a.contentKey(); else -> null } ?: return b
-        val bk = when (b) { is StructuredEntry -> b.contentKey(); is DayReport -> b.contentKey(); else -> null } ?: return a
+    private fun pickEntryWithBase(a: StructuredEntry, b: StructuredEntry, baseKey: String?): StructuredEntry {
+        val ak = a.contentKey(); val bk = b.contentKey()
         if (ak == bk) return a
         if (baseKey != null) {
             if (ak == baseKey) return b   // 仅远端改
             if (bk == baseKey) return a   // 仅本地改
         }
-        // 回退 LWW：updatedAt 较大者胜；平局取远端（服务器确定性裁决）
-        val au = when (a) { is StructuredEntry -> a.updatedAt; is DayReport -> a.updatedAt; else -> 0L }
-        val bu = when (b) { is StructuredEntry -> b.updatedAt; is DayReport -> b.updatedAt; else -> 0L }
-        if (au != bu) return if (au > bu) a else b
-        return b
+        if (a.updatedAt != b.updatedAt) return if (a.updatedAt > b.updatedAt) a else b
+        return b  // 平局取远端
+    }
+
+    private fun pickReportWithBase(a: DayReport, b: DayReport, baseKey: String?): DayReport {
+        val ak = a.contentKey(); val bk = b.contentKey()
+        if (ak == bk) return a
+        if (baseKey != null) {
+            if (ak == baseKey) return b   // 仅远端改
+            if (bk == baseKey) return a   // 仅本地改
+        }
+        if (a.updatedAt != b.updatedAt) return if (a.updatedAt > b.updatedAt) a else b
+        return b  // 平局取远端
     }
 
     private fun httpGet(url: String): String {

@@ -251,6 +251,9 @@ class BluetoothWakeService : Service() {
         store.appendToday(baseLine)
         fetchCurrentLocation { loc ->
             if (loc != null) {
+                // 唯一真相源：MainActivity 的焦虑面板从这里读坐标做逆地理编码，
+                // 不再和下面这行随笔文本的异步写入抢跑
+                WatchLocationStore.save(this, loc.latitude, loc.longitude)
                 val coords = String.format(Locale.US, "%.6f,%.6f", loc.latitude, loc.longitude)
                 store.replaceInToday(baseLine, "$baseLine @ $coords")
             }
@@ -261,14 +264,12 @@ class BluetoothWakeService : Service() {
 
     // 无 GMS 设备（国行三星）上不用 FusedLocationProviderClient，直接走框架
     // LocationManager：优先系统 fused provider（API 31+），再网络定位，最后 GPS。
+    // 三星 fused provider 在室内/无 GPS 时常 <1s 返回 null，因此每个 provider
+    // 失败后自动级联尝试下一个，全部失败才回退 lastKnownLocation。
     // 服务在后台取定位需要用户授予"始终允许"（ACCESS_BACKGROUND_LOCATION）；
     // 未授予/超时则回退最近一次已知位置，再不行就只记时间戳，绝不阻塞。
     private fun fetchCurrentLocation(onResult: (Location?) -> Unit) {
-        // 服务正在销毁时不发起新定位请求
-        if (!running.get()) {
-            onResult(null)
-            return
-        }
+        if (!running.get()) { onResult(null); return }
 
         val fine = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarse = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -279,19 +280,53 @@ class BluetoothWakeService : Service() {
         val lm = getSystemService(LocationManager::class.java)
         if (lm == null) { onResult(null); return }
 
-        val provider = pickProvider(lm)
-        if (provider == null) { onResult(lastKnownLocation(lm)); return }
+        // Build cascade: [fused, network, gps] — only enabled + available providers
+        val allCandidates = buildList {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                lm.allProviders.contains(LocationManager.FUSED_PROVIDER))
+                add(LocationManager.FUSED_PROVIDER)
+            if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER))
+                add(LocationManager.NETWORK_PROVIDER)
+            if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER))
+                add(LocationManager.GPS_PROVIDER)
+        }
+        if (allCandidates.isEmpty()) {
+            Log.w(TAG, "fetchCurrentLocation: no provider available")
+            onResult(lastKnownLocation(lm)); return
+        }
+
+        Log.d(TAG, "fetchCurrentLocation: cascade = $allCandidates")
+        tryNextProvider(lm, allCandidates, 0, onResult)
+    }
+
+    // 逐个尝试 provider；当前 provider 失败（getCurrentLocation 返回 null）时
+    // 自动级联到下一个，全失败则回退 lastKnownLocation。
+    private fun tryNextProvider(
+        lm: LocationManager,
+        candidates: List<String>,
+        idx: Int,
+        onResult: (Location?) -> Unit,
+    ) {
+        if (idx >= candidates.size) {
+            Log.w(TAG, "fetchCurrentLocation: all providers exhausted, lastKnown")
+            onResult(lastKnownLocation(lm))
+            return
+        }
+        val provider = candidates[idx]
+        Log.d(TAG, "fetchCurrentLocation: trying provider $provider (${idx + 1}/${candidates.size})")
 
         val done = AtomicBoolean(false)
-
-        // ── 前一次 pendingLocationListener 在发起新请求前清理 ──
         cleanupLocationRequest(lm)
 
+        // Per-provider timeout: 6s for fused (Samsung returns fast anyway),
+        // 10s for network/gps (need more time to get a fix).
+        val providerTimeout = if (provider == LocationManager.FUSED_PROVIDER) 6000L else 10000L
+
         val timeoutRunnable = Runnable {
-            Log.w(TAG, "fetchCurrentLocation: timed out, falling back to last known")
             if (done.compareAndSet(false, true)) {
                 cleanupLocationRequest(lm)
-                onResult(lastKnownLocation(lm))
+                Log.d(TAG, "fetchCurrentLocation: $provider timed out, trying next")
+                tryNextProvider(lm, candidates, idx + 1, onResult)
             }
         }
 
@@ -299,25 +334,25 @@ class BluetoothWakeService : Service() {
             if (done.compareAndSet(false, true)) {
                 mainHandler.removeCallbacks(timeoutRunnable)
                 cleanupLocationRequest(lm)
-                onResult(loc ?: lastKnownLocation(lm))
+                if (loc != null) {
+                    Log.d(TAG, "fetchCurrentLocation: got fix from $provider")
+                    onResult(loc)
+                } else {
+                    Log.d(TAG, "fetchCurrentLocation: $provider returned null, trying next")
+                    tryNextProvider(lm, candidates, idx + 1, onResult)
+                }
             }
         }
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                // One-shot callback via the modern API.  We pass null for
-                // CancellationSignal because the caller would need API 31+
-                // and the AtomicBoolean guard already prevents duplicate
-                // callbacks; cleanupLocationRequest is a no-op on R+.
                 lm.getCurrentLocation(provider, null, ContextCompat.getMainExecutor(this)) { loc ->
                     finish(loc)
                 }
             } else {
                 @Suppress("DEPRECATION")
                 val listener = object : LocationListener {
-                    override fun onLocationChanged(location: Location) {
-                        finish(location)
-                    }
+                    override fun onLocationChanged(location: Location) { finish(location) }
                     @Deprecated("Deprecated in Java")
                     override fun onStatusChanged(p: String?, s: Int, e: Bundle?) {}
                     override fun onProviderEnabled(p: String) {}
@@ -326,27 +361,18 @@ class BluetoothWakeService : Service() {
                 pendingLocationListener = listener
                 lm.requestSingleUpdate(provider, listener, Looper.getMainLooper())
             }
-            mainHandler.postDelayed(timeoutRunnable, LOCATION_TIMEOUT_MS)
+            mainHandler.postDelayed(timeoutRunnable, providerTimeout)
         } catch (e: SecurityException) {
-            // 后台取定位被系统拒绝（未授予"始终允许"）——回退最近已知位置
-            Log.w(TAG, "fetchCurrentLocation: denied in background", e)
+            Log.w(TAG, "fetchCurrentLocation: $provider denied in background", e)
             mainHandler.removeCallbacks(timeoutRunnable)
             cleanupLocationRequest(lm)
-            onResult(lastKnownLocation(lm))
+            tryNextProvider(lm, candidates, idx + 1, onResult)
         } catch (e: Exception) {
-            Log.e(TAG, "fetchCurrentLocation: failed", e)
+            Log.e(TAG, "fetchCurrentLocation: $provider failed", e)
             mainHandler.removeCallbacks(timeoutRunnable)
             cleanupLocationRequest(lm)
-            onResult(lastKnownLocation(lm))
+            tryNextProvider(lm, candidates, idx + 1, onResult)
         }
-    }
-
-    private fun pickProvider(lm: LocationManager): String? = when {
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            lm.allProviders.contains(LocationManager.FUSED_PROVIDER) -> LocationManager.FUSED_PROVIDER
-        lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER) -> LocationManager.NETWORK_PROVIDER
-        lm.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
-        else -> null
     }
 
     private fun lastKnownLocation(lm: LocationManager): Location? = try {

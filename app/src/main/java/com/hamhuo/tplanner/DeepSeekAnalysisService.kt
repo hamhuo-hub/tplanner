@@ -18,25 +18,57 @@ class DeepSeekAnalysisService(private val apiKey: String) {
     suspend fun restructureEntry(
         text: String,
         timestamp: String,
-        location: String
+        location: String,
+        emotions: List<String> = emptyList(),
+        symptoms: List<String> = emptyList(),
+        userIntensity: Int = 0,
     ): ThreeColumnResult? = withContext(Dispatchers.IO) {
+        // 提示词纪律：JSON 模板里绝不放具体数值/标签示例——低温下模型会把示例
+        // 当默认值照抄（此前模板里写了 thoughtConfidence: 85，导致任何输入都
+        // 返回 85）。数值一律给打分量规，让模型从原文证据推导。
         val prompt = buildString {
             append("你是一位接受过伯恩斯CBT训练的心理咨询师。用户正在经历焦虑发作，写下了以下记录。")
             append("请将其整理为伯恩斯三栏格式，并识别思维钢印（认知扭曲）类型。\n\n")
             append("**用户记录**：\n$text\n\n")
-            append("**背景**：时间 $timestamp，地点 $location\n\n")
-            append("请以 JSON 格式返回（不要包含其他内容）：\n")
+            append("**背景**：时间 $timestamp，地点 $location\n")
+            if (emotions.isNotEmpty()) append("**用户自述情绪**：${emotions.joinToString("、")}\n")
+            if (symptoms.isNotEmpty()) append("**用户自述身体症状**：${symptoms.joinToString("、")}\n")
+            if (userIntensity > 0) append("**用户自评强度**：${userIntensity}%\n")
+            append("\n请以 JSON 格式返回（不要包含其他内容）：\n")
             append("{\n")
-            append("  \"autoThought\": \"用户的核心自动思维（一句话）\",\n")
-            append("  \"thoughtConfidence\": 85,\n")
-            append("  \"distortions\": [\"读心术\", \"贴标签\"],\n")
-            append("  \"rationalResponse\": \"温柔但有力的理智反思（2-3句话）\",\n")
-            append("  \"emotion\": \"羞耻\",\n")
-            append("  \"intensity\": 70\n")
+            append("  \"autoThought\": \"<用户的核心自动思维，一句话，用用户自己的口吻>\",\n")
+            append("  \"thoughtConfidence\": <整数0-100，按下方量规评估>,\n")
+            append("  \"distortions\": [\"<从给定清单中选出的钢印类型，1-3个>\"],\n")
+            append("  \"rationalResponse\": \"<温柔但有力的理智反思，2-3句话>\",\n")
+            append("  \"emotion\": \"<从原文推断的主导情绪，一个词>\",\n")
+            append("  \"intensity\": <整数0-100，按下方量规评估>\n")
             append("}\n\n")
+            append("**thoughtConfidence 量规**（用户对该自动思维的相信程度，必须从原文措辞找证据）：\n")
+            append("- 90-100：把想法当成毫无疑问的事实陈述（\"肯定\"\"就是\"\"绝对\"，没有任何怀疑措辞）\n")
+            append("- 70-89：强烈相信，但措辞里有一丝余地（\"应该是\"\"八成\"）\n")
+            append("- 40-69：半信半疑，原文里有自我拉扯（\"可能是我想多了，但是…\"）\n")
+            append("- 10-39：用户自己已经在质疑这个想法\n")
+            append("先在心里引用原文的关键措辞作为依据，再给分。禁止不经推导就取整十数或中间值；")
+            append("不同的输入除非证据强度确实相同，否则不应得到相同的分数。\n\n")
+            append("**intensity 量规**（焦虑强度）：\n")
+            if (userIntensity > 0) {
+                append("- 用户已自评强度 ${userIntensity}%，intensity 直接沿用该值，不要自行改动。\n\n")
+            } else {
+                append("- 80-100：躯体症状明显/无法正常行动（发抖、心悸、逃离现场）\n")
+                append("- 50-79：显著影响当下状态，但还能维持表面功能\n")
+                append("- 20-49：持续的背景性不安\n")
+                append("- 0-19：轻微的一闪而过的担忧\n")
+                append("同样先找原文证据再给分。\n\n")
+            }
             append("思维钢印类型必须从以下中选择：全或无思维、过度概括、心理过滤、贬低正面、")
-            append("读心术、算命式预测、夸大与缩小、情绪推理、应该句式、贴标签、自责、责备他人\n\n")
+            append("读心术、算命式预测、夸大与缩小、情绪推理、应该句式、贴标签、自责、责备他人。")
+            append("只选原文有明确证据的类型，宁缺毋滥。\n\n")
             append("理智反思不要空洞安慰，要基于事实的温和反驳。语气是陪伴式而非说教式。")
+            if (emotions.isNotEmpty() || symptoms.isNotEmpty() || userIntensity > 0) {
+                append("\n\n用户已经标注了自己的情绪和身体反应，请在此基础上深入分析")
+                append("——你的任务是找出用户自己可能没意识到的思维钢印和核心自动思维，")
+                append("而不是重复用户已经知道的内容。")
+            }
         }
 
         val resp = callDeepSeek(prompt)
@@ -117,7 +149,7 @@ class DeepSeekAnalysisService(private val apiKey: String) {
                 put("messages", org.json.JSONArray().apply {
                     put(JSONObject().apply {
                         put("role", "system")
-                        put("content", "你是一位接受过CBT训练的心理咨询师。请总是返回有效的 JSON，不要包含 markdown 代码块标记。")
+                        put("content", "你是一位接受过CBT训练的心理咨询师。请总是返回有效的 JSON，不要包含 markdown 代码块标记。所有数值字段必须依据用户原文的具体措辞推导得出，禁止套用任何默认值或惯用值。")
                     })
                     put(JSONObject().apply {
                         put("role", "user")
