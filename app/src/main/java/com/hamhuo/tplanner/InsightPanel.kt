@@ -37,7 +37,6 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun InsightPanel(store: InsightStore, onRefresh: () -> Unit) {
     val scrollState = rememberScrollState()
-    // 日期偏移：0 = 今天，-1 = 昨天，以此类推
     var dateOffset by remember { mutableIntStateOf(0) }
     val date = remember(dateOffset) {
         LocalDate.now().plusDays(dateOffset.toLong())
@@ -50,10 +49,10 @@ fun InsightPanel(store: InsightStore, onRefresh: () -> Unit) {
 
     val dateDisplay = remember(date) {
         when (dateOffset) {
-            0 -> "今日"
-            -1 -> "昨日"
+            0 -> "Today"
+            -1 -> "Yesterday"
             else -> date.format(
-                DateTimeFormatter.ofPattern("M月d日 E")
+                DateTimeFormatter.ofPattern("MMM d  E")
             )
         }
     }
@@ -65,42 +64,42 @@ fun InsightPanel(store: InsightStore, onRefresh: () -> Unit) {
             .verticalScroll(scrollState)
             .padding(horizontal = 20.dp)
     ) {
-        // ── 日期导航 ──────────────────────────────────────────────────────
+        // ── Date nav ────────────────────────────────────────────────────
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 14.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("< 前日", color = DIM, fontSize = 14.sp,
+            Text("< Prev", color = DIM, fontSize = 14.sp,
                 modifier = Modifier.clickable { dateOffset-- })
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("📊 洞察", color = GOLD, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("Insights", color = GOLD, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Text(dateDisplay, color = DIM, fontSize = 13.sp)
             }
-            Text("后日 >", color = DIM, fontSize = 14.sp,
+            Text("Next >", color = DIM, fontSize = 14.sp,
                 modifier = Modifier.clickable { if (dateOffset < 0) dateOffset++ })
         }
 
         if (distortionCounts.isEmpty()) {
             Box(Modifier.fillMaxWidth().padding(vertical = 60.dp), contentAlignment = Alignment.Center) {
-                Text("今日暂无焦虑记录", color = DIM, fontSize = 15.sp)
+                Text("No anxiety records for this day", color = DIM, fontSize = 15.sp)
             }
             return@Column
         }
 
-        // ── 统计概览 ──────────────────────────────────────────────────────
+        // ── Stats overview ──────────────────────────────────────────────
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
-            StatCard("事件", "${report?.totalEvents ?: distortionCounts.size}", GOLD)
-            StatCard("平均强度", "${avgIntensity}%", TEAL)
+            StatCard("Events", "${report?.totalEvents ?: distortionCounts.size}", GOLD)
+            StatCard("Avg Intensity", "${avgIntensity}%", TEAL)
         }
 
         Spacer(Modifier.height(18.dp))
 
-        // ── 思维钢印计数表 ────────────────────────────────────────────────
-        Text("思维钢印分布", color = Color(0xFFE0D8C0), fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+        // ── Distortion distribution ─────────────────────────────────────
+        Text("Distortion Distribution", color = Color(0xFFE0D8C0), fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(bottom = 10.dp))
         Column(
             modifier = Modifier
@@ -120,7 +119,7 @@ fun InsightPanel(store: InsightStore, onRefresh: () -> Unit) {
                 }
         }
 
-        // ── 高发地点/时段 ──────────────────────────────────────────────────
+        // ── Top location / time slot ────────────────────────────────────
         val topLocation = report?.topLocation ?: store.getTopLocation(dateStr)
         val topTimeSlot = report?.topTimeSlot ?: store.getTopTimeSlot(dateStr)
         if (topLocation.isNotBlank() || topTimeSlot.isNotBlank()) {
@@ -130,19 +129,19 @@ fun InsightPanel(store: InsightStore, onRefresh: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 if (topLocation.isNotBlank()) {
-                    StatCard("高发地点", topLocation, GOLD, Modifier.weight(1f))
+                    StatCard("Top Location", topLocation, GOLD, Modifier.weight(1f))
                 }
                 if (topTimeSlot.isNotBlank()) {
-                    StatCard("高发时段", topTimeSlot, TEAL, Modifier.weight(1f))
+                    StatCard("Top Time", topTimeSlot, TEAL, Modifier.weight(1f))
                 }
             }
         }
 
-        // ── 日终报告 ──────────────────────────────────────────────────────
+        // ── Day review ──────────────────────────────────────────────────
         val narrative = report?.narrative ?: ""
         if (narrative.isNotBlank()) {
             Spacer(Modifier.height(18.dp))
-            Text("日终沙盘复盘", color = Color(0xFFE0D8C0), fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+            Text("Day Review", color = Color(0xFFE0D8C0), fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(bottom = 8.dp))
             Box(
                 modifier = Modifier
@@ -198,6 +197,6 @@ private fun DistortionBar(label: String, count: Int, total: Int) {
             )
         }
         Spacer(Modifier.width(8.dp))
-        Text("$count 次", color = DIM, fontSize = 12.sp, modifier = Modifier.width(36.dp))
+        Text("$count", color = DIM, fontSize = 12.sp, modifier = Modifier.width(36.dp))
     }
 }

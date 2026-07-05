@@ -5,51 +5,51 @@ import org.json.JSONObject
 
 // ── 伯恩斯 10 种认知扭曲（扩展为 12 类，对齐 SocialCD-3K） ──────────────
 enum class DistortionType(val label: String, val keywords: List<String>) {
-    ALL_OR_NOTHING("全或无思维", listOf(
+    ALL_OR_NOTHING("All-or-Nothing", listOf(
         "完全", "绝对", "永远", "从来", "总是", "从不", "一点都", "彻底",
         "要么", "非黑即白", "一直"
     )),
-    OVER_GENERALIZATION("过度概括", listOf(
+    OVER_GENERALIZATION("Overgeneralization", listOf(
         "永远都", "每次都", "总是这样", "从来都", "一辈子",
         "所有人", "没人", "什么都"
     )),
-    MENTAL_FILTER("心理过滤", listOf(
+    MENTAL_FILTER("Mental Filter", listOf(
         "只看到", "只有", "光盯着", "满脑子都是", "就是忘不掉",
         "反复想", "挥之不去"
     )),
-    DISQUALIFYING_POSITIVE("贬低正面", listOf(
+    DISQUALIFYING_POSITIVE("Disqualifying Positive", listOf(
         "那不算", "不代表什么", "只是运气", "任何人都会", "不值一提",
         "没什么大不了", "算不上"
     )),
-    MIND_READING("读心术", listOf(
+    MIND_READING("Mind Reading", listOf(
         "肯定觉得", "一定认为", "在笑我", "看不起", "觉得我",
         "肯定在", "他们都在", "别人都", "大家都"
     )),
-    FORTUNE_TELLING("算命式预测", listOf(
+    FORTUNE_TELLING("Fortune Telling", listOf(
         "肯定会", "一定会", "绝对会", "万一", "要是",
         "不可能", "做不到", "不会好的", "迟早", "最后肯定"
     )),
-    MAGNIFICATION("夸大与缩小", listOf(
+    MAGNIFICATION("Magnification", listOf(
         "太可怕了", "完蛋了", "毁掉了", "天塌了", "世界末日",
         "灾难", "崩溃", "彻底完了", "无法挽回"
     )),
-    EMOTIONAL_REASONING("情绪推理", listOf(
+    EMOTIONAL_REASONING("Emotional Reasoning", listOf(
         "我感觉", "我就是觉得", "直觉告诉我", "心里清楚",
         "不用说也知道", "没什么理由就是"
     )),
-    SHOULD_STATEMENTS("应该句式", listOf(
+    SHOULD_STATEMENTS("Should Statements", listOf(
         "应该", "必须", "不得不", "本该", "一定得",
         "不该", "不许", "不能这样"
     )),
-    LABELING("贴标签", listOf(
+    LABELING("Labeling", listOf(
         "我就是", "我是个", "我这人", "我天生", "我这辈子",
         "loser", "废物", "差劲", "不行", "没用", "失败者"
     )),
-    BLAMING_SELF("自责", listOf(
+    BLAMING_SELF("Blaming Self", listOf(
         "都怪我", "我的错", "是我不好", "我害的", "我不该",
         "怪我自己", "是我没做好", "我要负责"
     )),
-    BLAMING_OTHERS("责备他人", listOf(
+    BLAMING_OTHERS("Blaming Others", listOf(
         "都怪他", "是他的错", "他们害的", "要不是他们",
         "全因为他们", "被坑了"
     ));

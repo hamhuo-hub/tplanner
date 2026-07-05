@@ -81,11 +81,11 @@ class InsightStore(context: Context) {
         val slots = events.groupBy { e ->
             val cal = java.util.Calendar.getInstance().apply { timeInMillis = e.timestamp }
             when (cal.get(java.util.Calendar.HOUR_OF_DAY)) {
-                in 6..11 -> "上午"
-                in 12..13 -> "午间"
-                in 14..17 -> "下午"
-                in 18..22 -> "晚间"
-                else -> "深夜"
+                in 6..11 -> "Morning"
+                in 12..13 -> "Noon"
+                in 14..17 -> "Afternoon"
+                in 18..22 -> "Evening"
+                else -> "Night"
             }
         }
         return slots.maxByOrNull { it.value.size }?.key ?: ""
