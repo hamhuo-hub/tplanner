@@ -1,0 +1,18 @@
+[2026-07-05T01:02:50.712Z] [INFO] tPlanner Sync Server started
+[2026-07-05T01:02:50.713Z] [INFO] Port     : 37401
+[2026-07-05T01:02:50.713Z] [INFO] Data dir : C:\Users\hamhuo\tplanner\sync-server\data
+[2026-07-05T01:02:50.713Z] [INFO] Endpoint : http://localhost:37401/tplanner/events (public: Cloudflare Tunnel)
+[2026-07-05T01:03:22.261Z] [INFO] GET /health from ::1
+[2026-07-05T01:03:45.937Z] [INFO] PUT /tplanner/insights from ::1
+[2026-07-05T01:03:45.938Z] [INFO] Insights merged: 1 entries, 1 reports
+[2026-07-05T01:03:54.461Z] [INFO] GET /tplanner/insights from ::1
+[2026-07-05T01:03:54.461Z] [INFO] Serving 1 insight entries, 1 reports
+[2026-07-05T01:04:24.709Z] [INFO] PUT /tplanner/insights from ::1
+[2026-07-05T01:04:24.710Z] [INFO] Insights merged: 1 entries, 1 reports
+[2026-07-05T01:04:24.733Z] [INFO] GET /tplanner/insights from ::1
+[2026-07-05T01:04:24.734Z] [INFO] Serving 1 insight entries, 1 reports
+[2026-07-05T01:04:43.440Z] [INFO] GET /tplanner/events from ::1
+[2026-07-05T01:04:43.440Z] [INFO] Serving 0 events
+[2026-07-05T01:04:43.463Z] [INFO] GET /tplanner/goals from ::1
+[2026-07-05T01:04:43.463Z] [INFO] Serving 0 goals
+[2026-07-05T01:04:43.487Z] [INFO] GET /health from ::1

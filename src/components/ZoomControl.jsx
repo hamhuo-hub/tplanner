@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 
 const PRESETS = [75, 85, 100, 110, 125, 150];
@@ -12,6 +13,7 @@ const STORAGE_KEY = 'tplanner_zoom_factor';
  * Persists selection to localStorage.
  */
 export default function ZoomControl() {
+    const { t } = useTranslation();
     const [zoom, setZoom]       = useState(() => {
         const saved = parseFloat(localStorage.getItem(STORAGE_KEY) || '1');
         return isNaN(saved) ? 1 : saved;
@@ -65,7 +67,7 @@ export default function ZoomControl() {
             <button
                 onClick={() => setIsOpen(v => !v)}
                 className="btn btn--ghost"
-                title="调整界面缩放比例"
+                title={t('zoom.title')}
                 id="btn-zoom-control"
                 style={{
                     fontFamily:    'var(--font-mono)',
@@ -101,7 +103,7 @@ export default function ZoomControl() {
                     {/* Header */}
                     <div style={{ padding: '8px 12px 6px', borderBottom: '1px solid var(--clr-border)', background: 'var(--clr-void)' }}>
                         <div style={{ fontFamily: 'var(--font-display)', fontSize: '11px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--clr-gold)' }}>
-                            GUI SCALE
+                            {t('zoom.guiScale')}
                         </div>
                     </div>
 
@@ -111,7 +113,7 @@ export default function ZoomControl() {
                             onClick={() => step(-0.05)}
                             className="btn btn--ghost"
                             disabled={zoom <= 0.5}
-                            title="缩小"
+                            title={t('zoom.zoomOut')}
                             style={{ padding: '4px 8px', opacity: zoom <= 0.5 ? 0.35 : 1 }}
                         >
                             <ZoomOut size={13} />
@@ -134,7 +136,7 @@ export default function ZoomControl() {
                             onClick={() => step(0.05)}
                             className="btn btn--ghost"
                             disabled={zoom >= 2.0}
-                            title="放大"
+                            title={t('zoom.zoomIn')}
                             style={{ padding: '4px 8px', opacity: zoom >= 2.0 ? 0.35 : 1 }}
                         >
                             <ZoomIn size={13} />
@@ -200,7 +202,7 @@ export default function ZoomControl() {
                             }}
                         >
                             <RotateCcw size={10} />
-                            RESET 100%
+                            {t('zoom.reset')}
                         </button>
                     </div>
                 </div>

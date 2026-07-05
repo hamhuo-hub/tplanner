@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Minus, Maximize2, Minimize2, X } from 'lucide-react';
 
 /**
@@ -7,6 +8,7 @@ import { Minus, Maximize2, Minimize2, X } from 'lucide-react';
  * Only renders inside Electron (window.electronAPI must be present).
  */
 export default function TitleBar({ title = 'TPLANNER' }) {
+    const { t } = useTranslation();
     const [isMaximized, setIsMaximized] = useState(false);
 
     useEffect(() => {
@@ -28,7 +30,7 @@ export default function TitleBar({ title = 'TPLANNER' }) {
                     <div className="titlebar-accent-bar" />
                     <div className="titlebar-accent-bar titlebar-accent-bar--gold" />
                     <span className="titlebar-title">{title}</span>
-                    <span className="titlebar-subtitle">TEMPORAL PLANNER</span>
+                    <span className="titlebar-subtitle">{t('window.subtitle')}</span>
                 </div>
             </div>
 
@@ -37,16 +39,16 @@ export default function TitleBar({ title = 'TPLANNER' }) {
                 <button
                     className="titlebar-btn titlebar-btn--minimize"
                     onClick={() => window.electronAPI.minimize()}
-                    title="最小化"
-                    aria-label="Minimize"
+                    title={t('window.minimize')}
+                    aria-label={t('window.minimize')}
                 >
                     <Minus size={12} strokeWidth={2.5} />
                 </button>
                 <button
                     className="titlebar-btn titlebar-btn--maximize"
                     onClick={() => window.electronAPI.maximize()}
-                    title={isMaximized ? '还原' : '最大化'}
-                    aria-label="Maximize"
+                    title={isMaximized ? t('window.restore') : t('window.maximize')}
+                    aria-label={isMaximized ? t('window.restore') : t('window.maximize')}
                 >
                     {isMaximized
                         ? <Minimize2 size={11} strokeWidth={2.5} />
@@ -56,8 +58,8 @@ export default function TitleBar({ title = 'TPLANNER' }) {
                 <button
                     className="titlebar-btn titlebar-btn--close"
                     onClick={() => window.electronAPI.close()}
-                    title="关闭（最小化到托盘）"
-                    aria-label="Close"
+                    title={t('window.closeToTray')}
+                    aria-label={t('actions.close')}
                 >
                     <X size={12} strokeWidth={2.5} />
                 </button>

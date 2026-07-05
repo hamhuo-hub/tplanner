@@ -108,7 +108,7 @@ const expandBtnStyle = {
  */
 export default function NoteEditor({ value = '', onChange, onCommit, placeholder }) {
     const { t } = useTranslation();
-    const ph = placeholder ?? t('event.notePlaceholder', '点击添加备注…');
+    const ph = placeholder ?? t('event.notePlaceholder');
 
     const [editing, setEditing]       = useState(false);
     const [fullscreen, setFullscreen] = useState(false);
@@ -178,11 +178,11 @@ export default function NoteEditor({ value = '', onChange, onCommit, placeholder
                     fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase',
                     color: 'var(--clr-gold-dim)', fontFamily: 'var(--font-display)',
                 }}>
-                    {t('event.note', 'NOTE')}
+                    {t('event.note')}
                 </span>
 
                 <span style={{ fontSize: 10, color: 'var(--clr-text-mute)', letterSpacing: '0.08em' }}>
-                    EDIT · PREVIEW
+                    {t('note.editorLabel')}
                 </span>
 
                 <div style={{ flex: 1 }} />
@@ -194,7 +194,7 @@ export default function NoteEditor({ value = '', onChange, onCommit, placeholder
                         color: 'var(--clr-text-dim)', display: 'flex',
                         alignItems: 'center', padding: 4,
                     }}
-                    title="关闭全屏 (Esc)"
+                    title={t('note.closeFullscreen')}
                 >
                     <X size={16} />
                 </button>
@@ -284,7 +284,7 @@ export default function NoteEditor({ value = '', onChange, onCommit, placeholder
                     onMouseDown={e => e.preventDefault()}
                     onClick={openFullscreen}
                     style={expandBtnStyle}
-                    title={t('note.fullscreen', '全屏编辑')}
+                    title={t('note.fullscreen')}
                 >
                     <Maximize2 size={12} />
                 </button>

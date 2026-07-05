@@ -35,7 +35,7 @@ export default function ReminderBanner({ events, onHighlight, travelTimezone }) 
         <div className="banner banner--reminder reminder-banner">
             <Bell size={15} style={{ flexShrink: 0, marginTop: 2, color: 'var(--clr-blue)' }} />
             <div style={{ flex: 1 }}>
-                <p className="banner-title">{t('reminder.upcoming', '即将开始的提醒')}</p>
+                <p className="banner-title">{t('reminder.upcoming')}</p>
                 <ul style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 3, listStyle: 'none' }}>
                     {display.map(ev => {
                         const isNow = ev.start <= now;
@@ -51,7 +51,7 @@ export default function ReminderBanner({ events, onHighlight, travelTimezone }) 
                                     </span>
                                     {isNow && (
                                         <span className="banner-tag" style={{ background: 'var(--clr-blue)', color: '#fff' }}>
-                                            {t('reminder.ongoing', '进行中')}
+                                            {t('reminder.ongoing')}
                                         </span>
                                     )}
                                 </button>

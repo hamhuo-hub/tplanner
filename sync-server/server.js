@@ -24,6 +24,7 @@ const DATA_DIR  = process.env.DATA_DIR  || path.join(__dirname, 'data');
 const DATA_FILE     = path.join(DATA_DIR, 'events.json');
 const JOURNALS_FILE = path.join(DATA_DIR, 'journals.json');
 const GOALS_FILE    = path.join(DATA_DIR, 'goals.json');
+const INSIGHTS_FILE = path.join(DATA_DIR, 'insights.json');
 const LOG_FILE      = path.join(DATA_DIR, 'server.log');
 
 // 最多保留多少个备份
@@ -34,6 +35,7 @@ if (!fs.existsSync(DATA_DIR))     fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(DATA_FILE))     fs.writeFileSync(DATA_FILE, '[]');
 if (!fs.existsSync(JOURNALS_FILE)) fs.writeFileSync(JOURNALS_FILE, '{}');
 if (!fs.existsSync(GOALS_FILE))    fs.writeFileSync(GOALS_FILE, '[]');
+if (!fs.existsSync(INSIGHTS_FILE)) fs.writeFileSync(INSIGHTS_FILE, JSON.stringify({ entries: [], reports: {} }));
 
 // ── 日志 ──────────────────────────────────────────────────────────────────────
 function log(level, msg) {
@@ -109,6 +111,20 @@ function readJournals() {
 
 function writeJournals(journals) {
     fs.writeFileSync(JOURNALS_FILE, JSON.stringify(journals, null, 2));
+}
+
+// ── Insights 持久化 ───────────────────────────────────────────────────────────
+// 存储格式：{ entries: [StructuredEntry, ...], reports: { [date]: DayReport, ... } }
+// 与移动端 InsightStore 数据结构保持一致。
+function readInsights() {
+    try {
+        const raw = JSON.parse(fs.readFileSync(INSIGHTS_FILE, 'utf8'));
+        return { entries: raw.entries || [], reports: raw.reports || {} };
+    } catch (_) { return { entries: [], reports: {} }; }
+}
+
+function writeInsights(insights) {
+    fs.writeFileSync(INSIGHTS_FILE, JSON.stringify(insights, null, 2));
 }
 
 // ── 合并逻辑：updatedAt 较大的版本胜出；tombstone（deletedAt>0）正常参与竞争 ──
@@ -225,6 +241,65 @@ function mergeGoals(local, incoming) {
     return merged.filter(g => !g.deletedAt || (now - g.deletedAt) < TOMBSTONE_TTL_MS);
 }
 
+// ── Insights 规范形与合并 ─────────────────────────────────────────────────────
+// 与客户端 src/sync/insightsAdapter.js 中的同名函数逐字一致。
+function canonicalStructuredEntry(e) {
+    return {
+        ...e,
+        text: e.text || '', location: e.location || '',
+        lat: e.lat ?? 0, lng: e.lng ?? 0, intensity: e.intensity ?? 0,
+        distortions: e.distortions ?? [], autoThought: e.autoThought || '',
+        thoughtConfidence: e.thoughtConfidence ?? 0, rationalResponse: e.rationalResponse || '',
+        emotion: e.emotion || '', updatedAt: e.updatedAt || 0, deletedAt: e.deletedAt ?? null,
+    };
+}
+
+function canonicalDayReport(r) {
+    return {
+        ...r,
+        totalEvents: r.totalEvents ?? 0, avgIntensity: r.avgIntensity ?? 0,
+        distortionCounts: r.distortionCounts ?? {}, topLocation: r.topLocation || '',
+        topTimeSlot: r.topTimeSlot || '', narrative: r.narrative || '',
+        updatedAt: r.updatedAt || 0, deletedAt: r.deletedAt ?? null,
+    };
+}
+
+const toInsightEntryEntity = (e) => ({
+    id: e.id, payload: canonicalStructuredEntry(e),
+    updatedAt: e.updatedAt || 0, deletedAt: e.deletedAt ?? null,
+});
+
+const toInsightReportEntity = (date, r) => ({
+    id: date, payload: canonicalDayReport(r),
+    updatedAt: r.updatedAt || 0, deletedAt: r.deletedAt ?? null,
+});
+
+function mergeInsights(local, incoming) {
+    const locEntries = (local.entries || []).map(toInsightEntryEntity);
+    const locReports = Object.entries(local.reports || {}).map(([d, r]) => toInsightReportEntity(d, r));
+    const locEntities = [...locEntries, ...locReports];
+
+    const incEntries = (incoming.entries || []).map(toInsightEntryEntity);
+    const incReports = Object.entries(incoming.reports || {}).map(([d, r]) => toInsightReportEntity(d, r));
+    const incEntities = [...incEntries, ...incReports];
+
+    const mergedEntities = mergeEntities(locEntities, incEntities);
+    const now = Date.now();
+
+    const entries = [];
+    const reports = {};
+    for (const e of mergedEntities) {
+        // 跳过过期 tombstone
+        if (e.deletedAt && (now - e.deletedAt) >= TOMBSTONE_TTL_MS) continue;
+        if (e.payload && typeof e.payload.narrative !== 'undefined') {
+            reports[e.id] = { date: e.id, ...e.payload };
+        } else {
+            entries.push({ id: e.id, ...e.payload });
+        }
+    }
+    return { entries, reports };
+}
+
 // ── HTTP 工具 ─────────────────────────────────────────────────────────────────
 function setCORS(res) {
     res.setHeader('Access-Control-Allow-Origin',  '*');
@@ -277,10 +352,13 @@ async function handleRequest(req, res) {
     if (method === 'GET' && url === '/health') {
         const events = readEvents();
         const goals  = readGoals();
+        const insights = readInsights();
         json(res, 200, {
             status:    'ok',
             events:    events.length,
             goals:     goals.length,
+            insights_entries: (insights.entries || []).length,
+            insights_reports: Object.keys(insights.reports || {}).length,
             uptime:    Math.floor(process.uptime()),
             memory_mb: Math.round(process.memoryUsage().rss / 1024 / 1024),
             time:      new Date().toISOString(),
@@ -381,6 +459,31 @@ async function handleRequest(req, res) {
         writeGoals(merged);
         log('INFO', `Goals merged: local=${local.length} incoming=${incoming.length} result=${merged.length}`);
         json(res, 200, { ok: true, count: merged.length });
+        return;
+    }
+
+    // ── GET /tplanner/insights ──────────────────────────────────────────────
+    if (method === 'GET' && url === '/tplanner/insights') {
+        const insights = readInsights();
+        log('INFO', `Serving ${(insights.entries||[]).length} insight entries, ${Object.keys(insights.reports||{}).length} reports`);
+        json(res, 200, insights);
+        return;
+    }
+
+    // ── PUT /tplanner/insights ──────────────────────────────────────────────
+    if (method === 'PUT' && url === '/tplanner/insights') {
+        let body;
+        try { body = await readBody(req); } catch (e) { json(res, 413, { error: e.message }); return; }
+        let incoming;
+        try { incoming = JSON.parse(body); } catch (_) { json(res, 400, { error: 'Invalid JSON' }); return; }
+        if (typeof incoming !== 'object' || Array.isArray(incoming)) {
+            json(res, 400, { error: 'Expected object with entries and reports' }); return;
+        }
+        const local  = readInsights();
+        const merged = mergeInsights(local, incoming);
+        writeInsights(merged);
+        log('INFO', `Insights merged: ${(merged.entries||[]).length} entries, ${Object.keys(merged.reports||{}).length} reports`);
+        json(res, 200, { ok: true, entries: (merged.entries||[]).length, reports: Object.keys(merged.reports||{}).length });
         return;
     }
 

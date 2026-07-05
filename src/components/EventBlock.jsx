@@ -1,7 +1,9 @@
+import { useTranslation } from 'react-i18next';
 import { MASSEY_COLORS } from '../utils/constants';
 import { fromZonedTime, formatInTimeZone } from 'date-fns-tz';
 
 export default function EventBlock({ event, onClick, isConflicting, displayTimezone, onToggleTaskComplete, onDragStart, onContextMenu, isShadow, isSelected, style }) {
+    const { t } = useTranslation();
     const tz = displayTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
 
     let dayStartMs;
@@ -68,7 +70,7 @@ export default function EventBlock({ event, onClick, isConflicting, displayTimez
                         <div
                             className="task-checkbox"
                             onClick={handleCheckboxClick}
-                            title={hasChecklist && !allDone ? `请先完成子任务 (${doneCount}/${checklist.length})` : undefined}
+                            title={hasChecklist && !allDone ? t('event.subtaskBlocked', { done: doneCount, total: checklist.length }) : undefined}
                             style={{ opacity: hasChecklist && !allDone && !isCompleted ? 0.4 : 1, cursor: hasChecklist && !allDone && !isCompleted ? 'not-allowed' : 'pointer' }}
                         >
                             {isCompleted && (

@@ -13,9 +13,9 @@ function daysLabel(ev, now, t) {
     const d = deadline(ev);
     const days = differenceInCalendarDays(d, now);
     const hours = differenceInHours(d, now);
-    if (days === 0) return hours <= 0 ? t('task.dueNow', '到期') : t('task.dueToday', '今天到期');
-    if (days === 1) return t('task.dueTomorrow', '明天到期');
-    return t('task.dueInDays', { count: days, defaultValue: `还剩 ${days} 天` });
+    if (days === 0) return hours <= 0 ? t('task.dueNow') : t('task.dueToday');
+    if (days === 1) return t('task.dueTomorrow');
+    return t('task.dueInDays', { count: days });
 }
 
 export default function OverdueBanner({ events, onHighlight, travelTimezone }) {
@@ -58,7 +58,7 @@ export default function OverdueBanner({ events, onHighlight, travelTimezone }) {
                 <div className="banner banner--overdue overdue-banner">
                     <AlertCircle size={15} style={{ flexShrink: 0, marginTop: 2, color: 'var(--clr-gold)' }} />
                     <div style={{ flex: 1 }}>
-                        <p className="banner-title">{t('task.overdueDetected', '已逾期任务')}</p>
+                        <p className="banner-title">{t('task.overdueDetected')}</p>
                         <ul style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 3, listStyle: 'none' }}>
                             {displayOverdue.map(task => (
                                 <li key={task.id}>
@@ -71,7 +71,7 @@ export default function OverdueBanner({ events, onHighlight, travelTimezone }) {
                                             {`${formatInTimeZone(task.end, tz, 'MMM d HH:mm')}`}
                                         </span>
                                         <span className="banner-tag" style={{ color: 'var(--clr-red, #C0392B)' }}>
-                                            {t('task.overdue', '已逾期')}
+                                            {t('task.overdue')}
                                         </span>
                                     </button>
                                 </li>
@@ -96,7 +96,7 @@ export default function OverdueBanner({ events, onHighlight, travelTimezone }) {
                 <div className="banner banner--upcoming upcoming-banner">
                     <Clock size={15} style={{ flexShrink: 0, marginTop: 2, color: 'var(--clr-teal, #4A9DA8)' }} />
                     <div style={{ flex: 1 }}>
-                        <p className="banner-title">{t('task.upcoming', '即将截止')}</p>
+                        <p className="banner-title">{t('task.upcoming')}</p>
                         <ul style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 3, listStyle: 'none' }}>
                             {displayUpcoming.map(task => (
                                 <li key={task.id}>

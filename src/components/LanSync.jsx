@@ -1,6 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Wifi, RefreshCw, AlertTriangle, CheckCircle, X, ChevronDown, ChevronUp } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
+import { Wifi, RefreshCw, CheckCircle, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { format } from 'date-fns';
 import useLanSync from '../hooks/useLanSync';
 import { countSubtaskChanges } from '../utils/syncLogic';
@@ -8,23 +7,21 @@ import { countSubtaskChanges } from '../utils/syncLogic';
 // ── 子组件：冲突预览弹窗 ──────────────────────────────────────────────────────
 const fmtTime = (ts) => ts ? format(new Date(ts), 'MM-dd HH:mm') : '';
 
-// 通用冲突分组展示：事件/目标用 .title，日志用 .date + 文本片段
-function titleLabel(item) { return item?.title ?? ''; }
-function journalLabel(item) {
-    const text = item?.text || '';
-    const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 20);
-    return snippet ? `${item.date} · ${snippet}${text.length > 20 ? '…' : ''}` : item?.date ?? '';
-}
+// 类型名 → 中文 UI 标签
+const TYPE_LABELS = { events: '事件', goals: '目标', journals: '日志', insights: '洞察' };
+function adapterTitle(a) { return TYPE_LABELS[a.type] || a.type; }
 
-function ConflictSection({ title, itemLabel, unit, analysis, extra }) {
+function ConflictSection({ adapter, analysis, extra }) {
     const [showDetail, setShowDetail] = useState(false);
     const { added, removed, updated, deleted, conflicted, synced } = analysis;
     const hasChanges = added.length + removed.length + updated.length + deleted.length > 0;
+    const labelFn = adapter.itemLabel || (item => item?.title ?? '');
+    const unit = adapter.unitName || '条';
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 12, borderTop: '1px solid var(--clr-border,#333)' }}>
             <span style={{ fontFamily: 'var(--font-display)', fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--clr-text-dim)' }}>
-                {title}
+                {adapterTitle(adapter)}
             </span>
 
             {!hasChanges ? (
@@ -36,7 +33,7 @@ function ConflictSection({ title, itemLabel, unit, analysis, extra }) {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {added.length > 0      && <StatRow icon="↓" color="#5B8FCC" label={`从对端拉取 ${added.length} ${unit}`} />}
                     {removed.length > 0    && <StatRow icon="↑" color="#4A9DA8" label={`推送本地独有 ${removed.length} ${unit}`} />}
-                    {deleted.length > 0    && <StatRow icon="🗑" color="#A04040" label={`${deleted.length} ${unit}将被删除（已在其中一端删除）`} />}
+                    {deleted.length > 0    && <StatRow icon="🗑" color="#A04040" label={`${deleted.length} ${unit}将被删除`} />}
                     {updated.length > 0    && <StatRow icon="↻" color="#C9A84C" label={`${updated.length} ${unit}将被对端较新版本覆盖`} />}
                     {conflicted.length > 0 && <StatRow icon="!" color="#C0392B" label={`${conflicted.length} ${unit}本地版本更新（保留本地）`} />}
                     {synced.length > 0     && <StatRow icon="✓" color="#4A7C59" label={`${synced.length} ${unit}已同步无变化`} />}
@@ -52,33 +49,27 @@ function ConflictSection({ title, itemLabel, unit, analysis, extra }) {
                         {showDetail ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                         {showDetail ? '收起详情' : '查看详情'}
                     </button>
-
                     {showDetail && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 220, overflow: 'auto' }}>
-                            <EventGroup title="将从对端拉取" color="#5B8FCC" items={added} renderItem={itemLabel} />
-                            <EventGroup title="将推送到对端" color="#4A9DA8" items={removed} renderItem={itemLabel} />
+                            <EventGroup title="将从对端拉取" color="#5B8FCC" items={added} renderItem={labelFn} />
+                            <EventGroup title="将推送到对端" color="#4A9DA8" items={removed} renderItem={labelFn} />
                             <EventGroup title="将被删除（tombstone 传播）" color="#A04040" items={deleted}
                                 renderItem={({ local: l, remote: r }) => (
                                     <span style={{ textDecoration: 'line-through', color: 'var(--clr-text-dim)' }}>
-                                        {itemLabel(l)}
-                                        <span style={{ fontSize: 9, marginLeft: 6 }}>
-                                            {fmtTime(r.deletedAt || l.deletedAt) && `${fmtTime(r.deletedAt || l.deletedAt)} 删除`}
-                                        </span>
+                                        {labelFn(l)}
+                                        <span style={{ fontSize: 9, marginLeft: 6 }}>{fmtTime(r.deletedAt || l.deletedAt)} 删除</span>
                                     </span>
-                                )}
-                            />
+                                )} />
                             <EventGroup title="将被对端版本覆盖" color="#C9A84C" items={updated}
                                 renderItem={({ local: l, remote: r }) => (
                                     <span>
-                                        <span style={{ textDecoration: 'line-through', color: 'var(--clr-text-dim)', marginRight: 6 }}>{itemLabel(l)}</span>
-                                        → {itemLabel(r)}
+                                        <span style={{ textDecoration: 'line-through', color: 'var(--clr-text-dim)', marginRight: 6 }}>{labelFn(l)}</span>
+                                        → {labelFn(r)}
                                         <span style={{ fontSize: 9, color: 'var(--clr-text-dim)', marginLeft: 6 }}>{fmtTime(r.updatedAt)}</span>
                                     </span>
-                                )}
-                            />
+                                )} />
                             <EventGroup title="本地版本更新（保留）" color="#C0392B" items={conflicted}
-                                renderItem={({ local: l }) => itemLabel(l)}
-                            />
+                                renderItem={({ local: l }) => labelFn(l)} />
                         </div>
                     )}
                 </>
@@ -87,70 +78,42 @@ function ConflictSection({ title, itemLabel, unit, analysis, extra }) {
     );
 }
 
-function ConflictModal({ analysis, journalAnalysis, goalAnalysis, serverUrl, onConfirm, onCancel }) {
-    const { added, removed, updated, deleted } = analysis;
-    const hasEventChanges = added.length + removed.length + updated.length + deleted.length > 0;
-    const hasJournalChanges = ['added', 'removed', 'updated', 'deleted'].some(k => journalAnalysis[k].length > 0);
-    const hasGoalChanges    = ['added', 'removed', 'updated', 'deleted'].some(k => goalAnalysis[k].length > 0);
-    const hasChanges = hasEventChanges || hasJournalChanges || hasGoalChanges;
-    const subtaskStats = useMemo(() => countSubtaskChanges(updated), [updated]);
+function ConflictModal({ results, serverUrl, onConfirm, onCancel }) {
+    const eventsResult = results.find(r => r.adapter.type === 'events');
+    const eventsUpdated = eventsResult?.analysis?.updated || [];
+    const subtaskStats = useMemo(() => countSubtaskChanges(eventsUpdated), [eventsUpdated]);
+
+    const hasAnyChanges = results.some(r => {
+        const a = r.analysis;
+        return a.added.length + a.removed.length + a.updated.length +
+               a.deleted.length + a.conflicted.length > 0;
+    });
 
     return (
-        <div style={{
-            position: 'fixed', inset: 0, zIndex: 1000,
-            background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-            <div style={{
-                width: 440, maxHeight: '85vh', overflow: 'auto',
-                background: 'var(--clr-surface,#1e1e1e)',
-                border: '1px solid var(--clr-border,#333)', borderRadius: 10,
-                padding: 20, display: 'flex', flexDirection: 'column', gap: 12,
-                boxShadow: '0 16px 48px rgba(0,0,0,0.6)',
-            }}>
-                {/* Header */}
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: 440, maxHeight: '85vh', overflow: 'auto', background: 'var(--clr-surface,#1e1e1e)', border: '1px solid var(--clr-border,#333)', borderRadius: 10, padding: 20, display: 'flex', flexDirection: 'column', gap: 12, boxShadow: '0 16px 48px rgba(0,0,0,0.6)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontFamily: 'var(--font-display)', fontSize: 13, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--clr-text)' }}>
-                        同步预览
-                    </span>
-                    <button onClick={onCancel} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--clr-text-dim)' }}>
-                        <X size={16} />
-                    </button>
+                    <span style={{ fontFamily: 'var(--font-display)', fontSize: 13, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--clr-text)' }}>同步预览</span>
+                    <button onClick={onCancel} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--clr-text-dim)' }}><X size={16} /></button>
                 </div>
+                <div style={{ fontSize: 11, color: 'var(--clr-text-dim)', fontFamily: 'var(--font-mono)', padding: '6px 10px', background: 'rgba(255,255,255,0.04)', borderRadius: 4 }}>{serverUrl}</div>
 
-                {/* Server info */}
-                <div style={{ fontSize: 11, color: 'var(--clr-text-dim)', fontFamily: 'var(--font-mono)', padding: '6px 10px', background: 'rgba(255,255,255,0.04)', borderRadius: 4 }}>
-                    {serverUrl}
-                </div>
-
-                {!hasChanges && (
+                {!hasAnyChanges && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#4A9DA8' }}>
-                        <CheckCircle size={15} />
-                        <span style={{ fontSize: 13 }}>数据完全一致，无需合并</span>
+                        <CheckCircle size={15} /><span style={{ fontSize: 13 }}>数据完全一致，无需合并</span>
                     </div>
                 )}
 
-                <ConflictSection
-                    title="事件"
-                    unit="条"
-                    itemLabel={titleLabel}
-                    analysis={analysis}
-                    extra={subtaskStats.events > 0 && (
-                        <StatRow icon="☑" color="#9B7EBD" label={`其中 ${subtaskStats.events} 条事件的子任务有变化（共 ${subtaskStats.items} 项）`} />
-                    )}
-                />
-                <ConflictSection title="日志" unit="篇" itemLabel={journalLabel} analysis={journalAnalysis} />
-                <ConflictSection title="目标" unit="个" itemLabel={titleLabel} analysis={goalAnalysis} />
+                {results.map(r => (
+                    <ConflictSection key={r.adapter.type} adapter={r.adapter} analysis={r.analysis}
+                        extra={r.adapter.type === 'events' && subtaskStats.events > 0 && (
+                            <StatRow icon="☑" color="#9B7EBD" label={`其中 ${subtaskStats.events} 条事件的子任务有变化（共 ${subtaskStats.items} 项）`} />
+                        )} />
+                ))}
 
-                {/* Actions */}
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', paddingTop: 4 }}>
-                    <button onClick={onCancel}
-                        style={{ padding: '6px 14px', borderRadius: 4, background: 'none', border: '1px solid var(--clr-border,#333)', color: 'var(--clr-text-dim)', cursor: 'pointer', fontSize: 12 }}>
-                        取消
-                    </button>
-                    <button onClick={onConfirm}
-                        style={{ padding: '6px 14px', borderRadius: 4, background: 'var(--clr-blue,#5B8FCC)', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
-                        {hasChanges ? '确认合并' : '完成'}
-                    </button>
+                    <button onClick={onCancel} style={{ padding: '6px 14px', borderRadius: 4, background: 'none', border: '1px solid var(--clr-border,#333)', color: 'var(--clr-text-dim)', cursor: 'pointer', fontSize: 12 }}>取消</button>
+                    <button onClick={onConfirm} style={{ padding: '6px 14px', borderRadius: 4, background: 'var(--clr-blue,#5B8FCC)', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>{hasAnyChanges ? '确认合并' : '完成'}</button>
                 </div>
             </div>
         </div>
@@ -160,9 +123,7 @@ function ConflictModal({ analysis, journalAnalysis, goalAnalysis, serverUrl, onC
 function StatRow({ icon, color, label }) {
     return (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--clr-text)' }}>
-            <span style={{ width: 18, height: 18, borderRadius: 3, background: `${color}22`, color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
-                {icon}
-            </span>
+            <span style={{ width: 18, height: 18, borderRadius: 3, background: `${color}22`, color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{icon}</span>
             {label}
         </div>
     );
@@ -175,9 +136,7 @@ function EventGroup({ title, color, items, renderItem }) {
             <div style={{ fontSize: 10, color, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>{title}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 {items.map((item, i) => (
-                    <div key={i} style={{ fontSize: 11, color: 'var(--clr-text)', fontFamily: 'var(--font-mono)', padding: '2px 6px', background: 'rgba(255,255,255,0.04)', borderRadius: 3 }}>
-                        {renderItem(item)}
-                    </div>
+                    <div key={i} style={{ fontSize: 11, color: 'var(--clr-text)', fontFamily: 'var(--font-mono)', padding: '2px 6px', background: 'rgba(255,255,255,0.04)', borderRadius: 3 }}>{renderItem(item)}</div>
                 ))}
             </div>
         </div>
@@ -185,87 +144,41 @@ function EventGroup({ title, color, items, renderItem }) {
 }
 
 // ── 主组件 ────────────────────────────────────────────────────────────────────
-export default function LanSync({ events, onMergeEvents, journals, onMergeJournals, goals, onMergeGoals }) {
-    const { t } = useTranslation();
-    const sync = useLanSync({ events, onMergeEvents, journals, onMergeJournals, goals, onMergeGoals });
-    const {
-        isElectron,
-        open, setOpen,
-        config, setConfig, saveConfig,
-        status, statusMsg, statusColor,
-        preview, setPreview,
-        doSync, executeMerge,
-        serverUrl,
-    } = sync;
+// 新 API: <LanSync adapters={[...]} />
+// 旧 API（向后兼容）: <LanSync events={...} journals={...} goals={...} onMergeXxx={...} />
+export default function LanSync(props) {
+    const sync = useLanSync(props);
+    const { isElectron, open, setOpen, config, setConfig, saveConfig, status, statusMsg, statusColor, preview, setPreview, doSync, executeMerge, serverUrl } = sync;
 
     return (
         <>
-            {/* 工具栏按钮 */}
             <div style={{ position: 'relative' }}>
-                <button
-                    className="btn btn--ghost"
-                    onClick={() => setOpen(v => !v)}
-                    title="同步"
-                    style={{ color: status === 'success' ? '#4A9DA8' : status === 'error' ? 'var(--clr-red,#C0392B)' : undefined }}
-                >
+                <button className="btn btn--ghost" onClick={() => setOpen(v => !v)} title="同步"
+                    style={{ color: status === 'success' ? '#4A9DA8' : status === 'error' ? 'var(--clr-red,#C0392B)' : undefined }}>
                     <Wifi size={13} />
                 </button>
 
                 {open && (
-                    <div style={{
-                        position: 'absolute', top: '100%', right: 0, zIndex: 300,
-                        width: 300, background: 'var(--clr-surface,#1e1e1e)',
-                        border: '1px solid var(--clr-border,#333)', borderRadius: 8,
-                        padding: 14, boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-                        display: 'flex', flexDirection: 'column', gap: 12,
-                    }}>
-                        {/* 标题行 */}
+                    <div style={{ position: 'absolute', top: '100%', right: 0, zIndex: 300, width: 300, background: 'var(--clr-surface,#1e1e1e)', border: '1px solid var(--clr-border,#333)', borderRadius: 8, padding: 14, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column', gap: 12 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontFamily: 'var(--font-display)', fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--clr-text-dim)' }}>
-                                同步服务器
-                            </span>
+                            <span style={{ fontFamily: 'var(--font-display)', fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--clr-text-dim)' }}>同步服务器</span>
                         </div>
-
-                        {/* 同步服务器地址 */}
-                        <input
-                            type="text"
-                            placeholder="https://sync.hamhuo.top"
-                            value={config.serverUrl}
+                        <input type="text" placeholder="https://sync.hamhuo.top" value={config.serverUrl}
                             onChange={e => setConfig(c => ({ ...c, serverUrl: e.target.value }))}
-                            onBlur={() => saveConfig(config)}
-                            style={inputStyle}
-                        />
-
-                        {/* 开关 */}
+                            onBlur={() => saveConfig(config)} style={inputStyle} />
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                             <Toggle label="自动同步" checked={config.autoSync} onChange={v => saveConfig({ ...config, autoSync: v })} />
                             {config.autoSync && (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--clr-text-dim)', paddingLeft: 4 }}>
-                                    间隔
-                                    <input type="number" value={config.interval} min={10}
+                                    间隔 <input type="number" value={config.interval} min={10}
                                         onChange={e => setConfig(c => ({ ...c, interval: Number(e.target.value) }))}
-                                        onBlur={() => saveConfig(config)}
-                                        style={{ ...inputStyle, width: 56 }}
-                                    />
-                                    秒
+                                        onBlur={() => saveConfig(config)} style={{ ...inputStyle, width: 56 }} /> 秒
                                 </div>
                             )}
                         </div>
-
-                        {/* 状态 */}
-                        {statusMsg && (
-                            <span style={{ fontSize: 10, color: statusColor, fontFamily: 'var(--font-mono)' }}>
-                                {statusMsg}
-                            </span>
-                        )}
-
-                        {/* 同步按钮 */}
-                        <button
-                            className="btn btn--primary"
-                            onClick={() => doSync(serverUrl)}
-                            disabled={status === 'syncing' || !serverUrl}
-                            style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center' }}
-                        >
+                        {statusMsg && <span style={{ fontSize: 10, color: statusColor, fontFamily: 'var(--font-mono)' }}>{statusMsg}</span>}
+                        <button className="btn btn--primary" onClick={() => doSync(serverUrl)} disabled={status === 'syncing' || !serverUrl}
+                            style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center' }}>
                             <RefreshCw size={12} style={status === 'syncing' ? { animation: 'spin 1s linear infinite' } : {}} />
                             立即同步
                         </button>
@@ -273,16 +186,10 @@ export default function LanSync({ events, onMergeEvents, journals, onMergeJourna
                 )}
             </div>
 
-            {/* 冲突预览弹窗 */}
             {preview && (
-                <ConflictModal
-                    analysis={preview.analysis}
-                    journalAnalysis={preview.journalAnalysis}
-                    goalAnalysis={preview.goalAnalysis}
-                    serverUrl={preview.serverUrl}
-                    onConfirm={() => executeMerge(preview.serverUrl, preview.remoteEvents)}
-                    onCancel={() => setPreview(null)}
-                />
+                <ConflictModal results={preview.results} serverUrl={preview.serverUrl}
+                    onConfirm={() => executeMerge(preview.serverUrl)}
+                    onCancel={() => setPreview(null)} />
             )}
         </>
     );

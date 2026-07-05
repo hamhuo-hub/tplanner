@@ -2,8 +2,10 @@ import { eachDayOfInterval, format } from 'date-fns';
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
 import EventRow from './EventRow';
 import { useRef, useEffect, useLayoutEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export default function Timeline({ startDate, endDate, events, onEventClick, onAddEvent, highlight, onLoadPrev, onLoadNext, onUpdateEvent, clashes, travelTimezone, onToggleTaskComplete, journals, onSaveJournal, onContextMenu, selectedIds, onSelectionChange }) {
+    const { t } = useTranslation();
     const scrollContainerRef = useRef(null);
     const [days, setDays] = useState([]);
     const prevStartDateRef = useRef(startDate);
@@ -204,10 +206,10 @@ export default function Timeline({ startDate, endDate, events, onEventClick, onA
             {/* Time Axis Header */}
             <div className="timeline-header">
                 <div className="timeline-header-label">
-                    <span title={travelTimezone || 'Local Time'}>
+                    <span title={travelTimezone || t('timeline.localTime')}>
                         {travelTimezone
                             ? (travelTimezone === 'Asia/Shanghai' ? 'BEIJING' : travelTimezone.split('/').pop().replace(/_/g, ' ').toUpperCase())
-                            : 'LOCAL'}
+                            : t('timeline.localTimeShort')}
                     </span>
                 </div>
                 <div className="timeline-header-axis" style={{ position: 'relative', minWidth: 1200 }}>

@@ -9,7 +9,7 @@ export default function ClashBanner({ clashes, events, onHighlight, travelTimezo
 
     if (!clashes || clashes.length === 0) return null;
 
-    const getTitle = id => events.find(e => e.id === id)?.title || 'Unknown';
+    const getTitle = id => events.find(e => e.id === id)?.title || t('clash.unknown');
     const seen = new Set();
     const uniqueClashes = clashes.reduce((acc, c) => {
         const pair = [c.eventId, c.clashWithId].sort().join('-');

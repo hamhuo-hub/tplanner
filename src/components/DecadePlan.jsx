@@ -245,7 +245,7 @@ export default function DecadePlan({ goals = [], selectedId, onSelect, onAddGoal
                                             style={{ fontSize: 9, fontWeight: 600, fill: 'rgba(255,255,255,0.78)',
                                                 fontFamily: 'system-ui,sans-serif', letterSpacing: '0.02em',
                                                 userSelect: 'none', pointerEvents: 'none' }}>
-                                            {goal.title || `目标 ${goal.order + 1}`}
+                                            {goal.title || t('decade.goalFallback', { n: goal.order + 1 })}
                                         </text>
                                     </Hexagon>
                                 );

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Terminal, X, RefreshCw, Cpu, MemoryStick } from 'lucide-react';
 
 function fmt(bytes) {
@@ -7,6 +8,7 @@ function fmt(bytes) {
 }
 
 export default function DebugPanel() {
+    const { t } = useTranslation();
     const [open, setOpen]     = useState(false);
     const [perf, setPerf]     = useState(null);
     const [logs, setLogs]     = useState([]);      // captured console logs
@@ -109,7 +111,7 @@ export default function DebugPanel() {
             {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderBottom: '1px solid #222', background: '#111', borderRadius: '8px 0 0 0' }}>
                 <Terminal size={12} style={{ color: '#666' }} />
-                <span style={{ color: '#888', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Debug Console</span>
+                <span style={{ color: '#888', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{t('debug.title')}</span>
                 <span style={{ color: '#444', fontSize: 10, marginLeft: 2 }}>F12</span>
 
                 {/* Perf badges */}
@@ -121,14 +123,14 @@ export default function DebugPanel() {
                 )}
 
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
-                    <IconBtn onClick={refreshPerf} title="刷新性能信息"><RefreshCw size={11} /></IconBtn>
-                    <IconBtn onClick={openDevTools} title="打开 Electron DevTools (独立窗口)">
+                    <IconBtn onClick={refreshPerf} title={t('debug.refreshPerf')}><RefreshCw size={11} /></IconBtn>
+                    <IconBtn onClick={openDevTools} title={t('debug.openDevTools')}>
                         <span style={{ fontSize: 10, letterSpacing: 0 }}>DevTools</span>
                     </IconBtn>
-                    <IconBtn onClick={clearLogs} title="清空日志">
-                        <span style={{ fontSize: 10 }}>清空</span>
+                    <IconBtn onClick={clearLogs} title={t('debug.clearLogs')}>
+                        <span style={{ fontSize: 10 }}>{t('debug.clearLogs')}</span>
                     </IconBtn>
-                    <IconBtn onClick={() => setOpen(false)} title="关闭"><X size={11} /></IconBtn>
+                    <IconBtn onClick={() => setOpen(false)} title={t('debug.close')}><X size={11} /></IconBtn>
                 </div>
             </div>
 
@@ -148,7 +150,7 @@ export default function DebugPanel() {
             <div style={{ padding: '4px 10px', borderBottom: '1px solid #1a1a1a' }}>
                 <input
                     type="text"
-                    placeholder="过滤日志…"
+                    placeholder={t('debug.filterPlaceholder')}
                     value={filter}
                     onChange={e => setFilter(e.target.value)}
                     style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', color: '#888', fontSize: 11, fontFamily: 'inherit' }}
@@ -158,7 +160,7 @@ export default function DebugPanel() {
             {/* Log list */}
             <div style={{ flex: 1, overflow: 'auto', padding: '4px 0' }}>
                 {filtered.length === 0 ? (
-                    <div style={{ color: '#333', textAlign: 'center', marginTop: 20, fontSize: 10 }}>暂无日志</div>
+                    <div style={{ color: '#333', textAlign: 'center', marginTop: 20, fontSize: 10 }}>{t('debug.noLogs')}</div>
                 ) : (
                     filtered.map(entry => (
                         <LogLine key={entry.id} entry={entry} />
@@ -169,8 +171,8 @@ export default function DebugPanel() {
 
             {/* Footer: log count */}
             <div style={{ padding: '3px 10px', borderTop: '1px solid #1a1a1a', color: '#444', fontSize: 10, display: 'flex', justifyContent: 'space-between' }}>
-                <span>{logs.length} 条日志{filter ? `（过滤后 ${filtered.length} 条）` : ''}</span>
-                <span style={{ color: '#333' }}>最多保留 500 条</span>
+                <span>{filter ? t('debug.logCountFiltered', { total: logs.length, filtered: filtered.length }) : t('debug.logCount', { total: logs.length })}</span>
+                <span style={{ color: '#333' }}>{t('debug.maxRetention')}</span>
             </div>
         </div>
     );

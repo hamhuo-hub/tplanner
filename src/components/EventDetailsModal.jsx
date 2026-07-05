@@ -50,7 +50,7 @@ export default function EventDetailsModal({ event, travelTimezone, onClose, onDe
                         </p>
                         {/* Timezone display */}
                         <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: '10px', color: 'var(--clr-text-dim)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Original:</span>
+                            <span style={{ fontSize: '10px', color: 'var(--clr-text-dim)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{t('event.originalTz')}</span>
                             {(() => {
                                 const displayTz = event.timezone || 'Asia/Shanghai';
                                 return (
@@ -85,7 +85,7 @@ export default function EventDetailsModal({ event, travelTimezone, onClose, onDe
                     {event.checklist?.length > 0 && (
                         <div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                                <span className="modal-label" style={{ marginBottom: 0 }}>{t('event.checklist', '子任务')}</span>
+                                <span className="modal-label" style={{ marginBottom: 0 }}>{t('event.checklist')}</span>
                                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--clr-gold-dim)' }}>
                                     {event.checklist.filter(i => i.completed).length}/{event.checklist.length}
                                 </span>
@@ -139,10 +139,10 @@ export default function EventDetailsModal({ event, travelTimezone, onClose, onDe
                                         </select>
                                     )}
                                     <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--clr-text-dim)' }}>
-                                        {t('messages.deleteConfirmation', '确认删除？')}
+                                        {t('messages.deleteConfirmation')}
                                     </span>
                                     <button className="btn btn--danger" onClick={() => { onDelete(event.id, deleteScope, event); onClose(); }}>
-                                        {t('actions.confirm', '确认')}
+                                        {t('actions.confirm')}
                                     </button>
                                     <button className="btn" onClick={() => setConfirmingDelete(false)}>
                                         {t('actions.cancel')}

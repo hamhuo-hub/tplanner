@@ -2,7 +2,8 @@
     "app": {
         "title": "tPlanner",
         "switchLanguage": "Switch Language",
-        "printCalendar": "Print Calendar"
+        "printCalendar": "Print Calendar",
+        "displayTimezone": "Display Timezone"
     },
     "nav": {
         "prev": "Prev 2M",
@@ -23,7 +24,10 @@
         "addItem": "Add Item",
         "close": "Close",
         "copy": "Copy",
-        "confirm": "Confirm"
+        "confirm": "Confirm",
+        "merge": "Merge",
+        "done": "Done",
+        "syncNow": "Sync Now"
     },
     "recurrence": {
         "none": "None",
@@ -59,7 +63,10 @@
         "checklist": "Checklist",
         "checklistItem": "Item...",
         "recurrence": "Repeat",
-        "allDay": "All Day"
+        "allDay": "All Day",
+        "originalTz": "Original:",
+        "copySuffix": " (Copy)",
+        "subtaskBlocked": "Complete subtasks first ({{done}}/{{total}})"
     },
     "reminder": {
         "upcoming": "Upcoming Reminders",
@@ -97,7 +104,8 @@
         "detected": "Schedule Conflict Detected",
         "message": "You have {{count}} overlap in your schedule.",
         "message_plural": "You have {{count}} overlaps in your schedule.",
-        "jump": "Jump to"
+        "jump": "Jump to",
+        "unknown": "Unknown"
     },
     "tabs": {
         "calendar": "Calendar",
@@ -109,6 +117,85 @@
         "deleteGoal": "Delete Goal",
         "defaultTitle": "New Goal",
         "goalFallback": "Goal {{n}}"
+    },
+    "timeline": {
+        "localTime": "Local Time",
+        "localTimeShort": "LOCAL"
+    },
+    "selection": {
+        "count": "{{count}} selected",
+        "delete": "Delete Selected",
+        "cancel": "Cancel (Esc)"
+    },
+    "paste": {
+        "copied": "Copied",
+        "hint": "— Click empty area on timeline to paste",
+        "cancel": "Cancel (Esc)"
+    },
+    "sync": {
+        "title": "Sync Server",
+        "serverUrl": "https://sync.hamhuo.top",
+        "autoSync": "Auto Sync",
+        "interval": "Interval",
+        "seconds": "s",
+        "syncNow": "Sync Now",
+        "preview": "Sync Preview",
+        "noChanges": "Data is identical, no merge needed",
+        "confirmMerge": "Confirm Merge",
+        "done": "Done",
+        "events": "Events",
+        "journals": "Journals",
+        "goals": "Goals",
+        "unitEvents": "items",
+        "unitJournals": "entries",
+        "unitGoals": "items",
+        "showDetail": "Details",
+        "hideDetail": "Hide Details",
+        "pullFromPeer": "Pull {{count}} {{unit}} from peer",
+        "pushToPeer": "Push {{count}} local-only {{unit}} to peer",
+        "willBeDeleted": "{{count}} {{unit}} will be deleted (already deleted on one side)",
+        "willBeOverwritten": "{{count}} {{unit}} will be overwritten by peer's newer version",
+        "localNewer": "{{count}} {{unit}} local version is newer (keep local)",
+        "alreadySynced": "{{count}} {{unit}} already synced",
+        "syncedNoChanges": "{{count}} {{unit}} synced, no merge needed",
+        "dataIdentical": "Data is identical, no merge needed",
+        "subtaskChanges": "{{events}} events have subtask changes ({{items}} total items)",
+        "detailPull": "Pull from peer",
+        "detailPush": "Push to peer",
+        "detailDelete": "Tombstone propagation",
+        "detailOverwrite": "Overwrite with peer version",
+        "detailLocalNewer": "Local version (kept)"
+    },
+    "window": {
+        "minimize": "Minimize",
+        "maximize": "Maximize",
+        "restore": "Restore",
+        "closeToTray": "Close (minimize to tray)",
+        "subtitle": "TEMPORAL PLANNER"
+    },
+    "zoom": {
+        "title": "Adjust UI Scale",
+        "guiScale": "GUI SCALE",
+        "zoomOut": "Zoom Out",
+        "zoomIn": "Zoom In",
+        "reset": "RESET 100%"
+    },
+    "note": {
+        "fullscreen": "Fullscreen Edit",
+        "closeFullscreen": "Close Fullscreen (Esc)",
+        "editorLabel": "EDIT · PREVIEW"
+    },
+    "debug": {
+        "title": "Debug Console",
+        "refreshPerf": "Refresh Performance Info",
+        "openDevTools": "Open Electron DevTools (separate window)",
+        "clearLogs": "Clear Logs",
+        "close": "Close",
+        "filterPlaceholder": "Filter logs…",
+        "noLogs": "No logs",
+        "logCount": "{{total}} logs",
+        "logCountFiltered": "{{total}} logs ({{filtered}} after filter)",
+        "maxRetention": "Max 500 retained"
     },
     "messages": {
         "importSuccess": "Data imported successfully!",

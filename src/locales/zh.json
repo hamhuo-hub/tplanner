@@ -2,7 +2,8 @@
     "app": {
         "title": "tPlanner",
         "switchLanguage": "切换语言",
-        "printCalendar": "打印日历"
+        "printCalendar": "打印日历",
+        "displayTimezone": "显示时区"
     },
     "nav": {
         "prev": "前两个月",
@@ -23,7 +24,10 @@
         "addItem": "添加项目",
         "close": "关闭",
         "copy": "复制",
-        "confirm": "确认"
+        "confirm": "确认",
+        "merge": "合并",
+        "done": "完成",
+        "syncNow": "立即同步"
     },
     "recurrence": {
         "none": "无",
@@ -59,14 +63,17 @@
         "checklist": "子任务",
         "checklistItem": "项目...",
         "recurrence": "重复",
-        "allDay": "全天"
+        "allDay": "全天",
+        "originalTz": "原始时区:",
+        "copySuffix": "（副本）",
+        "subtaskBlocked": "请先完成子任务（{{done}}/{{total}}）"
     },
     "reminder": {
         "upcoming": "即将到来的提醒",
         "ongoing": "正在进行"
     },
     "timezones": {
-        "default": "中国时间 (默认)",
+        "default": "中国时间（默认）",
         "America_Los_Angeles": "洛杉矶 (PT)",
         "America_New_York": "纽约 (ET)",
         "Europe_London": "伦敦 (GMT)",
@@ -97,7 +104,8 @@
         "detected": "检测到日程冲突",
         "message": "您的日程中有 {{count}} 处重叠。",
         "message_plural": "您的日程中有 {{count}} 处重叠。",
-        "jump": "跳转至"
+        "jump": "跳转至",
+        "unknown": "未知"
     },
     "tabs": {
         "calendar": "日历",
@@ -109,6 +117,85 @@
         "deleteGoal": "删除目标",
         "defaultTitle": "新目标",
         "goalFallback": "目标 {{n}}"
+    },
+    "timeline": {
+        "localTime": "本地时间",
+        "localTimeShort": "本地"
+    },
+    "selection": {
+        "count": "已选中 {{count}} 项",
+        "delete": "批量删除",
+        "cancel": "取消 (Esc)"
+    },
+    "paste": {
+        "copied": "已复制",
+        "hint": "— 点击时间轴空白处粘贴",
+        "cancel": "取消 (Esc)"
+    },
+    "sync": {
+        "title": "同步服务器",
+        "serverUrl": "https://sync.hamhuo.top",
+        "autoSync": "自动同步",
+        "interval": "间隔",
+        "seconds": "秒",
+        "syncNow": "立即同步",
+        "preview": "同步预览",
+        "noChanges": "数据完全一致，无需合并",
+        "confirmMerge": "确认合并",
+        "done": "完成",
+        "events": "事件",
+        "journals": "日志",
+        "goals": "目标",
+        "unitEvents": "条",
+        "unitJournals": "篇",
+        "unitGoals": "个",
+        "showDetail": "查看详情",
+        "hideDetail": "收起详情",
+        "pullFromPeer": "从对端拉取 {{count}} {{unit}}",
+        "pushToPeer": "推送本地独有 {{count}} {{unit}}",
+        "willBeDeleted": "{{count}} {{unit}}将被删除（已在其中一端删除）",
+        "willBeOverwritten": "{{count}} {{unit}}将被对端较新版本覆盖",
+        "localNewer": "{{count}} {{unit}}本地版本更新（保留本地）",
+        "alreadySynced": "{{count}} {{unit}}已同步无变化",
+        "syncedNoChanges": "{{count}} {{unit}}已同步，无需合并",
+        "dataIdentical": "数据完全一致，无需合并",
+        "subtaskChanges": "其中 {{events}} 条事件的子任务有变化（共 {{items}} 项）",
+        "detailPull": "将从对端拉取",
+        "detailPush": "将推送到对端",
+        "detailDelete": "将被删除（tombstone 传播）",
+        "detailOverwrite": "将被对端版本覆盖",
+        "detailLocalNewer": "本地版本更新（保留）"
+    },
+    "window": {
+        "minimize": "最小化",
+        "maximize": "最大化",
+        "restore": "还原",
+        "closeToTray": "关闭（最小化到托盘）",
+        "subtitle": "TEMPORAL PLANNER"
+    },
+    "zoom": {
+        "title": "调整界面缩放比例",
+        "guiScale": "GUI 缩放",
+        "zoomOut": "缩小",
+        "zoomIn": "放大",
+        "reset": "重置 100%"
+    },
+    "note": {
+        "fullscreen": "全屏编辑",
+        "closeFullscreen": "关闭全屏 (Esc)",
+        "editorLabel": "编辑 · 预览"
+    },
+    "debug": {
+        "title": "调试控制台",
+        "refreshPerf": "刷新性能信息",
+        "openDevTools": "打开 Electron DevTools（独立窗口）",
+        "clearLogs": "清空日志",
+        "close": "关闭",
+        "filterPlaceholder": "过滤日志…",
+        "noLogs": "暂无日志",
+        "logCount": "{{total}} 条日志",
+        "logCountFiltered": "{{total}} 条日志（过滤后 {{filtered}} 条）",
+        "maxRetention": "最多保留 500 条"
     },
     "messages": {
         "importSuccess": "数据导入成功！",

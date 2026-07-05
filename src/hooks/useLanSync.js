@@ -1,54 +1,55 @@
-// 同步的状态与流程：连接固定服务器、冲突预览、合并执行、自动同步、配置持久化。
-// 抽离自 components/LanSync.jsx，使 UI 组件可以只关心渲染。
-// 同步目标是固定地址的服务器（Cloudflare Tunnel），不再做局域网扫描/发现。
+// 同步的状态与流程：适配器驱动的同步引擎。
+// 不再硬编码 events/goals/journals 三类数据——每种数据类型通过 SyncAdapter 注册，
+// sync 引擎只迭代 adapters[]，不知道也不关心后面是什么数据。
+//
+// 旧 API（{ events, onMergeEvents, ... }）仍被支持，内部自动转为 adapters。
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
     DEFAULT_CONFIG, DEFAULT_SERVER_URL, normalizeServerUrl,
-    analyzeConflict, analyzeGoalConflict, analyzeJournalConflict,
-    mergeEvents, mergeGoals, mergeJournals,
-    syncClockOffset,
+    syncClockOffset, fetchAndAnalyze, syncAndPush,
+    BUILTIN_ADAPTERS,
 } from '../utils/syncLogic';
 
-export default function useLanSync({ events, onMergeEvents, journals, onMergeJournals, goals, onMergeGoals }) {
+export default function useLanSync(props = {}) {
+    // ── resolve adapters ──────────────────────────────────────────────────
+    // 新 API: props.adapters = SyncAdapter[]
+    // 旧 API: props = { events, onMergeEvents, journals, onMergeJournals, goals, onMergeGoals }
+    const adapters = resolveAdapters(props);
+
     const [open, setOpen]           = useState(false);
     const [config, setConfig]       = useState(DEFAULT_CONFIG);
 
-    // Sync state
-    const [status, setStatus]       = useState('idle');  // idle|syncing|success|error
+    const [status, setStatus]       = useState('idle');
     const [statusMsg, setStatusMsg] = useState('');
 
-    // Conflict preview
-    const [preview, setPreview]     = useState(null);    // { analysis, journalAnalysis, goalAnalysis, remoteEvents, serverUrl }
+    // Conflict preview: { results: [{ adapter, analysis, remoteData }], serverUrl }
+    const [preview, setPreview]     = useState(null);
 
     const autoTimerRef = useRef(null);
     const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
 
-    // Always-current refs — avoids stale closures in async callbacks and timers
-    const eventsRef   = useRef(events);
-    const journalsRef = useRef(journals);
-    const goalsRef    = useRef(goals);
-    useEffect(() => { eventsRef.current   = events;   }, [events]);
-    useEffect(() => { journalsRef.current = journals; }, [journals]);
-    useEffect(() => { goalsRef.current    = goals;    }, [goals]);
+    const adaptersRef = useRef(adapters);
+    useEffect(() => { adaptersRef.current = adapters; }, [adapters]);
 
-    // Load config, then sync with the configured server once on startup
+    // Load config, then sync once on startup
     useEffect(() => {
         if (!isElectron) return;
         window.electronAPI.getLanConfig?.().then(cfg => {
-            // 旧版配置只有 peerIp/port（IPv6 直连时代），统一迁移到固定服务器地址
             const serverUrl = normalizeServerUrl(cfg?.serverUrl) || DEFAULT_SERVER_URL;
             setConfig(c => ({ ...c, ...cfg, serverUrl }));
             doSyncRef.current?.(serverUrl, true);
         });
     }, [isElectron]);
 
-    // Auto-sync timer — uses ref so it always sees the latest doSync/events
+    // Auto-sync timer
     const doSyncRef = useRef(null);
     useEffect(() => {
         clearInterval(autoTimerRef.current);
         const serverUrl = normalizeServerUrl(config.serverUrl);
         if (config.autoSync && serverUrl) {
-            autoTimerRef.current = setInterval(() => doSyncRef.current?.(serverUrl, true), (config.interval || 60) * 1000);
+            autoTimerRef.current = setInterval(
+                () => doSyncRef.current?.(serverUrl, true),
+                (config.interval || 60) * 1000);
         }
         return () => clearInterval(autoTimerRef.current);
     }, [config.autoSync, config.interval, config.serverUrl]);
@@ -58,127 +59,102 @@ export default function useLanSync({ events, onMergeEvents, journals, onMergeJou
         if (isElectron) window.electronAPI.saveLanConfig?.(next);
     }, [isElectron]);
 
-    // ── 同步（含冲突预览） ────────────────────────────────────────────────────
+    // ── 同步（含冲突预览） ────────────────────────────────────────────────
     const doSync = useCallback(async (serverUrl, skipPreview = false) => {
         const base = normalizeServerUrl(serverUrl);
-        if (!base) {
-            setStatus('error'); setStatusMsg('未配置服务器地址'); return;
-        }
+        if (!base) { setStatus('error'); setStatusMsg('未配置服务器地址'); return; }
         setStatus('syncing'); setStatusMsg('');
         try {
             await syncClockOffset(base);
-
-            const res = await fetch(`${base}/tplanner/events`, { method: 'GET', signal: AbortSignal.timeout(10000) });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const remoteEvents = await res.json();
+            const ads = adaptersRef.current;
 
             if (!skipPreview) {
-                // 同时拉取 journals/goals，让预览能展示三类数据各自的变更
-                let remoteJournals = {};
-                let remoteGoals = [];
-                try {
-                    const jRes = await fetch(`${base}/tplanner/journals`, { method: 'GET', signal: AbortSignal.timeout(10000) });
-                    if (jRes.ok) remoteJournals = await jRes.json();
-                } catch (_) { /* journals preview is best-effort */ }
-                try {
-                    const gRes = await fetch(`${base}/tplanner/goals`, { method: 'GET', signal: AbortSignal.timeout(10000) });
-                    if (gRes.ok) remoteGoals = await gRes.json();
-                } catch (_) { /* goals preview is best-effort */ }
-
-                // Use refs for latest local data to avoid stale analysis
-                const analysis        = analyzeConflict(eventsRef.current, remoteEvents);
-                const journalAnalysis = analyzeJournalConflict(journalsRef.current, remoteJournals);
-                const goalAnalysis    = analyzeGoalConflict(goalsRef.current, remoteGoals);
-
-                // 三类数据都没有任何待合并的变更（含待推送的本地独有/本地更新项）
-                // 时，弹预览没有信息量——直接报成功，不打断用户。
-                const hasChanges = [analysis, journalAnalysis, goalAnalysis].some(a =>
-                    a.added.length + a.removed.length + a.updated.length +
-                    a.deleted.length + a.conflicted.length > 0);
-                if (!hasChanges) {
-                    setStatus('success');
-                    setStatusMsg('数据完全一致，无需合并');
-                    return;
+                // 预览模式：拉取所有 adapter 的远端数据并做冲突分析
+                const results = [];
+                for (const a of ads) {
+                    const localData = a._getLocal ? a._getLocal() : [];
+                    const r = await fetchAndAnalyze(a, base, localData);
+                    if (r) results.push(r);
+                    else if (a.isRequired) throw new Error(`${a.type} 拉取失败`);
                 }
 
-                setPreview({ analysis, journalAnalysis, goalAnalysis, remoteEvents, serverUrl: base });
+                const hasChanges = results.some(r => {
+                    const an = r.analysis;
+                    return an.added.length + an.removed.length + an.updated.length +
+                           an.deleted.length + an.conflicted.length > 0;
+                });
+                if (!hasChanges) {
+                    setStatus('success'); setStatusMsg('数据完全一致，无需合并'); return;
+                }
+                setPreview({ results, serverUrl: base });
                 setStatus('idle');
                 return;
             }
 
-            await executeMerge(base, remoteEvents);
-        } catch (e) {
-            setStatus('error'); setStatusMsg(e.message);
-        }
-    }, []);  // no deps — always reads from refs
+            // 自动同步：直接合并
+            await executeMerge(base, ads);
+        } catch (e) { setStatus('error'); setStatusMsg(e.message); }
+    }, []);
 
-    // Keep doSyncRef current so the auto-sync timer always uses the latest version
     useEffect(() => { doSyncRef.current = doSync; }, [doSync]);
 
-    const executeMerge = useCallback(async (serverUrl, remoteEvents) => {
+    const executeMerge = useCallback(async (serverUrl, currentAdapters) => {
         const base = normalizeServerUrl(serverUrl);
-        // Read from refs to always get the latest data, even if called from a stale closure
-        const localEvents   = eventsRef.current;
-        const localJournals = journalsRef.current;
-        const localGoals    = goalsRef.current;
+        const ads = currentAdapters || adaptersRef.current;
+        let totalMerged = 0;
 
-        // ── Events ──────────────────────────────────────────────────────────
-        const mergedEvents = mergeEvents(localEvents, remoteEvents);
-        await fetch(`${base}/tplanner/events`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(mergedEvents),
-            signal: AbortSignal.timeout(10000),
-        });
-        onMergeEvents?.(mergedEvents);
-
-        // ── Journals ─────────────────────────────────────────────────────────
-        try {
-            const jRes = await fetch(`${base}/tplanner/journals`, { method: 'GET', signal: AbortSignal.timeout(10000) });
-            if (jRes.ok) {
-                const remoteJournals = await jRes.json();
-                const mergedJournals = mergeJournals(localJournals, remoteJournals);
-                await fetch(`${base}/tplanner/journals`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(mergedJournals),
-                    signal: AbortSignal.timeout(10000),
-                });
-                onMergeJournals?.(mergedJournals);
+        for (const a of ads) {
+            const localData = a._getLocal ? a._getLocal() : [];
+            const merged = await syncAndPush(a, base, localData);
+            if (merged !== null) {
+                if (a._writeLocal) a._writeLocal(merged);
+                if (Array.isArray(merged)) totalMerged += merged.length;
+            } else if (a.isRequired) {
+                setStatus('error'); setStatusMsg(`${a.type} 同步失败`); return;
             }
-        } catch (_) { /* journals sync failure is non-fatal */ }
-
-        // ── Goals ────────────────────────────────────────────────────────────
-        try {
-            const gRes = await fetch(`${base}/tplanner/goals`, { method: 'GET', signal: AbortSignal.timeout(10000) });
-            if (gRes.ok) {
-                const remoteGoals  = await gRes.json();
-                const mergedGoals  = mergeGoals(localGoals, remoteGoals);
-                await fetch(`${base}/tplanner/goals`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(mergedGoals),
-                    signal: AbortSignal.timeout(10000),
-                });
-                onMergeGoals?.(mergedGoals);
-            }
-        } catch (_) { /* goals sync failure is non-fatal */ }
+        }
 
         setStatus('success');
-        setStatusMsg(`已同步 ${mergedEvents.length} 条事件`);
+        setStatusMsg(totalMerged > 0 ? `已同步 ${totalMerged} 条记录` : '同步完成');
         setPreview(null);
-    }, [onMergeEvents, onMergeJournals, onMergeGoals]);  // refs are stable, no need as deps
+    }, []);
 
     const serverUrl = normalizeServerUrl(config.serverUrl);
     const statusColor = { idle: 'var(--clr-text-dim)', syncing: 'var(--clr-gold)', success: '#4A9DA8', error: 'var(--clr-red,#C0392B)' }[status];
 
     return {
-        isElectron,
-        open, setOpen,
-        config, setConfig, saveConfig,
-        status, statusMsg, statusColor,
-        preview, setPreview,
-        doSync, executeMerge,
-        serverUrl,
+        isElectron, open, setOpen, config, setConfig, saveConfig,
+        status, statusMsg, statusColor, preview, setPreview,
+        doSync, executeMerge, serverUrl,
     };
+}
+
+// ── 向后兼容：旧 API → 新 adapters[] ──────────────────────────────────────
+function resolveAdapters(props) {
+    if (props.adapters && Array.isArray(props.adapters)) return props.adapters;
+
+    const ads = [];
+
+    if (props.events !== undefined || props.onMergeEvents) {
+        const a = { ...BUILTIN_ADAPTERS.events };
+        a._getLocal  = () => props.events || [];
+        a._writeLocal = (m) => props.onMergeEvents?.(m);
+        ads.push(a);
+    }
+
+    if (props.journals !== undefined || props.onMergeJournals) {
+        const a = { ...BUILTIN_ADAPTERS.journals };
+        a._getLocal  = () => props.journals || {};
+        a._writeLocal = (m) => props.onMergeJournals?.(m);
+        ads.push(a);
+    }
+
+    if (props.goals !== undefined || props.onMergeGoals) {
+        const a = { ...BUILTIN_ADAPTERS.goals };
+        a._getLocal  = () => props.goals || [];
+        a._writeLocal = (m) => props.onMergeGoals?.(m);
+        ads.push(a);
+    }
+
+    return ads;
 }

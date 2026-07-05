@@ -344,7 +344,7 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                                     }
                                     label={
                                         <Typography variant="body2" color="text.secondary">
-                                            {t('event.allDay', '全天')}
+                                            {t('event.allDay')}
                                         </Typography>
                                     }
                                 />

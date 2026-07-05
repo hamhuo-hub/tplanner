@@ -17,10 +17,11 @@ import DebugPanel from './components/DebugPanel'
 import ContextMenu from './components/ContextMenu'
 import { checkForClashes } from './utils/dateUtils'
 import { TIMEZONES } from './utils/constants'
-import { Plus, Languages, Printer, Globe, Download, Upload, Power } from 'lucide-react'
+import { Plus, Languages, Printer, Globe, Download, Upload, Power, X } from 'lucide-react'
 import { getDatabase } from './database/db'
 import { makeGoal } from './utils/goalUtils'
 import { now as clockNow } from './utils/clock'
+import { BUILTIN_ADAPTERS } from './utils/syncLogic'
 
 function App() {
     const { t, i18n } = useTranslation();
@@ -459,7 +460,7 @@ function App() {
             const copy = {
                 ...clipboard,
                 id: crypto.randomUUID(),
-                title: clipboard.title + ' (副本)',
+                title: clipboard.title + t('event.copySuffix'),
                 groupId: crypto.randomUUID(),
                 start: new Date(start).toISOString(),
                 end:   new Date(start.getTime() + duration).toISOString(),
@@ -593,7 +594,7 @@ function App() {
 
                 <div className="app-header-right">
                     {/* Timezone selector */}
-                    <div className="tz-select-wrap" title="Display Timezone">
+                    <div className="tz-select-wrap" title={t('app.displayTimezone')}>
                         <Globe size={13} />
                         <select
                             value={travelTimezone}
@@ -660,45 +661,42 @@ function App() {
                     {/* Zoom Control */}
                     <ZoomControl />
 
-                    {/* LAN Sync */}
+                    {/* LAN Sync — 适配器驱动 */}
                     {isElectron  && (
                         <LanSync
-                            events={events}
-                            journals={journals}
-                            goals={goals}
-                            onMergeEvents={async (merged) => {
-                                if (!db) return;
-                                try {
-                                    // merged 已是规范形（syncLogic.js canonicalEvent）：start/end 为
-                                    // 带毫秒的 ISO 字符串、可选字段已补默认值。落盘的与推送给服务器
-                                    // 的必须是同一份数据——在这里再改写任何字段都会让本地和服务器
-                                    // 的副本漂移，同一批记录会在每次同步预览里反复出现。
-                                    await db.events.bulkUpsert(merged);
-                                } catch (err) {
-                                    console.error('LAN merge failed', err);
-                                }
-                            }}
-                            onMergeJournals={(merged) => {
-                                const normalized = normalizeJournals(merged);
-                                setJournals(normalized);
-                                if (isElectron && window.electronAPI?.saveAllJournals) {
-                                    // Single atomic write — no N sequential IPC calls
-                                    window.electronAPI.saveAllJournals(normalized);
-                                } else {
-                                    Object.entries(normalized).forEach(([date, entry]) => {
-                                        localStorage.setItem(`tplanner_journal_${date}`, JSON.stringify(entry));
-                                    });
-                                }
-                            }}
-                            onMergeGoals={async (merged) => {
-                                if (!db) return;
-                                try {
-                                    // merged 已是规范形（syncLogic.js canonicalGoal），直接落盘。
-                                    await db.goals.bulkUpsert(merged);
-                                } catch (err) {
-                                    console.error('LAN goals merge failed', err);
-                                }
-                            }}
+                            adapters={[
+                                {
+                                    ...BUILTIN_ADAPTERS.events,
+                                    _getLocal: () => events,
+                                    _writeLocal: async (merged) => {
+                                        if (!db) return;
+                                        try { await db.events.bulkUpsert(merged); } catch (err) { console.error('LAN merge failed', err); }
+                                    },
+                                },
+                                {
+                                    ...BUILTIN_ADAPTERS.goals,
+                                    _getLocal: () => goals,
+                                    _writeLocal: async (merged) => {
+                                        if (!db) return;
+                                        try { await db.goals.bulkUpsert(merged); } catch (err) { console.error('LAN goals merge failed', err); }
+                                    },
+                                },
+                                {
+                                    ...BUILTIN_ADAPTERS.journals,
+                                    _getLocal: () => journals,
+                                    _writeLocal: (merged) => {
+                                        const normalized = normalizeJournals(merged);
+                                        setJournals(normalized);
+                                        if (isElectron && window.electronAPI?.saveAllJournals) {
+                                            window.electronAPI.saveAllJournals(normalized);
+                                        } else {
+                                            Object.entries(normalized).forEach(([date, entry]) => {
+                                                localStorage.setItem(`tplanner_journal_${date}`, JSON.stringify(entry));
+                                            });
+                                        }
+                                    },
+                                },
+                            ]}
                         />
                     )}
 
@@ -857,13 +855,13 @@ function App() {
                     boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
                     fontFamily: 'var(--font-mono)', fontSize: 12,
                 }}>
-                    <span style={{ color: 'var(--clr-gold)' }}>已复制</span>
+                    <span style={{ color: 'var(--clr-gold)' }}>{t('paste.copied')}</span>
                     <span style={{ color: 'var(--clr-text)' }}>「{clipboard.title}」</span>
-                    <span style={{ color: 'var(--clr-text-dim)' }}>— 点击时间轴空白处粘贴</span>
+                    <span style={{ color: 'var(--clr-text-dim)' }}>{t('paste.hint')}</span>
                     <button onClick={() => setClipboard(null)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--clr-text-dim)', padding: 0, marginLeft: 4 }}
-                        title="取消 (Esc)"
-                    >✕</button>
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--clr-text-dim)', padding: 0, marginLeft: 4, display: 'flex', alignItems: 'center' }}
+                        title={t('paste.cancel')}
+                    ><X size={14} /></button>
                 </div>
             )}
 
@@ -877,7 +875,7 @@ function App() {
                     boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
                     fontFamily: 'var(--font-mono)', fontSize: 12,
                 }}>
-                    <span style={{ color: 'var(--clr-gold)' }}>{t('selection.count', { count: selectedIds.size, defaultValue: `已选中 ${selectedIds.size} 项` })}</span>
+                    <span style={{ color: 'var(--clr-gold)' }}>{t('selection.count', { count: selectedIds.size })}</span>
                     <button
                         onClick={() => handleBatchDelete(Array.from(selectedIds))}
                         style={{
@@ -885,12 +883,12 @@ function App() {
                             cursor: 'pointer', color: 'var(--clr-red,#C0392B)', padding: '3px 10px', fontSize: 12,
                         }}
                     >
-                        {t('selection.delete', { defaultValue: '批量删除' })}
+                        {t('selection.delete')}
                     </button>
                     <button onClick={() => setSelectedIds(new Set())}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--clr-text-dim)', padding: 0, marginLeft: 4 }}
-                        title="取消 (Esc)"
-                    >✕</button>
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--clr-text-dim)', padding: 0, marginLeft: 4, display: 'flex', alignItems: 'center' }}
+                        title={t('selection.cancel')}
+                    ><X size={14} /></button>
                 </div>
             )}
 

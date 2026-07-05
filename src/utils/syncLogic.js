@@ -159,20 +159,6 @@ const journalEntries  = obj => Object.entries(obj || {}).map(([date, entry]) => 
 const fromEntity        = e => e.payload;
 const journalFromEntity = e => ({ date: e.id, ...e.payload });
 
-// 把 analyzeEntities 返回的统一实体结果，还原成各数据类型原本的展示形状
-// （UI 需要读取 .title / .text / .date 等字段，详见 LanSync.jsx）。
-function convertResults(results, toDisplay) {
-    const pair = p => ({ local: toDisplay(p.local), remote: toDisplay(p.remote) });
-    return {
-        added:      results.added.map(toDisplay),
-        removed:    results.removed.map(toDisplay),
-        synced:     results.synced.map(toDisplay),
-        updated:    results.updated.map(pair),
-        deleted:    results.deleted.map(pair),
-        conflicted: results.conflicted.map(pair),
-    };
-}
-
 export function analyzeConflict(local, remote) {
     return convertResults(analyzeEntities(local.map(toEventEntity), remote.map(toEventEntity)), fromEntity);
 }
@@ -235,7 +221,154 @@ export async function syncClockOffset(base) {
         const { now: peerNow } = await res.json();
         if (!Number.isFinite(peerNow)) return;
         const rtt = t1 - t0;
-        // 假设请求/响应耗时对称，对端收到响应时的时钟约为 peerNow + rtt/2
         setClockOffset((peerNow + rtt / 2) - t1);
     } catch (_) { /* clock sync is best-effort; fall back to local clock (offset 0) */ }
 }
+
+// ── SyncAdapter — 可组合的同步数据源抽象 ─────────────────────────────────────
+// 每种需要同步的数据类型只需提供一个 adapter（实现 toEntity / fromEntity /
+// localToEntities / entitiesToLocal），sync 引擎不关心数据形状。
+// 核心的 compare / merge / analyze 全部复用已有的统一实体引擎。
+//
+// 旧函数 analyzeConflict / mergeEvents 等仍导出以维持向后兼容，
+// 新代码应直接使用 createSyncAdapter + fetchAndAnalyze + syncAndPush。
+
+/** 把 analyzeEntities 的结果通过 toDisplay 还原为本地展示形状 */
+export function convertResults(results, toDisplay) {
+    const pair = p => ({ local: toDisplay(p.local), remote: toDisplay(p.remote) });
+    return {
+        added:      results.added.map(toDisplay),
+        removed:    results.removed.map(toDisplay),
+        synced:     results.synced.map(toDisplay),
+        updated:    results.updated.map(pair),
+        deleted:    results.deleted.map(pair),
+        conflicted: results.conflicted.map(pair),
+    };
+}
+
+/**
+ * createSyncAdapter(config) — 构建一个同步数据源描述符。
+ *
+ * @param {Object} config
+ * @param {string} config.type         - 类型名，如 'events' / 'goals' / 'journals' / 'insights'
+ * @param {string} config.endpoint     - 服务端路径，如 '/tplanner/events'
+ * @param {boolean}[config.isRequired] - 核心数据（失败阻断），默认 false
+ * @param {string}[config.unitName]    - UI 量词，如 '条' / '篇' / '个'
+ * @param {(item)=>Entity} config.toEntity       - 单条 → 统一实体
+ * @param {(entity)=>item} config.fromEntity     - 统一实体 → 单条
+ * @param {(local)=>Entity[]}[config.localToEntities]  - 本地数据 → 统一实体数组
+ * @param {(Entity[])=>local}[config.entitiesToLocal]  - 统一实体数组 → 本地数据
+ * @param {(item)=>string}[config.itemLabel]     - 冲突预览中的单条描述
+ */
+export function createSyncAdapter(config) {
+    const { type, endpoint, isRequired = false, unitName = '条',
+            toEntity, fromEntity, localToEntities, entitiesToLocal, itemLabel } = config;
+
+    const _localToEntities = localToEntities || (local =>
+        (Array.isArray(local) ? local : []).map(toEntity));
+    const _entitiesToLocal = entitiesToLocal || (entities =>
+        entities.map(fromEntity));
+
+    return {
+        type, endpoint, isRequired, unitName,
+        toEntity, fromEntity,
+        localToEntities: _localToEntities,
+        entitiesToLocal: _entitiesToLocal,
+        itemLabel: itemLabel || (item => item?.title ?? item?.text ?? ''),
+
+        /** 冲突分析：返回 { added, removed, updated, deleted, synced, conflicted } */
+        analyze(local, remote) {
+            const locs = _localToEntities(local);
+            const rems = (Array.isArray(remote) ? remote : []).map(toEntity);
+            return convertResults(analyzeEntities(locs, rems), fromEntity);
+        },
+
+        /** 合并：返回合并后的本地格式数据 */
+        merge(local, remote) {
+            const locs = _localToEntities(local);
+            const rems = (Array.isArray(remote) ? remote : []).map(toEntity);
+            return _entitiesToLocal(mergeEntities(locs, rems));
+        },
+    };
+}
+
+/**
+ * 对单个 adapter 执行同步预览：拉取远端 + 冲突分析（不合并，不写本地）。
+ * @returns {{ adapter, remoteData, analysis } | null}
+ */
+export async function fetchAndAnalyze(adapter, serverUrl, localData) {
+    try {
+        const res = await fetch(`${serverUrl}${adapter.endpoint}`, {
+            method: 'GET', signal: AbortSignal.timeout(10000),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const remoteData = await res.json();
+        const analysis = adapter.analyze(localData, remoteData);
+        return { adapter, remoteData, analysis };
+    } catch (_) { return null; }
+}
+
+/**
+ * 对单个 adapter 执行完整同步合并：拉取 → 合并 → 推送 → 返回本地格式数据。
+ * @returns {any | null} 合并后的本地格式数据；失败返回 null
+ */
+export async function syncAndPush(adapter, serverUrl, localData) {
+    const base = normalizeServerUrl(serverUrl);
+    try {
+        const res = await fetch(`${base}${adapter.endpoint}`, {
+            method: 'GET', signal: AbortSignal.timeout(10000),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const remoteData = await res.json();
+        const merged = adapter.merge(localData, remoteData);
+        await fetch(`${base}${adapter.endpoint}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(merged),
+            signal: AbortSignal.timeout(10000),
+        });
+        return merged;
+    } catch (_) { return null; }
+}
+
+// ── 内联 fallback adapters（供旧调用路径 resolveAdapters 使用）──────────────
+// 新代码应从 src/sync/*Adapter.js import 并在 App.jsx 中组装 adapters[]。
+
+const _eventsAdapter = createSyncAdapter({
+    type: 'events', endpoint: '/tplanner/events', isRequired: true, unitName: '条',
+    toEntity:   e => ({ id: e.id, payload: canonicalEvent(e), updatedAt: e.updatedAt || 0, deletedAt: e.deletedAt || null }),
+    fromEntity: e => e.payload,
+    itemLabel:  e => e?.title ?? '',
+});
+
+const _goalsAdapter = createSyncAdapter({
+    type: 'goals', endpoint: '/tplanner/goals', unitName: '个',
+    toEntity:   g => ({ id: g.id, payload: canonicalGoal(g), updatedAt: g.updatedAt || 0, deletedAt: g.deletedAt || null }),
+    fromEntity: e => e.payload,
+    itemLabel:  g => g?.title ?? '',
+});
+
+const _journalsAdapter = createSyncAdapter({
+    type: 'journals', endpoint: '/tplanner/journals', unitName: '篇',
+    toEntity:   ([date, entry]) => ({ id: date, payload: entry || {}, updatedAt: entry?.updatedAt || 0, deletedAt: entry?.deletedAt ?? null }),
+    fromEntity: e => ({ date: e.id, ...e.payload }),
+    localToEntities(obj) {
+        return Object.entries(obj || {}).map(([date, entry]) =>
+            ({ id: date, payload: entry || {}, updatedAt: entry?.updatedAt || 0, deletedAt: entry?.deletedAt ?? null }));
+    },
+    entitiesToLocal(entities) {
+        const result = {};
+        for (const e of entities) result[e.id] = { ...e.payload };
+        return result;
+    },
+    itemLabel(item) {
+        const text = (item?.text || '').replace(/\s+/g, ' ').trim().slice(0, 20);
+        return text ? `${item.date} · ${text}${(item.text?.length > 20) ? '…' : ''}` : item?.date ?? '';
+    },
+});
+
+export const BUILTIN_ADAPTERS = {
+    events:   _eventsAdapter,
+    goals:    _goalsAdapter,
+    journals: _journalsAdapter,
+};
