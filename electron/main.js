@@ -882,12 +882,17 @@ ipcMain.on('journal:save', (_e, date, entry) => {
     // 在 LWW 合并中永远输给任何带真实时间戳的版本，导致 widget 的修改"无法同步"
     // （实际是写入时就已带着必输的时间戳，与同步逻辑无关）。因此裸字符串在这里
     // 必须当作"新的本地编辑"处理，赋予真实的当前时间戳。
+    const ts = Date.now();
     if (entry && typeof entry === 'object') {
         data[date] = normalizeJournalEntry(entry);
+        // 由主窗口传入的完整对象已包含 version，无需修改
     } else {
+        // 小部件的裸字符串：增量版本号
         const text = entry || '';
-        const ts = Date.now();
-        data[date] = text.trim() ? { text, updatedAt: ts, deletedAt: null } : { text: '', updatedAt: ts, deletedAt: ts };
+        const oldVer = (data[date] && data[date].version) || 0;
+        data[date] = text.trim()
+            ? { text, version: oldVer + 1, updatedAt: ts, deletedAt: null }
+            : { text: '', version: oldVer + 1, updatedAt: ts, deletedAt: ts };
     }
     saveJournals(data);
     const sid = _e.sender.id;

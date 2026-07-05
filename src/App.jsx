@@ -154,7 +154,10 @@ function App() {
         if (!db) return;
         try {
             const doc = await db.goals.findOne(id).exec();
-            if (doc) await doc.incrementalPatch({ ...patch, updatedAt: clockNow() });
+            if (doc) {
+                const v = (doc.get('version') || 0) + 1;
+                await doc.incrementalPatch({ ...patch, version: v, updatedAt: clockNow() });
+            }
         } catch (err) {
             console.error('Update goal failed', err);
         }
@@ -164,7 +167,10 @@ function App() {
         if (!db) return;
         try {
             const doc = await db.goals.findOne(id).exec();
-            if (doc) await doc.update({ $set: { deletedAt: clockNow(), updatedAt: clockNow() } });
+            if (doc) {
+                const v = (doc.get('version') || 0) + 1;
+                await doc.update({ $set: { version: v, deletedAt: clockNow(), updatedAt: clockNow() } });
+            }
         } catch (err) {
             console.error('Delete goal failed', err);
         }
@@ -251,16 +257,19 @@ function App() {
     }, [isElectron]);
 
     const handleSaveJournal = (dateStr, text) => {
-        const ts = clockNow();
-        const entry = text?.trim()
-            ? { text, updatedAt: ts, deletedAt: null }
-            : { text: '', updatedAt: ts, deletedAt: ts };
-        setJournals(prev => ({ ...prev, [dateStr]: entry }));
-        if (isElectron && window.electronAPI?.saveJournal) {
-            window.electronAPI.saveJournal(dateStr, entry);
-        } else {
-            localStorage.setItem(`tplanner_journal_${dateStr}`, JSON.stringify(entry));
-        }
+        setJournals(prev => {
+            const oldVer = prev[dateStr]?.version || 0;
+            const ts = clockNow();
+            const entry = text?.trim()
+                ? { text, version: oldVer + 1, updatedAt: ts, deletedAt: null }
+                : { text: '', version: oldVer + 1, updatedAt: ts, deletedAt: ts };
+            if (isElectron && window.electronAPI?.saveJournal) {
+                window.electronAPI.saveJournal(dateStr, entry);
+            } else {
+                localStorage.setItem(`tplanner_journal_${dateStr}`, JSON.stringify(entry));
+            }
+            return { ...prev, [dateStr]: entry };
+        });
     };
 
     const [viewRange, setViewRange] = useState({ start: null, end: null });
@@ -354,7 +363,8 @@ function App() {
         try {
             const doc = await db.events.findOne(eventId).exec();
             if (doc) {
-                await doc.update({ $set: { completed: completedStatus, updatedAt: clockNow() } });
+                const v = (doc.get('version') || 0) + 1;
+                await doc.update({ $set: { completed: completedStatus, version: v, updatedAt: clockNow() } });
             }
         } catch (err) {
             console.error('Update failed', err);
@@ -378,6 +388,7 @@ function App() {
                 const cleanUpdate = { ...update };
                 cleanUpdate.start = new Date(cleanUpdate.start).toISOString();
                 cleanUpdate.end = new Date(cleanUpdate.end).toISOString();
+                cleanUpdate.version = (update.version || 0) + 1;
                 cleanUpdate.updatedAt = clockNow();
                 return cleanUpdate;
             });
@@ -397,7 +408,8 @@ function App() {
     // Soft-delete: stamp deletedAt instead of physically removing,
     // so the tombstone propagates to peers during the next LAN sync.
     const softDelete = async (doc) => {
-        await doc.update({ $set: { deletedAt: clockNow(), updatedAt: clockNow() } });
+        const v = (doc.get('version') || 0) + 1;
+        await doc.update({ $set: { deletedAt: clockNow(), version: v, updatedAt: clockNow() } });
     };
 
     const handleDeleteEvent = async (id, scope = 'single', event = null) => {
@@ -407,17 +419,19 @@ function App() {
             if (scope === 'all' && event?.groupId) {
                 const docsObj = await db.events.find({ selector: { groupId: event.groupId } }).exec();
                 // bulkUpsert fires a single batch write → single subscription emission
-                await db.events.bulkUpsert(docsObj.map(doc => ({
-                    ...doc.toJSON(), deletedAt: now, updatedAt: now,
-                })));
+                await db.events.bulkUpsert(docsObj.map(doc => {
+                    const old = doc.toJSON();
+                    return { ...old, version: (old.version || 0) + 1, deletedAt: now, updatedAt: now };
+                }));
             } else if (scope === 'future' && event?.groupId) {
                 const cutoff = new Date(event.start).getTime();
                 const docsObj = await db.events.find({ selector: { groupId: event.groupId } }).exec();
                 const toMark = docsObj.filter(doc => new Date(doc.get('start')).getTime() >= cutoff);
                 if (toMark.length) {
-                    await db.events.bulkUpsert(toMark.map(doc => ({
-                        ...doc.toJSON(), deletedAt: now, updatedAt: now,
-                    })));
+                    await db.events.bulkUpsert(toMark.map(doc => {
+                        const old = doc.toJSON();
+                        return { ...old, version: (old.version || 0) + 1, deletedAt: now, updatedAt: now };
+                    }));
                 }
             } else {
                 const doc = await db.events.findOne(id).exec();
@@ -437,9 +451,10 @@ function App() {
         try {
             const now = clockNow();
             const docs = await db.events.findByIds(ids).exec();
-            const upserts = Array.from(docs.values()).map(doc => ({
-                ...doc.toJSON(), deletedAt: now, updatedAt: now,
-            }));
+            const upserts = Array.from(docs.values()).map(doc => {
+                const old = doc.toJSON();
+                return { ...old, version: (old.version || 0) + 1, deletedAt: now, updatedAt: now };
+            });
             if (upserts.length) await db.events.bulkUpsert(upserts);
         } catch (err) {
             console.error('Error batch deleting events', err);
@@ -465,6 +480,7 @@ function App() {
                 start: new Date(start).toISOString(),
                 end:   new Date(start.getTime() + duration).toISOString(),
                 completed: false,
+                version: 1,
                 deletedAt: 0,
                 updatedAt: clockNow(),
                 checklist: (clipboard.checklist || []).map(i => ({ ...i, id: crypto.randomUUID(), completed: false })),

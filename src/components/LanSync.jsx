@@ -29,8 +29,9 @@ function ConflictSection({ adapter, analysis }) {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {added.length > 0      && <StatRow icon="↓" color="#5B8FCC" label={`从对端拉取 ${added.length} ${unit}`} />}
                     {removed.length > 0    && <StatRow icon="↑" color="#4A9DA8" label={`推送本地独有 ${removed.length} ${unit}`} />}
+                    {updated.length > 0    && <StatRow icon="↻" color="#C9A84C" label={`${updated.length} ${unit}版本更新（高版本自动胜出）`} />}
                     {deleted.length > 0    && <StatRow icon="🗑" color="#A04040" label={`${deleted.length} ${unit}将被删除（一端已删除）`} />}
-                    {conflicted.length > 0 && <StatRow icon="⚡" color="#C0392B" label={`${conflicted.length} ${unit}内容冲突，需手动选择`} />}
+                    {conflicted.length > 0 && <StatRow icon="⚡" color="#C0392B" label={`${conflicted.length} ${unit}版本相同但内容冲突，需手动选择`} />}
                     {synced.length > 0     && <StatRow icon="✓" color="#4A7C59" label={`${synced.length} ${unit}已同步`} />}
                 </div>
             )}
@@ -46,11 +47,18 @@ function ConflictSection({ adapter, analysis }) {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 220, overflow: 'auto' }}>
                             <EventGroup title="将从对端拉取" color="#5B8FCC" items={added} renderItem={labelFn} />
                             <EventGroup title="将推送到对端" color="#4A9DA8" items={removed} renderItem={labelFn} />
+                            <EventGroup title="版本更新（高版本自动覆盖）" color="#C9A84C" items={updated}
+                                renderItem={({ local: l, remote: r }) => (
+                                    <span>
+                                        <span style={{ textDecoration: 'line-through', color: 'var(--clr-text-dim)', marginRight: 6 }}>{labelFn(l)}</span>
+                                        → {labelFn(r)}
+                                    </span>
+                                )} />
                             <EventGroup title="将被删除（一端已删除）" color="#A04040" items={deleted}
                                 renderItem={({ local: l }) => (
                                     <span style={{ textDecoration: 'line-through', color: 'var(--clr-text-dim)' }}>{labelFn(l)}</span>
                                 )} />
-                            <EventGroup title="内容冲突（需手动选择保留哪个版本）" color="#C0392B" items={conflicted}
+                            <EventGroup title="版本相同但内容不同（需手动选择）" color="#C0392B" items={conflicted}
                                 renderItem={({ local: l, remote: r }) => (
                                     <span>
                                         <span style={{ textDecoration: 'line-through', color: 'var(--clr-text-dim)', marginRight: 6 }}>{labelFn(l)}</span>

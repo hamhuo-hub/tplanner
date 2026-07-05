@@ -163,32 +163,20 @@ const toIsoMs = (v) => {
 };
 
 function canonicalEvent(e) {
-    return {
-        ...e,
-        type:            e.type || 'event',
-        start:           toIsoMs(e.start),
-        end:             toIsoMs(e.end),
-        note:            e.note || '',
-        timezone:        e.timezone || '',
-        groupId:         e.groupId || '',
-        colorId:         e.colorId ?? 0,
-        completed:       e.completed ?? false,
-        checklist:       e.checklist ?? [],
-        recurrenceType:  e.recurrenceType || 'none',
+    return { ...e,
+        type: e.type || 'event', start: toIsoMs(e.start), end: toIsoMs(e.end),
+        note: e.note || '', timezone: e.timezone || '', groupId: e.groupId || '',
+        colorId: e.colorId ?? 0, completed: e.completed ?? false,
+        checklist: e.checklist ?? [], recurrenceType: e.recurrenceType || 'none',
         recurrenceCount: e.recurrenceCount || 1,
-        updatedAt:       e.updatedAt || 0,
-        deletedAt:       e.deletedAt ?? 0,
+        version: e.version || 0, updatedAt: e.updatedAt || 0, deletedAt: e.deletedAt ?? 0,
     };
 }
 
 function canonicalGoal(g) {
-    return {
-        ...g,
-        note:      g.note ?? '',
-        icon:      g.icon ?? '',
-        order:     g.order ?? 0,
-        updatedAt: g.updatedAt || 0,
-        deletedAt: g.deletedAt ?? 0,
+    return { ...g,
+        note: g.note ?? '', icon: g.icon ?? '', order: g.order ?? 0,
+        version: g.version || 0, updatedAt: g.updatedAt || 0, deletedAt: g.deletedAt ?? 0,
     };
 }
 
@@ -196,9 +184,11 @@ function contentKey(e) {
     return stableStringify({ payload: e?.payload, deletedAt: e?.deletedAt ?? null });
 }
 
-// Pure content-based — no timestamps. Must stay byte-identical to src/utils/syncLogic.js
+// Version-based (Lamport clock). Must stay byte-identical to src/utils/syncLogic.js
 function pickEntity(a, b) {
     if (contentKey(a) === contentKey(b)) return a;
+    const av = a?.version || 0, bv = b?.version || 0;
+    if (av !== bv) return av > bv ? a : b;
     return contentKey(a) >= contentKey(b) ? a : b;
 }
 
@@ -211,9 +201,10 @@ function mergeEntities(local, remote) {
     return Array.from(map.values());
 }
 
-const toEventEntity   = e => ({ id: e.id, payload: canonicalEvent(e), updatedAt: e.updatedAt || 0, deletedAt: e.deletedAt || null });
-const toGoalEntity    = g => ({ id: g.id, payload: canonicalGoal(g),  updatedAt: g.updatedAt || 0, deletedAt: g.deletedAt || null });
-const toJournalEntity = (date, entry) => ({ id: date, payload: entry || {}, updatedAt: entry?.updatedAt || 0, deletedAt: entry?.deletedAt ?? null });
+const ev = (p) => p?.version || 0;
+const toEventEntity   = e => ({ id: e.id, payload: canonicalEvent(e), version: ev(e), updatedAt: e.updatedAt || 0, deletedAt: e.deletedAt || null });
+const toGoalEntity    = g => ({ id: g.id, payload: canonicalGoal(g), version: ev(g), updatedAt: g.updatedAt || 0, deletedAt: g.deletedAt || null });
+const toJournalEntity = (date, entry) => ({ id: date, payload: entry || {}, version: ev(entry), updatedAt: entry?.updatedAt || 0, deletedAt: entry?.deletedAt ?? null });
 const journalEntries  = obj => Object.entries(obj || {}).map(([date, entry]) => toJournalEntity(date, entry));
 const fromEntity      = e => e.payload;
 

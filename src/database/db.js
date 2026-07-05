@@ -31,12 +31,17 @@ export const getDatabase = async () => {
             events: {
                 schema: eventSchema,
                 migrationStrategies: {
-                    // v0 → v1: add deletedAt field (0 = alive)
                     1: (oldDoc) => ({ ...oldDoc, deletedAt: 0 }),
+                    // v1 → v2: add version field (seed from updatedAt for legacy data)
+                    2: (oldDoc) => ({ ...oldDoc, version: oldDoc.updatedAt || 0 }),
                 },
             },
             goals: {
                 schema: goalSchema,
+                migrationStrategies: {
+                    // v0 → v1: add version field
+                    1: (oldDoc) => ({ ...oldDoc, version: oldDoc.updatedAt || 0 }),
+                },
             },
         });
 
