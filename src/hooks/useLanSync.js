@@ -1,6 +1,9 @@
-// 同步的状态与流程：适配器驱动的同步引擎。
-// 不再硬编码 events/goals/journals 三类数据——每种数据类型通过 SyncAdapter 注册，
-// sync 引擎只迭代 adapters[]，不知道也不关心后面是什么数据。
+// 同步的状态与流程：适配器驱动的同步引擎 + base 快照三方对比 + 人工冲突裁决。
+//
+// 每种数据类型通过 SyncAdapter 注册，引擎只迭代 adapters[]。每次成功同步后
+// 把「合并结果的内容键」存为 base 快照（localStorage），下次同步据此区分
+// "只有一边改了"（自动）与"两边都改了"（人工裁决）。未裁决的冲突两边各保
+// 各的，不会被自动同步冲掉。
 //
 // 旧 API（{ events, onMergeEvents, ... }）仍被支持，内部自动转为 adapters。
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -10,10 +13,19 @@ import {
     BUILTIN_ADAPTERS,
 } from '../utils/syncLogic';
 
+// ── base 快照持久化 ──────────────────────────────────────────────────────────
+// 按数据类型存 { id → contentKey }。假设单一同步服务器（固定地址），
+// 不按服务器区分；若未来支持多服务器，key 需带上服务器标识。
+function loadBaseKeys(type) {
+    try { return JSON.parse(localStorage.getItem(`tplanner_sync_base::${type}`) || 'null'); }
+    catch { return null; }
+}
+function saveBaseKeys(type, keys) {
+    try { localStorage.setItem(`tplanner_sync_base::${type}`, JSON.stringify(keys)); }
+    catch { /* 存不下就下次退化为 LWW，不致命 */ }
+}
+
 export default function useLanSync(props = {}) {
-    // ── resolve adapters ──────────────────────────────────────────────────
-    // 新 API: props.adapters = SyncAdapter[]
-    // 旧 API: props = { events, onMergeEvents, journals, onMergeJournals, goals, onMergeGoals }
     const adapters = resolveAdapters(props);
 
     const [open, setOpen]           = useState(false);
@@ -21,6 +33,8 @@ export default function useLanSync(props = {}) {
 
     const [status, setStatus]       = useState('idle');
     const [statusMsg, setStatusMsg] = useState('');
+    // 自动同步遇到的未裁决冲突数（跨 adapter 合计），面板给用户挂徽章
+    const [pendingConflicts, setPendingConflicts] = useState(0);
 
     // Conflict preview: { results: [{ adapter, analysis, remoteData }], serverUrl }
     const [preview, setPreview]     = useState(null);
@@ -69,11 +83,10 @@ export default function useLanSync(props = {}) {
             const ads = adaptersRef.current;
 
             if (!skipPreview) {
-                // 预览模式：拉取所有 adapter 的远端数据并做冲突分析
                 const results = [];
                 for (const a of ads) {
                     const localData = a._getLocal ? a._getLocal() : [];
-                    const r = await fetchAndAnalyze(a, base, localData);
+                    const r = await fetchAndAnalyze(a, base, localData, loadBaseKeys(a.type));
                     if (r) results.push(r);
                     else if (a.isRequired) throw new Error(`${a.type} 拉取失败`);
                 }
@@ -81,41 +94,52 @@ export default function useLanSync(props = {}) {
                 const hasChanges = results.some(r => {
                     const an = r.analysis;
                     return an.added.length + an.removed.length + an.updated.length +
-                           an.deleted.length + an.conflicted.length > 0;
+                           an.deleted.length + an.conflicted.length + an.manual.length > 0;
                 });
                 if (!hasChanges) {
-                    setStatus('success'); setStatusMsg('数据完全一致，无需合并'); return;
+                    setStatus('success'); setStatusMsg('数据完全一致，无需合并');
+                    setPendingConflicts(0);
+                    return;
                 }
                 setPreview({ results, serverUrl: base });
                 setStatus('idle');
                 return;
             }
 
-            // 自动同步：直接合并
-            await executeMerge(base, ads);
+            // 自动同步：无人工裁决，真冲突挂起（两边互不覆盖）
+            await executeMerge(base, {}, ads);
         } catch (e) { setStatus('error'); setStatusMsg(e.message); }
     }, []);
 
     useEffect(() => { doSyncRef.current = doSync; }, [doSync]);
 
-    const executeMerge = useCallback(async (serverUrl, currentAdapters) => {
+    // resolutions: { [adapterType]: { [id]: 'local' | 'remote' } }
+    const executeMerge = useCallback(async (serverUrl, resolutions = {}, currentAdapters) => {
         const base = normalizeServerUrl(serverUrl);
         const ads = currentAdapters || adaptersRef.current;
-        let totalMerged = 0;
+        let totalMerged = 0, totalUnresolved = 0;
 
         for (const a of ads) {
             const localData = a._getLocal ? a._getLocal() : [];
-            const merged = await syncAndPush(a, base, localData);
-            if (merged !== null) {
-                if (a._writeLocal) a._writeLocal(merged);
-                if (Array.isArray(merged)) totalMerged += merged.length;
+            const r = await syncAndPush(a, base, localData, loadBaseKeys(a.type), resolutions[a.type] || {});
+            if (r !== null) {
+                if (a._writeLocal) a._writeLocal(r.merged);
+                saveBaseKeys(a.type, r.newBaseKeys);
+                totalUnresolved += r.unresolved;
+                if (Array.isArray(r.merged)) totalMerged += r.merged.length;
             } else if (a.isRequired) {
                 setStatus('error'); setStatusMsg(`${a.type} 同步失败`); return;
             }
         }
 
-        setStatus('success');
-        setStatusMsg(totalMerged > 0 ? `已同步 ${totalMerged} 条记录` : '同步完成');
+        setPendingConflicts(totalUnresolved);
+        if (totalUnresolved > 0) {
+            setStatus('success');
+            setStatusMsg(`同步完成 · ⚡ ${totalUnresolved} 条冲突待手动解决（点「立即同步」处理）`);
+        } else {
+            setStatus('success');
+            setStatusMsg(totalMerged > 0 ? `已同步 ${totalMerged} 条记录` : '同步完成');
+        }
         setPreview(null);
     }, []);
 
@@ -125,7 +149,7 @@ export default function useLanSync(props = {}) {
     return {
         isElectron, open, setOpen, config, setConfig, saveConfig,
         status, statusMsg, statusColor, preview, setPreview,
-        doSync, executeMerge, serverUrl,
+        doSync, executeMerge, serverUrl, pendingConflicts,
     };
 }
 

@@ -162,33 +162,45 @@ const toIsoMs = (v) => {
     return Number.isFinite(t) ? new Date(t).toISOString() : v;
 };
 
+// version 必须从 payload 里剔除：并非所有写入方都维护它（安卓/手表打点/便签
+// 只更新 updatedAt），若进入比较键，同一内容会因 version 有无而判为不同。
 function canonicalEvent(e) {
-    return { ...e,
+    const c = { ...e,
         type: e.type || 'event', start: toIsoMs(e.start), end: toIsoMs(e.end),
         note: e.note || '', timezone: e.timezone || '', groupId: e.groupId || '',
         colorId: e.colorId ?? 0, completed: e.completed ?? false,
         checklist: e.checklist ?? [], recurrenceType: e.recurrenceType || 'none',
         recurrenceCount: e.recurrenceCount || 1,
-        version: e.version || 0, updatedAt: e.updatedAt || 0, deletedAt: e.deletedAt ?? 0,
+        updatedAt: e.updatedAt || 0, deletedAt: e.deletedAt ?? 0,
     };
+    delete c.version;
+    return c;
 }
 
 function canonicalGoal(g) {
-    return { ...g,
+    const c = { ...g,
         note: g.note ?? '', icon: g.icon ?? '', order: g.order ?? 0,
-        version: g.version || 0, updatedAt: g.updatedAt || 0, deletedAt: g.deletedAt ?? 0,
+        updatedAt: g.updatedAt || 0, deletedAt: g.deletedAt ?? 0,
     };
+    delete c.version;
+    return c;
+}
+
+function canonicalJournalEntry(entry) {
+    const e = entry || {};
+    return { text: e.text || '', updatedAt: e.updatedAt || 0, deletedAt: e.deletedAt ?? null };
 }
 
 function contentKey(e) {
     return stableStringify({ payload: e?.payload, deletedAt: e?.deletedAt ?? null });
 }
 
-// Version-based (Lamport clock). Must stay byte-identical to src/utils/syncLogic.js
+// updatedAt LWW + content-key 平局裁决。必须与 src/utils/syncLogic.js 逐字一致。
+// 服务器只做存储级仲裁：客户端的三方对比/人工裁决在推送前已完成，胜者带着
+// 新 updatedAt 到达，这里的 LWW 让它确定性胜出。
 function pickEntity(a, b) {
-    if (contentKey(a) === contentKey(b)) return a;
-    const av = a?.version || 0, bv = b?.version || 0;
-    if (av !== bv) return av > bv ? a : b;
+    const au = a?.updatedAt || 0, bu = b?.updatedAt || 0;
+    if (au !== bu) return au > bu ? a : b;
     return contentKey(a) >= contentKey(b) ? a : b;
 }
 
@@ -201,10 +213,9 @@ function mergeEntities(local, remote) {
     return Array.from(map.values());
 }
 
-const ev = (p) => p?.version || 0;
-const toEventEntity   = e => ({ id: e.id, payload: canonicalEvent(e), version: ev(e), updatedAt: e.updatedAt || 0, deletedAt: e.deletedAt || null });
-const toGoalEntity    = g => ({ id: g.id, payload: canonicalGoal(g), version: ev(g), updatedAt: g.updatedAt || 0, deletedAt: g.deletedAt || null });
-const toJournalEntity = (date, entry) => ({ id: date, payload: entry || {}, version: ev(entry), updatedAt: entry?.updatedAt || 0, deletedAt: entry?.deletedAt ?? null });
+const toEventEntity   = e => ({ id: e.id, payload: canonicalEvent(e), updatedAt: e.updatedAt || 0, deletedAt: e.deletedAt || null });
+const toGoalEntity    = g => ({ id: g.id, payload: canonicalGoal(g), updatedAt: g.updatedAt || 0, deletedAt: g.deletedAt || null });
+const toJournalEntity = (date, entry) => ({ id: date, payload: canonicalJournalEntry(entry), updatedAt: entry?.updatedAt || 0, deletedAt: entry?.deletedAt ?? null });
 const journalEntries  = obj => Object.entries(obj || {}).map(([date, entry]) => toJournalEntity(date, entry));
 const fromEntity      = e => e.payload;
 
@@ -235,7 +246,7 @@ function mergeGoals(local, incoming) {
 // ── Insights 规范形与合并 ─────────────────────────────────────────────────────
 // 与客户端 src/sync/insightsAdapter.js 中的同名函数逐字一致。
 function canonicalStructuredEntry(e) {
-    return {
+    const c = {
         ...e,
         text: e.text || '', location: e.location || '',
         lat: e.lat ?? 0, lng: e.lng ?? 0, intensity: e.intensity ?? 0,
@@ -243,16 +254,20 @@ function canonicalStructuredEntry(e) {
         thoughtConfidence: e.thoughtConfidence ?? 0, rationalResponse: e.rationalResponse || '',
         emotion: e.emotion || '', updatedAt: e.updatedAt || 0, deletedAt: e.deletedAt ?? null,
     };
+    delete c.version;
+    return c;
 }
 
 function canonicalDayReport(r) {
-    return {
+    const c = {
         ...r,
         totalEvents: r.totalEvents ?? 0, avgIntensity: r.avgIntensity ?? 0,
         distortionCounts: r.distortionCounts ?? {}, topLocation: r.topLocation || '',
         topTimeSlot: r.topTimeSlot || '', narrative: r.narrative || '',
         updatedAt: r.updatedAt || 0, deletedAt: r.deletedAt ?? null,
     };
+    delete c.version;
+    return c;
 }
 
 const toInsightEntryEntity = (e) => ({
