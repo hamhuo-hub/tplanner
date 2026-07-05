@@ -333,8 +333,8 @@ fun MainScreen(
         if (anxietyTriggerCount > 0) {
             showAnxietySheet = true
             val latestContent = store.getToday()
-            val lastLine = latestContent.lines().lastOrNull { it.contains("📍") } ?: ""
-            val coords = Regex("📍([0-9.]+),([0-9.]+)").find(lastLine)
+            val lastLine = latestContent.lines().lastOrNull { it.contains("[WATCH]") } ?: ""
+            val coords = Regex("\\[WATCH\\] \\d{2}:\\d{2} @ ([0-9.]+),([0-9.]+)").find(lastLine)
             if (coords != null && amapApiKey.isNotBlank()) {
                 val lat = coords.groupValues[1].toDoubleOrNull() ?: 0.0
                 val lng = coords.groupValues[2].toDoubleOrNull() ?: 0.0
@@ -424,10 +424,10 @@ fun MainScreen(
                     val entryLine = buildString {
                         append("\n\n---\n\n### ")
                         append(java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date()))
-                        append(" · ").append(prefillLocation.ifBlank { "未知地点" })
-                        if (intensity > 0) append("\n*焦虑强度 ${intensity}%*")
-                        if (emotions.isNotEmpty()) append("\n*情绪: ${emotions.joinToString(" · ")}*")
-                        if (symptoms.isNotEmpty()) append("\n*身体: ${symptoms.joinToString(" · ")}*")
+                        append(" · ").append(prefillLocation.ifBlank { "Unknown" })
+                        if (intensity > 0) append("\n*Intensity ${intensity}%*")
+                        if (emotions.isNotEmpty()) append("\n*Emotions: ${emotions.joinToString(" · ")}*")
+                        if (symptoms.isNotEmpty()) append("\n*Physical: ${symptoms.joinToString(" · ")}*")
                         append("\n\n").append(text)
                     }
                     val updated = content + entryLine
@@ -441,27 +441,27 @@ fun MainScreen(
                                 text = text,
                                 timestamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US)
                                     .format(java.util.Date(now)),
-                                location = prefillLocation.ifBlank { "未知" },
+                                location = prefillLocation.ifBlank { "Unknown" },
                             )
                             if (result != null) {
                                 val threeColumnBlock = buildString {
-                                    append("\n\n> **自动思维**\n> ${result.autoThought}（相信度 ${result.thoughtConfidence}%）\n>\n")
-                                    append("> **思维钢印**\n> ${result.distortions.joinToString(" · ")}\n>\n")
-                                    append("> **理智反思**\n> ${result.rationalResponse}")
+                                    append("\n\n> **Automatic Thought**\n> ${result.autoThought} (confidence ${result.thoughtConfidence}%)\n>\n")
+                                    append("> **Distortions**\n> ${result.distortions.joinToString(" · ")}\n>\n")
+                                    append("> **Rational Response**\n> ${result.rationalResponse}")
                                 }
                                 val final = store.getToday() + threeColumnBlock
                                 store.saveToday(final)
                                 content = final
 
                                 val todayText = store.getToday()
-                                val coordMatch = Regex("📍([0-9.]+),([0-9.]+)").find(todayText)
+                                val coordMatch = Regex("\\[WATCH\\] \\d{2}:\\d{2} @ ([0-9.]+),([0-9.]+)").find(todayText)
                                 val lat = coordMatch?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
                                 val lng = coordMatch?.groupValues?.get(2)?.toDoubleOrNull() ?: 0.0
                                 insightStore.addEvent(StructuredEntry(
                                     id = UUID.randomUUID().toString(),
                                     timestamp = now,
                                     text = text,
-                                    location = prefillLocation.ifBlank { "未知" },
+                                    location = prefillLocation.ifBlank { "Unknown" },
                                     lat = lat, lng = lng,
                                     intensity = if (result.intensity > 0) result.intensity else intensity,
                                     distortions = result.distortions,
@@ -472,14 +472,14 @@ fun MainScreen(
                                 ))
                             } else {
                                 val todayText = store.getToday()
-                                val coordMatch = Regex("📍([0-9.]+),([0-9.]+)").find(todayText)
+                                val coordMatch = Regex("\\[WATCH\\] \\d{2}:\\d{2} @ ([0-9.]+),([0-9.]+)").find(todayText)
                                 val lat = coordMatch?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
                                 val lng = coordMatch?.groupValues?.get(2)?.toDoubleOrNull() ?: 0.0
                                 insightStore.addEvent(StructuredEntry(
                                     id = UUID.randomUUID().toString(),
                                     timestamp = now,
                                     text = text,
-                                    location = prefillLocation.ifBlank { "未知" },
+                                    location = prefillLocation.ifBlank { "Unknown" },
                                     lat = lat, lng = lng,
                                     intensity = intensity,
                                     distortions = emptyList(),
@@ -504,7 +504,7 @@ fun MainScreen(
                     tabs      = listOf(
                         stringResource(R.string.tab_journal),
                         stringResource(R.string.tab_tasks),
-                        "洞察"
+                        "Insights"
                     ),
                     selected  = phoneTab,
                     onSelect  = { phoneTab = it }

@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -340,7 +341,7 @@ fun TaskItem(
                     .clickable { onToggle(event.id, !event.completed) },
                 contentAlignment = Alignment.Center
             ) {
-                if (isDone) Text("✓", color = Color.Black, fontSize = 9.sp, lineHeight = 9.sp)
+                if (isDone) Icon(Icons.Default.Check, contentDescription = "Done", tint = Color.Black, modifier = Modifier.size(12.dp))
             }
         } else {
             Box(

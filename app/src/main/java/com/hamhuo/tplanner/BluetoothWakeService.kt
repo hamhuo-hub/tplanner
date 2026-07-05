@@ -242,17 +242,17 @@ class BluetoothWakeService : Service() {
 
     // ── 手表唤醒打点：时间戳 + 位置写入今日随笔 ──────────────────────────────
     // 时间戳立即落盘（保证必有记录），定位异步获取、到达后补充到同一行——
-    // 不阻塞拉起 MainActivity。行格式固定为 "- ⌚ HH:mm 📍lat,lng"，坐标
+    // 不阻塞拉起 MainActivity。行格式固定为 "[WATCH] HH:mm @ lat,lng"，坐标
     // 保留六位小数（约 0.1m 精度），便于之后解析出轨迹在地图上展示。
     private fun logWatchInvocation() {
         val store = JournalStore(this)
         val stamp = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
-        val baseLine = "- ⌚ $stamp"
+        val baseLine = "[WATCH] $stamp"
         store.appendToday(baseLine)
         fetchCurrentLocation { loc ->
             if (loc != null) {
                 val coords = String.format(Locale.US, "%.6f,%.6f", loc.latitude, loc.longitude)
-                store.replaceInToday(baseLine, "$baseLine 📍$coords")
+                store.replaceInToday(baseLine, "$baseLine @ $coords")
             }
         }
     }

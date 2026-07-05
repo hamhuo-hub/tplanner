@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.CalendarMonth
@@ -120,7 +121,7 @@ fun AddEventTypeSheet(onSelect: (String) -> Unit, onDismiss: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(stringResource(R.string.label_new), color = Color(0xFFE0D8C8), fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Text("✕", color = DIM, fontSize = 16.sp, modifier = Modifier.clickable { onDismiss() })
+            Icon(Icons.Default.Close, contentDescription = "Close", tint = DIM, modifier = Modifier.size(18.dp).clickable { onDismiss() })
         }
 
         Spacer(Modifier.height(12.dp))

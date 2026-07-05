@@ -18,11 +18,17 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -69,7 +75,7 @@ fun NotesHeader(syncStatus: String, onPanelToggle: () -> Unit) {
             Text(today, color = DIM, fontSize = 14.sp)
         }
         IconButton(onClick = onPanelToggle) {
-            Text("⇄", color = iconColor, fontSize = 17.sp)
+            Icon(Icons.Default.SwapHoriz, contentDescription = "Sync", tint = iconColor, modifier = Modifier.size(20.dp))
         }
     }
 }
@@ -100,7 +106,7 @@ fun SyncPanel(
             // 标题行
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.sync_server_title), color = DIM, fontSize = 10.sp, letterSpacing = 0.1.sp)
-                Text("✕", color = DIM, fontSize = 12.sp, modifier = Modifier.clickable { onClose() })
+                Icon(Icons.Default.Close, contentDescription = "Close", tint = DIM, modifier = Modifier.size(14.dp).clickable { onClose() })
             }
 
             // 服务器地址
@@ -259,7 +265,7 @@ fun MarkdownField(
                 onClick = { draft = content; isEditing = true },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp)
             ) {
-                Text("✎", color = GOLD, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Icon(Icons.Default.Edit, contentDescription = "Edit", tint = GOLD, modifier = Modifier.size(18.dp))
             }
         }
     }
