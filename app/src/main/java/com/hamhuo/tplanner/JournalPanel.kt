@@ -2,8 +2,11 @@ package com.hamhuo.tplanner
 
 import android.annotation.SuppressLint
 import android.util.Base64
+import android.view.GestureDetector
+import android.view.MotionEvent
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -35,6 +38,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -151,11 +155,21 @@ fun MonoInput(value: String, placeholder: String, onValue: (String) -> Unit, mod
     )
 }
 
-@SuppressLint("SetJavaScriptEnabled")
+@SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
 @Composable
-fun MarkdownViewer(content: String, modifier: Modifier = Modifier) {
+fun MarkdownViewer(content: String, onTap: () -> Unit = {}, modifier: Modifier = Modifier) {
     var webView   by remember { mutableStateOf<WebView?>(null) }
     var pageReady by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    val gestureDetector = remember {
+        GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onSingleTapUp(e: MotionEvent): Boolean {
+                onTap()
+                return false
+            }
+        })
+    }
 
     LaunchedEffect(pageReady, content) {
         if (!pageReady) return@LaunchedEffect
@@ -173,6 +187,12 @@ fun MarkdownViewer(content: String, modifier: Modifier = Modifier) {
                 webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView, url: String) { pageReady = true }
                 }
+                // GestureDetector distinguishes tap from scroll: fires onSingleTapUp
+                // only on real taps while letting scroll gestures pass through to WebView
+                setOnTouchListener { _, event ->
+                    gestureDetector.onTouchEvent(event)
+                    false // always let WebView handle the event for scrolling
+                }
                 loadUrl("file:///android_asset/md_viewer.html")
                 webView = this
             }
@@ -181,9 +201,10 @@ fun MarkdownViewer(content: String, modifier: Modifier = Modifier) {
     )
 }
 
-// 编辑态渲染原始文本输入框，查看态渲染 Markdown 预览（WebView），点击切换两种渲染代码，
-// 而不是做单一控件内的实时叠加 WYSIWYG。随手记和任务详情页的备注共用这一套组件——
-// 安卓端手动输入不需要 MD 工具栏，但同步过来的内容可能携带 PC 端写的 MD，查看时要能正确渲染。
+// 查看态渲染 Markdown 预览（WebView），编辑态渲染原始文本输入框，
+// 点击 WebView 或编辑按钮进入编辑，返回手势保存并退出编辑。
+// 随手记和任务详情页的备注共用这一套组件——安卓端手动输入不需要 MD 工具栏，
+// 但同步过来的内容可能携带 PC 端写的 MD，查看时要能正确渲染。
 @Composable
 fun MarkdownField(
     content: String,
@@ -195,18 +216,22 @@ fun MarkdownField(
     var isEditing by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf(content) }
 
-    // 不在这里再追加 fillMaxSize()——调用方的 modifier 必须自带确定的尺寸
-    // （weight()/明确的 height()），否则在可滚动的无限高度父级里会测不出尺寸，
-    // 导致内部 BasicTextField 实际可点区域为零，看起来像“点了没反应、打不了字”。
+    // 返回手势保存并退出编辑
+    if (isEditing) {
+        BackHandler {
+            isEditing = false
+            onSave(draft)
+        }
+    }
+
+    // 调用方的 modifier 必须自带确定的尺寸（weight()/明确的 height()），
+    // 否则在可滚动的无限高度父级里会测不出尺寸。
     Box(modifier) {
         if (isEditing) {
             val focusRequester = remember { FocusRequester() }
             BasicTextField(
                 value = draft,
                 onValueChange = { draft = it },
-                // 字号/行高需要跟 md_viewer.html 的 body 样式（15px、1.75 行高）保持一致，
-                // 内边距统一交给下方 MarkdownViewer 调用处的 Compose padding（同一份数值），
-                // 不再各自在 HTML/Compose 两端分别设置，避免 CSS px 与 dp 没法保证 1:1 对齐。
                 textStyle = TextStyle(color = Color(0xFFE8E0D0), fontSize = 15.sp, lineHeight = 26.sp),
                 cursorBrush = SolidColor(GOLD),
                 modifier = Modifier
@@ -221,28 +246,21 @@ fun MarkdownField(
                 }
             )
             LaunchedEffect(Unit) { focusRequester.requestFocus() }
-
-            IconButton(
-                onClick = { isEditing = false; onSave(draft) },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp)
-            ) {
-                Text("✓", color = GOLD, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            }
         } else {
-            // 内边距统一在 Compose 侧加（md_viewer.html 自身不再设 padding），
-            // 否则 WebView 里的 CSS px 和这里的 dp 不保证 1:1，对不齐。
             MarkdownViewer(
                 content = content,
+                onTap = { draft = content; isEditing = true },
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(contentPadding)
             )
-            // WebView 会吞掉点击事件，叠一层透明可点层用来进入编辑态（整卡可点，不受内边距影响）
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clickable { draft = content; isEditing = true }
-            )
+            // 编辑按钮
+            IconButton(
+                onClick = { draft = content; isEditing = true },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp)
+            ) {
+                Text("✎", color = GOLD, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
