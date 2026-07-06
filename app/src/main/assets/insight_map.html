@@ -74,7 +74,7 @@
     var bounds = [];
     points.forEach(function(p) {
       var m = L.marker([p.lat, p.lng], { icon: GOLD_ICON })
-        .bindTooltip((p.location || 'Unknown') + ' · ' + p.intensity + '%',
+        .bindTooltip(p.location || 'Unknown',
           { direction: 'top', offset: [0, -8] })
         .addTo(_map);
       _markers.push(m);

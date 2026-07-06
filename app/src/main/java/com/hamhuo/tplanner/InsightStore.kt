@@ -6,7 +6,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalDate
 import java.util.UUID
-import kotlin.math.roundToInt
 
 // Statistics store: independent of JournalStore, uses a separate SharedPreferences file.
 // Stores two types of data:
@@ -63,24 +62,21 @@ class InsightStore(context: Context) {
         }
     }
 
-    // ── Statistics queries ───────────────────────────────────────────────
-
-    fun getDistortionCounts(date: String): Map<String, Int> {
-        val events = getEvents(date)
-        val counts = mutableMapOf<String, Int>()
-        events.forEach { e ->
-            e.distortions.forEach { d ->
-                counts[d] = (counts[d] ?: 0) + 1
+    // 软删除：打 deletedAt 墓碑（updatedAt 一并更新，才能在 LWW 合并中战胜对端
+    // 尚存的旧版本），getEvents 会把它过滤掉。与 Notes/随笔互不影响——删这条
+    // 洞察记录不触碰随笔里对应那段文字。
+    fun deleteEvent(id: String, timestamp: Long) {
+        synchronized(lock) {
+            val date = epochToDate(timestamp)
+            val now = System.currentTimeMillis()
+            val list = getEventsRaw(date).map {
+                if (it.id == id) it.copy(deletedAt = now, updatedAt = now) else it
             }
+            saveEvents(date, list)
         }
-        return counts
     }
 
-    fun getAvgIntensity(date: String): Int {
-        val events = getEvents(date)
-        if (events.isEmpty()) return 0
-        return events.map { it.intensity }.average().roundToInt()
-    }
+    // ── Statistics queries ───────────────────────────────────────────────
 
     fun getTopLocation(date: String): String {
         val events = getEvents(date)

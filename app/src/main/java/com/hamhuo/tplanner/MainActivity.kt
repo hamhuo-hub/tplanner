@@ -327,8 +327,14 @@ fun MainScreen(
     val isPhone = LocalConfiguration.current.screenWidthDp < 840
     var phoneTab by remember { mutableStateOf(0) }   // 0=Journal, 1=Tasks, 2=Insights
 
-    // ── Watch-triggered anxiety recording ─────────────────────────────────
+    // ── Watch-triggered thought capture ("理一理") ────────────────────────
     var showAnxietySheet by remember { mutableStateOf(false) }
+    var thinking by remember { mutableStateOf(false) }            // AI 正在读你写的
+    var sheetQuestions by remember { mutableStateOf<List<String>?>(null) }  // 非空 → 显示追问
+    var sheetAction by remember { mutableStateOf<DeepSeekAnalysisService.ProposedAction?>(null) }  // 非空 → 显示"加日程"提议
+    var sheetClarify by remember { mutableStateOf<DeepSeekAnalysisService.Clarify?>(null) }  // 非空 → 先追问补全参数
+    var pendingAction by remember { mutableStateOf<DeepSeekAnalysisService.ProposedAction?>(null) }  // 待补全的部分操作
+    var pendingText by remember { mutableStateOf("") }  // 原文，供 refineAction 用
     var prefillLocation by remember { mutableStateOf("") }
     // 手表打点定位（唯一真相源来自 WatchLocationStore，由蓝牙服务异步写入），
     // submit 时直接用这两个值存进 InsightStore，不再从随笔文本正则抠坐标
@@ -339,6 +345,8 @@ fun MainScreen(
     LaunchedEffect(anxietyTriggerCount) {
         if (anxietyTriggerCount > 0) {
             showAnxietySheet = true
+            thinking = false; sheetQuestions = null; sheetAction = null
+            sheetClarify = null; pendingAction = null; pendingText = ""    // 新会话回到编辑态
             prefillLocation = ""; watchLat = 0.0; watchLng = 0.0   // 本次会话重置，面板显示"Locating..."
 
             // 轮询等待蓝牙服务的异步定位落地（GPS 冷启可达数秒）。savedAt 需晚于
@@ -360,20 +368,6 @@ fun MainScreen(
                     // 逆地理编码失败会回退坐标串——面板从"Locating..."更新为地名/坐标
                     prefillLocation = AmapGeocoder.reverseGeocode(it.lat, it.lng, amapApiKey)
                 }
-            }
-        }
-    }
-
-    // End-of-day auto analysis
-    LaunchedEffect(content) {
-        val today = java.time.LocalDate.now().toString()
-        val existingReport = insightStore.getDayReport(today)
-        if (existingReport == null) {
-            val dayEntries = insightStore.getTodayEvents()
-            if (dayEntries.isNotEmpty() && deepseekService != null) {
-                val report = deepseekService.synthesizeDay(dayEntries, today)
-                if (report != null) insightStore.saveDayReport(report)
-                insightRefreshTrigger++
             }
         }
     }
@@ -438,81 +432,124 @@ fun MainScreen(
     // ── Main layout ──────────────────────────────────────────────────────
     Box(Modifier.fillMaxSize().background(BG).windowInsetsPadding(WindowInsets.systemBars)) {
         if (showAnxietySheet) {
-            // Anxiety log panel fullscreen overlay
-            val submitAnxiety: (String, Int, List<String>, List<String>) -> Unit =
-                { text, intensity, emotions, symptoms ->
-                    val now = System.currentTimeMillis()
-                    val entryLine = buildString {
-                        append("\n\n---\n\n### ")
-                        append(java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date()))
-                        append(" · ").append(prefillLocation.ifBlank { "Unknown" })
-                        if (intensity > 0) append("\n*Intensity ${intensity}%*")
-                        if (emotions.isNotEmpty()) append("\n*Emotions: ${emotions.joinToString(" · ")}*")
-                        if (symptoms.isNotEmpty()) append("\n*Physical: ${symptoms.joinToString(" · ")}*")
-                        append("\n\n").append(text)
+            // "理一理"全屏面板：默认只把想法修好语法记成随笔；仅当用户在文字里
+            // 明确求助时，AI 才反过来提问（不给答案/不诊断）。
+            val submitThought: (String) -> Unit = { text ->
+                val now = System.currentTimeMillis()
+                val loc = prefillLocation.ifBlank { "Unknown" }
+                val stamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date(now))
+                // 想法本身先原样落随笔（保证记录必存），拿到结果后再替换成修好语法的版本
+                val entryLine = "\n\n---\n\n### $stamp · $loc\n\n$text"
+                content = content + entryLine
+                store.saveToday(content)
+
+                thinking = true
+                sheetQuestions = null
+                sheetAction = null
+                sheetClarify = null
+                pendingText = text
+                scope.launch {
+                    val res = deepseekService?.processThought(text, stamp, loc)
+                        ?: DeepSeekAnalysisService.ThoughtResult("record", text, emptyList())
+
+                    // 语法修正：把随笔里的原文替换成修好的版本（record 是默认行为；
+                    // 其它模式也顺带把错别字理一下）
+                    if (res.text.isNotBlank() && res.text != text) {
+                        store.replaceInToday(text, res.text)
+                        content = store.getToday()
                     }
-                    val updated = content + entryLine
-                    content = updated
-                    store.saveToday(updated)
-                    showAnxietySheet = false
 
-                    if (deepseekService != null && text.isNotBlank()) {
-                        scope.launch {
-                            val result = deepseekService.restructureEntry(
-                                text = text,
-                                timestamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US)
-                                    .format(java.util.Date(now)),
-                                location = prefillLocation.ifBlank { "Unknown" },
-                                emotions = emotions,
-                                symptoms = symptoms,
-                                userIntensity = intensity,
-                            )
-                            if (result != null) {
-                                val threeColumnBlock = buildString {
-                                    append("\n\n> **Automatic Thought**\n> ${result.autoThought} (confidence ${result.thoughtConfidence}%)\n>\n")
-                                    append("> **Distortions**\n> ${result.distortions.joinToString(" · ")}\n>\n")
-                                    append("> **Rational Response**\n> ${result.rationalResponse}")
-                                }
-                                val final = store.getToday() + threeColumnBlock
-                                store.saveToday(final)
-                                content = final
+                    insightStore.addEvent(StructuredEntry(
+                        id = UUID.randomUUID().toString(),
+                        timestamp = now,
+                        text = res.text,
+                        location = loc,
+                        lat = watchLat, lng = watchLng,
+                        questions = res.questions,
+                    ))
 
-                                insightStore.addEvent(StructuredEntry(
-                                    id = UUID.randomUUID().toString(),
-                                    timestamp = now,
-                                    text = text,
-                                    location = prefillLocation.ifBlank { "Unknown" },
-                                    lat = watchLat, lng = watchLng,
-                                    intensity = if (result.intensity > 0) result.intensity else intensity,
-                                    distortions = result.distortions,
-                                    autoThought = result.autoThought,
-                                    thoughtConfidence = result.thoughtConfidence,
-                                    rationalResponse = result.rationalResponse,
-                                    emotion = result.emotion.ifBlank { emotions.firstOrNull() ?: "" },
-                                ))
-                            } else {
-                                insightStore.addEvent(StructuredEntry(
-                                    id = UUID.randomUUID().toString(),
-                                    timestamp = now,
-                                    text = text,
-                                    location = prefillLocation.ifBlank { "Unknown" },
-                                    lat = watchLat, lng = watchLng,
-                                    intensity = intensity,
-                                    distortions = emptyList(),
-                                    autoThought = "", thoughtConfidence = 0,
-                                    rationalResponse = "",
-                                    emotion = emotions.firstOrNull() ?: "",
-                                ))
+                    when {
+                        res.mode == "questions" && res.questions.isNotEmpty() -> {
+                            // 追问追加到随笔，方便日后翻看；面板切到"追问"态
+                            val block = buildString {
+                                append("\n\n> **有几个问题给你**")
+                                res.questions.forEachIndexed { i, q -> append("\n> ${i + 1}. $q") }
                             }
-                            insightRefreshTrigger++
+                            content = store.getToday() + block
+                            store.saveToday(content)
+                            thinking = false
+                            sheetQuestions = res.questions
+                        }
+                        res.mode == "action" && res.action != null -> {
+                            thinking = false
+                            if (res.clarify != null) {
+                                // 缺关键参数（如提醒时间）→ 先追问，答完再补全
+                                pendingAction = res.action
+                                sheetClarify = res.clarify
+                            } else {
+                                // 参数齐全 → 直接提议，等用户确认
+                                sheetAction = res.action
+                            }
+                        }
+                        else -> {
+                            // record 模式（或失败）：已记下，直接关面板
+                            thinking = false
+                            showAnxietySheet = false
                         }
                     }
+                    insightRefreshTrigger++
                 }
+            }
 
-            AnxietyInputSheet(
+            // 用户确认"加入日程"：把 AI 提议的动作落成 TaskEvent，落盘并同步
+            val confirmAction: (DeepSeekAnalysisService.ProposedAction) -> Unit = { act ->
+                val start = parseAgentDatetime(act.datetimeIso)
+                val ev = TaskEvent(
+                    id = UUID.randomUUID().toString(),
+                    title = act.title,
+                    type = if (act.type == "reminder") "reminder" else "task",
+                    start = start,
+                    end = start.plusSeconds(3600),
+                    completed = false,
+                    checklist = emptyList(),
+                    colorId = 0,
+                    note = "",
+                    deletedAt = 0L,
+                    updatedAt = System.currentTimeMillis(),
+                )
+                events = events + ev
+                eventStore.saveAll(events)
+                showAnxietySheet = false; sheetAction = null
+                scope.launch { events = manager.fetchEvents(serverUrl) }   // 推到服务器/其它端
+            }
+
+            // 用户回答了澄清追问：用答案补全操作，再切到确认卡
+            val answerClarify: (String) -> Unit = { answer ->
+                val partial = pendingAction
+                sheetClarify = null
+                if (partial == null) { showAnxietySheet = false }
+                else {
+                    thinking = true
+                    scope.launch {
+                        val refined = deepseekService?.refineAction(pendingText, partial, answer) ?: partial
+                        thinking = false
+                        pendingAction = null
+                        sheetAction = refined
+                    }
+                }
+            }
+
+            UntangleSheet(
                 prefillLocation = prefillLocation,
-                onDismiss = { showAnxietySheet = false },
-                onSubmit = submitAnxiety,
+                thinking = thinking,
+                questions = sheetQuestions,
+                action = sheetAction,
+                clarify = sheetClarify,
+                onDismiss = { showAnxietySheet = false; thinking = false; sheetQuestions = null; sheetAction = null; sheetClarify = null },
+                onSubmit = submitThought,
+                onConfirmAction = confirmAction,
+                onDeclineAction = { showAnxietySheet = false; sheetAction = null },  // 就当笔记（想法已存）
+                onAnswerClarify = answerClarify,
             )
         } else if (isPhone) {
             Column(Modifier.fillMaxSize()) {
@@ -533,7 +570,14 @@ fun MainScreen(
                 ) {
                     if (phoneTab == 0) notesCardContent()
                     else if (phoneTab == 1) taskCardContent()
-                    else InsightPanel(store = insightStore, amapApiKey = amapApiKey, onRefresh = { insightRefreshTrigger++ })
+                    else InsightPanel(
+                        store = insightStore, amapApiKey = amapApiKey,
+                        onRefresh = { insightRefreshTrigger++ },
+                        onDelete = { entry ->
+                            insightStore.deleteEvent(entry.id, entry.timestamp)   // 软删（同步）
+                            scope.launch { manager.syncInsights(serverUrl) }       // 把墓碑推到服务器
+                        },
+                    )
                 }
             }
         } else {
@@ -593,3 +637,10 @@ fun MainScreen(
         )
     }
 }
+
+// AI 提议的本地时间 ISO（如 2026-07-07T08:00:00）→ Instant；空/解析失败回退到"现在"。
+// 无明确时间的待办（task）就落在当前时刻，用户之后可在详情页调。
+private fun parseAgentDatetime(iso: String): Instant = try {
+    if (iso.isBlank()) Instant.now()
+    else java.time.LocalDateTime.parse(iso).atZone(java.time.ZoneId.systemDefault()).toInstant()
+} catch (_: Exception) { Instant.now() }

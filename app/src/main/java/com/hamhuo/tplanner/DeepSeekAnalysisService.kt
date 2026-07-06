@@ -8,134 +8,157 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 // 手机直连 DeepSeek API，不走树莓派。
-// 两次调用：
-//   1) restructureEntry —— 单事件自由文本 → 伯恩斯三栏
-//   2) synthesizeDay —— 全天结构化事件 → 日终报告
+//
+// 产品定位：帮用户把散乱的思路理清。核心不是"给答案/做分析"，而是【反过来
+// 提问】——用户写下凌乱、片段、可能表述不准的想法，AI 只提问，帮他定位自己
+// 卡在哪儿。两次调用：
+//   1) processThought —— 单条想法 → 默认只修语法+记录；明确求助时提问；识别待办/
+//      提醒时提议加日程（缺参数先追问 clarify）
+//   2) refineAction   —— 用户答完澄清追问后，用答案补全日程操作
 class DeepSeekAnalysisService(private val apiKey: String) {
 
-    // ── 第 1 次调用：单事件整理 ────────────────────────────────────────────
+    // 一次处理，分四种场景：
+    //   record    —— 默认。只修错别字/语法，当笔记记下（不提问、不分析）。
+    //   questions —— 用户在文字里【明确】求助时，反过来提问帮他定位困惑。
+    //   action    —— 文字明显是"要做/要记住的事"（待办/提醒），提议帮他建一个
+    //                task/reminder。带明确时间→reminder，无时间的待办→task。
+    // 无论哪种，最终有副作用的动作（建日程）都要用户在界面上确认后才执行。
+    data class ProposedAction(val type: String, val title: String, val datetimeIso: String)
+    // 缺关键参数时的一条澄清追问（含快捷选项）；agent 先问、答完再补全操作。
+    data class Clarify(val q: String, val options: List<String>)
+    data class ThoughtResult(
+        val mode: String,
+        val text: String,
+        val questions: List<String>,
+        val action: ProposedAction? = null,
+        val clarify: Clarify? = null,   // action 且 !=null → 先追问，答完调 refineAction
+    )
 
-    suspend fun restructureEntry(
+    suspend fun processThought(
         text: String,
         timestamp: String,
         location: String,
-        emotions: List<String> = emptyList(),
-        symptoms: List<String> = emptyList(),
-        userIntensity: Int = 0,
-    ): ThreeColumnResult? = withContext(Dispatchers.IO) {
-        // 提示词纪律：JSON 模板里绝不放具体数值/标签示例——低温下模型会把示例
-        // 当默认值照抄（此前模板里写了 thoughtConfidence: 85，导致任何输入都
-        // 返回 85）。数值一律给打分量规，让模型从原文证据推导。
-        val prompt = buildString {
-            append("你是一位接受过伯恩斯CBT训练的心理咨询师。用户正在经历焦虑发作，写下了以下记录。")
-            append("请将其整理为伯恩斯三栏格式，并识别思维钢印（认知扭曲）类型。\n\n")
-            append("**用户记录**：\n$text\n\n")
-            append("**背景**：时间 $timestamp，地点 $location\n")
-            if (emotions.isNotEmpty()) append("**用户自述情绪**：${emotions.joinToString("、")}\n")
-            if (symptoms.isNotEmpty()) append("**用户自述身体症状**：${symptoms.joinToString("、")}\n")
-            if (userIntensity > 0) append("**用户自评强度**：${userIntensity}%\n")
-            append("\n请以 JSON 格式返回（不要包含其他内容）：\n")
-            append("{\n")
-            append("  \"autoThought\": \"<用户的核心自动思维，一句话，用用户自己的口吻>\",\n")
-            append("  \"thoughtConfidence\": <整数0-100，按下方量规评估>,\n")
-            append("  \"distortions\": [\"<从给定清单中选出的钢印类型，1-3个>\"],\n")
-            append("  \"rationalResponse\": \"<温柔但有力的理智反思，2-3句话>\",\n")
-            append("  \"emotion\": \"<从原文推断的主导情绪，一个词>\",\n")
-            append("  \"intensity\": <整数0-100，按下方量规评估>\n")
-            append("}\n\n")
-            append("**thoughtConfidence 量规**（用户对该自动思维的相信程度，必须从原文措辞找证据）：\n")
-            append("- 90-100：把想法当成毫无疑问的事实陈述（\"肯定\"\"就是\"\"绝对\"，没有任何怀疑措辞）\n")
-            append("- 70-89：强烈相信，但措辞里有一丝余地（\"应该是\"\"八成\"）\n")
-            append("- 40-69：半信半疑，原文里有自我拉扯（\"可能是我想多了，但是…\"）\n")
-            append("- 10-39：用户自己已经在质疑这个想法\n")
-            append("先在心里引用原文的关键措辞作为依据，再给分。禁止不经推导就取整十数或中间值；")
-            append("不同的输入除非证据强度确实相同，否则不应得到相同的分数。\n\n")
-            append("**intensity 量规**（焦虑强度）：\n")
-            if (userIntensity > 0) {
-                append("- 用户已自评强度 ${userIntensity}%，intensity 直接沿用该值，不要自行改动。\n\n")
-            } else {
-                append("- 80-100：躯体症状明显/无法正常行动（发抖、心悸、逃离现场）\n")
-                append("- 50-79：显著影响当下状态，但还能维持表面功能\n")
-                append("- 20-49：持续的背景性不安\n")
-                append("- 0-19：轻微的一闪而过的担忧\n")
-                append("同样先找原文证据再给分。\n\n")
-            }
-            append("思维钢印类型必须从以下中选择：全或无思维、过度概括、心理过滤、贬低正面、")
-            append("读心术、算命式预测、夸大与缩小、情绪推理、应该句式、贴标签、自责、责备他人。")
-            append("只选原文有明确证据的类型，宁缺毋滥。\n\n")
-            append("理智反思不要空洞安慰，要基于事实的温和反驳。语气是陪伴式而非说教式。")
-            if (emotions.isNotEmpty() || symptoms.isNotEmpty() || userIntensity > 0) {
-                append("\n\n用户已经标注了自己的情绪和身体反应，请在此基础上深入分析")
-                append("——你的任务是找出用户自己可能没意识到的思维钢印和核心自动思维，")
-                append("而不是重复用户已经知道的内容。")
-            }
-        }
+    ): ThoughtResult = withContext(Dispatchers.IO) {
+        // 相对时间（明天/下周一/早上…）需要一个"现在"作参照才能解析成绝对时间
+        val nowDt = java.time.LocalDateTime.now()
+        val zhWeek = arrayOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")[nowDt.dayOfWeek.value - 1]
+        val nowStr = "%04d-%02d-%02d %02d:%02d %s".format(
+            nowDt.year, nowDt.monthValue, nowDt.dayOfMonth, nowDt.hour, nowDt.minute, zhWeek)
 
-        val resp = callDeepSeek(prompt)
-        parseThreeColumnResult(resp)
+        val prompt = buildString {
+            append("现在：$nowStr\n地点：$location\n")
+            append("用户写下的文字（原样，可能有错别字/语病）：\n\"\"\"\n")
+            append(text)
+            append("\n\"\"\"\n\n")
+            append("返回 JSON（不要 markdown 代码块）：\n")
+            append("{\n")
+            append("  \"mode\": \"record 或 questions 或 action\",\n")
+            append("  \"text\": \"<修正错别字和语法后的文字，保持原意原语气，绝不改写、扩写、发挥；没错就原样返回>\",\n")
+            append("  \"questions\": [],\n")
+            append("  \"action\": {\"type\": \"task 或 reminder\", \"title\": \"<简短标题，动宾短语>\", \"datetime\": \"<本地时间 ISO；已知日期就填日期部分、钟点未定填 T00:00:00；纯 task 无时间填空>\"},\n")
+            append("  \"clarify\": {\"q\": \"<追问，如：明天几点提醒你？>\", \"options\": [\"上午9点\", \"中午12点\", \"下午3点\", \"晚上8点\"]}\n")
+            append("}\n\n")
+            append("mode 判定：\n")
+            append("- action：文字明显是【一件要做/要记住的事】——待办、提醒、\"记得/别忘了/")
+            append("提醒我/明天要\"+一件具体的事。带明确时间点→reminder，没时间的待办→task。\n")
+            append("- questions：用户【明确】求助——\"帮我理理 / 你问我几个问题 / 我卡住了\"。\n")
+            append("- record：其余一切（musing、观察、感受、片段、一般笔记）。拿不准就 record。\n")
+            append("record/questions 模式：action 与 clarify 都置为 null。\n")
+            append("【clarify 追问规则】reminder（定时提醒）必须有明确钟点。如果用户只给了日期")
+            append("（\"明天\"\"下周一\"\"后天\"）或根本没提时间，【绝对不要自己猜钟点】，而是在 clarify 里")
+            append("问\"几点\"并给 4 个快捷选项（上午9点/中午12点/下午3点/晚上8点）；datetime 先只填")
+            append("日期部分。只有用户明确说了 早上(→08:00)/中午(→12:00)/下午(→14:00)/晚上(→20:00)/")
+            append("具体几点，才直接用、clarify 置 null。纯 task（无时间意味的待办）clarify 置 null。\n")
+            append("其余相对时间按\"现在\"解析成绝对 ISO。\n")
+            append("questions 模式：给 1-3 个问题。只提问不给答案；扎在具体接缝上（含混的词、")
+            append("跳过的步骤、没说出口的前提、被当成一回事的两件事）；真开放不诱导；优先他一时")
+            append("答不上来的；保持临时不制造\"想通了\"的终局感；卡点关乎他自己时转成他能自己")
+            append("去试去验证的问题，别剖析他是什么样的人。")
+        }
+        try {
+            val json = extractJson(callDeepSeek(prompt, SYSTEM_THOUGHT))
+            val rawMode = json.optString("mode", "record")
+            val cleaned = json.optString("text", text).ifBlank { text }
+
+            val qs = if (rawMode == "questions") {
+                val out = mutableListOf<String>()
+                json.optJSONArray("questions")?.let { arr ->
+                    for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotBlank() }?.let { out += it }
+                }
+                out.take(3)
+            } else emptyList()
+
+            val action = if (rawMode == "action") {
+                json.optJSONObject("action")?.let { a ->
+                    val title = a.optString("title", "").trim()
+                    if (title.isBlank()) null else ProposedAction(
+                        type = if (a.optString("type", "task") == "reminder") "reminder" else "task",
+                        title = title,
+                        datetimeIso = a.optString("datetime", "").trim(),
+                    )
+                }
+            } else null
+
+            val clarify = if (rawMode == "action") {
+                json.optJSONObject("clarify")?.let { c ->
+                    val q = c.optString("q", "").trim()
+                    val opts = mutableListOf<String>()
+                    c.optJSONArray("options")?.let { arr ->
+                        for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotBlank() }?.let { opts += it }
+                    }
+                    if (q.isBlank()) null else Clarify(q, opts)
+                }
+            } else null
+
+            // 归一化：mode 与产物一致，缺产物则回退 record
+            val mode = when {
+                rawMode == "action" && action != null -> "action"
+                rawMode == "questions" && qs.isNotEmpty() -> "questions"
+                else -> "record"
+            }
+            android.util.Log.d("TplannerDS", "processThought mode=$mode q=${qs.size} action=${action?.type} clarify=${clarify != null}")
+            ThoughtResult(mode, cleaned, qs, action, if (mode == "action") clarify else null)
+        } catch (e: Exception) {
+            // 网络/超时/限流：退化为"原样记录"，绝不打断记录本身
+            android.util.Log.e("TplannerDS", "processThought failed: ${e.message}")
+            ThoughtResult("record", text, emptyList())
+        }
     }
 
-    // ── 第 2 次调用：日终归档 ──────────────────────────────────────────────
-
-    suspend fun synthesizeDay(
-        entries: List<StructuredEntry>,
-        date: String
-    ): DayReport? = withContext(Dispatchers.IO) {
-        if (entries.isEmpty()) return@withContext null
-
-        val eventsText = buildString {
-            entries.forEachIndexed { i, e ->
-                val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US)
-                    .format(java.util.Date(e.timestamp))
-                append("${i + 1}. $time · ${e.location}\n")
-                append("   强度: ${e.intensity}%\n")
-                append("   思维钢印: ${e.distortions.joinToString("、")}\n")
-                append("   核心思维: ${e.autoThought}\n\n")
-            }
-        }
-
+    // 第二阶段：用户回答了澄清追问后，用答案把操作补全（如把"下午3点"并进已知日期）。
+    // 失败则回退到原始 best-guess（datetime 可能只有日期，parseAgentDatetime 会兜底到当天）。
+    suspend fun refineAction(
+        text: String,
+        action: ProposedAction,
+        answer: String,
+    ): ProposedAction = withContext(Dispatchers.IO) {
+        val nowDt = java.time.LocalDateTime.now()
+        val zhWeek = arrayOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")[nowDt.dayOfWeek.value - 1]
+        val nowStr = "%04d-%02d-%02d %02d:%02d %s".format(
+            nowDt.year, nowDt.monthValue, nowDt.dayOfMonth, nowDt.hour, nowDt.minute, zhWeek)
         val prompt = buildString {
-            append("你是一位心理咨询师。今天用户记录了以下焦虑事件。请综合全天数据，")
-            append("做一份温柔的日终沙盘复盘。\n\n")
-            append("**日期**：$date\n")
-            append("**事件列表**：\n$eventsText\n")
-            append("请以 JSON 格式返回（不要包含其他内容）：\n")
-            append("{\n")
-            append("  \"topLocation\": \"今日高发地点\",\n")
-            append("  \"topTimeSlot\": \"今日高发时段（上午/午间/下午/晚间/深夜）\",\n")
-            append("  \"narrative\": \"2-4句话的自然语言总结。语气是陪伴式而非诊断式。")
-            append("如果发现了重复出现的思维钢印，温柔地指出来。")
-            append("如果某个地点频繁出现，提一下。最后可以留一个好奇的小钩子。\"\n")
-            append("}\n")
-            append("语调参考：'你的情绪风暴今天高度集中在望京SOHO...'\n")
-            append("避免直接说'你应该...'，而用'不妨'、'也许可以'等柔和建议。")
+            append("现在：$nowStr\n原文：$text\n")
+            append("已确定的部分操作：type=${action.type}, title=${action.title}, datetime=${action.datetimeIso.ifBlank { "(未定)" }}\n")
+            append("用户对澄清追问的回答：$answer\n\n")
+            append("把回答里的钟点并进已知日期，算成绝对本地时间。返回 JSON（不要 markdown）：\n")
+            append("{\"type\": \"${action.type}\", \"title\": \"${action.title}\", \"datetime\": \"<本地 ISO，如 2026-07-07T15:00:00>\"}")
         }
-
-        val resp = callDeepSeek(prompt)
-        val parsed = parseDayReportJson(resp) ?: return@withContext null
-        // 补充本地可计算的数据
-        val avgIntensity = if (entries.isEmpty()) 0
-            else entries.map { it.intensity }.average().toInt()
-        val distortionCounts = mutableMapOf<String, Int>()
-        entries.forEach { e -> e.distortions.forEach { d -> distortionCounts[d] = (distortionCounts[d] ?: 0) + 1 } }
-        val topLoc = parsed.optString("topLocation", "")
-        val topSlot = parsed.optString("topTimeSlot", "")
-        val narrative = parsed.optString("narrative", "")
-
-        DayReport(
-            date = date,
-            totalEvents = entries.size,
-            avgIntensity = avgIntensity,
-            distortionCounts = distortionCounts,
-            topLocation = if (topLoc.isNotBlank()) topLoc else entries.groupBy { it.location }.maxByOrNull { it.value.size }?.key ?: "",
-            topTimeSlot = if (topSlot.isNotBlank()) topSlot else "",
-            narrative = narrative,
-        )
+        try {
+            val j = extractJson(callDeepSeek(prompt, SYSTEM_REFINE))
+            ProposedAction(
+                type = if (j.optString("type", action.type) == "reminder") "reminder" else "task",
+                title = j.optString("title", action.title).ifBlank { action.title },
+                datetimeIso = j.optString("datetime", action.datetimeIso).trim(),
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("TplannerDS", "refineAction failed: ${e.message}")
+            action
+        }
     }
 
     // ── 内部 ──────────────────────────────────────────────────────────────
 
-    private fun callDeepSeek(userMessage: String): String {
+    private fun callDeepSeek(userMessage: String, system: String): String {
         val conn = URL(DEEPSEEK_URL).openConnection() as HttpURLConnection
         conn.requestMethod = "POST"
         conn.connectTimeout = 30000
@@ -147,17 +170,12 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             val body = JSONObject().apply {
                 put("model", MODEL)
                 put("messages", org.json.JSONArray().apply {
-                    put(JSONObject().apply {
-                        put("role", "system")
-                        put("content", "你是一位接受过CBT训练的心理咨询师。请总是返回有效的 JSON，不要包含 markdown 代码块标记。所有数值字段必须依据用户原文的具体措辞推导得出，禁止套用任何默认值或惯用值。")
-                    })
-                    put(JSONObject().apply {
-                        put("role", "user")
-                        put("content", userMessage)
-                    })
+                    put(JSONObject().apply { put("role", "system"); put("content", system) })
+                    put(JSONObject().apply { put("role", "user"); put("content", userMessage) })
                 })
-                put("temperature", 0.3)
-                put("max_tokens", 2048)
+                // 提问需要一点发散去戳中不同的接缝，温度略高
+                put("temperature", 0.7)
+                put("max_tokens", 1024)
             }.toString()
             OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { it.write(body) }
             if (conn.responseCode !in 200..299) {
@@ -166,31 +184,12 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             }
             val resp = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
             return JSONObject(resp)
-                .getJSONArray("choices")
-                .getJSONObject(0)
-                .getJSONObject("message")
-                .getString("content")
-                .trim()
+                .getJSONArray("choices").getJSONObject(0)
+                .getJSONObject("message").getString("content").trim()
         } finally {
             conn.disconnect()
         }
     }
-
-    private fun parseThreeColumnResult(resp: String): ThreeColumnResult? = try {
-        val json = extractJson(resp)
-        val distortions = mutableListOf<String>()
-        json.optJSONArray("distortions")?.let { arr ->
-            for (i in 0 until arr.length()) distortions += arr.getString(i)
-        }
-        ThreeColumnResult(
-            autoThought = json.optString("autoThought", ""),
-            thoughtConfidence = json.optInt("thoughtConfidence", 0),
-            distortions = distortions,
-            rationalResponse = json.optString("rationalResponse", ""),
-            emotion = json.optString("emotion", ""),
-            intensity = json.optInt("intensity", 0),
-        )
-    } catch (_: Exception) { null }
 
     // 有时 LLM 返回的 JSON 被包在 ```json ... ``` 里
     private fun extractJson(raw: String): JSONObject {
@@ -207,12 +206,19 @@ class DeepSeekAnalysisService(private val apiKey: String) {
         }
     }
 
-    private fun parseDayReportJson(resp: String): JSONObject? = try {
-        extractJson(resp)
-    } catch (_: Exception) { null }
-
     companion object {
         private const val DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
         private const val MODEL = "deepseek-chat"
+
+        private const val SYSTEM_THOUGHT =
+            "你在帮用户处理随手写下的文字，分四种：默认 record（只修错别字/语法，当笔记" +
+            "记下，不提问不分析）；questions（用户明确求助时才反过来提问，帮他定位困惑，" +
+            "不给答案不剖析他这个人）；action（文字明显是要做/要记住的事时，提议帮他建 task/" +
+            "reminder）。判断从严，拿不准当 record。有副作用的动作最终都要用户确认才执行。" +
+            "永远只返回有效 JSON，不要 markdown 代码块。"
+
+        private const val SYSTEM_REFINE =
+            "你根据用户对澄清追问的回答，补全一个日程操作（把答的钟点并进已知日期算成绝对时间）。" +
+            "永远只返回有效 JSON，不要 markdown 代码块。"
     }
 }
