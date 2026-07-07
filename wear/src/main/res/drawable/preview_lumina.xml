@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 光韵预览：多层柔光环 + 核心光球 + 单针 + 星芒事件 + 底部珍珠 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="466dp" android:height="466dp"
+    android:viewportWidth="466" android:viewportHeight="466">
+    <!-- 圆形暗底 -->
+    <path android:fillColor="#0D0D0D"
+        android:pathData="M0,233 a233,233 0 1,0 466,0 a233,233 0 1,0 -466,0 z" />
+    <!-- 外环极淡光晕 -->
+    <path android:strokeColor="#101A2A" android:strokeWidth="31.7" android:fillColor="#00000000"
+        android:pathData="M56.5,228.1 a176.5,176.5 0 1,0 353,0 a176.5,176.5 0 1,0 -353,0 z" />
+    <!-- 中层光环 -->
+    <path android:strokeColor="#184A7A9E" android:strokeWidth="9.8" android:fillColor="#00000000"
+        android:pathData="M117.8,228.1 a115.2,115.2 0 1,0 230.4,0 a115.2,115.2 0 1,0 -230.4,0 z" />
+    <!-- 核心光球外柔光 -->
+    <path android:fillColor="#228AB4FF"
+        android:pathData="M233,210 a28,28 0 1,0 0.1,0 z" />
+    <!-- 核心光球 -->
+    <path android:fillColor="#EEC9A84C"
+        android:pathData="M233,215 a12,12 0 1,0 0.1,0 z" />
+    <!-- 高光点 -->
+    <path android:fillColor="#88FFFFFF"
+        android:pathData="M228,210 a2.5,2.5 0 1,0 0.1,0 z" />
+    <!-- 优雅指针（约 2 点钟方向，24h 单针） -->
+    <path android:strokeColor="#C9A84C" android:strokeWidth="2.9" android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M233,218 L278,175" />
+    <!-- 指针光晕尾迹 -->
+    <path android:strokeColor="#188AB4FF" android:strokeWidth="4.4" android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M233,218 L274,178" />
+    <!-- 指针尖端晶点 -->
+    <path android:fillColor="#FEF8E8"
+        android:pathData="M278,175 a3,3 0 1,0 0.1,0 z" />
+    <!-- 事件星芒 x 3（青色） -->
+    <path android:fillColor="#4A9DA8"
+        android:pathData="M233,95 a4,4 0 1,0 0.1,0 z" />
+    <path android:fillColor="#4A9DA8"
+        android:pathData="M370,233 a4,4 0 1,0 0.1,0 z" />
+    <path android:fillColor="#4A9DA8"
+        android:pathData="M290,370 a4,4 0 1,0 0.1,0 z" />
+    <!-- 下一事件星芒（金色 + 光晕） -->
+    <path android:strokeColor="#30C9A84C" android:strokeWidth="8" android:fillColor="#00000000"
+        android:pathData="M233,95 a4,4 0 1,0 0.1,0 z" />
+    <path android:fillColor="#C9A84C"
+        android:pathData="M233,92 a6,6 0 1,0 0.1,0 z" />
+    <!-- 时间 -->
+    <path android:fillColor="#E8E0D0"
+        android:pathData="M190,348 h86 v28 h-86 z" />
+    <!-- 日期 -->
+    <path android:fillColor="#857F6E"
+        android:pathData="M196,380 h74 v4 h-74 z" />
+    <!-- 底部珍珠锚点 -->
+    <path android:fillColor="#612A3A4A"
+        android:pathData="M233,415 a12,12 0 1,0 0.1,0 z" />
+    <path android:strokeColor="#C9A84C" android:strokeWidth="2" android:fillColor="#00000000"
+        android:pathData="M233,415 a12,12 0 1,0 0.1,0 z" />
+    <path android:fillColor="#C9A84C"
+        android:pathData="M233,413 a5,5 0 1,0 0.1,0 z" />
+</vector>
