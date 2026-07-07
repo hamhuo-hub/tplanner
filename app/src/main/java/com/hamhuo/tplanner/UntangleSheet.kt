@@ -194,7 +194,7 @@ fun UntangleSheet(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     Text(
-                        (if (isReminder) "⏰  " else "☑  ") + action.title,
+                        action.title,
                         color = Color(0xFFE8E0D0), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, lineHeight = 26.sp,
                     )
                     Text(prettyWhen(action.datetimeIso), color = GOLD, fontSize = 14.sp)

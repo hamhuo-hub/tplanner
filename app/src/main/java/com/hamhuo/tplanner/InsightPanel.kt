@@ -113,7 +113,7 @@ fun InsightPanel(store: InsightStore, amapApiKey: String, onRefresh: () -> Unit,
                         enableDismissFromStartToEnd = false,   // 只允许左滑
                         backgroundContent = {
                             Box(
-                                Modifier.fillMaxWidth().background(Color(0xFF3A1414), RoundedCornerShape(10.dp))
+                                Modifier.fillMaxSize().background(Color(0xFF3A1414), RoundedCornerShape(10.dp))
                                     .padding(horizontal = 20.dp),
                                 contentAlignment = Alignment.CenterEnd,
                             ) { Text("删除", color = Color(0xFFE07A6A), fontSize = 14.sp) }
@@ -212,7 +212,7 @@ private fun AmapScatterMap(
 
     Box(modifier = modifier.background(SURFACE, RoundedCornerShape(10.dp)).padding(12.dp)) {
         Column {
-            Text("📍 Where", color = Color(0xFFE0D8C0), fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+            Text("Where", color = Color(0xFFE0D8C0), fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(bottom = 8.dp))
             Text("${points.size} spot${if (points.size > 1) "s" else ""}", color = DIM, fontSize = 12.sp,
                 modifier = Modifier.padding(bottom = 8.dp))
