@@ -7,19 +7,20 @@ import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 
-// 手机直连 DeepSeek API，不走树莓派。
+// 手机直连 DeepSeek API（deepseek-v4-pro），不走树莓派。
 //
 // 产品定位：帮用户把散乱的思路理清。核心不是"给答案/做分析"，而是【反过来
 // 提问】——用户写下凌乱、片段、可能表述不准的想法，AI 只提问，帮他定位自己
-// 卡在哪儿。两次调用：
-//   1) processThought —— 单条想法 → 默认只修语法+记录；明确求助时提问；识别待办/
-//      提醒时提议加日程（缺参数先追问 clarify）
-//   2) refineAction   —— 用户答完澄清追问后，用答案补全日程操作
+// 卡在哪儿。
+//
+// 多轮会话：
+//   processThought → refineAction（clarify 补全）或 followUpQuestions（多轮追问）
+//   同一会话内各阶段共享上下文，后续调用会拼接之前的消息历史。
 class DeepSeekAnalysisService(private val apiKey: String) {
 
     // 一次处理，分四种场景：
     //   record    —— 默认。只修错别字/语法，当笔记记下（不提问、不分析）。
-    //   questions —— 用户在文字里【明确】求助时，反过来提问帮他定位困惑。
+    //   questions —— 文字里带问句/困惑就做场景判断，反过来提问帮他定位困惑。
     //   action    —— 文字明显是"要做/要记住的事"（待办/提醒），提议帮他建一个
     //                task/reminder。带明确时间→reminder，无时间的待办→task。
     // 无论哪种，最终有副作用的动作（建日程）都要用户在界面上确认后才执行。
@@ -34,11 +35,36 @@ class DeepSeekAnalysisService(private val apiKey: String) {
         val clarify: Clarify? = null,   // action 且 !=null → 先追问，答完调 refineAction
     )
 
+    // ── 会话记忆：同一轮"理一理"内多步共享上下文，累积 user/assistant 消息即可 ──
+    private var sessionSystemPrompt: String = ""
+    private val sessionMessages = mutableListOf<JSONObject>()  // user / assistant 交替
+
+    private fun resetSession(systemPrompt: String) {
+        sessionSystemPrompt = systemPrompt
+        sessionMessages.clear()
+    }
+
+    private fun addUserTurn(content: String) {
+        sessionMessages.add(JSONObject().apply {
+            put("role", "user"); put("content", content)
+        })
+    }
+
+    private fun addAssistantTurn(content: String) {
+        sessionMessages.add(JSONObject().apply {
+            put("role", "assistant"); put("content", content)
+        })
+    }
+
+    // ── 第一阶段：分析用户想法 → record / questions / action ──────────
     suspend fun processThought(
         text: String,
         timestamp: String,
         location: String,
     ): ThoughtResult = withContext(Dispatchers.IO) {
+        // 新会话开始：清空历史，换上对应的 system prompt
+        resetSession(SYSTEM_THOUGHT)
+
         // 相对时间（明天/下周一/早上…）需要一个"现在"作参照才能解析成绝对时间
         val nowDt = java.time.LocalDateTime.now()
         val zhWeek = arrayOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")[nowDt.dayOfWeek.value - 1]
@@ -80,7 +106,7 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             append("去试去验证的问题，别剖析他是什么样的人。")
         }
         try {
-            val json = extractJson(callDeepSeek(prompt, SYSTEM_THOUGHT))
+            val json = extractJson(callDeepSeekWithHistory(prompt))
             val rawMode = json.optString("mode", "record")
             val cleaned = json.optString("text", text).ifBlank { text }
 
@@ -129,8 +155,8 @@ class DeepSeekAnalysisService(private val apiKey: String) {
         }
     }
 
-    // 第二阶段：用户回答了澄清追问后，用答案把操作补全（如把"下午3点"并进已知日期）。
-    // 失败则回退到原始 best-guess（datetime 可能只有日期，parseAgentDatetime 会兜底到当天）。
+    // ── 第二阶段 A：补全澄清追问后的日程参数 ─────────────────────────
+    // 在 processThought 后调用，拼接了之前的会话历史，模型能引用前面的分析结果。
     suspend fun refineAction(
         text: String,
         action: ProposedAction,
@@ -148,7 +174,7 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             append("{\"type\": \"${action.type}\", \"title\": \"${action.title}\", \"datetime\": \"<本地 ISO，如 2026-07-07T15:00:00>\"}")
         }
         try {
-            val j = extractJson(callDeepSeek(prompt, SYSTEM_REFINE))
+            val j = extractJson(callDeepSeekWithHistory(prompt))
             ProposedAction(
                 type = if (j.optString("type", action.type) == "reminder") "reminder" else "task",
                 title = j.optString("title", action.title).ifBlank { action.title },
@@ -160,8 +186,8 @@ class DeepSeekAnalysisService(private val apiKey: String) {
         }
     }
 
-    // 多轮追问：用户回答完上一轮问题后，基于整段对话往更深处问。
-    // 返回新的 1-3 个问题；返回空列表表示没有更多好问题了，用户可点 Done。
+    // ── 第二阶段 B：多轮追问（用户答完当前问题 → 往更深层再问） ─────
+    // 在 processThought（questions 模式）后调用，拼接了会话历史，模型知道前面问了什么。
     suspend fun followUpQuestions(
         originalText: String,
         qaHistory: String,
@@ -179,7 +205,7 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             append("{\"questions\": []}  或  {\"questions\": [\"问题1\", \"问题2\", \"问题3\"]}")
         }
         try {
-            val json = extractJson(callDeepSeek(prompt, SYSTEM_FOLLOWUP))
+            val json = extractJson(callDeepSeekWithHistory(prompt))
             val out = mutableListOf<String>()
             json.optJSONArray("questions")?.let { arr ->
                 for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotBlank() }?.let { out += it }
@@ -194,7 +220,10 @@ class DeepSeekAnalysisService(private val apiKey: String) {
 
     // ── 内部 ──────────────────────────────────────────────────────────────
 
-    private fun callDeepSeek(userMessage: String, system: String): String {
+    // 多轮感知的 API 调用：把 sessionMessages（历史 user/assistant 交替）
+    // 拼到当前 user message 前面一起发送。收到响应后把本轮 user+assistant
+    // 追加到 sessionMessages，供后续调用使用。
+    private fun callDeepSeekWithHistory(currentUserMessage: String): String {
         val conn = URL(DEEPSEEK_URL).openConnection() as HttpURLConnection
         conn.requestMethod = "POST"
         conn.connectTimeout = 30000
@@ -203,25 +232,38 @@ class DeepSeekAnalysisService(private val apiKey: String) {
         conn.setRequestProperty("Content-Type", "application/json")
         conn.setRequestProperty("Authorization", "Bearer $apiKey")
         try {
+            // 构建完整消息数组：[system] + [历史 user/assistant ...] + [当前 user]
+            val messages = org.json.JSONArray().apply {
+                put(JSONObject().apply { put("role", "system"); put("content", sessionSystemPrompt) })
+                sessionMessages.forEach { put(it) }
+                put(JSONObject().apply { put("role", "user"); put("content", currentUserMessage) })
+            }
+
             val body = JSONObject().apply {
                 put("model", MODEL)
-                put("messages", org.json.JSONArray().apply {
-                    put(JSONObject().apply { put("role", "system"); put("content", system) })
-                    put(JSONObject().apply { put("role", "user"); put("content", userMessage) })
-                })
-                // 提问需要一点发散去戳中不同的接缝，温度略高
+                put("messages", messages)
+                put("max_tokens", 2048)
                 put("temperature", 0.7)
-                put("max_tokens", 1024)
             }.toString()
+
+            android.util.Log.d("TplannerDS", "callDeepSeek historyTurns=${sessionMessages.size / 2}")
             OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { it.write(body) }
+
             if (conn.responseCode !in 200..299) {
                 val err = conn.errorStream?.bufferedReader(Charsets.UTF_8)?.readText() ?: "HTTP ${conn.responseCode}"
                 throw Exception("DeepSeek API error: $err")
             }
+
             val resp = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
-            return JSONObject(resp)
-                .getJSONArray("choices").getJSONObject(0)
-                .getJSONObject("message").getString("content").trim()
+            val choice = JSONObject(resp).getJSONArray("choices").getJSONObject(0)
+            val msg = choice.getJSONObject("message")
+            val content = msg.getString("content").trim()
+
+            // 把本轮对话追加到会话历史
+            addUserTurn(currentUserMessage)
+            addAssistantTurn(content)
+
+            return content
         } finally {
             conn.disconnect()
         }
@@ -244,7 +286,8 @@ class DeepSeekAnalysisService(private val apiKey: String) {
 
     companion object {
         private const val DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
-        private const val MODEL = "deepseek-chat"
+        // deepseek-v4-pro：DeepSeek 最新 pro 模型，推理能力更强
+        private const val MODEL = "deepseek-v4-pro"
 
         private const val SYSTEM_THOUGHT =
             "你在帮用户处理随手写下的文字，分四种：默认 record（只修错别字/语法，当笔记" +
