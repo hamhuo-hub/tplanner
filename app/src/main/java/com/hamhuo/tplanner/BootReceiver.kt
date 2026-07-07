@@ -31,5 +31,8 @@ class BootReceiver : BroadcastReceiver() {
             // 这种情况下寄希望于用户下次打开 App 时手动拉起。
             Log.e("TplannerBoot", "failed to start service on $action", e)
         }
+        // Always schedule the keepalive alarm — if the service fails to start
+        // now (Samsung restriction), the alarm will retry in 15 minutes.
+        KeepAliveReceiver.schedule(context)
     }
 }
