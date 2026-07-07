@@ -20,8 +20,15 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- moveTaskToFront 兜底：把已有 task 拉到前台，不新建 Activity -->
+    <uses-permission android:name="android.permission.REORDER_TASKS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-
+    <!-- KeepAliveReceiver 使用精确闹钟每 15 分钟拉活一次前台服务。
+         需要用户手动在设置中授权（MainActivity 会引导）。 -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- 前台服务通知：Android 13+ 需动态申请，否则通知被系统压制，
+         前台服务失去优先级，三星会更快杀掉进程。 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -42,11 +49,13 @@
             </intent-filter>
         </activity>
 
-        <!-- 经典蓝牙 RFCOMM 前台服务，接收手表表盘直连信号并记录时间戳到随手记 -->
+        <!-- 经典蓝牙 RFCOMM 前台服务，运行在独立进程 (:bluetooth) 中，
+             三星清后台时杀不掉这个进程，服务持续存活。 -->
         <service
             android:name=".BluetoothWakeService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice" />
+            android:foregroundServiceType="connectedDevice"
+            android:process=":bluetooth" />
 
         <!-- 开机/应用更新后自启。exported 必须为 true：官方指引要求监听系统广播的
              receiver 显式导出，部分 Android 12+ 设备上 false 会收不到 BOOT_COMPLETED；
@@ -60,6 +69,13 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+
+        <!-- 前台服务看门狗：每 15 分钟 AlarmManager 唤醒，检查并重启前台服务。
+             三星清后台可杀进程但无法阻止系统广播唤醒。 -->
+        <receiver
+            android:name=".KeepAliveReceiver"
+            android:enabled="true"
+            android:exported="false" />
 
     </application>
 

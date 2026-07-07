@@ -23,13 +23,11 @@ import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
+import android.view.WindowManager
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import java.io.IOException
-import java.time.LocalTime
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -54,6 +52,11 @@ class BluetoothWakeService : Service() {
     // updates after the service is destroyed.
     @Volatile private var pendingLocationListener: LocationListener? = null
 
+    // Persistent 1×1 invisible overlay — keeps the process in a state where
+    // Samsung's BAL checker won't block startActivity().  Attached at service
+    // start, removed at service destroy.
+    @Volatile private var persistentOverlay: android.view.View? = null
+
     override fun onCreate() {
         super.onCreate()
         if (!hasBluetoothConnectPermission()) {
@@ -66,7 +69,11 @@ class BluetoothWakeService : Service() {
         // (especially on API 26+), and the listener thread would run in a
         // doomed process.
         if (startAsForegroundService()) {
+            attachPersistentOverlay()
             startListening()
+            // Arm the 15-minute keepalive alarm.  If Samsung kills :bluetooth
+            // process, AlarmManager will wake us back up and restart the service.
+            KeepAliveReceiver.schedule(this)
         }
     }
 
@@ -82,6 +89,9 @@ class BluetoothWakeService : Service() {
 
         // --- WakeLock cleanup ---
         releaseWakeLock()
+
+        // --- Persistent overlay cleanup ---
+        detachPersistentOverlay()
 
         // --- Location / timeout cleanup ---
         mainHandler.removeCallbacksAndMessages(null)
@@ -234,28 +244,14 @@ class BluetoothWakeService : Service() {
             val command = it.inputStream.read()
             Log.d(TAG, "handleSocket: command=$command")
             if (command >= 0) {
-                logWatchInvocation()
+                // 仅取定位存入 WatchLocationStore 供焦虑面板逆地理编码用，
+                // 不写入随笔——记录动作延迟到用户点 Done 时才由 UI 层触发。
+                fetchCurrentLocation { loc ->
+                    if (loc != null) {
+                        WatchLocationStore.save(this, loc.latitude, loc.longitude)
+                    }
+                }
                 launchMainActivityFromWatch()
-            }
-        }
-    }
-
-    // ── 手表唤醒打点：时间戳 + 位置写入今日随笔 ──────────────────────────────
-    // 时间戳立即落盘（保证必有记录），定位异步获取、到达后补充到同一行——
-    // 不阻塞拉起 MainActivity。行格式固定为 "[WATCH] HH:mm @ lat,lng"，坐标
-    // 保留六位小数（约 0.1m 精度），便于之后解析出轨迹在地图上展示。
-    private fun logWatchInvocation() {
-        val store = JournalStore(this)
-        val stamp = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
-        val baseLine = "[WATCH] $stamp"
-        store.appendToday(baseLine)
-        fetchCurrentLocation { loc ->
-            if (loc != null) {
-                // 唯一真相源：MainActivity 的焦虑面板从这里读坐标做逆地理编码，
-                // 不再和下面这行随笔文本的异步写入抢跑
-                WatchLocationStore.save(this, loc.latitude, loc.longitude)
-                val coords = String.format(Locale.US, "%.6f,%.6f", loc.latitude, loc.longitude)
-                store.replaceInToday(baseLine, "$baseLine @ $coords")
             }
         }
     }
@@ -402,29 +398,81 @@ class BluetoothWakeService : Service() {
         }
     }
 
+    // ---------- Persistent overlay (BAL bypass) ----------
+
+    /**
+     * Attaches a 1×1 invisible overlay window that persists for the lifetime
+     * of this service.
+     *
+     * Samsung's BAL checker (see logcat: "Background activity launch blocked")
+     * blocks [startActivity] from any process that has no visible window,
+     * even foreground services.  Keeping a TYPE_APPLICATION_OVERLAY attached
+     * puts the process into a "has window" state where the checker allows
+     * activity starts — no notification noise, no user-visible artifacts.
+     */
+    private fun attachPersistentOverlay() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        if (!Settings.canDrawOverlays(this)) {
+            Log.w(TAG, "attachPersistentOverlay: overlay permission not granted")
+            return
+        }
+        try {
+            val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+            val view = android.view.View(this)
+            val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
+            }
+            val params = WindowManager.LayoutParams(
+                1, 1, type,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                android.graphics.PixelFormat.TRANSLUCENT,
+            )
+            wm.addView(view, params)
+            persistentOverlay = view
+            Log.d(TAG, "attachPersistentOverlay: attached")
+        } catch (e: Exception) {
+            Log.e(TAG, "attachPersistentOverlay: failed", e)
+        }
+    }
+
+    private fun detachPersistentOverlay() {
+        persistentOverlay?.let { view ->
+            try {
+                (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(view)
+            } catch (_: Exception) {}
+            persistentOverlay = null
+        }
+    }
+
     // ---------- Screen wake ----------
 
+    /**
+     * Launches MainActivity in response to a watch Bluetooth signal.
+     *
+     * Relies on [attachPersistentOverlay] to keep the process in a "visible
+     * window" state where Samsung's BAL checker won't block.  Uses
+     * FLAG_ACTIVITY_CLEAR_TASK (not REORDER_TO_FRONT) to avoid Samsung's
+     * "balDontBringExistingBackgroundTaskStackToFg" check.
+     */
     private fun launchMainActivityFromWatch() {
-        val canUseOverlayException =
-            Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)
-        Log.d(TAG, "launchMainActivityFromWatch: canUseOverlayException=$canUseOverlayException")
-
         wakeScreenBriefly()
 
         val intent = Intent(this, MainActivity::class.java).apply {
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    Intent.FLAG_ACTIVITY_CLEAR_TASK
             )
             putExtra(MainActivity.EXTRA_WAKE_FROM_WATCH, true)
         }
 
         try {
             startActivity(intent)
-            Log.d(TAG, "launchMainActivityFromWatch: startActivity requested")
+            Log.d(TAG, "launchMainActivityFromWatch: started")
         } catch (e: Exception) {
-            Log.e(TAG, "launchMainActivityFromWatch: startActivity failed", e)
+            Log.e(TAG, "launchMainActivityFromWatch: failed", e)
         }
     }
 

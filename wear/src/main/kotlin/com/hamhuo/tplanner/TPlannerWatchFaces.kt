@@ -54,7 +54,7 @@ abstract class TPlannerFaceService : WatchFaceService() {
                     if (tapType != TapType.UP) return
                     if (renderer.isOnWakeButton(tapEvent.xPos, tapEvent.yPos)) {
                         vibrator.cancel()
-                        vibrator.vibrate(VibrationEffect.createOneShot(3000, VibrationEffect.DEFAULT_AMPLITUDE))
+                        vibrator.vibrate(VibrationEffect.createOneShot(100, VibrationEffect.DEFAULT_AMPLITUDE))
                         renderer.startTapAnimation()
                         PhoneWaker.wakeUpPhone(applicationContext)
                     }

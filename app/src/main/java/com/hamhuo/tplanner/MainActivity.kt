@@ -70,6 +70,12 @@ class MainActivity : ComponentActivity() {
         Log.d("TplannerMain", "background location granted=$granted")
     }
 
+    private val requestNotification = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        Log.d("TplannerMain", "notification permission granted=$granted")
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -108,7 +114,10 @@ class MainActivity : ComponentActivity() {
     private fun requestWakeSetup() {
         if (requestBatteryOptimizationExemption()) return
         if (requestSamsungNeverSleepingAppExemption()) return
+        if (requestSamsungBackgroundActivity()) return
         if (requestOverlayPermission()) return
+        if (requestExactAlarmPermission()) return
+        if (requestNotificationPermission()) return
         requestDisableAppHibernation()
     }
 
@@ -193,6 +202,40 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Opens Samsung's per-app "Background activity" toggle.
+     *
+     * Even with battery-optimization exemption and "Never sleeping" status,
+     * Samsung One UI has a separate per-app "Allow background activity"
+     * toggle (Settings → Apps → [app] → Battery).  If this is off, the
+     * system blocks ALL background activity starts regardless of CDM or
+     * overlay permission.
+     */
+    private fun requestSamsungBackgroundActivity(): Boolean {
+        if (!Build.MANUFACTURER.equals("samsung", ignoreCase = true)) return false
+        val prefs = getSharedPreferences(WAKE_SETUP_PREFS, MODE_PRIVATE)
+        if (prefs.getBoolean(PREF_SAMSUNG_BG_ACTIVITY_PROMPTED, false)) return false
+        if (isFinishing || isDestroyed) return false
+
+        // Try Samsung Device Care → Battery → App power management first,
+        // then fall back to the generic app details page.
+        val opened = try {
+            startActivity(Intent("com.samsung.android.sm.ACTION_BATTERY_OPTIMIZATION_SETTINGS"))
+            true
+        } catch (_: Exception) {
+            try {
+                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.parse("package:$packageName")
+                })
+                true
+            } catch (_: Exception) { false }
+        }
+        if (opened) {
+            prefs.edit().putBoolean(PREF_SAMSUNG_BG_ACTIVITY_PROMPTED, true).apply()
+        }
+        return opened
+    }
+
     private fun requestOverlayPermission(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)) return false
 
@@ -210,6 +253,55 @@ class MainActivity : ComponentActivity() {
             Log.e("TplannerMain", "requestOverlayPermission: failed to launch", e)
             false
         }
+    }
+
+    /**
+     * Requests SCHEDULE_EXACT_ALARM on Android 12+.
+     *
+     * KeepAliveReceiver uses exact alarms to survive Samsung's process killing.
+     * On Android 12+ the user must grant this via system settings; on 14+
+     * it's auto-granted for apps targeting SDK 34+.
+     */
+    private fun requestExactAlarmPermission(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return false
+        val am = getSystemService(android.app.AlarmManager::class.java) ?: return false
+        if (am.canScheduleExactAlarms()) return false
+
+        val prefs = getSharedPreferences(WAKE_SETUP_PREFS, MODE_PRIVATE)
+        if (prefs.getBoolean(PREF_EXACT_ALARM_PROMPTED, false)) return false
+        if (isFinishing || isDestroyed) return false
+
+        return try {
+            startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                data = Uri.parse("package:$packageName")
+            })
+            prefs.edit().putBoolean(PREF_EXACT_ALARM_PROMPTED, true).apply()
+            true
+        } catch (e: Exception) {
+            Log.e("TplannerMain", "requestExactAlarmPermission: failed", e)
+            false
+        }
+    }
+
+    /**
+     * Requests POST_NOTIFICATIONS on Android 13+.
+     *
+     * Without notification permission the foreground-service notification is
+     * suppressed by the system (see logcat: "Suppressing notification … by
+     * user request").  Samsung then treats the service as a regular background
+     * service and kills it aggressively.
+     */
+    private fun requestNotificationPermission(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return false
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return false
+
+        val prefs = getSharedPreferences(WAKE_SETUP_PREFS, MODE_PRIVATE)
+        if (prefs.getBoolean(PREF_NOTIF_PROMPTED, false)) return false
+        if (isFinishing || isDestroyed) return false
+
+        prefs.edit().putBoolean(PREF_NOTIF_PROMPTED, true).apply()
+        requestNotification.launch(Manifest.permission.POST_NOTIFICATIONS)
+        return true
     }
 
     private fun ensureBluetoothWakeService() {
@@ -249,8 +341,11 @@ class MainActivity : ComponentActivity() {
         private const val WAKE_SETUP_PREFS = "wake_setup"
         private const val PREF_BATTERY_PROMPTED = "battery_prompted"
         private const val PREF_SAMSUNG_NEVER_SLEEP_PROMPTED = "samsung_never_sleep_prompted"
+        private const val PREF_SAMSUNG_BG_ACTIVITY_PROMPTED = "samsung_bg_activity_prompted"
         private const val PREF_OVERLAY_PROMPTED = "overlay_prompted"
         private const val PREF_BG_LOCATION_PROMPTED = "bg_location_prompted"
+        private const val PREF_EXACT_ALARM_PROMPTED = "exact_alarm_prompted"
+        private const val PREF_NOTIF_PROMPTED = "notif_prompted"
         private const val PREF_HIBERNATION_PROMPTED = "hibernation_prompted"
     }
 }
