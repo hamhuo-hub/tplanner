@@ -32,12 +32,7 @@ class DeepSeekAnalysisService(private val apiKey: String) {
         val questions: List<String>,
         val action: ProposedAction? = null,
         val clarify: Clarify? = null,   // action 且 !=null → 先追问，答完调 refineAction
-        // 与 questions 一一对应的快捷选项（Claude 式提问：给可点选项帮用户补充上下文）。
-        val questionOptions: List<List<String>> = emptyList(),
     )
-
-    // 多轮追问的返回：问题 + 每个问题的快捷选项（一一对应）。
-    data class FollowUp(val questions: List<String>, val options: List<List<String>>)
 
     suspend fun processThought(
         text: String,
@@ -59,7 +54,7 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             append("{\n")
             append("  \"mode\": \"record 或 questions 或 action\",\n")
             append("  \"text\": \"<修正错别字和语法后的文字，保持原意原语气，绝不改写、扩写、发挥；没错就原样返回>\",\n")
-            append("  \"questions\": [{\"q\": \"<问题>\", \"options\": [\"<快捷选项，短语>\", \"<...2-4个>\"]}],\n")
+            append("  \"questions\": [],\n")
             append("  \"action\": {\"type\": \"task 或 reminder\", \"title\": \"<简短标题，动宾短语>\", \"datetime\": \"<本地时间 ISO；已知日期就填日期部分、钟点未定填 T00:00:00；纯 task 无时间填空>\"},\n")
             append("  \"clarify\": {\"q\": \"<追问，如：明天几点提醒你？>\", \"options\": [\"上午9点\", \"中午12点\", \"下午3点\", \"晚上8点\"]}\n")
             append("}\n\n")
@@ -78,37 +73,20 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             append("questions 模式：给 1-3 个问题。只提问不给答案；扎在具体接缝上（含混的词、")
             append("跳过的步骤、没说出口的前提、被当成一回事的两件事）；真开放不诱导；优先他一时")
             append("答不上来的；保持临时不制造\"想通了\"的终局感；卡点关乎他自己时转成他能自己")
-            append("去试去验证的问题，别剖析他是什么样的人。\n")
-            append("每个问题都要配 2-4 个【快捷选项】(短语，供用户一点即答来补充上下文；覆盖常见")
-            append("的几种可能，用户也可自己写)。options 里放这些短语。")
+            append("去试去验证的问题，别剖析他是什么样的人。")
         }
         try {
             val json = extractJson(callDeepSeek(prompt, SYSTEM_THOUGHT))
             val rawMode = json.optString("mode", "record")
             val cleaned = json.optString("text", text).ifBlank { text }
 
-            val qs = mutableListOf<String>()
-            val qOpts = mutableListOf<List<String>>()
-            if (rawMode == "questions") {
+            val qs = if (rawMode == "questions") {
+                val out = mutableListOf<String>()
                 json.optJSONArray("questions")?.let { arr ->
-                    for (i in 0 until arr.length()) {
-                        when (val item = arr.opt(i)) {
-                            is JSONObject -> {
-                                val q = item.optString("q", "").trim()
-                                if (q.isBlank()) continue
-                                val opts = mutableListOf<String>()
-                                item.optJSONArray("options")?.let { oa ->
-                                    for (k in 0 until oa.length()) oa.optString(k).takeIf { it.isNotBlank() }?.let { opts += it }
-                                }
-                                qs += q; qOpts.add(opts.take(4))
-                            }
-                            else -> {  // 兼容旧格式：纯字符串问题，无选项
-                                item?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let { qs += it; qOpts.add(emptyList()) }
-                            }
-                        }
-                    }
+                    for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotBlank() }?.let { out += it }
                 }
-            }
+                out.take(3)
+            } else emptyList()
 
             val action = if (rawMode == "action") {
                 json.optJSONObject("action")?.let { a ->
@@ -139,7 +117,7 @@ class DeepSeekAnalysisService(private val apiKey: String) {
                 else -> "record"
             }
             android.util.Log.d("TplannerDS", "processThought mode=$mode q=${qs.size} action=${action?.type} clarify=${clarify != null}")
-            ThoughtResult(mode, cleaned, qs.take(3), action, if (mode == "action") clarify else null, qOpts.take(3))
+            ThoughtResult(mode, cleaned, qs, action, if (mode == "action") clarify else null)
         } catch (e: Exception) {
             // 网络/超时/限流：退化为"原样记录"，绝不打断记录本身
             android.util.Log.e("TplannerDS", "processThought failed: ${e.message}")
@@ -183,7 +161,7 @@ class DeepSeekAnalysisService(private val apiKey: String) {
     suspend fun followUpQuestions(
         originalText: String,
         qaHistory: String,
-    ): FollowUp = withContext(Dispatchers.IO) {
+    ): List<String> = withContext(Dispatchers.IO) {
         val prompt = buildString {
             append("用户最初写下的文字：\n\"\"\"\n$originalText\n\"\"\"\n\n")
             if (qaHistory.isNotBlank()) {
@@ -192,36 +170,21 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             append("你已经问过了上面这些问题并得到了用户的回答。现在请基于整段对话往更深处问 1-3 个新问题——")
             append("扎在具体接缝上（含混的词、跳过的步骤、没说出口的前提、被当成一回事的两件事）；")
             append("真开放不诱导；优先他一时答不上来的；保持临时不制造「想通了」的终局感。")
-            append("每个问题配 2-4 个快捷选项（短语，供用户一点即答来补充上下文）。")
             append("如果确实没有更多值得问的了，返回空数组。\n\n")
             append("返回 JSON（不要 markdown）：\n")
-            append("{\"questions\": []}  或  {\"questions\": [{\"q\": \"问题1\", \"options\": [\"选项a\", \"选项b\"]}]}")
+            append("{\"questions\": []}  或  {\"questions\": [\"问题1\", \"问题2\", \"问题3\"]}")
         }
         try {
             val json = extractJson(callDeepSeek(prompt, SYSTEM_FOLLOWUP))
-            val qs = mutableListOf<String>()
-            val qOpts = mutableListOf<List<String>>()
+            val out = mutableListOf<String>()
             json.optJSONArray("questions")?.let { arr ->
-                for (i in 0 until arr.length()) {
-                    when (val item = arr.opt(i)) {
-                        is JSONObject -> {
-                            val q = item.optString("q", "").trim()
-                            if (q.isBlank()) continue
-                            val opts = mutableListOf<String>()
-                            item.optJSONArray("options")?.let { oa ->
-                                for (k in 0 until oa.length()) oa.optString(k).takeIf { it.isNotBlank() }?.let { opts += it }
-                            }
-                            qs += q; qOpts.add(opts.take(4))
-                        }
-                        else -> item?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let { qs += it; qOpts.add(emptyList()) }
-                    }
-                }
+                for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotBlank() }?.let { out += it }
             }
-            android.util.Log.d("TplannerDS", "followUpQuestions count=${qs.size}")
-            FollowUp(qs.take(3), qOpts.take(3))
+            android.util.Log.d("TplannerDS", "followUpQuestions count=${out.size}")
+            out.take(3)
         } catch (e: Exception) {
             android.util.Log.e("TplannerDS", "followUpQuestions failed: ${e.message}")
-            FollowUp(emptyList(), emptyList())
+            emptyList()
         }
     }
 
