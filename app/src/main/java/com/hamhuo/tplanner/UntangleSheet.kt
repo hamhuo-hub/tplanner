@@ -77,6 +77,7 @@ fun UntangleSheet(
     onConfirmAction: (DeepSeekAnalysisService.ProposedAction) -> Unit,
     onDeclineAction: () -> Unit,
     onAnswerClarify: (String) -> Unit,
+    onAnswerQuestion: (String) -> Unit = {},
 ) {
     var text by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
@@ -206,10 +207,11 @@ fun UntangleSheet(
 
             // ── 追问：AI 把问题递还给你 ──────────────────────────────
             questions != null -> {
+                var answer by remember { mutableStateOf("") }
                 Text("这些不是答案，是帮你找到自己卡在哪。带着它们去试。",
                     color = DIM, fontSize = 13.sp, modifier = Modifier.padding(bottom = 14.dp))
                 Column(
-                    modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),
+                    modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     questions.forEachIndexed { i, q ->
@@ -224,7 +226,31 @@ fun UntangleSheet(
                             Text(q, color = Color(0xFFE8E0D0), fontSize = 16.sp, lineHeight = 26.sp)
                         }
                     }
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(4.dp))
+                    // 回答输入 —— 用户答完可以点"继续"，AI 会基于整段对话往更深处再问
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                            .background(SURFACE, RoundedCornerShape(12.dp))
+                            .border(1.dp, BORDER, RoundedCornerShape(12.dp))
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(Modifier.weight(1f)) {
+                            BasicTextField(
+                                value = answer, onValueChange = { answer = it }, singleLine = false,
+                                textStyle = TextStyle(color = Color(0xFFE8E0D0), fontSize = 15.sp, lineHeight = 24.sp),
+                                cursorBrush = SolidColor(GOLD), modifier = Modifier.fillMaxWidth(),
+                                decorationBox = { inner ->
+                                    if (answer.isEmpty()) Text("写下你的回答…", color = DIM, fontSize = 15.sp)
+                                    inner()
+                                },
+                            )
+                        }
+                        if (answer.isNotBlank()) {
+                            Text("继续", color = GOLD, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.clickable { onAnswerQuestion(answer); answer = "" }.padding(start = 10.dp))
+                        }
+                    }
                 }
             }
 
