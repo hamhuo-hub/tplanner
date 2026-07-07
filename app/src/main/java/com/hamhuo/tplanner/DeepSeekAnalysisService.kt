@@ -61,8 +61,10 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             append("mode 判定：\n")
             append("- action：文字明显是【一件要做/要记住的事】——待办、提醒、\"记得/别忘了/")
             append("提醒我/明天要\"+一件具体的事。带明确时间点→reminder，没时间的待办→task。\n")
-            append("- questions：用户【明确】求助——\"帮我理理 / 你问我几个问题 / 我卡住了\"。\n")
-            append("- record：其余一切（musing、观察、感受、片段、一般笔记）。拿不准就 record。\n")
+            append("- questions：文字里带【问句/困惑】——有问号，或\"要不要 / 该不该 / 怎么办 / ")
+            append("为什么 / 是不是 / 能不能 / 值不值\"这类疑问，或明确求助。检测到问句就进 questions ")
+            append("做场景判断（不必等他明说\"帮我理理\"）。\n")
+            append("- record：陈述性的想法——musing、观察、感受、片段、一般笔记，且不含问句。\n")
             append("record/questions 模式：action 与 clarify 都置为 null。\n")
             append("【clarify 追问规则】reminder（定时提醒）必须有明确钟点。如果用户只给了日期")
             append("（\"明天\"\"下周一\"\"后天\"）或根本没提时间，【绝对不要自己猜钟点】，而是在 clarify 里")
@@ -70,7 +72,9 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             append("日期部分。只有用户明确说了 早上(→08:00)/中午(→12:00)/下午(→14:00)/晚上(→20:00)/")
             append("具体几点，才直接用、clarify 置 null。纯 task（无时间意味的待办）clarify 置 null。\n")
             append("其余相对时间按\"现在\"解析成绝对 ISO。\n")
-            append("questions 模式：给 1-3 个问题。只提问不给答案；扎在具体接缝上（含混的词、")
+            append("questions 模式：先判断这个问句值不值得反问。若只是简单事实问、随口一问、")
+            append("信息已足够、没什么可深挖的——questions 返回【空数组】，退回记录，不打扰。\n")
+            append("值得的话给 1-3 个问题：只提问不给答案；扎在具体接缝上（含混的词、")
             append("跳过的步骤、没说出口的前提、被当成一回事的两件事）；真开放不诱导；优先他一时")
             append("答不上来的；保持临时不制造\"想通了\"的终局感；卡点关乎他自己时转成他能自己")
             append("去试去验证的问题，别剖析他是什么样的人。")
@@ -244,10 +248,11 @@ class DeepSeekAnalysisService(private val apiKey: String) {
 
         private const val SYSTEM_THOUGHT =
             "你在帮用户处理随手写下的文字，分四种：默认 record（只修错别字/语法，当笔记" +
-            "记下，不提问不分析）；questions（用户明确求助时才反过来提问，帮他定位困惑，" +
-            "不给答案不剖析他这个人）；action（文字明显是要做/要记住的事时，提议帮他建 task/" +
-            "reminder）。判断从严，拿不准当 record。有副作用的动作最终都要用户确认才执行。" +
-            "永远只返回有效 JSON，不要 markdown 代码块。"
+            "记下，不提问不分析）；questions（文字里带问句/困惑就进来做场景判断，反过来提问" +
+            "帮他定位困惑——但若没什么值得反问的就返回空问题、退回 record；不给答案不剖析他" +
+            "这个人）；action（文字明显是要做/要记住的事时，提议帮他建 task/reminder）。" +
+            "action 判断从严；questions 只要是问句就先进来判断。有副作用的动作最终都要用户" +
+            "确认才执行。永远只返回有效 JSON，不要 markdown 代码块。"
 
         private const val SYSTEM_REFINE =
             "你根据用户对澄清追问的回答，补全一个日程操作（把答的钟点并进已知日期算成绝对时间）。" +
