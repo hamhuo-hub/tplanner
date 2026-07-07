@@ -79,14 +79,14 @@ import java.util.Calendar
 import java.util.UUID
 
 @Composable
-private fun typeLabel(type: String): String = when (type) {
+internal fun typeLabel(type: String): String = when (type) {
     "task"     -> stringResource(R.string.type_task)
     "event"    -> stringResource(R.string.type_event)
     "reminder" -> stringResource(R.string.type_reminder)
     else       -> stringResource(R.string.type_generic)
 }
 
-private fun typeIcon(type: String): ImageVector = when (type) {
+internal fun typeIcon(type: String): ImageVector = when (type) {
     "task"     -> Icons.Outlined.CheckCircle
     "event"    -> Icons.Outlined.CalendarMonth
     "reminder" -> Icons.Outlined.Alarm
@@ -168,6 +168,115 @@ private fun AddTypeItem(icon: ImageVector, title: String, desc: String, onClick:
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(title, color = Color(0xFFE0D8C8), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
             Text(desc, color = DIM, fontSize = 13.sp)
+        }
+    }
+}
+
+// ── 修改类型选择面板（点击已有事件的类型指示器后弹出） ──────────────────────────
+@Composable
+fun TypeChangeSheet(currentType: String, onSelect: (String) -> Unit, onDismiss: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 32.dp)
+    ) {
+        // 拖拽把手
+        Box(
+            modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 18.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                Modifier
+                    .width(36.dp).height(4.dp)
+                    .background(Color(0xFF444444), RoundedCornerShape(2.dp))
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 20.dp, end = 20.dp, bottom = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                stringResource(R.string.change_type_title),
+                color = Color(0xFFE0D8C8), fontSize = 20.sp, fontWeight = FontWeight.Bold
+            )
+            Icon(
+                Icons.Default.Close, contentDescription = "Close",
+                tint = DIM, modifier = Modifier.size(18.dp).clickable { onDismiss() }
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        val types = listOf("task", "event", "reminder")
+        types.forEach { type ->
+            val isCurrent = type == currentType
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelect(type) }
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .background(
+                            if (isCurrent) GOLD else Color(0xFF2E2E2E),
+                            CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        typeIcon(type), contentDescription = null,
+                        tint = if (isCurrent) Color(0xFF0E0E0E) else Color(0xFFE0D8C8),
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            typeLabel(type),
+                            color = Color(0xFFE0D8C8),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        if (isCurrent) {
+                            Box(
+                                Modifier
+                                    .background(GOLD, RoundedCornerShape(3.dp))
+                                    .padding(horizontal = 6.dp, vertical = 1.dp)
+                            ) {
+                                Text(
+                                    stringResource(R.string.current_label),
+                                    color = Color(0xFF0E0E0E),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                    Text(
+                        when (type) {
+                            "task" -> stringResource(R.string.desc_task)
+                            "event" -> stringResource(R.string.desc_event)
+                            "reminder" -> stringResource(R.string.desc_reminder)
+                            else -> ""
+                        },
+                        color = DIM, fontSize = 13.sp
+                    )
+                }
+            }
         }
     }
 }
@@ -260,6 +369,10 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
     var checklist by remember { mutableStateOf(event.checklist) }
     var note      by remember { mutableStateOf(event.note) }
     var colorId   by remember { mutableStateOf(event.colorId) }
+    var type      by remember { mutableStateOf(event.type) }
+
+    var showTypeSheet by remember { mutableStateOf(false) }
+    val typeSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val zone    = remember { ZoneId.systemDefault() }
     val dateTimePattern = stringResource(R.string.date_pattern_month_day_time)
@@ -278,9 +391,11 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
 
     fun buildResult() = event.copy(
         title     = title.ifBlank { event.title },
+        type      = type,
         start     = start,
         end       = end,
-        checklist = checklist,
+        checklist = if (type == "task") checklist else emptyList(),
+        completed = if (type == "task") event.completed else false,
         note      = note,
         colorId   = colorId,
         updatedAt = System.currentTimeMillis(),
@@ -334,11 +449,12 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
                                 .background(
                                     EVENT_COLORS.getOrElse(colorId) { EVENT_COLORS[0] },
                                     RoundedCornerShape(14.dp)
-                                ),
+                                )
+                                .clickable { showTypeSheet = true },
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                typeIcon(event.type), contentDescription = null,
+                                typeIcon(type), contentDescription = null,
                                 tint = Color(0xFF0E0E0E), modifier = Modifier.size(26.dp)
                             )
                         }
@@ -391,7 +507,7 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
                     }
 
                     // 清单只对「任务」类型有意义——事件/提醒不是待办事项，不需要子项打勾。
-                    if (event.type == "task") {
+                    if (type == "task") {
                         Spacer(Modifier.height(24.dp))
                         HorizontalDivider(color = BORDER)
                         Spacer(Modifier.height(20.dp))
@@ -468,6 +584,31 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
                     }
 
                     Spacer(Modifier.height(40.dp))
+                }
+            }
+
+            // 修改类型底部面板
+            if (showTypeSheet) {
+                ModalBottomSheet(
+                    onDismissRequest = { showTypeSheet = false },
+                    sheetState       = typeSheetState,
+                    containerColor   = Color(0xFF1A1A1A),
+                    dragHandle       = null,
+                ) {
+                    TypeChangeSheet(
+                        currentType = type,
+                        onSelect = { newType ->
+                            if (newType != type) {
+                                type = newType
+                                // 切换到非任务类型时清空清单和完成状态
+                                if (newType != "task") {
+                                    checklist = emptyList()
+                                }
+                            }
+                            showTypeSheet = false
+                        },
+                        onDismiss = { showTypeSheet = false }
+                    )
                 }
             }
         }

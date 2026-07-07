@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 潮汐预览：金色正弦波 + 金球 + 时间 + 底部珍珠 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="466dp" android:height="466dp"
+    android:viewportWidth="466" android:viewportHeight="466">
+    <!-- 圆形暗底 -->
+    <path android:fillColor="#0D0D0D"
+        android:pathData="M0,233 a233,233 0 1,0 466,0 a233,233 0 1,0 -466,0 z" />
+    <!-- 波下渐变填充（简化：半透明金块） -->
+    <path android:fillColor="#0DC9A84C"
+        android:pathData="M14,283 Q116,185 233,234 Q350,283 452,283 L452,400 L14,400 z" />
+    <!-- 正弦波曲线 -->
+    <path android:strokeColor="#C9A84C" android:strokeWidth="2.2"
+        android:strokeLineCap="round" android:fillColor="#00000000"
+        android:pathData="M14,283 Q70,205 116,224 Q162,243 183,215 Q203,188 233,208 Q264,228 283,265 Q303,302 350,263 Q396,224 452,283" />
+    <!-- 金球（三层光晕 + 本体） -->
+    <path android:strokeColor="#12C9A84C" android:strokeWidth="8" android:fillColor="#00000000"
+        android:pathData="M233,198 a28,28 0 1,0 0.1,0 z" />
+    <path android:strokeColor="#28C9A84C" android:strokeWidth="4.5" android:fillColor="#00000000"
+        android:pathData="M233,200 a16,16 0 1,0 0.1,0 z" />
+    <path android:fillColor="#C9A84C"
+        android:pathData="M233,198 a10,10 0 1,0 11.8,9.4 a10,10 0 1,0 -11.8,-9.4 z" />
+    <!-- 时间（虚化矩形块表示） -->
+    <path android:fillColor="#E8E0D0"
+        android:pathData="M181,106 h104 v48 h-104 z" />
+    <!-- 日期 -->
+    <path android:fillColor="#857F6E"
+        android:pathData="M195,165 h76 v5 h-76 z" />
+    <!-- 底部珍珠 -->
+    <path android:strokeColor="#32C9A84C" android:strokeWidth="3" android:fillColor="#00000000"
+        android:pathData="M233,408 a12,12 0 1,0 0.1,0 z" />
+    <path android:fillColor="#C9A84C"
+        android:pathData="M233,405 a7,7 0 1,0 0.1,0 z" />
+</vector>

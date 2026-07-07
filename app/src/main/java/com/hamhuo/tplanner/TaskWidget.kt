@@ -70,6 +70,7 @@ fun TaskWidget(
     onAddEvent: (String) -> Unit,
     onDelete: (String) -> Unit,
     onItemClick: (TaskEvent) -> Unit,
+    onTypeChange: (String, String) -> Unit = { _, _ -> },
 ) {
     val now    = remember { Instant.now() }
     val today  = remember { LocalDate.now() }
@@ -78,6 +79,9 @@ fun TaskWidget(
 
     var showTypeSheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    var typeChangeTarget by remember { mutableStateOf<TaskEvent?>(null) }
+    val typeChangeSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val todayEvents    = remember(events) { events.forToday() }
     val tomorrowEvents = remember(events) { events.forDate(LocalDate.now().plusDays(1)) }
@@ -162,7 +166,8 @@ fun TaskWidget(
                     items(list, key = { it.id }) { e ->
                         SwipeableTaskRow(
                             event = e, fmt = fmt, zone = zone, now = now,
-                            onToggle = onToggle, onDelete = onDelete, onItemClick = onItemClick
+                            onToggle = onToggle, onDelete = onDelete, onItemClick = onItemClick,
+                            onTypeChangeRequest = { typeChangeTarget = e }
                         )
                     }
                 }
@@ -182,7 +187,8 @@ fun TaskWidget(
                         items(tomorrowEvents, key = { "tomorrow-${it.id}" }) { e ->
                             SwipeableTaskRow(
                                 event = e, fmt = fmt, zone = zone, now = now,
-                                onToggle = onToggle, onDelete = onDelete, onItemClick = onItemClick
+                                onToggle = onToggle, onDelete = onDelete, onItemClick = onItemClick,
+                                onTypeChangeRequest = { typeChangeTarget = e }
                             )
                         }
                     }
@@ -205,6 +211,28 @@ fun TaskWidget(
                     onAddEvent(type)
                 },
                 onDismiss = { showTypeSheet = false }
+            )
+        }
+    }
+
+    // 底部弹出面板 — 修改已有事件的类型
+    if (typeChangeTarget != null) {
+        ModalBottomSheet(
+            onDismissRequest = { typeChangeTarget = null },
+            sheetState       = typeChangeSheetState,
+            containerColor   = Color(0xFF1A1A1A),
+            dragHandle       = null,
+        ) {
+            TypeChangeSheet(
+                currentType = typeChangeTarget!!.type,
+                onSelect = { newType ->
+                    val ev = typeChangeTarget!!
+                    if (newType != ev.type) {
+                        onTypeChange(ev.id, newType)
+                    }
+                    typeChangeTarget = null
+                },
+                onDismiss = { typeChangeTarget = null }
             )
         }
     }
@@ -250,6 +278,7 @@ private fun SwipeableTaskRow(
     onToggle: (String, Boolean) -> Unit,
     onDelete: (String) -> Unit,
     onItemClick: (TaskEvent) -> Unit,
+    onTypeChangeRequest: () -> Unit = {},
 ) {
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
@@ -290,7 +319,8 @@ private fun SwipeableTaskRow(
                 fmt    = fmt,
                 zone   = zone,
                 now    = now,
-                onToggle = onToggle
+                onToggle = onToggle,
+                onTypeChangeRequest = onTypeChangeRequest
             )
         }
     }
@@ -303,6 +333,7 @@ fun TaskItem(
     zone: ZoneId,
     now: Instant,
     onToggle: (String, Boolean) -> Unit,
+    onTypeChangeRequest: () -> Unit = {},
 ) {
     val status     = taskStatus(event, now)
     val isDone     = event.type == "task" && event.completed
@@ -349,6 +380,7 @@ fun TaskItem(
                     .width(3.dp)
                     .height(28.dp)
                     .background(color, RoundedCornerShape(1.dp))
+                    .clickable { onTypeChangeRequest() }
             )
         }
 

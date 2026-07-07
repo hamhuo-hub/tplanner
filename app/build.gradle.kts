@@ -1,6 +1,14 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+}
+
+// Load API keys from local.properties (never committed to VCS)
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
 }
 
 android {
@@ -13,6 +21,9 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.1.0"
+
+        buildConfigField("String", "DEEPSEEK_API_KEY", "\"${localProperties.getProperty("deepseek.api.key", "")}\"")
+        buildConfigField("String", "AMAP_API_KEY", "\"${localProperties.getProperty("amap.api.key", "")}\"")
     }
 
     buildTypes {
@@ -32,6 +43,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

@@ -4,6 +4,7 @@
     <string name="wf_ring">tPlanner 时环</string>
     <string name="wf_orbit">tPlanner 星轨</string>
     <string name="wf_ember">tPlanner 余烬</string>
+    <string name="wf_tide">tPlanner 潮汐</string>
     <string name="wake_phone_no_node">未找到已配对的手机</string>
     <string name="wake_phone_failed">唤起手机失败</string>
     <string name="wake_phone_no_permission">缺少蓝牙权限，请打开 TPlanner 应用授权</string>

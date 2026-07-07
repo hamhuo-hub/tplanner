@@ -39,6 +39,8 @@
     <string name="desc_task">创建可勾选的待办任务</string>
     <string name="desc_event">添加日程或会议安排</string>
     <string name="desc_reminder">在指定时间发送提醒</string>
+    <string name="change_type_title">修改类型</string>
+    <string name="current_label">当前</string>
 
     <!-- 命名面板 / 详情页 -->
     <string name="default_name_template">新建%1$s</string>

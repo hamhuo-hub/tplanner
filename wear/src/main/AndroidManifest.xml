@@ -29,7 +29,7 @@
             </intent-filter>
         </activity>
 
-        <!-- ── tPlanner 三款表盘：时环 / 星轨 / 余烬 ── -->
+        <!-- ── tPlanner 四款表盘：时环 / 星轨 / 余烬 / 潮汐 ── -->
 
         <service android:name=".WatchFaceRingService" android:exported="true"
             android:label="@string/wf_ring" android:permission="android.permission.BIND_WALLPAPER">
@@ -64,6 +64,18 @@
             <meta-data android:name="android.service.wallpaper" android:resource="@xml/watch_face" />
             <meta-data android:name="com.google.android.wearable.watchface.preview" android:resource="@drawable/preview_ember" />
             <meta-data android:name="com.google.android.wearable.watchface.preview_circular" android:resource="@drawable/preview_ember" />
+            <meta-data android:name="androidx.wear.watchface.MULTIPLE_INSTANCES_ALLOWED" android:value="false" />
+        </service>
+
+        <service android:name=".WatchFaceTideService" android:exported="true"
+            android:label="@string/wf_tide" android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService" />
+                <category android:name="com.google.android.wearable.watchface.category.WATCH_FACE" />
+            </intent-filter>
+            <meta-data android:name="android.service.wallpaper" android:resource="@xml/watch_face" />
+            <meta-data android:name="com.google.android.wearable.watchface.preview" android:resource="@drawable/preview_tide" />
+            <meta-data android:name="com.google.android.wearable.watchface.preview_circular" android:resource="@drawable/preview_tide" />
             <meta-data android:name="androidx.wear.watchface.MULTIPLE_INSTANCES_ALLOWED" android:value="false" />
         </service>
 

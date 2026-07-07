@@ -38,6 +38,8 @@
     <string name="desc_task">Create a checkable to-do task</string>
     <string name="desc_event">Add a schedule or meeting</string>
     <string name="desc_reminder">Send a reminder at a specific time</string>
+    <string name="change_type_title">Change Type</string>
+    <string name="current_label">Current</string>
 
     <!-- Naming sheet / detail screen -->
     <string name="default_name_template">New %1$s</string>
