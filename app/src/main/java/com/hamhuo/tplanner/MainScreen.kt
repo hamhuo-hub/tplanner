@@ -142,6 +142,23 @@ fun MainScreen(
             // 超时兜底：即便是陈旧定位也好过没有
             if (fix == null) fix = WatchLocationStore.get(context)
 
+            // 手机自身兜底：手表始终没提供定位时，直接取手机最近已知定位，
+            // 避免记成 Unknown（面板入口仍只由手表唤醒，这里只补定位来源）。
+            if (fix == null) {
+                try {
+                    val lm = context.getSystemService(android.location.LocationManager::class.java)
+                    val last = listOf(
+                        android.location.LocationManager.FUSED_PROVIDER,
+                        android.location.LocationManager.GPS_PROVIDER,
+                        android.location.LocationManager.NETWORK_PROVIDER,
+                    ).asSequence()
+                        .filter { lm?.allProviders?.contains(it) == true }
+                        .mapNotNull { p -> runCatching { lm?.getLastKnownLocation(p) }.getOrNull() }
+                        .maxByOrNull { it.time }
+                    if (last != null) fix = WatchLocationStore.Fix(last.latitude, last.longitude, last.time)
+                } catch (_: SecurityException) { /* 无定位权限则跳过 */ }
+            }
+
             fix?.let {
                 watchLat = it.lat; watchLng = it.lng
                 if (amapApiKey.isNotBlank()) {

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -85,7 +86,7 @@ fun UntangleSheet(
     LaunchedEffect(showEditor) { if (showEditor) focusRequester.requestFocus() }
 
     Column(
-        modifier = Modifier.fillMaxSize().background(BG).padding(horizontal = 20.dp)
+        modifier = Modifier.fillMaxSize().background(BG).imePadding().padding(horizontal = 20.dp)
     ) {
         // ── Top bar ────────────────────────────────────────────────────
         Row(
