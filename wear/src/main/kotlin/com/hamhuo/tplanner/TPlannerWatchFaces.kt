@@ -14,7 +14,7 @@ import androidx.wear.watchface.WatchState
 import androidx.wear.watchface.style.CurrentUserStyleRepository
 
 // ═══════════════════════════════════════════════════════════════════════════
-// tPlanner 四款表盘：时环（Ring）· 星轨（Orbit）· 余烬（Ember）· 潮汐（Tide）。
+// tPlanner 七款表盘：时环（Ring）· 星轨（Orbit）· 余烬（Ember）· 潮汐（Tide）· 脉动（Pulse）· 光弦（Lumina）· 月相（Moon）。
 // 设计语言与桌面端一致：暗底 #0D0D0D、金 #C9A84C、米白衬线数字、青色事件点。
 // 点击表盘下方的金色按钮/短划 → 震动并经典蓝牙唤醒手机（PhoneWaker）。
 //
@@ -40,10 +40,13 @@ abstract class TPlannerFaceService : WatchFaceService() {
         currentUserStyleRepository: CurrentUserStyleRepository,
     ): WatchFace {
         val renderer = when (design) {
-            FaceDesign.RING  -> FaceRing(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
-            FaceDesign.ORBIT -> FaceOrbit(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
-            FaceDesign.EMBER -> FaceEmber(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
-            FaceDesign.TIDE  -> FaceTide(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
+            FaceDesign.RING   -> FaceRing(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
+            FaceDesign.ORBIT  -> FaceOrbit(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
+            FaceDesign.EMBER  -> FaceEmber(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
+            FaceDesign.TIDE   -> FaceTide(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
+            FaceDesign.PULSE  -> FacePulse(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
+            FaceDesign.LUMINA -> FaceLumina(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
+            FaceDesign.MOON   -> FaceMoon(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
         }
         return WatchFace(WatchFaceType.DIGITAL, renderer)
             .setTapListener(object : WatchFace.TapListener {
@@ -64,3 +67,6 @@ class WatchFaceRingService  : TPlannerFaceService() { override val design = Face
 class WatchFaceOrbitService : TPlannerFaceService() { override val design = FaceDesign.ORBIT }
 class WatchFaceEmberService : TPlannerFaceService() { override val design = FaceDesign.EMBER }
 class WatchFaceTideService  : TPlannerFaceService() { override val design = FaceDesign.TIDE }
+class WatchFacePulseService  : TPlannerFaceService() { override val design = FaceDesign.PULSE }
+class WatchFaceLuminaService : TPlannerFaceService() { override val design = FaceDesign.LUMINA }
+class WatchFaceMoonService   : TPlannerFaceService() { override val design = FaceDesign.MOON }

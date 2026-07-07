@@ -360,6 +360,7 @@ private fun PillButton(label: String, filled: Boolean, onClick: () -> Unit) {
 }
 
 // ── 任务详情页：时间 / 清单 / 备注 / 颜色 ──────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
     var title     by remember { mutableStateOf(event.title) }

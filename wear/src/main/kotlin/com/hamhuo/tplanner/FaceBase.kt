@@ -70,7 +70,8 @@ abstract class FaceBase(
 
     private fun FaceDesign.buttonYFrac() = when (this) {
         FaceDesign.RING, FaceDesign.ORBIT -> 0.326f
-        FaceDesign.EMBER, FaceDesign.TIDE -> 0.395f
+        FaceDesign.EMBER, FaceDesign.TIDE, FaceDesign.PULSE, FaceDesign.MOON -> 0.395f
+        FaceDesign.LUMINA -> 0.437f
     }
 
     // ── 主渲染入口 ──────────────────────────────────────────────────────────
