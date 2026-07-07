@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -77,6 +78,7 @@ fun UntangleSheet(
     onConfirmAction: (DeepSeekAnalysisService.ProposedAction) -> Unit,
     onDeclineAction: () -> Unit,
     onAnswerClarify: (String) -> Unit,
+    onAnswerQuestion: (String) -> Unit = {},
 ) {
     var text by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
@@ -84,7 +86,7 @@ fun UntangleSheet(
     LaunchedEffect(showEditor) { if (showEditor) focusRequester.requestFocus() }
 
     Column(
-        modifier = Modifier.fillMaxSize().background(BG).padding(horizontal = 20.dp)
+        modifier = Modifier.fillMaxSize().background(BG).imePadding().padding(horizontal = 20.dp)
     ) {
         // ── Top bar ────────────────────────────────────────────────────
         Row(
@@ -119,6 +121,17 @@ fun UntangleSheet(
             modifier = Modifier.padding(bottom = 12.dp))
 
         when {
+            // ── 思考中 ──────────────────────────────────────────────
+            // 放在最前：只要在读内容（含点了问题后拉取下一轮），就盖过其它态显示动画
+            thinking -> {
+                Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        CircularProgressIndicator(color = GOLD, strokeWidth = 2.dp, modifier = Modifier.size(28.dp))
+                        Text("在读你写的…", color = DIM, fontSize = 14.sp)
+                    }
+                }
+            }
+
             // ── 澄清追问：缺关键参数，先问你，答完再补全操作 ──────────
             clarify != null -> {
                 var custom by remember { mutableStateOf("") }
@@ -181,7 +194,7 @@ fun UntangleSheet(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     Text(
-                        (if (isReminder) "⏰  " else "☑  ") + action.title,
+                        action.title,
                         color = Color(0xFFE8E0D0), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, lineHeight = 26.sp,
                     )
                     Text(prettyWhen(action.datetimeIso), color = GOLD, fontSize = 14.sp)
@@ -206,10 +219,11 @@ fun UntangleSheet(
 
             // ── 追问：AI 把问题递还给你 ──────────────────────────────
             questions != null -> {
+                var answer by remember { mutableStateOf("") }
                 Text("这些不是答案，是帮你找到自己卡在哪。带着它们去试。",
                     color = DIM, fontSize = 13.sp, modifier = Modifier.padding(bottom = 14.dp))
                 Column(
-                    modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),
+                    modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     questions.forEachIndexed { i, q ->
@@ -217,6 +231,7 @@ fun UntangleSheet(
                             modifier = Modifier.fillMaxWidth()
                                 .background(SURFACE, RoundedCornerShape(12.dp))
                                 .border(1.dp, BORDER, RoundedCornerShape(12.dp))
+                                .clickable { onAnswerQuestion(q) }   // 点问题即回答
                                 .padding(16.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
@@ -224,16 +239,30 @@ fun UntangleSheet(
                             Text(q, color = Color(0xFFE8E0D0), fontSize = 16.sp, lineHeight = 26.sp)
                         }
                     }
-                    Spacer(Modifier.height(8.dp))
-                }
-            }
-
-            // ── 思考中 ──────────────────────────────────────────────
-            thinking -> {
-                Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                        CircularProgressIndicator(color = GOLD, strokeWidth = 2.dp, modifier = Modifier.size(28.dp))
-                        Text("在读你写的…", color = DIM, fontSize = 14.sp)
+                    Spacer(Modifier.height(4.dp))
+                    // 回答输入 —— 用户答完可以点"继续"，AI 会基于整段对话往更深处再问
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                            .background(SURFACE, RoundedCornerShape(12.dp))
+                            .border(1.dp, BORDER, RoundedCornerShape(12.dp))
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(Modifier.weight(1f)) {
+                            BasicTextField(
+                                value = answer, onValueChange = { answer = it }, singleLine = false,
+                                textStyle = TextStyle(color = Color(0xFFE8E0D0), fontSize = 15.sp, lineHeight = 24.sp),
+                                cursorBrush = SolidColor(GOLD), modifier = Modifier.fillMaxWidth(),
+                                decorationBox = { inner ->
+                                    if (answer.isEmpty()) Text("写下你的回答…", color = DIM, fontSize = 15.sp)
+                                    inner()
+                                },
+                            )
+                        }
+                        if (answer.isNotBlank()) {
+                            Text("继续", color = GOLD, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.clickable { onAnswerQuestion(answer); answer = "" }.padding(start = 10.dp))
+                        }
                     }
                 }
             }

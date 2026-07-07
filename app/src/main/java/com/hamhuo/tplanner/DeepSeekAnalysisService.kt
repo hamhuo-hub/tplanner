@@ -156,6 +156,38 @@ class DeepSeekAnalysisService(private val apiKey: String) {
         }
     }
 
+    // 多轮追问：用户回答完上一轮问题后，基于整段对话往更深处问。
+    // 返回新的 1-3 个问题；返回空列表表示没有更多好问题了，用户可点 Done。
+    suspend fun followUpQuestions(
+        originalText: String,
+        qaHistory: String,
+    ): List<String> = withContext(Dispatchers.IO) {
+        val prompt = buildString {
+            append("用户最初写下的文字：\n\"\"\"\n$originalText\n\"\"\"\n\n")
+            if (qaHistory.isNotBlank()) {
+                append("此前的对话：\n$qaHistory\n\n")
+            }
+            append("你已经问过了上面这些问题并得到了用户的回答。现在请基于整段对话往更深处问 1-3 个新问题——")
+            append("扎在具体接缝上（含混的词、跳过的步骤、没说出口的前提、被当成一回事的两件事）；")
+            append("真开放不诱导；优先他一时答不上来的；保持临时不制造「想通了」的终局感。")
+            append("如果确实没有更多值得问的了，返回空数组。\n\n")
+            append("返回 JSON（不要 markdown）：\n")
+            append("{\"questions\": []}  或  {\"questions\": [\"问题1\", \"问题2\", \"问题3\"]}")
+        }
+        try {
+            val json = extractJson(callDeepSeek(prompt, SYSTEM_FOLLOWUP))
+            val out = mutableListOf<String>()
+            json.optJSONArray("questions")?.let { arr ->
+                for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotBlank() }?.let { out += it }
+            }
+            android.util.Log.d("TplannerDS", "followUpQuestions count=${out.size}")
+            out.take(3)
+        } catch (e: Exception) {
+            android.util.Log.e("TplannerDS", "followUpQuestions failed: ${e.message}")
+            emptyList()
+        }
+    }
+
     // ── 内部 ──────────────────────────────────────────────────────────────
 
     private fun callDeepSeek(userMessage: String, system: String): String {
@@ -219,6 +251,14 @@ class DeepSeekAnalysisService(private val apiKey: String) {
 
         private const val SYSTEM_REFINE =
             "你根据用户对澄清追问的回答，补全一个日程操作（把答的钟点并进已知日期算成绝对时间）。" +
+            "永远只返回有效 JSON，不要 markdown 代码块。"
+
+        private const val SYSTEM_FOLLOWUP =
+            "你在帮用户理清思路。你已经问过几轮问题、得到了用户的一些回答。" +
+            "现在基于整段对话，往更深处再追问 1-3 个真正值得他坐在那儿想的问题。" +
+            "扎在具体接缝上（含混的词、跳过的步骤、没说出口的前提、被当成一回事的两件事）；" +
+            "真开放不诱导；优先他一时答不上来的；保持临时感——这些问题不是终点。" +
+            "如果确实没有更多值得问的，返回空数组。" +
             "永远只返回有效 JSON，不要 markdown 代码块。"
     }
 }

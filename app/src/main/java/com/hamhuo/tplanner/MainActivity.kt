@@ -14,39 +14,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBars
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
-import java.time.Instant
-import java.util.UUID
 
 class MainActivity : ComponentActivity() {
 
@@ -202,6 +172,25 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun requestOverlayPermission(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)) return false
+
+        val prefs = getSharedPreferences(WAKE_SETUP_PREFS, MODE_PRIVATE)
+        if (prefs.getBoolean(PREF_OVERLAY_PROMPTED, false)) return false
+        if (isFinishing || isDestroyed) return false
+
+        return try {
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                data = Uri.parse("package:$packageName")
+            })
+            prefs.edit().putBoolean(PREF_OVERLAY_PROMPTED, true).apply()
+            true
+        } catch (e: Exception) {
+            Log.e("TplannerMain", "requestOverlayPermission: failed to launch", e)
+            false
+        }
+    }
+
     /**
      * Opens Samsung's per-app "Background activity" toggle.
      *
@@ -234,25 +223,6 @@ class MainActivity : ComponentActivity() {
             prefs.edit().putBoolean(PREF_SAMSUNG_BG_ACTIVITY_PROMPTED, true).apply()
         }
         return opened
-    }
-
-    private fun requestOverlayPermission(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)) return false
-
-        val prefs = getSharedPreferences(WAKE_SETUP_PREFS, MODE_PRIVATE)
-        if (prefs.getBoolean(PREF_OVERLAY_PROMPTED, false)) return false
-        if (isFinishing || isDestroyed) return false
-
-        return try {
-            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
-                data = Uri.parse("package:$packageName")
-            })
-            prefs.edit().putBoolean(PREF_OVERLAY_PROMPTED, true).apply()
-            true
-        } catch (e: Exception) {
-            Log.e("TplannerMain", "requestOverlayPermission: failed to launch", e)
-            false
-        }
     }
 
     /**

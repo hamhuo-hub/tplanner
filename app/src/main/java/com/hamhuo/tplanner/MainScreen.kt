@@ -113,7 +113,8 @@ fun MainScreen(
     var sheetAction by remember { mutableStateOf<DeepSeekAnalysisService.ProposedAction?>(null) }  // 非空 → 显示"加日程"提议
     var sheetClarify by remember { mutableStateOf<DeepSeekAnalysisService.Clarify?>(null) }  // 非空 → 先追问补全参数
     var pendingAction by remember { mutableStateOf<DeepSeekAnalysisService.ProposedAction?>(null) }  // 待补全的部分操作
-    var pendingText by remember { mutableStateOf("") }  // 原文，供 refineAction 用
+    var pendingText by remember { mutableStateOf("") }  // 原文，供 refineAction / 多轮追问用
+    var qaHistory by remember { mutableStateOf("") }  // 多轮追问对话记录（供 followUp 上下文）
     var prefillLocation by remember { mutableStateOf("") }
     // 手表打点定位（唯一真相源来自 WatchLocationStore，由蓝牙服务异步写入），
     // submit 时直接用这两个值存进 InsightStore，不再从随笔文本正则抠坐标
@@ -125,7 +126,7 @@ fun MainScreen(
         if (anxietyTriggerCount > 0) {
             showAnxietySheet = true
             thinking = false; sheetQuestions = null; sheetAction = null
-            sheetClarify = null; pendingAction = null; pendingText = ""  // 新会话回到编辑态
+            sheetClarify = null; pendingAction = null; pendingText = ""; qaHistory = ""  // 新会话回到编辑态
             prefillLocation = ""; watchLat = 0.0; watchLng = 0.0   // 本次会话重置，面板显示"Locating..."
 
             // 轮询等待蓝牙服务的异步定位落地（GPS 冷启可达数秒）。savedAt 需晚于
@@ -140,6 +141,23 @@ fun MainScreen(
             }
             // 超时兜底：即便是陈旧定位也好过没有
             if (fix == null) fix = WatchLocationStore.get(context)
+
+            // 手机自身兜底：手表始终没提供定位时，直接取手机最近已知定位，
+            // 避免记成 Unknown（面板入口仍只由手表唤醒，这里只补定位来源）。
+            if (fix == null) {
+                try {
+                    val lm = context.getSystemService(android.location.LocationManager::class.java)
+                    val last = listOf(
+                        android.location.LocationManager.FUSED_PROVIDER,
+                        android.location.LocationManager.GPS_PROVIDER,
+                        android.location.LocationManager.NETWORK_PROVIDER,
+                    ).asSequence()
+                        .filter { lm?.allProviders?.contains(it) == true }
+                        .mapNotNull { p -> runCatching { lm?.getLastKnownLocation(p) }.getOrNull() }
+                        .maxByOrNull { it.time }
+                    if (last != null) fix = WatchLocationStore.Fix(last.latitude, last.longitude, last.time)
+                } catch (_: SecurityException) { /* 无定位权限则跳过 */ }
+            }
 
             fix?.let {
                 watchLat = it.lat; watchLng = it.lng
@@ -332,6 +350,27 @@ fun MainScreen(
                 }
             }
 
+            // 多轮追问：用户答完当前问题 → 基于整段对话往更深处再问，直到点 Done
+            val answerQuestion: (String) -> Unit = { answer ->
+                val current = sheetQuestions ?: emptyList()
+                qaHistory += "AI问：${current.joinToString("；")}\n用户答：$answer\n"
+                // 回答追加进随笔，保留思路
+                content = store.getToday() + "\n> 你：$answer"
+                store.saveToday(content)
+                thinking = true
+                scope.launch {
+                    val next = deepseekService?.followUpQuestions(pendingText, qaHistory) ?: emptyList()
+                    thinking = false
+                    if (next.isNotEmpty()) {
+                        val block = buildString { append("\n> 再问："); next.forEach { append("\n> - $it") } }
+                        content = store.getToday() + block
+                        store.saveToday(content)
+                        sheetQuestions = next
+                    }
+                    // next 为空：保持当前问题，用户可继续答或点 Done
+                }
+            }
+
             UntangleSheet(
                 prefillLocation = prefillLocation,
                 thinking = thinking,
@@ -343,6 +382,7 @@ fun MainScreen(
                 onConfirmAction = confirmAction,
                 onDeclineAction = { showAnxietySheet = false; sheetAction = null },  // 就当笔记（想法已存）
                 onAnswerClarify = answerClarify,
+                onAnswerQuestion = answerQuestion,
             )
         } else if (isPhone) {
             Column(Modifier.fillMaxSize()) {
