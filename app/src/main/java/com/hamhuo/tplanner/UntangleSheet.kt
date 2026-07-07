@@ -1,14 +1,8 @@
 package com.hamhuo.tplanner
 
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,7 +37,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -128,6 +121,17 @@ fun UntangleSheet(
             modifier = Modifier.padding(bottom = 12.dp))
 
         when {
+            // ── 思考中 ──────────────────────────────────────────────
+            // 放在最前：只要在读内容（含点了问题后拉取下一轮），就盖过其它态显示动画
+            thinking -> {
+                Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        CircularProgressIndicator(color = GOLD, strokeWidth = 2.dp, modifier = Modifier.size(28.dp))
+                        Text("在读你写的…", color = DIM, fontSize = 14.sp)
+                    }
+                }
+            }
+
             // ── 澄清追问：缺关键参数，先问你，答完再补全操作 ──────────
             clarify != null -> {
                 var custom by remember { mutableStateOf("") }
@@ -219,28 +223,15 @@ fun UntangleSheet(
                 Text("这些不是答案，是帮你找到自己卡在哪。带着它们去试。",
                     color = DIM, fontSize = 13.sp, modifier = Modifier.padding(bottom = 14.dp))
                 Column(
-                    modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
-                        .animateContentSize(),
+                    modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     questions.forEachIndexed { i, q ->
-                        // 点击过渡：按下时卡片轻微回弹缩放，给出触感反馈
-                        val interaction = remember { MutableInteractionSource() }
-                        val pressed by interaction.collectIsPressedAsState()
-                        val scale by animateFloatAsState(
-                            targetValue = if (pressed) 0.96f else 1f,
-                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-                            label = "questionPress",
-                        )
                         Row(
                             modifier = Modifier.fillMaxWidth()
-                                .graphicsLayer { scaleX = scale; scaleY = scale }
                                 .background(SURFACE, RoundedCornerShape(12.dp))
                                 .border(1.dp, BORDER, RoundedCornerShape(12.dp))
-                                .clickable(
-                                    interactionSource = interaction,
-                                    indication = null,
-                                ) { onAnswerQuestion(q) }   // 点问题即回答
+                                .clickable { onAnswerQuestion(q) }   // 点问题即回答
                                 .padding(16.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
@@ -272,16 +263,6 @@ fun UntangleSheet(
                             Text("继续", color = GOLD, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
                                 modifier = Modifier.clickable { onAnswerQuestion(answer); answer = "" }.padding(start = 10.dp))
                         }
-                    }
-                }
-            }
-
-            // ── 思考中 ──────────────────────────────────────────────
-            thinking -> {
-                Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                        CircularProgressIndicator(color = GOLD, strokeWidth = 2.dp, modifier = Modifier.size(28.dp))
-                        Text("在读你写的…", color = DIM, fontSize = 14.sp)
                     }
                 }
             }
