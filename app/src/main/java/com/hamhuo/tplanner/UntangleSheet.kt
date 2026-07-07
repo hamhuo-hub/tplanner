@@ -71,6 +71,7 @@ fun UntangleSheet(
     prefillLocation: String,
     thinking: Boolean,
     questions: List<String>?,
+    questionOptions: List<List<String>> = emptyList(),
     action: DeepSeekAnalysisService.ProposedAction?,
     clarify: DeepSeekAnalysisService.Clarify?,
     onDismiss: () -> Unit,
@@ -216,15 +217,35 @@ fun UntangleSheet(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     questions.forEachIndexed { i, q ->
-                        Row(
+                        Column(
                             modifier = Modifier.fillMaxWidth()
                                 .background(SURFACE, RoundedCornerShape(12.dp))
                                 .border(1.dp, BORDER, RoundedCornerShape(12.dp))
                                 .padding(16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            Text("${i + 1}", color = GOLD, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                            Text(q, color = Color(0xFFE8E0D0), fontSize = 16.sp, lineHeight = 26.sp)
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Text("${i + 1}", color = GOLD, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                                Text(q, color = Color(0xFFE8E0D0), fontSize = 16.sp, lineHeight = 26.sp)
+                            }
+                            // 快捷选项：点一下即作为该问题的回答（补充上下文，往更深处追问）
+                            val opts = questionOptions.getOrNull(i).orEmpty()
+                            if (opts.isNotEmpty()) {
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    opts.forEach { opt ->
+                                        Box(
+                                            modifier = Modifier
+                                                .background(Color(0xFF222222), RoundedCornerShape(18.dp))
+                                                .border(1.dp, GOLD.copy(alpha = 0.4f), RoundedCornerShape(18.dp))
+                                                .clickable { onAnswerQuestion("$q → $opt") }
+                                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                                        ) { Text(opt, color = Color(0xFFE0D8C0), fontSize = 14.sp) }
+                                    }
+                                }
+                            }
                         }
                     }
                     Spacer(Modifier.height(4.dp))

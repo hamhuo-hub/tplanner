@@ -110,6 +110,7 @@ fun MainScreen(
     var showAnxietySheet by remember { mutableStateOf(false) }
     var thinking by remember { mutableStateOf(false) }            // AI 正在读你写的
     var sheetQuestions by remember { mutableStateOf<List<String>?>(null) }  // 非空 → 显示追问
+    var sheetQuestionOptions by remember { mutableStateOf<List<List<String>>>(emptyList()) }  // 每个追问的快捷选项
     var sheetAction by remember { mutableStateOf<DeepSeekAnalysisService.ProposedAction?>(null) }  // 非空 → 显示"加日程"提议
     var sheetClarify by remember { mutableStateOf<DeepSeekAnalysisService.Clarify?>(null) }  // 非空 → 先追问补全参数
     var pendingAction by remember { mutableStateOf<DeepSeekAnalysisService.ProposedAction?>(null) }  // 待补全的部分操作
@@ -125,7 +126,7 @@ fun MainScreen(
     LaunchedEffect(anxietyTriggerCount) {
         if (anxietyTriggerCount > 0) {
             showAnxietySheet = true
-            thinking = false; sheetQuestions = null; sheetAction = null
+            thinking = false; sheetQuestions = null; sheetQuestionOptions = emptyList(); sheetAction = null
             sheetClarify = null; pendingAction = null; pendingText = ""; qaHistory = ""  // 新会话回到编辑态
             prefillLocation = ""; watchLat = 0.0; watchLng = 0.0   // 本次会话重置，面板显示"Locating..."
 
@@ -290,6 +291,7 @@ fun MainScreen(
                             store.saveToday(content)
                             thinking = false
                             sheetQuestions = res.questions
+                            sheetQuestionOptions = res.questionOptions
                         }
                         res.mode == "action" && res.action != null -> {
                             thinking = false
@@ -350,34 +352,22 @@ fun MainScreen(
                 }
             }
 
-            // 多轮追问：用户答完当前问题 → 基于整段对话往更深处再问，直到点 Done
+            // 点选项 / 写回答 = 就地回答这个问题、补充上下文（照 clarify 的单层模式）。
+            // 只把回答追加进随笔，不再触发新一轮追问——这一组问题就是最终产物，
+            // 用户答完想答的、点 Done 收尾。
             val answerQuestion: (String) -> Unit = { answer ->
-                val current = sheetQuestions ?: emptyList()
-                qaHistory += "AI问：${current.joinToString("；")}\n用户答：$answer\n"
-                // 回答追加进随笔，保留思路
                 content = store.getToday() + "\n> 你：$answer"
                 store.saveToday(content)
-                thinking = true
-                scope.launch {
-                    val next = deepseekService?.followUpQuestions(pendingText, qaHistory) ?: emptyList()
-                    thinking = false
-                    if (next.isNotEmpty()) {
-                        val block = buildString { append("\n> 再问："); next.forEach { append("\n> - $it") } }
-                        content = store.getToday() + block
-                        store.saveToday(content)
-                        sheetQuestions = next
-                    }
-                    // next 为空：保持当前问题，用户可继续答或点 Done
-                }
             }
 
             UntangleSheet(
                 prefillLocation = prefillLocation,
                 thinking = thinking,
                 questions = sheetQuestions,
+                questionOptions = sheetQuestionOptions,
                 action = sheetAction,
                 clarify = sheetClarify,
-                onDismiss = { showAnxietySheet = false; thinking = false; sheetQuestions = null; sheetAction = null; sheetClarify = null },
+                onDismiss = { showAnxietySheet = false; thinking = false; sheetQuestions = null; sheetQuestionOptions = emptyList(); sheetAction = null; sheetClarify = null },
                 onSubmit = submitThought,
                 onConfirmAction = confirmAction,
                 onDeclineAction = { showAnxietySheet = false; sheetAction = null },  // 就当笔记（想法已存）
