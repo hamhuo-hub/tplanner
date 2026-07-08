@@ -61,8 +61,13 @@ class WakeProxyActivity : Activity() {
         // Proxy done — disappear.  The user sees MainActivity (which was already
         // alive and just got brought to front) or a fresh launch.
         finish()
-        // No animations — overridePendingTransition would be visible to the user.
-        // The translucent theme + immediate finish is already seamless.
+
+        // Detach the BAL-bypass overlay that WakeDataLayerService attached.
+        // Delayed 2s to cover the Activity transition window — removing it
+        // too early could cause Samsung to kill the transition mid-flight.
+        window.decorView.postDelayed({
+            WakeDataLayerService.detachOverlayFromProxy()
+        }, 2_000L)
     }
 
     companion object {

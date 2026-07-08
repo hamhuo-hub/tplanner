@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 三星 BAL 绕过：WakeDataLayerService 收到手表信号后，
+         在 startActivity 前先挂一个 1×1 不可见 overlay，
+         让进程进入"有可见窗口"状态，BAL checker 放行。 -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- 手表唤醒打点时记录手机当前位置；需要"始终允许"（背景定位）
          才能在息屏/后台状态下拿到坐标 -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />

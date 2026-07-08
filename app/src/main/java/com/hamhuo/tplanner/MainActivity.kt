@@ -3,8 +3,10 @@ package com.hamhuo.tplanner
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -16,10 +18,9 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 
 /**
- * No foreground-service infrastructure.  GMS Data Layer wakes
- * [WakeDataLayerService], which delegates through [WakeProxyActivity]
- * to here with EXTRA_WAKE_FROM_WATCH — just like Samsung Health's
- * DeeplinkDelegatorActivity → HomeMainActivity chain.
+ * GMS Data Layer wakes [WakeDataLayerService], which attaches a 1×1
+ * invisible overlay (bypassing Samsung BAL), then delegates through
+ * [WakeProxyActivity] to here with EXTRA_WAKE_FROM_WATCH.
  */
 class MainActivity : ComponentActivity() {
 
@@ -37,6 +38,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         handleWakeIntent(intent)
+        requestOverlayPermissionIfNeeded()
         maybeRequestBackgroundLocation()
         val store       = JournalStore(this)
         val eventStore  = EventStore(this)
@@ -67,6 +69,29 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * SYSTEM_ALERT_WINDOW is required for the invisible overlay that
+     * [WakeDataLayerService] attaches before launching the proxy Activity.
+     * Without it, Samsung's BAL checker blocks every watch→phone wake-up.
+     * The user must grant this once in system settings.
+     */
+    private fun requestOverlayPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        if (Settings.canDrawOverlays(this)) return
+        val prefs = getSharedPreferences(WAKE_SETUP_PREFS, MODE_PRIVATE)
+        if (prefs.getBoolean(PREF_OVERLAY_PROMPTED, false)) return
+        if (isFinishing || isDestroyed) return
+
+        try {
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                data = Uri.parse("package:$packageName")
+            })
+            prefs.edit().putBoolean(PREF_OVERLAY_PROMPTED, true).apply()
+        } catch (e: Exception) {
+            Log.e("TplannerMain", "requestOverlayPermission: failed", e)
+        }
+    }
+
     private fun maybeRequestBackgroundLocation() {
         if (isFinishing || isDestroyed) return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
@@ -80,6 +105,7 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_WAKE_FROM_WATCH = "wake_from_watch"
         private const val WAKE_SETUP_PREFS = "wake_setup"
+        private const val PREF_OVERLAY_PROMPTED = "overlay_prompted"
         private const val PREF_BG_LOCATION_PROMPTED = "bg_location_prompted"
     }
 }
