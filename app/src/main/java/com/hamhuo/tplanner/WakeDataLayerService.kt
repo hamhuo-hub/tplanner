@@ -109,7 +109,10 @@ class WakeDataLayerService : WearableListenerService() {
     private fun detachOverlay() {
         synchronized(overlayLock) {
             overlayView?.let { view ->
-                try { overlayWm?.removeView(view) } catch (_: Exception) {}
+                // removeViewImmediate is synchronous — no Handler.post involved.
+                // removeView would go through ViewRootImpl.die() which posts to
+                // a Handler that may already be dead (onDestroy / process shutdown).
+                try { overlayWm?.removeViewImmediate(view) } catch (_: Exception) {}
                 overlayView = null
                 overlayWm = null
                 Log.d(TAG, "detachOverlay: removed")
@@ -216,7 +219,7 @@ class WakeDataLayerService : WearableListenerService() {
         fun detachOverlayFromProxy() {
             synchronized(overlayLock) {
                 overlayView?.let { view ->
-                    try { overlayWm?.removeView(view) } catch (_: Exception) {}
+                    try { overlayWm?.removeViewImmediate(view) } catch (_: Exception) {}
                     overlayView = null
                     overlayWm = null
                 }
