@@ -7,7 +7,7 @@ import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 
-// 手机直连 DeepSeek API（deepseek-v4-pro），不走树莓派。
+// 手机直连 DeepSeek API（deepseek-chat），不走树莓派。
 //
 // 产品定位：帮用户把散乱的思路理清。核心不是"给答案/做分析"，而是【反过来
 // 提问】——用户写下凌乱、片段、可能表述不准的想法，AI 只提问，帮他定位自己
@@ -286,8 +286,8 @@ class DeepSeekAnalysisService(private val apiKey: String) {
 
     companion object {
         private const val DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
-        // deepseek-v4-pro：DeepSeek 最新 pro 模型，推理能力更强
-        private const val MODEL = "deepseek-v4-pro"
+        // deepseek-chat：快速响应，不做推理/thinking
+        private const val MODEL = "deepseek-chat"
 
         private const val SYSTEM_THOUGHT =
             "你在帮用户处理随手写下的文字，分四种：默认 record（只修错别字/语法，当笔记" +
