@@ -125,15 +125,12 @@ class MainActivity : ComponentActivity() {
     private fun requestOverlayPermissionIfNeeded(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
         if (Settings.canDrawOverlays(this)) return false
-        val prefs = getSharedPreferences(WAKE_SETUP_PREFS, MODE_PRIVATE)
-        if (prefs.getBoolean(PREF_OVERLAY_PROMPTED, false)) return false
         if (isFinishing || isDestroyed) return false
 
         return try {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
                 data = Uri.parse("package:$packageName")
             })
-            prefs.edit().putBoolean(PREF_OVERLAY_PROMPTED, true).apply()
             true
         } catch (e: Exception) {
             Log.e(TAG, "requestOverlayPermission: failed", e)
@@ -149,15 +146,12 @@ class MainActivity : ComponentActivity() {
     private fun requestBatteryOptimizationExemption(): Boolean {
         val pm = getSystemService(PowerManager::class.java)
         if (pm?.isIgnoringBatteryOptimizations(packageName) == true) return false
-        val prefs = getSharedPreferences(WAKE_SETUP_PREFS, MODE_PRIVATE)
-        if (prefs.getBoolean(PREF_BATTERY_PROMPTED, false)) return false
         if (isFinishing || isDestroyed) return false
 
         return try {
             startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
                 data = Uri.parse("package:$packageName")
             })
-            prefs.edit().putBoolean(PREF_BATTERY_PROMPTED, true).apply()
             true
         } catch (e: Exception) {
             Log.e(TAG, "requestBatteryOptimization: failed", e)
@@ -169,9 +163,6 @@ class MainActivity : ComponentActivity() {
         if (isFinishing || isDestroyed) return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
         if (hasPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION)) return
-        val prefs = getSharedPreferences(WAKE_SETUP_PREFS, MODE_PRIVATE)
-        if (prefs.getBoolean(PREF_BG_LOCATION_PROMPTED, false)) return
-        prefs.edit().putBoolean(PREF_BG_LOCATION_PROMPTED, true).apply()
         requestBgLocation.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
     }
 
@@ -181,9 +172,5 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_WAKE_FROM_WATCH = "wake_from_watch"
         private const val TAG = "TplannerMain"
-        private const val WAKE_SETUP_PREFS = "wake_setup"
-        private const val PREF_OVERLAY_PROMPTED = "overlay_prompted"
-        private const val PREF_BATTERY_PROMPTED = "battery_prompted"
-        private const val PREF_BG_LOCATION_PROMPTED = "bg_location_prompted"
     }
 }
