@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -85,14 +86,15 @@ class MainActivity : ComponentActivity() {
     // ── Permissions ─────────────────────────────────────────────
 
     /**
-     * Check all required runtime permissions on startup and request
-     * any that are missing.  The flow chains in dependency order:
+     * Check all required permissions / exemptions on startup in dependency order:
      *   1. SYSTEM_ALERT_WINDOW (special – settings intent)
-     *   2. Foreground location + notifications (bundled)
-     *   3. Background location (only after foreground is granted)
+     *   2. Battery optimization exemption (settings intent, keeps process alive)
+     *   3. Foreground location + notifications (bundled runtime permission)
+     *   4. Background location (chained after foreground)
      */
     private fun checkAndRequestPermissions() {
-        requestOverlayPermissionIfNeeded()
+        if (requestOverlayPermissionIfNeeded()) return
+        if (requestBatteryOptimizationExemption()) return
 
         val missing = mutableListOf<String>()
 
@@ -120,20 +122,46 @@ class MainActivity : ComponentActivity() {
      * Without it, Samsung BAL blocks every watch→phone wake-up.
      * The user must grant this once in system settings.
      */
-    private fun requestOverlayPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
-        if (Settings.canDrawOverlays(this)) return
+    private fun requestOverlayPermissionIfNeeded(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
+        if (Settings.canDrawOverlays(this)) return false
         val prefs = getSharedPreferences(WAKE_SETUP_PREFS, MODE_PRIVATE)
-        if (prefs.getBoolean(PREF_OVERLAY_PROMPTED, false)) return
-        if (isFinishing || isDestroyed) return
+        if (prefs.getBoolean(PREF_OVERLAY_PROMPTED, false)) return false
+        if (isFinishing || isDestroyed) return false
 
-        try {
+        return try {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
                 data = Uri.parse("package:$packageName")
             })
             prefs.edit().putBoolean(PREF_OVERLAY_PROMPTED, true).apply()
+            true
         } catch (e: Exception) {
             Log.e(TAG, "requestOverlayPermission: failed", e)
+            false
+        }
+    }
+
+    /**
+     * Battery optimization exemption keeps the process alive so GMS can deliver
+     * Data Layer messages.  On Samsung / Chinese ROMs the process gets killed
+     * within minutes of going to background without this.
+     */
+    private fun requestBatteryOptimizationExemption(): Boolean {
+        val pm = getSystemService(PowerManager::class.java)
+        if (pm?.isIgnoringBatteryOptimizations(packageName) == true) return false
+        val prefs = getSharedPreferences(WAKE_SETUP_PREFS, MODE_PRIVATE)
+        if (prefs.getBoolean(PREF_BATTERY_PROMPTED, false)) return false
+        if (isFinishing || isDestroyed) return false
+
+        return try {
+            startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.parse("package:$packageName")
+            })
+            prefs.edit().putBoolean(PREF_BATTERY_PROMPTED, true).apply()
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "requestBatteryOptimization: failed", e)
+            false
         }
     }
 
@@ -155,6 +183,7 @@ class MainActivity : ComponentActivity() {
         private const val TAG = "TplannerMain"
         private const val WAKE_SETUP_PREFS = "wake_setup"
         private const val PREF_OVERLAY_PROMPTED = "overlay_prompted"
+        private const val PREF_BATTERY_PROMPTED = "battery_prompted"
         private const val PREF_BG_LOCATION_PROMPTED = "bg_location_prompted"
     }
 }
