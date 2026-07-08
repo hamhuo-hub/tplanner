@@ -15,7 +15,7 @@ class JournalStore(context: Context) {
     private val prefs = context.getSharedPreferences("tplanner_journals", Context.MODE_PRIVATE)
 
     // 同步锁：appendToday / replaceInToday 读-改-写序列为原子操作，
-    // 防止 BluetoothWakeService 后台线程与 UI 主线并发写入丢失数据。
+    // 防止后台线程与 UI 主线并发写入丢失数据。
     private val lock = Any()
 
     fun getAll(): Map<String, JournalEntry> =
@@ -79,7 +79,7 @@ class JournalStore(context: Context) {
         }
     }
 
-    // 同进程内（如 BluetoothWakeService 的打点写入）监听随笔变化，界面据此实时刷新。
+    // 监听随笔变化，界面据此实时刷新。
     fun registerListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) =
         prefs.registerOnSharedPreferenceChangeListener(listener)
 

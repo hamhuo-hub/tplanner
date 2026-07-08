@@ -60,4 +60,7 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
+    // Wearable Data Layer — 手表 ↔ 手机通过 GMS 通信（国际版 Wear OS 设备）。
+    // 国行三星无 GMS 时走经典蓝牙 RFCOMM fallback。
+    implementation(libs.play.services.wearable)
 }

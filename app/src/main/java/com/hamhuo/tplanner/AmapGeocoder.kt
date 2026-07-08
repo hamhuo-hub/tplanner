@@ -13,7 +13,7 @@ import java.net.URLEncoder
 // 三级回落：建筑名 → 兴趣点名 → 街道门牌 → 区县
 // Web API 每日免费 5000 次（个人开发者），无需 Android SDK 依赖。
 //
-// 注意：高德 API 需要 GCJ-02 坐标。蓝牙唤醒时 BluetoothWakeService
+// 注意：高德 API 需要 GCJ-02 坐标。WakeDataLayerService
 // 从 LocationManager 拿到的 GPS 定位可能是 WGS-84 也可能是 GCJ-02
 // （取决于 ROM），本类不做转换——高德逆地理编码对坐标偏移有容忍度，
 // 100-300 米的偏移一般不影响建筑物级别的位置识别。

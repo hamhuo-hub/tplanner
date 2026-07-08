@@ -2,33 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- 开机自启动前台服务（BootReceiver），实现三星健康式的无感知常驻 -->
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- 手表唤醒打点时记录手机当前位置；服务在后台收到信号时取一次定位，
-         需要"始终允许"（背景定位）才能在息屏/后台状态下拿到坐标 -->
+    <!-- 手表唤醒打点时记录手机当前位置；需要"始终允许"（背景定位）
+         才能在息屏/后台状态下拿到坐标 -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
-    <!-- 三星手机的"休眠应用"省电策略可能冻结后台 Service，
-         首次启动时申请电池优化豁免以保证 BluetoothWakeService 能持续运行。 -->
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
-    <!-- 经典蓝牙 RFCOMM 接收手表端直连信号（绕开国行设备上不可用的
-         Google Wearable Data Layer），以及维持前台服务所需的权限。 -->
-    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
-    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <!-- moveTaskToFront 兜底：把已有 task 拉到前台，不新建 Activity -->
-    <uses-permission android:name="android.permission.REORDER_TASKS" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <!-- KeepAliveReceiver 使用精确闹钟每 15 分钟拉活一次前台服务。
-         需要用户手动在设置中授权（MainActivity 会引导）。 -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
-    <!-- 前台服务通知：Android 13+ 需动态申请，否则通知被系统压制，
-         前台服务失去优先级，三星会更快杀掉进程。 -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -49,33 +27,32 @@
             </intent-filter>
         </activity>
 
-        <!-- 经典蓝牙 RFCOMM 前台服务，运行在独立进程 (:bluetooth) 中，
-             三星清后台时杀不掉这个进程，服务持续存活。 -->
-        <service
-            android:name=".BluetoothWakeService"
-            android:exported="false"
-            android:foregroundServiceType="connectedDevice"
-            android:process=":bluetooth" />
+        <!-- 透明代理 Activity：手表唤醒信号的中转站。
+             Theme.Translucent 无 UI、excludeFromRecents 不留痕迹、
+             独立 taskAffinity 不污染主任务栈。
+             在 onCreate 中用 REORDER_TO_FRONT 把 MainActivity 拉回前台
+             （保留用户正在编辑的内容），然后立即 finish。 -->
+        <activity
+            android:name=".WakeProxyActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:taskAffinity=":proxy"
+            android:launchMode="singleInstance"
+            android:exported="false" />
 
-        <!-- 开机/应用更新后自启。exported 必须为 true：官方指引要求监听系统广播的
-             receiver 显式导出，部分 Android 12+ 设备上 false 会收不到 BOOT_COMPLETED；
-             这两个都是受保护广播，只有系统能发送，导出无安全风险。 -->
-        <receiver
-            android:name=".BootReceiver"
-            android:enabled="true"
+        <!-- Wearable Data Layer 监听：GMS 系统进程转发的 watch→phone 唤醒信号。
+             GMS（系统进程）→ 此 Service → WakeProxyActivity → MainActivity，
+             走 Google Play Services 的信道，无需自己维持前台服务。
+             exported=true + intent-filter 是 GMS 发现并唤醒此服务的必要条件。 -->
+        <service
+            android:name=".WakeDataLayerService"
             android:exported="true">
             <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/tplanner" />
             </intent-filter>
-        </receiver>
-
-        <!-- 前台服务看门狗：每 15 分钟 AlarmManager 唤醒，检查并重启前台服务。
-             三星清后台可杀进程但无法阻止系统广播唤醒。 -->
-        <receiver
-            android:name=".KeepAliveReceiver"
-            android:enabled="true"
-            android:exported="false" />
+        </service>
 
     </application>
 
