@@ -28,18 +28,31 @@ class MainActivity : ComponentActivity() {
     // MainScreen observes changes to show the anxiety panel.
     var anxietyTriggerCount by mutableIntStateOf(0)
 
+    // Multi-permission launcher for foreground location + notifications
+    private val requestPermissionsLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        Log.d(TAG, "permissions result: $results")
+        val locationGranted = results[Manifest.permission.ACCESS_FINE_LOCATION]
+            ?: hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+        if (locationGranted) {
+            // Foreground location granted → chain to background location
+            maybeRequestBackgroundLocation()
+        }
+    }
+
+    // Background location must be requested separately after foreground is granted
     private val requestBgLocation = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        Log.d("TplannerMain", "background location granted=$granted")
+        Log.d(TAG, "background location granted=$granted")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         handleWakeIntent(intent)
-        requestOverlayPermissionIfNeeded()
-        maybeRequestBackgroundLocation()
+        checkAndRequestPermissions()
         val store       = JournalStore(this)
         val eventStore  = EventStore(this)
         val insightStore = InsightStore(this)
@@ -69,10 +82,42 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // ── Permissions ─────────────────────────────────────────────
+
+    /**
+     * Check all required runtime permissions on startup and request
+     * any that are missing.  The flow chains in dependency order:
+     *   1. SYSTEM_ALERT_WINDOW (special – settings intent)
+     *   2. Foreground location + notifications (bundled)
+     *   3. Background location (only after foreground is granted)
+     */
+    private fun checkAndRequestPermissions() {
+        requestOverlayPermissionIfNeeded()
+
+        val missing = mutableListOf<String>()
+
+        if (!hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)) {
+            missing.add(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (!hasPermission(Manifest.permission.POST_NOTIFICATIONS)) {
+                missing.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+
+        if (missing.isNotEmpty()) {
+            requestPermissionsLauncher.launch(missing.toTypedArray())
+        } else {
+            // All foreground permissions already granted → check background
+            maybeRequestBackgroundLocation()
+        }
+    }
+
     /**
      * SYSTEM_ALERT_WINDOW is required for the invisible overlay that
      * [WakeDataLayerService] attaches before launching the proxy Activity.
-     * Without it, Samsung's BAL checker blocks every watch→phone wake-up.
+     * Without it, Samsung BAL blocks every watch→phone wake-up.
      * The user must grant this once in system settings.
      */
     private fun requestOverlayPermissionIfNeeded() {
@@ -88,22 +133,26 @@ class MainActivity : ComponentActivity() {
             })
             prefs.edit().putBoolean(PREF_OVERLAY_PROMPTED, true).apply()
         } catch (e: Exception) {
-            Log.e("TplannerMain", "requestOverlayPermission: failed", e)
+            Log.e(TAG, "requestOverlayPermission: failed", e)
         }
     }
 
     private fun maybeRequestBackgroundLocation() {
         if (isFinishing || isDestroyed) return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED) return
+        if (hasPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION)) return
         val prefs = getSharedPreferences(WAKE_SETUP_PREFS, MODE_PRIVATE)
         if (prefs.getBoolean(PREF_BG_LOCATION_PROMPTED, false)) return
         prefs.edit().putBoolean(PREF_BG_LOCATION_PROMPTED, true).apply()
         requestBgLocation.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
     }
 
+    private fun hasPermission(permission: String): Boolean =
+        ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+
     companion object {
         const val EXTRA_WAKE_FROM_WATCH = "wake_from_watch"
+        private const val TAG = "TplannerMain"
         private const val WAKE_SETUP_PREFS = "wake_setup"
         private const val PREF_OVERLAY_PROMPTED = "overlay_prompted"
         private const val PREF_BG_LOCATION_PROMPTED = "bg_location_prompted"
