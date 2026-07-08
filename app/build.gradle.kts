@@ -19,8 +19,8 @@ android {
         applicationId = "com.hamhuo.tplanner"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.1.0"
+        versionCode = 2
+        versionName = "mobile_2.0.0"
 
         buildConfigField("String", "DEEPSEEK_API_KEY", "\"${localProperties.getProperty("deepseek.api.key", "")}\"")
         buildConfigField("String", "AMAP_API_KEY", "\"${localProperties.getProperty("amap.api.key", "")}\"")
