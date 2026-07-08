@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -385,7 +386,7 @@ fun MainScreen(
                 onAnswerQuestion = answerQuestion,
             )
         } else if (isPhone) {
-            Column(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().imePadding()) {
                 PhoneTabBar(
                     tabs      = listOf(
                         stringResource(R.string.tab_journal),
@@ -414,7 +415,7 @@ fun MainScreen(
                 }
             }
         } else {
-            Box(Modifier.fillMaxSize().padding(10.dp)) {
+            Box(Modifier.fillMaxSize().padding(10.dp).imePadding()) {
                 Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Card(
                         modifier  = Modifier.weight(1.618f).fillMaxHeight(),
