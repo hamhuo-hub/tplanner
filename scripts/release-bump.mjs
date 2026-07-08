@@ -55,8 +55,8 @@ export function release(bumpType) {
 
         run('git add package.json');
         run(`git commit -m "${newVer}"`);
-        run(`git tag v${newVer}`);
-        console.log(`✓ Tag v${newVer}. git push --follow-tags to push.`);
+        run(`git tag desktop_${newVer}`);
+        console.log(`✓ Tag desktop_${newVer}. git push --follow-tags to push.`);
 
     // ── mobile_andorid / Android ────────────────────────────────────────
     } else if (branch === 'mobile_andorid') {
@@ -75,8 +75,8 @@ export function release(bumpType) {
 
         run(`git add "${f}"`);
         run(`git commit -m "${ver}"`);
-        run(`git tag v${ver}`);
-        console.log(`✓ Tag v${ver}. git push --follow-tags to push.`);
+        run(`git tag mobile_${ver}`);
+        console.log(`✓ Tag mobile_${ver}. git push --follow-tags to push.`);
 
     } else {
         console.error(`❌ Unknown branch '${branch}'. Only master / mobile_andorid supported.`);

@@ -1,7 +1,7 @@
 {
   "name": "tplanner",
   "private": true,
-  "version": "4.2.0",
+  "version": "2.0.0",
   "type": "module",
   "main": "dist-electron/main.cjs",
   "scripts": {
@@ -11,9 +11,7 @@
     "preview": "vite preview",
     "package": "npm run build && electron-builder build --win --config",
     "package:linux": "bash package-linux.sh",
-    "package:patch": "node scripts/release-patch.mjs && npm run build && electron-builder build --win --config",
-    "package:minor": "node scripts/release-minor.mjs && npm run build && electron-builder build --win --config",
-    "package:major": "node scripts/release-major.mjs && npm run build && electron-builder build --win --config",
+    "release": "node scripts/release-bump.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },

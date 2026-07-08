@@ -1,12 +1,13 @@
 name: Build & Release
 
 # 触发条件：
-#   1. 推送 v 开头的 tag（如 v3.3.1）→ 构建各平台产物，并自动创建 GitHub Release
-#   2. 手动触发（Actions 页面点 "Run workflow"）→ 只构建、上传产物，便于测试
+#   1. 推送 desktop_* 或 mobile_* 标签 → 构建并发布
+#   2. 手动触发 → 只构建、上传产物，便于测试
 on:
   push:
     tags:
-      - 'v*'
+      - 'desktop_*'
+      - 'mobile_*'
   workflow_dispatch:
 
 # 创建 Release 需要写权限；放在 workflow 级即可覆盖所有 job
