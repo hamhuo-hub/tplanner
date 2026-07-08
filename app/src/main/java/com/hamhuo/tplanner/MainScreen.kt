@@ -277,18 +277,11 @@ fun MainScreen(
                         text = res.text,
                         location = loc,
                         lat = watchLat, lng = watchLng,
-                        questions = res.questions,
+                        questions = emptyList(),  // AI questions are not recorded
                     ))
 
                     when {
                         res.mode == "questions" && res.questions.isNotEmpty() -> {
-                            // 追问追加到随笔，方便日后翻看；面板切到"追问"态
-                            val block = buildString {
-                                append("\n\n> **有几个问题给你**")
-                                res.questions.forEachIndexed { i, q -> append("\n> ${i + 1}. $q") }
-                            }
-                            content = store.getToday() + block
-                            store.saveToday(content)
                             thinking = false
                             sheetQuestions = res.questions
                         }
@@ -339,6 +332,9 @@ fun MainScreen(
             val answerClarify: (String) -> Unit = { answer ->
                 val partial = pendingAction
                 sheetClarify = null
+                // Record user's answer (clicked option or typed) to journal
+                content = store.getToday() + "\n> 你选了：$answer"
+                store.saveToday(content)
                 if (partial == null) { showAnxietySheet = false }
                 else {
                     thinking = true
@@ -363,9 +359,6 @@ fun MainScreen(
                     val next = deepseekService?.followUpQuestions(pendingText, qaHistory) ?: emptyList()
                     thinking = false
                     if (next.isNotEmpty()) {
-                        val block = buildString { append("\n> 再问："); next.forEach { append("\n> - $it") } }
-                        content = store.getToday() + block
-                        store.saveToday(content)
                         sheetQuestions = next
                     }
                     // next 为空：保持当前问题，用户可继续答或点 Done
