@@ -9,6 +9,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "build:web": "vite build",
+    "deploy:web": "node scripts/deploy-web.mjs",
     "package": "npm run build && electron-builder build --win --config",
     "package:linux": "bash package-linux.sh",
     "release": "node scripts/release-bump.mjs",

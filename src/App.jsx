@@ -22,6 +22,7 @@ import { getDatabase } from './database/db'
 import { makeGoal } from './utils/goalUtils'
 import { now as clockNow } from './utils/clock'
 import { BUILTIN_ADAPTERS } from './utils/syncLogic'
+import * as webApi from './utils/webDataAdapter'
 
 function App() {
     const { t, i18n } = useTranslation();
@@ -49,29 +50,47 @@ function App() {
     const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
 
     // ── Database & Native Init ───────────────────────────────────────────
+    // Electron: RxDB (IndexedDB) with observable subscription
+    // Web: fetch from sync server API (same machine)
     useEffect(() => {
-        let subscription;
-        getDatabase().then(database => {
-            setDb(database);
-            subscription = database.events.find().$.pipe(debounceTime(50)).subscribe(docs => {
-                // Keep ALL docs (including tombstones) in state so they can
-                // be included in the sync payload and propagate deletions.
-                const hydrated = docs.map(doc => {
-                    const e = doc.toJSON();
-                    return { ...e, start: new Date(e.start), end: new Date(e.end) };
+        if (isElectron) {
+            let subscription;
+            getDatabase().then(database => {
+                setDb(database);
+                subscription = database.events.find().$.pipe(debounceTime(50)).subscribe(docs => {
+                    const hydrated = docs.map(doc => {
+                        const e = doc.toJSON();
+                        return { ...e, start: new Date(e.start), end: new Date(e.end) };
+                    });
+                    setEvents(hydrated);
+                    setIsLoaded(true);
                 });
-                setEvents(hydrated);
-                setIsLoaded(true);
+            }).catch(err => {
+                console.error("Failed to init RxDB", err);
             });
-        }).catch(err => {
-            console.error("Failed to init RxDB", err);
-        });
 
-        const savedTz = localStorage.getItem('tplanner_travel_timezone');
-        if (savedTz) setTravelTimezone(savedTz);
+            const savedTz = localStorage.getItem('tplanner_travel_timezone');
+            if (savedTz) setTravelTimezone(savedTz);
 
-        return () => { if (subscription) subscription.unsubscribe(); };
-    }, []);
+            return () => { if (subscription) subscription.unsubscribe(); };
+        } else {
+            // Web mode: load directly from server API
+            Promise.all([
+                webApi.loadEvents(),
+                webApi.loadGoals(),
+            ]).then(([ev, g]) => {
+                setEvents(ev);
+                setGoals(g);
+                setIsLoaded(true);
+            }).catch(err => {
+                console.error('Failed to load from server', err);
+                setIsLoaded(true); // show UI even if load fails
+            });
+
+            const savedTz = localStorage.getItem('tplanner_travel_timezone');
+            if (savedTz) setTravelTimezone(savedTz);
+        }
+    }, [isElectron]);
 
     // ── Electron Today-Widget Sync ────────────────────────────────────────
     // Debounce: rapid RxDB updates (delete/batch) collapse into one IPC call
@@ -98,6 +117,19 @@ function App() {
         const off = window.electronAPI?.onAutoLaunchChanged?.((v) => setAutoLaunch(v));
         return () => off?.();
     }, [isElectron]);
+
+    // ── Web-mode auto-save to server ─────────────────────────────────────
+    // Debounced PUT on every events change; runs only in browser (not Electron).
+    const webEventSaveTimerRef = useRef(null);
+    useEffect(() => {
+        if (isElectron || !isLoaded) return;
+        clearTimeout(webEventSaveTimerRef.current);
+        webEventSaveTimerRef.current = setTimeout(() => {
+            webApi.saveEvents(events).catch(err =>
+                console.error('Failed to save events to server', err)
+            );
+        }, 300);
+    }, [events, isLoaded, isElectron]);
 
     const syncTimerRef = useRef(null);
     useEffect(() => {
@@ -241,7 +273,7 @@ function App() {
             });
             return () => { off1?.(); off2?.(); };
         } else {
-            // Web fallback: scan localStorage
+            // Web mode: load from server API (authoritative), fall back to localStorage
             const data = {};
             for (let i = 0; i < localStorage.length; i++) {
                 const k = localStorage.key(i);
@@ -253,6 +285,16 @@ function App() {
                 }
             }
             setJournals(data);
+            // Then try server (overwrites localStorage if server has newer data)
+            webApi.loadJournals().then(j => {
+                setJournals(normalizeJournals(j));
+                // Mirror server data back to localStorage
+                for (const [date, entry] of Object.entries(j)) {
+                    if (entry && !entry.deletedAt) {
+                        localStorage.setItem(`tplanner_journal_${date}`, JSON.stringify(entry));
+                    }
+                }
+            }).catch(() => { /* server unavailable, use localStorage */ });
         }
     }, [isElectron]);
 
@@ -266,11 +308,36 @@ function App() {
             if (isElectron && window.electronAPI?.saveJournal) {
                 window.electronAPI.saveJournal(dateStr, entry);
             } else {
+                // Web mode: save to localStorage (instant) + server (debounced in useEffect below)
                 localStorage.setItem(`tplanner_journal_${dateStr}`, JSON.stringify(entry));
             }
             return { ...prev, [dateStr]: entry };
         });
     };
+
+    // ── Web-mode auto-save goals to server ────────────────────────────────
+    const webGoalSaveTimerRef = useRef(null);
+    useEffect(() => {
+        if (isElectron || !isLoaded) return;
+        clearTimeout(webGoalSaveTimerRef.current);
+        webGoalSaveTimerRef.current = setTimeout(() => {
+            webApi.saveGoals(goals).catch(err =>
+                console.error('Failed to save goals to server', err)
+            );
+        }, 300);
+    }, [goals, isLoaded, isElectron]);
+
+    // ── Web-mode auto-save journals to server ─────────────────────────────
+    const webJournalSaveTimerRef = useRef(null);
+    useEffect(() => {
+        if (isElectron || Object.keys(journals).length === 0) return;
+        clearTimeout(webJournalSaveTimerRef.current);
+        webJournalSaveTimerRef.current = setTimeout(() => {
+            webApi.saveJournals(journals).catch(err =>
+                console.error('Failed to save journals to server', err)
+            );
+        }, 500);
+    }, [journals, isElectron]);
 
     const [viewRange, setViewRange] = useState({ start: null, end: null });
 
@@ -657,22 +724,24 @@ function App() {
                         <Download size={13} />
                     </button>
 
-                    {/* Import */}
-                    <label
-                        className="btn btn--ghost"
-                        title={t('actions.import')}
-                        style={{ cursor: 'pointer' }}
-                        id="btn-import-label"
-                    >
-                        <Upload size={13} />
-                        <input
-                            type="file"
-                            accept=".json"
-                            style={{ display: 'none' }}
-                            onChange={handleImport}
-                            id="btn-import"
-                        />
-                    </label>
+                    {/* Import — Electron only (security: no local file upload in web) */}
+                    {isElectron && (
+                        <label
+                            className="btn btn--ghost"
+                            title={t('actions.import')}
+                            style={{ cursor: 'pointer' }}
+                            id="btn-import-label"
+                        >
+                            <Upload size={13} />
+                            <input
+                                type="file"
+                                accept=".json"
+                                style={{ display: 'none' }}
+                                onChange={handleImport}
+                                id="btn-import"
+                            />
+                        </label>
+                    )}
 
                     {/* Zoom Control */}
                     <ZoomControl />

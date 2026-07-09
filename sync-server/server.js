@@ -21,6 +21,7 @@ const path  = require('path');
 // 本服务只需监听本机端口，不再需要局域网发现。
 const PORT = parseInt(process.env.PORT || '37401', 10);
 const DATA_DIR  = process.env.DATA_DIR  || path.join(__dirname, 'data');
+const WEB_DIR   = process.env.WEB_DIR   || path.join(__dirname, 'dist-web');
 const DATA_FILE     = path.join(DATA_DIR, 'events.json');
 const JOURNALS_FILE = path.join(DATA_DIR, 'journals.json');
 const GOALS_FILE    = path.join(DATA_DIR, 'goals.json');
@@ -29,6 +30,24 @@ const LOG_FILE      = path.join(DATA_DIR, 'server.log');
 
 // 最多保留多少个备份
 const MAX_BACKUPS = 5;
+
+// ── MIME 类型映射（静态文件服务） ───────────────────────────────────────────────
+const MIME_TYPES = {
+    '.html':   'text/html; charset=utf-8',
+    '.css':    'text/css; charset=utf-8',
+    '.js':     'text/javascript; charset=utf-8',
+    '.mjs':    'text/javascript; charset=utf-8',
+    '.json':   'application/json',
+    '.svg':    'image/svg+xml',
+    '.png':    'image/png',
+    '.ico':    'image/x-icon',
+    '.woff2':  'font/woff2',
+    '.woff':   'font/woff',
+    '.ttf':    'font/ttf',
+    '.txt':    'text/plain; charset=utf-8',
+    '.xml':    'application/xml',
+    '.webmanifest': 'application/manifest+json',
+};
 
 // ── 启动前准备 ─────────────────────────────────────────────────────────────────
 if (!fs.existsSync(DATA_DIR))     fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -493,8 +512,60 @@ async function handleRequest(req, res) {
         return;
     }
 
-    // 404
-    json(res, 404, { error: 'Not found' });
+    // ── Static file serving (web app) + SPA fallback ─────────────────────────
+    // 仅处理 GET 请求；API 路由已在前面的 handler 中全部 return。
+    // 路径不包含 /tplanner/ 且不是 /health /tplanner/time 时才到这里。
+    if (method !== 'GET') {
+        json(res, 405, { error: 'Method not allowed' });
+        return;
+    }
+
+    // 规范化路径 —— 拒绝路径穿越攻击
+    const safePath = path.normalize(url.split('?')[0]).replace(/^\/+/, '');
+    if (safePath.includes('..')) {
+        res.writeHead(403);
+        res.end('Forbidden');
+        return;
+    }
+
+    const filePath = safePath ? path.join(WEB_DIR, safePath) : path.join(WEB_DIR, 'index.html');
+
+    // 检查文件是否在 WEB_DIR 内（二次防护）
+    if (!filePath.startsWith(WEB_DIR)) {
+        res.writeHead(403);
+        res.end('Forbidden');
+        return;
+    }
+
+    // 如果路径是目录或根路径，尝试 index.html
+    let finalPath = filePath;
+    try {
+        if (fs.existsSync(finalPath) && fs.statSync(finalPath).isDirectory()) {
+            finalPath = path.join(finalPath, 'index.html');
+        }
+    } catch (_) { /* fall through to 404 */ }
+
+    // 尝试读取并返回文件
+    try {
+        const ext = path.extname(finalPath).toLowerCase();
+        const mime = MIME_TYPES[ext] || 'application/octet-stream';
+        const data = fs.readFileSync(finalPath);
+        res.writeHead(200, { 'Content-Type': mime, 'Content-Length': data.length });
+        res.end(data);
+        return;
+    } catch (_) {
+        // 文件不存在 → SPA fallback: 返回 index.html
+        // 让前端路由（React Router / state-based navigation）处理路径
+    }
+
+    // SPA fallback
+    try {
+        const indexHtml = fs.readFileSync(path.join(WEB_DIR, 'index.html'));
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': indexHtml.length });
+        res.end(indexHtml);
+    } catch (_) {
+        json(res, 404, { error: 'Not found' });
+    }
 }
 
 // ── 启动服务器 ────────────────────────────────────────────────────────────────
