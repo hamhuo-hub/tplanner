@@ -116,6 +116,7 @@ fun MainScreen(
     var pendingAction by remember { mutableStateOf<DeepSeekAnalysisService.ProposedAction?>(null) }  // 待补全的部分操作
     var pendingText by remember { mutableStateOf("") }  // 原文，供 refineAction / 多轮追问用
     var qaHistory by remember { mutableStateOf("") }  // 多轮追问对话记录（供 followUp 上下文）
+    var pendingFollowUpQuestions by remember { mutableStateOf<List<String>?>(null) }  // followUp 同时返回问题和 action 时，暂存问题
     var prefillLocation by remember { mutableStateOf("") }
     // 手表打点定位（唯一真相源来自 WatchLocationStore，由蓝牙服务异步写入），
     // submit 时直接用这两个值存进 InsightStore，不再从随笔文本正则抠坐标
@@ -128,6 +129,7 @@ fun MainScreen(
             showAnxietySheet = true
             thinking = false; sheetQuestions = null; sheetAction = null
             sheetClarify = null; pendingAction = null; pendingText = ""; qaHistory = ""  // 新会话回到编辑态
+            pendingFollowUpQuestions = null
             prefillLocation = ""; watchLat = 0.0; watchLng = 0.0   // 本次会话重置，面板显示"Locating..."
 
             // 轮询等待蓝牙服务的异步定位落地（GPS 冷启可达数秒）。savedAt 需晚于
@@ -347,7 +349,8 @@ fun MainScreen(
                 }
             }
 
-            // 多轮追问：用户答完当前问题 → 基于整段对话往更深处再问，直到点 Done
+            // 多轮追问：用户答完当前问题 → 基于整段对话往更深处再问，直到点 Done。
+            // 同时 agent 可以在对话中随时识别出"要做的事"并提议插入日程。
             val answerQuestion: (String) -> Unit = { answer ->
                 val current = sheetQuestions ?: emptyList()
                 qaHistory += "AI问：${current.joinToString("；")}\n用户答：$answer\n"
@@ -356,12 +359,29 @@ fun MainScreen(
                 store.saveToday(content)
                 thinking = true
                 scope.launch {
-                    val next = deepseekService?.followUpQuestions(pendingText, qaHistory) ?: emptyList()
+                    val result = deepseekService?.followUp(pendingText, qaHistory)
+                        ?: DeepSeekAnalysisService.FollowUpResult()
                     thinking = false
-                    if (next.isNotEmpty()) {
-                        sheetQuestions = next
+
+                    // action/clarify 优先于 questions：agent 随时可以提议插入日程
+                    when {
+                        result.action != null -> {
+                            // 如果同时返回了问题，暂存起来，等 action 处理完再展示
+                            pendingFollowUpQuestions = result.questions.takeIf { it.isNotEmpty() }
+                            if (result.clarify != null) {
+                                pendingAction = result.action
+                                sheetClarify = result.clarify
+                                sheetQuestions = null
+                            } else {
+                                sheetAction = result.action
+                                sheetQuestions = null
+                            }
+                        }
+                        result.questions.isNotEmpty() -> {
+                            sheetQuestions = result.questions
+                        }
+                        // 都为空：保持当前问题，用户可继续答或点 Done
                     }
-                    // next 为空：保持当前问题，用户可继续答或点 Done
                 }
             }
 
@@ -371,10 +391,20 @@ fun MainScreen(
                 questions = sheetQuestions,
                 action = sheetAction,
                 clarify = sheetClarify,
-                onDismiss = { showAnxietySheet = false; thinking = false; sheetQuestions = null; sheetAction = null; sheetClarify = null },
+                onDismiss = { showAnxietySheet = false; thinking = false; sheetQuestions = null; sheetAction = null; sheetClarify = null; pendingFollowUpQuestions = null },
                 onSubmit = submitThought,
                 onConfirmAction = confirmAction,
-                onDeclineAction = { showAnxietySheet = false; sheetAction = null },  // 就当笔记（想法已存）
+                onDeclineAction = {
+                    // 如果 followUp 还有暂存的问题，展示它们；否则关面板
+                    val savedQuestions = pendingFollowUpQuestions
+                    pendingFollowUpQuestions = null
+                    sheetAction = null
+                    if (savedQuestions != null && savedQuestions.isNotEmpty()) {
+                        sheetQuestions = savedQuestions
+                    } else {
+                        showAnxietySheet = false
+                    }
+                },  // 就当笔记（想法已存），但有后续问题就继续
                 onAnswerClarify = answerClarify,
                 onAnswerQuestion = answerQuestion,
             )

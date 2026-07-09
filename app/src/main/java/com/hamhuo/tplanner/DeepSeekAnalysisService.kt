@@ -34,6 +34,12 @@ class DeepSeekAnalysisService(private val apiKey: String) {
         val action: ProposedAction? = null,
         val clarify: Clarify? = null,   // action 且 !=null → 先追问，答完调 refineAction
     )
+    // 多轮追问的返回值：可以同时返回追问和日程提议，agent 随时可以插入日程
+    data class FollowUpResult(
+        val questions: List<String> = emptyList(),
+        val action: ProposedAction? = null,
+        val clarify: Clarify? = null,
+    )
 
     // ── 会话记忆：同一轮"理一理"内多步共享上下文，累积 user/assistant 消息即可 ──
     private var sessionSystemPrompt: String = ""
@@ -187,22 +193,43 @@ class DeepSeekAnalysisService(private val apiKey: String) {
     }
 
     // ── 第二阶段 B：多轮追问（用户答完当前问题 → 往更深层再问） ─────
-    // 在 processThought（questions 模式）后调用，拼接了会话历史，模型知道前面问了什么。
-    suspend fun followUpQuestions(
+    // 在 processThought 后调用，拼接了会话历史，模型知道前面问了什么。
+    // 同时允许 agent 在对话中随时识别出"要做的事"并提议插入日程——
+    // 不再强制把 QA 和日程插入拆成两种互斥场景。
+    suspend fun followUp(
         originalText: String,
         qaHistory: String,
-    ): List<String> = withContext(Dispatchers.IO) {
+    ): FollowUpResult = withContext(Dispatchers.IO) {
+        val nowDt = java.time.LocalDateTime.now()
+        val zhWeek = arrayOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")[nowDt.dayOfWeek.value - 1]
+        val nowStr = "%04d-%02d-%02d %02d:%02d %s".format(
+            nowDt.year, nowDt.monthValue, nowDt.dayOfMonth, nowDt.hour, nowDt.minute, zhWeek)
         val prompt = buildString {
+            append("现在：$nowStr\n\n")
             append("用户最初写下的文字：\n\"\"\"\n$originalText\n\"\"\"\n\n")
             if (qaHistory.isNotBlank()) {
                 append("此前的对话：\n$qaHistory\n\n")
             }
-            append("你已经问过了上面这些问题并得到了用户的回答。现在请基于整段对话往更深处问 1-3 个新问题——")
-            append("扎在具体接缝上（含混的词、跳过的步骤、没说出口的前提、被当成一回事的两件事）；")
-            append("真开放不诱导；优先他一时答不上来的；保持临时不制造「想通了」的终局感。")
-            append("如果确实没有更多值得问的了，返回空数组。\n\n")
+            append("你已经问过了上面这些问题并得到了用户的回答。\n\n")
+            append("你现在有两件事可以做（可以都做，也可以只做其中一件）：\n")
+            append("1. 基于整段对话往更深处问 1-3 个新问题——扎在具体接缝上（含混的词、")
+            append("跳过的步骤、没说出口的前提、被当成一回事的两件事）；真开放不诱导；")
+            append("优先他一时答不上来的；保持临时不制造「想通了」的终局感。")
+            append("如果确实没有更多值得问的了，questions 返回空数组。\n")
+            append("2. 如果你在对话中识别出用户明确提到了一件【要做/要记住的事】——")
+            append("待办、提醒、\"记得/别忘了/提醒我/明天要\"+具体的事，在 action 字段里")
+            append("提议帮他建 task 或 reminder。带明确时间→reminder，没时间→task。\n")
+            append("reminder 必须有明确钟点；如果用户只给了日期或完全没提时间，不要在 ")
+            append("action 里猜钟点——用 clarify 字段追问并给 4 个快捷选项")
+            append("（上午9点/中午12点/下午3点/晚上8点）。纯 task 不需要 clarify。\n")
+            append("没有可识别的行动就把 action 和 clarify 都置为 null。\n\n")
             append("返回 JSON（不要 markdown）：\n")
-            append("{\"questions\": []}  或  {\"questions\": [\"问题1\", \"问题2\", \"问题3\"]}")
+            append("{\n")
+            append("  \"questions\": [\"问题1\", \"问题2\"],\n")
+            append("  \"action\": {\"type\": \"task 或 reminder\", \"title\": \"<简短标题>\", \"datetime\": \"<本地 ISO>\"},\n")
+            append("  \"clarify\": {\"q\": \"<追问钟点>\", \"options\": [\"上午9点\", \"中午12点\", \"下午3点\", \"晚上8点\"]}\n")
+            append("}\n")
+            append("如果没有 action，action 和 clarify 都置为 null。")
         }
         try {
             val json = extractJson(callDeepSeekWithHistory(prompt))
@@ -210,11 +237,29 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             json.optJSONArray("questions")?.let { arr ->
                 for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotBlank() }?.let { out += it }
             }
-            android.util.Log.d("TplannerDS", "followUpQuestions count=${out.size}")
-            out.take(3)
+            val action = json.optJSONObject("action")?.let { a ->
+                val title = a.optString("title", "").trim()
+                if (title.isBlank()) null else ProposedAction(
+                    type = if (a.optString("type", "task") == "reminder") "reminder" else "task",
+                    title = title,
+                    datetimeIso = a.optString("datetime", "").trim(),
+                )
+            }
+            val clarify = if (action != null) {
+                json.optJSONObject("clarify")?.let { c ->
+                    val q = c.optString("q", "").trim()
+                    val opts = mutableListOf<String>()
+                    c.optJSONArray("options")?.let { arr ->
+                        for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotBlank() }?.let { opts += it }
+                    }
+                    if (q.isBlank()) null else Clarify(q, opts)
+                }
+            } else null
+            android.util.Log.d("TplannerDS", "followUp q=${out.size} action=${action?.type} clarify=${clarify != null}")
+            FollowUpResult(out.take(3), action, clarify)
         } catch (e: Exception) {
-            android.util.Log.e("TplannerDS", "followUpQuestions failed: ${e.message}")
-            emptyList()
+            android.util.Log.e("TplannerDS", "followUp failed: ${e.message}")
+            FollowUpResult()
         }
     }
 
@@ -303,10 +348,11 @@ class DeepSeekAnalysisService(private val apiKey: String) {
 
         private const val SYSTEM_FOLLOWUP =
             "你在帮用户理清思路。你已经问过几轮问题、得到了用户的一些回答。" +
-            "现在基于整段对话，往更深处再追问 1-3 个真正值得他坐在那儿想的问题。" +
-            "扎在具体接缝上（含混的词、跳过的步骤、没说出口的前提、被当成一回事的两件事）；" +
-            "真开放不诱导；优先他一时答不上来的；保持临时感——这些问题不是终点。" +
+            "现在基于整段对话做两件事（可以都做，也可以只做一件）：" +
+            "1) 往更深处再追问 1-3 个问题——扎在具体接缝上，真开放不诱导；" +
             "如果确实没有更多值得问的，返回空数组。" +
+            "2) 如果对话中明确出现了【要做/要记住的事】，同时提议帮他建 task/reminder——" +
+            "这是你的 agent 能力，随时可用，不用等对话结束才提议。" +
             "永远只返回有效 JSON，不要 markdown 代码块。"
     }
 }
