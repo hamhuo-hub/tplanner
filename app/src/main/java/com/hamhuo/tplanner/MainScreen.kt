@@ -307,7 +307,7 @@ fun MainScreen(
                 val ev = TaskEvent(
                     id = UUID.randomUUID().toString(),
                     title = act.title,
-                    type = if (act.type == "reminder") "reminder" else "task",
+                    type = if (act.type == "reminder") "event" else "task",
                     start = start,
                     end = start.plusSeconds(3600),
                     completed = false,

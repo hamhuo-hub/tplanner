@@ -32,12 +32,12 @@
 
     <!-- Event types -->
     <string name="type_task">Task</string>
-    <string name="type_event">Event</string>
-    <string name="type_reminder">Reminder</string>
+    <string name="type_event">Reminder</string>
+    <string name="type_status">Status</string>
     <string name="type_generic">Item</string>
     <string name="desc_task">Create a checkable to-do task</string>
-    <string name="desc_event">Add a schedule or meeting</string>
-    <string name="desc_reminder">Send a reminder at a specific time</string>
+    <string name="desc_event">Send a reminder at a specific time</string>
+    <string name="desc_status">Mark current status or activity</string>
     <string name="change_type_title">Change Type</string>
     <string name="current_label">Current</string>
 

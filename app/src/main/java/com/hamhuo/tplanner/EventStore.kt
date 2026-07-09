@@ -14,7 +14,7 @@ data class CheckItem(val id: String, val text: String, val completed: Boolean)
 data class TaskEvent(
     val id: String,
     val title: String,
-    val type: String,          // "task" | "event" | "reminder" | "status"
+    val type: String,          // "event" | "status" | "task"
     val start: Instant,
     val end: Instant,
     val completed: Boolean,

@@ -33,12 +33,12 @@
 
     <!-- 事件类型 -->
     <string name="type_task">任务</string>
-    <string name="type_event">事件</string>
-    <string name="type_reminder">提醒</string>
+    <string name="type_event">提醒</string>
+    <string name="type_status">状态</string>
     <string name="type_generic">项目</string>
     <string name="desc_task">创建可勾选的待办任务</string>
-    <string name="desc_event">添加日程或会议安排</string>
-    <string name="desc_reminder">在指定时间发送提醒</string>
+    <string name="desc_event">在指定时间发送提醒</string>
+    <string name="desc_status">标记当前状态或动态</string>
     <string name="change_type_title">修改类型</string>
     <string name="current_label">当前</string>
 

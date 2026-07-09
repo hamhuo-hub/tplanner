@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -81,17 +82,17 @@ import java.util.UUID
 
 @Composable
 internal fun typeLabel(type: String): String = when (type) {
-    "task"     -> stringResource(R.string.type_task)
-    "event"    -> stringResource(R.string.type_event)
-    "reminder" -> stringResource(R.string.type_reminder)
-    else       -> stringResource(R.string.type_generic)
+    "task"   -> stringResource(R.string.type_task)
+    "event"  -> stringResource(R.string.type_event)
+    "status" -> stringResource(R.string.type_status)
+    else     -> stringResource(R.string.type_generic)
 }
 
 internal fun typeIcon(type: String): ImageVector = when (type) {
-    "task"     -> Icons.Outlined.CheckCircle
-    "event"    -> Icons.Outlined.CalendarMonth
-    "reminder" -> Icons.Outlined.Alarm
-    else       -> Icons.Outlined.CheckCircle
+    "task"   -> Icons.Outlined.CheckCircle
+    "event"  -> Icons.Outlined.Alarm
+    "status" -> Icons.Filled.Star
+    else     -> Icons.Outlined.CheckCircle
 }
 
 // ── 新建类型选择面板（点击任务面板 + 号后弹出） ──────────────────────────────────
@@ -128,22 +129,22 @@ fun AddEventTypeSheet(onSelect: (String) -> Unit, onDismiss: () -> Unit) {
         Spacer(Modifier.height(12.dp))
 
         AddTypeItem(
-            icon   = Icons.Outlined.CheckCircle,
-            title  = stringResource(R.string.type_task),
-            desc   = stringResource(R.string.desc_task),
-            onClick = { onSelect("task") }
-        )
-        AddTypeItem(
-            icon   = Icons.Outlined.CalendarMonth,
+            icon   = Icons.Outlined.Alarm,
             title  = stringResource(R.string.type_event),
             desc   = stringResource(R.string.desc_event),
             onClick = { onSelect("event") }
         )
         AddTypeItem(
-            icon   = Icons.Outlined.Alarm,
-            title  = stringResource(R.string.type_reminder),
-            desc   = stringResource(R.string.desc_reminder),
-            onClick = { onSelect("reminder") }
+            icon   = Icons.Filled.Star,
+            title  = stringResource(R.string.type_status),
+            desc   = stringResource(R.string.desc_status),
+            onClick = { onSelect("status") }
+        )
+        AddTypeItem(
+            icon   = Icons.Outlined.CheckCircle,
+            title  = stringResource(R.string.type_task),
+            desc   = stringResource(R.string.desc_task),
+            onClick = { onSelect("task") }
         )
     }
 }
@@ -212,7 +213,7 @@ fun TypeChangeSheet(currentType: String, onSelect: (String) -> Unit, onDismiss: 
 
         Spacer(Modifier.height(12.dp))
 
-        val types = listOf("task", "event", "reminder")
+        val types = listOf("event", "status", "task")
         types.forEach { type ->
             val isCurrent = type == currentType
             Row(
@@ -269,10 +270,10 @@ fun TypeChangeSheet(currentType: String, onSelect: (String) -> Unit, onDismiss: 
                     }
                     Text(
                         when (type) {
-                            "task" -> stringResource(R.string.desc_task)
-                            "event" -> stringResource(R.string.desc_event)
-                            "reminder" -> stringResource(R.string.desc_reminder)
-                            else -> ""
+                            "event"  -> stringResource(R.string.desc_event)
+                            "status" -> stringResource(R.string.desc_status)
+                            "task"   -> stringResource(R.string.desc_task)
+                            else     -> ""
                         },
                         color = DIM, fontSize = 13.sp
                     )
