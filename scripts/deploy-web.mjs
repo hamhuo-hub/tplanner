@@ -36,37 +36,27 @@ function run(cmd, opts = {}) {
 
 // ── 1. Build ──────────────────────────────────────────────────────────────
 console.log('=== Step 1: Build web app ===');
-if (!existsSync(join(rootDir, 'dist', 'index.html'))) {
-    console.log('dist/ not found, running vite build...');
-    run('npx vite build');
-} else {
-    console.log('dist/ already exists. Run "npm run build:web" to rebuild, or delete dist/ to force rebuild.');
-    console.log('Skipping build — using existing dist/.');
-}
+run('npx vite build');
 
 // ── 2. Deploy ─────────────────────────────────────────────────────────────
 console.log('\n=== Step 2: Deploy to Pi ===');
 
-// Clear old files on the Pi (so removed assets don't stick around)
-console.log('Clearing old web files on Pi...');
-try {
-    run(`ssh ${SSH_TARGET} "rm -rf ${WEB_DIR}/*"`);
-} catch (e) {
-    console.log('(may be first deploy — directory empty or does not exist)');
-}
+// scp to a temp location in hamhuo's home (avoids /root permission issues)
+const TMP_DIR = '/tmp/tplanner-deploy';
+console.log('Uploading files...');
+run(`ssh ${SSH_TARGET} "rm -rf ${TMP_DIR} && mkdir -p ${TMP_DIR}"`);
+run(`scp -r dist/* ${SSH_TARGET}:${TMP_DIR}/`);
 
-// Ensure dist-web/ exists on the Pi
-run(`ssh ${SSH_TARGET} "mkdir -p ${WEB_DIR}"`);
-
-// Copy new web files via scp
-run(`scp -r dist/* ${SSH_TARGET}:${WEB_DIR}/`);
-
-// Also deploy updated server.js (static file serving)
+// Also copy updated server.js
 const serverJs = join(rootDir, 'sync-server', 'server.js');
 if (existsSync(serverJs)) {
-    console.log('Deploying updated server.js...');
-    run(`scp "${serverJs}" ${SSH_TARGET}:${PI_PATH}/server.js`);
+    console.log('Including updated server.js...');
+    run(`scp "${serverJs}" ${SSH_TARGET}:${TMP_DIR}/server.js`);
 }
+
+// Move from temp to /root/tplanner-sync/ with sudo
+console.log('Installing to /root/tplanner-sync/...');
+run(`ssh ${SSH_TARGET} "sudo rm -rf ${WEB_DIR}/* && sudo mkdir -p ${WEB_DIR} && sudo cp -r ${TMP_DIR}/* ${WEB_DIR}/ && sudo cp ${TMP_DIR}/server.js ${PI_PATH}/server.js 2>/dev/null; rm -rf ${TMP_DIR}"`);
 
 // ── 3. Restart service ────────────────────────────────────────────────────
 console.log('\n=== Step 3: Restart sync server ===');
