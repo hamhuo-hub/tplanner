@@ -500,11 +500,23 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         TimeChip(
                             label = stringResource(R.string.label_start), value = start.atZone(zone).format(dateFmt),
-                            onClick = { pickDateTime(start) { start = it } }
+                            onClick = { pickDateTime(start) { newStart ->
+                                start = newStart
+                                // 开始时间不能晚于结束时间，否则自动把结束时间往后推 1 小时
+                                if (!newStart.isBefore(end)) {
+                                    end = newStart.plusSeconds(3600)
+                                }
+                            } }
                         )
                         TimeChip(
                             label = stringResource(R.string.label_end), value = end.atZone(zone).format(dateFmt),
-                            onClick = { pickDateTime(end) { end = it } }
+                            onClick = { pickDateTime(end) { newEnd ->
+                                end = newEnd
+                                // 结束时间不能早于开始时间，否则自动把开始时间往前推 1 小时
+                                if (!newEnd.isAfter(start)) {
+                                    start = newEnd.minusSeconds(3600)
+                                }
+                            } }
                         )
                     }
 
