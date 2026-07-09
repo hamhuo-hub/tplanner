@@ -246,13 +246,12 @@ fun MainScreen(
     // ── Main layout ──────────────────────────────────────────────────────
     Box(Modifier.fillMaxSize().background(BG).windowInsetsPadding(WindowInsets.systemBars)) {
         if (showAnxietySheet) {
-            // "理一理"全屏面板：默认只把想法修好语法记成随笔；仅当用户在文字里
-            // 明确求助时，AI 才反过来提问（不给答案/不诊断）。
+            // "理一理"全屏面板：只记录用户输入，不持久化 LLM 输出。
+            // 文本原样落随笔和 Insight，不做语法修正替换——那是 LLM 的输出。
             val submitThought: (String) -> Unit = { text ->
                 val now = System.currentTimeMillis()
                 val loc = prefillLocation.ifBlank { "Unknown" }
                 val stamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date(now))
-                // 想法本身先原样落随笔（保证记录必存），拿到结果后再替换成修好语法的版本
                 val entryLine = "\n\n---\n\n### $stamp · $loc\n\n$text"
                 content = content + entryLine
                 store.saveToday(content)
@@ -266,20 +265,14 @@ fun MainScreen(
                     val res = deepseekService?.processThought(text, stamp, loc)
                         ?: DeepSeekAnalysisService.ThoughtResult("record", text, emptyList())
 
-                    // 语法修正：把随笔里的原文替换成修好的版本（record 是默认行为；
-                    // 其它模式也顺带把错别字理一下）
-                    if (res.text.isNotBlank() && res.text != text) {
-                        store.replaceInToday(text, res.text)
-                        content = store.getToday()
-                    }
-
+                    // 只记录用户原文到 Insight（与 journal 一致），不记录 LLM 修正后的版本
                     insightStore.addEvent(StructuredEntry(
                         id = UUID.randomUUID().toString(),
                         timestamp = now,
-                        text = res.text,
+                        text = text,
                         location = loc,
                         lat = watchLat, lng = watchLng,
-                        questions = emptyList(),  // AI questions are not recorded
+                        questions = emptyList(),  // AI questions are not user input
                     ))
 
                     when {
@@ -334,9 +327,20 @@ fun MainScreen(
             val answerClarify: (String) -> Unit = { answer ->
                 val partial = pendingAction
                 sheetClarify = null
-                // Record user's answer (clicked option or typed) to journal
+                // Record user's answer (clicked option or typed) to journal and Insight
+                val now = System.currentTimeMillis()
                 content = store.getToday() + "\n> 你选了：$answer"
                 store.saveToday(content)
+                val loc = prefillLocation.ifBlank { "Unknown" }
+                insightStore.addEvent(StructuredEntry(
+                    id = UUID.randomUUID().toString(),
+                    timestamp = now,
+                    text = answer,
+                    location = loc,
+                    lat = watchLat, lng = watchLng,
+                    questions = emptyList(),
+                ))
+                insightRefreshTrigger++
                 if (partial == null) { showAnxietySheet = false }
                 else {
                     thinking = true
@@ -353,10 +357,22 @@ fun MainScreen(
             // 同时 agent 可以在对话中随时识别出"要做的事"并提议插入日程。
             val answerQuestion: (String) -> Unit = { answer ->
                 val current = sheetQuestions ?: emptyList()
+                val now = System.currentTimeMillis()
                 qaHistory += "AI问：${current.joinToString("；")}\n用户答：$answer\n"
                 // 回答追加进随笔，保留思路
                 content = store.getToday() + "\n> 你：$answer"
                 store.saveToday(content)
+                // 同时记录用户回答到 Insight（与 journal 一致）
+                val loc = prefillLocation.ifBlank { "Unknown" }
+                insightStore.addEvent(StructuredEntry(
+                    id = UUID.randomUUID().toString(),
+                    timestamp = now,
+                    text = answer,
+                    location = loc,
+                    lat = watchLat, lng = watchLng,
+                    questions = emptyList(),
+                ))
+                insightRefreshTrigger++
                 thinking = true
                 scope.launch {
                     val result = deepseekService?.followUp(pendingText, qaHistory)
