@@ -176,14 +176,25 @@ function App() {
     const visibleGoals = useMemo(() => goals.filter(g => !g.deletedAt), [goals]);
 
     const handleAddGoal = async ({ q, r, s }) => {
-        if (!db) return;
+        if (!db) {
+            const goal = makeGoal({ order: visibleGoals.length, q, r, s });
+            setGoals(prev => [...prev, goal]);
+            setSelectedGoalId(goal.id);
+            return;
+        }
         const goal = makeGoal({ order: visibleGoals.length, q, r, s });
         await db.goals.insert(goal);
         setSelectedGoalId(goal.id);
     };
 
     const handleUpdateGoal = async (id, patch) => {
-        if (!db) return;
+        if (!db) {
+            const now = clockNow();
+            setGoals(prev => prev.map(g =>
+                g.id === id ? { ...g, ...patch, version: (g.version || 0) + 1, updatedAt: now } : g
+            ));
+            return;
+        }
         try {
             const doc = await db.goals.findOne(id).exec();
             if (doc) {
@@ -196,7 +207,14 @@ function App() {
     };
 
     const handleDeleteGoal = async (id) => {
-        if (!db) return;
+        if (!db) {
+            const now = clockNow();
+            setGoals(prev => prev.map(g =>
+                g.id === id ? { ...g, version: (g.version || 0) + 1, deletedAt: now, updatedAt: now } : g
+            ));
+            if (selectedGoalId === id) setSelectedGoalId(null);
+            return;
+        }
         try {
             const doc = await db.goals.findOne(id).exec();
             if (doc) {
@@ -426,7 +444,14 @@ function App() {
     };
 
     const handleToggleTaskComplete = async (eventId, completedStatus) => {
-        if (!db) return;
+        if (!db) {
+            // Web mode: update state directly (autosave effect will PUT to server)
+            const now = clockNow();
+            setEvents(prev => prev.map(e =>
+                e.id === eventId ? { ...e, completed: completedStatus, version: (e.version || 0) + 1, updatedAt: now } : e
+            ));
+            return;
+        }
         try {
             const doc = await db.events.findOne(eventId).exec();
             if (doc) {
@@ -439,7 +464,32 @@ function App() {
     };
 
     const handleSaveEvent = async (eventData, config = { scope: 'single' }) => {
-        if (!db) return;
+        if (!db) {
+            // Web mode: update state directly (autosave effect will PUT to server)
+            const updates = Array.isArray(eventData) ? eventData : [eventData];
+            const now = clockNow();
+            setEvents(prev => {
+                const map = new Map(prev.map(e => [e.id, e]));
+                for (const u of updates) {
+                    map.set(u.id, {
+                        ...u,
+                        start: u.start instanceof Date ? u.start.toISOString() : u.start,
+                        end: u.end instanceof Date ? u.end.toISOString() : u.end,
+                        version: (u.version || 0) + 1,
+                        updatedAt: now,
+                    });
+                }
+                return Array.from(map.values());
+            });
+            setEditingEvent(null);
+            setIsAddModalOpen(false);
+            if (!Array.isArray(eventData) && selectedEvent && selectedEvent.id === eventData.id) {
+                setSelectedEvent(eventData);
+            } else if (config.scope !== 'single' && selectedEvent) {
+                setSelectedEvent(null);
+            }
+            return;
+        }
         const updates = Array.isArray(eventData) ? eventData : [eventData];
         try {
             if (config.scope === 'all' && config.originalGroupId) {
@@ -480,7 +530,15 @@ function App() {
     };
 
     const handleDeleteEvent = async (id, scope = 'single', event = null) => {
-        if (!db) return;
+        if (!db) {
+            // Web mode: tombstone directly in state (autosave will PUT to server)
+            const now = clockNow();
+            setEvents(prev => prev.map(e =>
+                e.id === id ? { ...e, version: (e.version || 0) + 1, deletedAt: now, updatedAt: now } : e
+            ));
+            setSelectedEvent(null);
+            return;
+        }
         try {
             const now = clockNow();
             if (scope === 'all' && event?.groupId) {
@@ -514,7 +572,17 @@ function App() {
     // Temporary patch — recurring instances aren't synced as a group yet,
     // so a multi-select box lets users clear them all without one-by-one deletes.
     const handleBatchDelete = async (ids) => {
-        if (!db || !ids?.length) return;
+        if (!ids?.length) return;
+        if (!db) {
+            // Web mode: tombstone directly in state
+            const now = clockNow();
+            const idSet = new Set(ids);
+            setEvents(prev => prev.map(e =>
+                idSet.has(e.id) ? { ...e, version: (e.version || 0) + 1, deletedAt: now, updatedAt: now } : e
+            ));
+            setSelectedIds(new Set());
+            return;
+        }
         try {
             const now = clockNow();
             const docs = await db.events.findByIds(ids).exec();
@@ -536,22 +604,28 @@ function App() {
 
     // Paste clipboard event at clicked time
     const pasteClipboard = async (start) => {
-        if (!db || !clipboard) return;
+        if (!clipboard) return;
         const duration = clipboard.end - clipboard.start;
+        const copy = {
+            ...clipboard,
+            id: crypto.randomUUID(),
+            title: clipboard.title + t('event.copySuffix'),
+            groupId: crypto.randomUUID(),
+            start: new Date(start).toISOString(),
+            end:   new Date(start.getTime() + duration).toISOString(),
+            completed: false,
+            version: 1,
+            deletedAt: 0,
+            updatedAt: clockNow(),
+            checklist: (clipboard.checklist || []).map(i => ({ ...i, id: crypto.randomUUID(), completed: false })),
+        };
+        if (!db) {
+            // Web mode: add directly to state
+            setEvents(prev => [...prev, copy]);
+            setClipboard(null);
+            return;
+        }
         try {
-            const copy = {
-                ...clipboard,
-                id: crypto.randomUUID(),
-                title: clipboard.title + t('event.copySuffix'),
-                groupId: crypto.randomUUID(),
-                start: new Date(start).toISOString(),
-                end:   new Date(start.getTime() + duration).toISOString(),
-                completed: false,
-                version: 1,
-                deletedAt: 0,
-                updatedAt: clockNow(),
-                checklist: (clipboard.checklist || []).map(i => ({ ...i, id: crypto.randomUUID(), completed: false })),
-            };
             await db.events.insert(copy);
         } catch (err) {
             console.error('Paste failed', err);
