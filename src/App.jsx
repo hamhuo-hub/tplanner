@@ -928,7 +928,8 @@ function App() {
                 onSave={handleSaveEvent}
             />
 
-            <DebugPanel />
+            {/* Debug panel — Electron only; browser has F12 */}
+            {isElectron && <DebugPanel />}
 
             {/* Paste mode toast */}
             {clipboard && (
