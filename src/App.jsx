@@ -471,10 +471,11 @@ function App() {
             setEvents(prev => {
                 const map = new Map(prev.map(e => [e.id, e]));
                 for (const u of updates) {
+                    // Keep Date objects in state — saveEvents handles serialization
                     map.set(u.id, {
                         ...u,
-                        start: u.start instanceof Date ? u.start.toISOString() : u.start,
-                        end: u.end instanceof Date ? u.end.toISOString() : u.end,
+                        start: u.start instanceof Date ? u.start : new Date(u.start),
+                        end: u.end instanceof Date ? u.end : new Date(u.end),
                         version: (u.version || 0) + 1,
                         updatedAt: now,
                     });
