@@ -151,7 +151,7 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
     return (
         <div id={`row-${format(date, 'yyyy-MM-dd')}`}
              className={`event-row ${isWeekend ? 'event-row--weekend' : 'event-row--weekday'}`}
-             style={{ minHeight: rowHeightPx }}
+             style={{ minHeight: rowHeightPx, position: 'relative', zIndex: journalOpen ? 50 : 'auto' }}
         >
             {/* Date Column */}
             <div
