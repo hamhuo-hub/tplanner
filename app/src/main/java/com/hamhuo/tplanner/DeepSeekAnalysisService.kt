@@ -2,319 +2,415 @@ package com.hamhuo.tplanner
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.time.LocalDateTime
 
-// 手机直连 DeepSeek API（deepseek-chat），不走树莓派。
-//
-// 产品定位：帮用户把散乱的思路理清。核心不是"给答案/做分析"，而是【反过来
-// 提问】——用户写下凌乱、片段、可能表述不准的想法，AI 只提问，帮他定位自己
-// 卡在哪儿。
-//
-// 多轮会话：
-//   processThought → refineAction（clarify 补全）或 followUpQuestions（多轮追问）
-//   同一会话内各阶段共享上下文，后续调用会拼接之前的消息历史。
+/**
+ * DeepSeek-backed QA agent.
+ *
+ * Schedule creation uses the provider's native Tool Calls envelope, while the
+ * tool definition, validation, execution, confirmation and result contract all
+ * remain owned by tPlanner. The model can only propose a create_schedule call;
+ * Android decides whether and when to execute it.
+ */
 class DeepSeekAnalysisService(private val apiKey: String) {
 
-    // 一次处理，分四种场景：
-    //   record    —— 默认。只修错别字/语法，当笔记记下（不提问、不分析）。
-    //   questions —— 文字里带问句/困惑就做场景判断，反过来提问帮他定位困惑。
-    //   action    —— 文字明显是"要做/要记住的事"（待办/提醒），提议帮他建一个
-    //                task/reminder。带明确时间→reminder，无时间的待办→task。
-    // 无论哪种，最终有副作用的动作（建日程）都要用户在界面上确认后才执行。
-    data class ProposedAction(val type: String, val title: String, val datetimeIso: String)
-    // 缺关键参数时的一条澄清追问（含快捷选项）；agent 先问、答完再补全操作。
+    data class ProposedAction(
+        val toolCallId: String,
+        val type: String,
+        val title: String,
+        val startIso: String,
+        val endIso: String,
+        val note: String,
+        val colorId: Int,
+        val checklist: List<String>,
+    )
+
     data class Clarify(val q: String, val options: List<String>)
+
     data class ThoughtResult(
         val mode: String,
         val text: String,
         val questions: List<String>,
         val action: ProposedAction? = null,
-        val clarify: Clarify? = null,   // action 且 !=null → 先追问，答完调 refineAction
+        val clarify: Clarify? = null,
     )
-    // 多轮追问的返回值：可以同时返回追问和日程提议，agent 随时可以插入日程
+
     data class FollowUpResult(
         val questions: List<String> = emptyList(),
         val action: ProposedAction? = null,
         val clarify: Clarify? = null,
     )
 
-    // ── 会话记忆：同一轮"理一理"内多步共享上下文，累积 user/assistant 消息即可 ──
+    private data class ToolInvocation(
+        val id: String,
+        val name: String,
+        val arguments: String,
+    )
+
+    private data class ModelTurn(
+        val content: String,
+        val toolCalls: List<ToolInvocation>,
+    )
+
+    private data class ParsedContent(
+        val text: String,
+        val questions: List<String>,
+        val clarify: Clarify?,
+    )
+
+    private data class ParsedTool(
+        val action: ProposedAction? = null,
+        val clarify: Clarify? = null,
+    )
+
     private var sessionSystemPrompt: String = ""
-    private val sessionMessages = mutableListOf<JSONObject>()  // user / assistant 交替
+    private val sessionMessages = mutableListOf<JSONObject>()
 
     private fun resetSession(systemPrompt: String) {
         sessionSystemPrompt = systemPrompt
         sessionMessages.clear()
     }
 
-    private fun addUserTurn(content: String) {
-        sessionMessages.add(JSONObject().apply {
-            put("role", "user"); put("content", content)
-        })
-    }
-
-    private fun addAssistantTurn(content: String) {
-        sessionMessages.add(JSONObject().apply {
-            put("role", "assistant"); put("content", content)
-        })
-    }
-
-    // ── 第一阶段：分析用户想法 → record / questions / action ──────────
     suspend fun processThought(
         text: String,
         timestamp: String,
         location: String,
     ): ThoughtResult = withContext(Dispatchers.IO) {
-        // 新会话开始：清空历史，换上对应的 system prompt
-        resetSession(SYSTEM_THOUGHT)
-
-        // 相对时间（明天/下周一/早上…）需要一个"现在"作参照才能解析成绝对时间
-        val nowDt = java.time.LocalDateTime.now()
-        val zhWeek = arrayOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")[nowDt.dayOfWeek.value - 1]
-        val nowStr = "%04d-%02d-%02d %02d:%02d %s".format(
-            nowDt.year, nowDt.monthValue, nowDt.dayOfMonth, nowDt.hour, nowDt.minute, zhWeek)
-
+        resetSession(SYSTEM_AGENT)
         val prompt = buildString {
-            append("现在：$nowStr\n地点：$location\n")
-            append("用户写下的文字（原样，可能有错别字/语病）：\n\"\"\"\n")
-            append(text)
-            append("\n\"\"\"\n\n")
-            append("返回 JSON（不要 markdown 代码块）：\n")
-            append("{\n")
-            append("  \"mode\": \"record 或 questions 或 action\",\n")
-            append("  \"text\": \"<修正错别字和语法后的文字，保持原意原语气，绝不改写、扩写、发挥；没错就原样返回>\",\n")
-            append("  \"questions\": [],\n")
-            append("  \"action\": {\"type\": \"task 或 reminder\", \"title\": \"<简短标题，动宾短语>\", \"datetime\": \"<本地时间 ISO；已知日期就填日期部分、钟点未定填 T00:00:00；纯 task 无时间填空>\"},\n")
-            append("  \"clarify\": {\"q\": \"<追问，如：明天几点提醒你？>\", \"options\": [\"上午9点\", \"中午12点\", \"下午3点\", \"晚上8点\"]}\n")
-            append("}\n\n")
-            append("mode 判定：\n")
-            append("- action：文字明显是【一件要做/要记住的事】——待办、提醒、\"记得/别忘了/")
-            append("提醒我/明天要\"+一件具体的事。带明确时间点→reminder，没时间的待办→task。\n")
-            append("- questions：文字里带【问句/困惑】——有问号，或\"要不要 / 该不该 / 怎么办 / ")
-            append("为什么 / 是不是 / 能不能 / 值不值\"这类疑问，或明确求助。检测到问句就进 questions ")
-            append("做场景判断（不必等他明说\"帮我理理\"）。\n")
-            append("- record：陈述性的想法——musing、观察、感受、片段、一般笔记，且不含问句。\n")
-            append("record/questions 模式：action 与 clarify 都置为 null。\n")
-            append("【clarify 追问规则】reminder（定时提醒）必须有明确钟点。如果用户只给了日期")
-            append("（\"明天\"\"下周一\"\"后天\"）或根本没提时间，【绝对不要自己猜钟点】，而是在 clarify 里")
-            append("问\"几点\"并给 4 个快捷选项（上午9点/中午12点/下午3点/晚上8点）；datetime 先只填")
-            append("日期部分。只有用户明确说了 早上(→08:00)/中午(→12:00)/下午(→14:00)/晚上(→20:00)/")
-            append("具体几点，才直接用、clarify 置 null。纯 task（无时间意味的待办）clarify 置 null。\n")
-            append("其余相对时间按\"现在\"解析成绝对 ISO。\n")
-            append("questions 模式：先判断这个问句值不值得反问。若只是简单事实问、随口一问、")
-            append("信息已足够、没什么可深挖的——questions 返回【空数组】，退回记录，不打扰。\n")
-            append("值得的话给 1-3 个问题：只提问不给答案；扎在具体接缝上（含混的词、")
-            append("跳过的步骤、没说出口的前提、被当成一回事的两件事）；真开放不诱导；优先他一时")
-            append("答不上来的；保持临时不制造\"想通了\"的终局感；卡点关乎他自己时转成他能自己")
-            append("去试去验证的问题，别剖析他是什么样的人。")
+            append("现在：${nowDescription()}\n地点：$location\n记录时间：$timestamp\n")
+            append("用户写下的文字：\n\"\"\"\n$text\n\"\"\"\n\n")
+            append(RESPONSE_RULES)
         }
         try {
-            val json = extractJson(callDeepSeekWithHistory(prompt))
-            val rawMode = json.optString("mode", "record")
-            val cleaned = json.optString("text", text).ifBlank { text }
-
-            val qs = if (rawMode == "questions") {
-                val out = mutableListOf<String>()
-                json.optJSONArray("questions")?.let { arr ->
-                    for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotBlank() }?.let { out += it }
-                }
-                out.take(3)
-            } else emptyList()
-
-            val action = if (rawMode == "action") {
-                json.optJSONObject("action")?.let { a ->
-                    val title = a.optString("title", "").trim()
-                    if (title.isBlank()) null else ProposedAction(
-                        type = if (a.optString("type", "task") == "reminder") "reminder" else "task",
-                        title = title,
-                        datetimeIso = a.optString("datetime", "").trim(),
-                    )
-                }
-            } else null
-
-            val clarify = if (rawMode == "action") {
-                json.optJSONObject("clarify")?.let { c ->
-                    val q = c.optString("q", "").trim()
-                    val opts = mutableListOf<String>()
-                    c.optJSONArray("options")?.let { arr ->
-                        for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotBlank() }?.let { opts += it }
-                    }
-                    if (q.isBlank()) null else Clarify(q, opts)
-                }
-            } else null
-
-            // 归一化：mode 与产物一致，缺产物则回退 record
-            val mode = when {
-                rawMode == "action" && action != null -> "action"
-                rawMode == "questions" && qs.isNotEmpty() -> "questions"
-                else -> "record"
-            }
-            android.util.Log.d("TplannerDS", "processThought mode=$mode q=${qs.size} action=${action?.type} clarify=${clarify != null}")
-            ThoughtResult(mode, cleaned, qs, action, if (mode == "action") clarify else null)
+            toThoughtResult(callDeepSeekWithHistory(prompt), text)
         } catch (e: Exception) {
-            // 网络/超时/限流：退化为"原样记录"，绝不打断记录本身
-            android.util.Log.e("TplannerDS", "processThought failed: ${e.message}")
-            ThoughtResult("record", text, emptyList())
+            android.util.Log.e(TAG, "processThought failed: ${e.message}")
+            ThoughtResult("questions", text, FALLBACK_QUESTIONS)
         }
     }
 
-    // ── 第二阶段 A：补全澄清追问后的日程参数 ─────────────────────────
-    // 在 processThought 后调用，拼接了之前的会话历史，模型能引用前面的分析结果。
+    /** Continue collecting schedule fields after a clarify question. */
     suspend fun refineAction(
-        text: String,
-        action: ProposedAction,
+        originalText: String,
         answer: String,
-    ): ProposedAction = withContext(Dispatchers.IO) {
-        val nowDt = java.time.LocalDateTime.now()
-        val zhWeek = arrayOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")[nowDt.dayOfWeek.value - 1]
-        val nowStr = "%04d-%02d-%02d %02d:%02d %s".format(
-            nowDt.year, nowDt.monthValue, nowDt.dayOfMonth, nowDt.hour, nowDt.minute, zhWeek)
+    ): ThoughtResult = withContext(Dispatchers.IO) {
         val prompt = buildString {
-            append("现在：$nowStr\n原文：$text\n")
-            append("已确定的部分操作：type=${action.type}, title=${action.title}, datetime=${action.datetimeIso.ifBlank { "(未定)" }}\n")
-            append("用户对澄清追问的回答：$answer\n\n")
-            append("把回答里的钟点并进已知日期，算成绝对本地时间。返回 JSON（不要 markdown）：\n")
-            append("{\"type\": \"${action.type}\", \"title\": \"${action.title}\", \"datetime\": \"<本地 ISO，如 2026-07-07T15:00:00>\"}")
+            append("现在：${nowDescription()}\n")
+            append("最初文字：$originalText\n")
+            append("用户对日程字段追问的回答：$answer\n\n")
+            append("合并这次回答与会话中已经确认的字段。仍有未询问或未确认的可填写项时，")
+            append("继续通过 clarify 一次列出全部缺失项；禁止猜值。全部字段明确后才调用 create_schedule。\n")
+            append(RESPONSE_RULES)
         }
         try {
-            val j = extractJson(callDeepSeekWithHistory(prompt))
-            ProposedAction(
-                type = if (j.optString("type", action.type) == "reminder") "reminder" else "task",
-                title = j.optString("title", action.title).ifBlank { action.title },
-                datetimeIso = j.optString("datetime", action.datetimeIso).trim(),
-            )
+            toThoughtResult(callDeepSeekWithHistory(prompt), originalText)
         } catch (e: Exception) {
-            android.util.Log.e("TplannerDS", "refineAction failed: ${e.message}")
-            action
+            android.util.Log.e(TAG, "refineAction failed: ${e.message}")
+            ThoughtResult(
+                mode = "questions",
+                text = originalText,
+                questions = FALLBACK_QUESTIONS,
+                clarify = Clarify("刚才没能处理这些日程信息，请再补充一次。", emptyList()),
+            )
         }
     }
 
-    // ── 第二阶段 B：多轮追问（用户答完当前问题 → 往更深层再问） ─────
-    // 在 processThought 后调用，拼接了会话历史，模型知道前面问了什么。
-    // 同时允许 agent 在对话中随时识别出"要做的事"并提议插入日程——
-    // 不再强制把 QA 和日程插入拆成两种互斥场景。
     suspend fun followUp(
         originalText: String,
         qaHistory: String,
     ): FollowUpResult = withContext(Dispatchers.IO) {
-        val nowDt = java.time.LocalDateTime.now()
-        val zhWeek = arrayOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")[nowDt.dayOfWeek.value - 1]
-        val nowStr = "%04d-%02d-%02d %02d:%02d %s".format(
-            nowDt.year, nowDt.monthValue, nowDt.dayOfMonth, nowDt.hour, nowDt.minute, zhWeek)
         val prompt = buildString {
-            append("现在：$nowStr\n\n")
+            append("现在：${nowDescription()}\n\n")
             append("用户最初写下的文字：\n\"\"\"\n$originalText\n\"\"\"\n\n")
-            if (qaHistory.isNotBlank()) {
-                append("此前的对话：\n$qaHistory\n\n")
-            }
-            append("你已经问过了上面这些问题并得到了用户的回答。\n\n")
-            append("你现在有两件事可以做（可以都做，也可以只做其中一件）：\n")
-            append("1. 基于整段对话往更深处问 1-3 个新问题——扎在具体接缝上（含混的词、")
-            append("跳过的步骤、没说出口的前提、被当成一回事的两件事）；真开放不诱导；")
-            append("优先他一时答不上来的；保持临时不制造「想通了」的终局感。")
-            append("如果确实没有更多值得问的了，questions 返回空数组。\n")
-            append("2. 如果你在对话中识别出用户明确提到了一件【要做/要记住的事】——")
-            append("待办、提醒、\"记得/别忘了/提醒我/明天要\"+具体的事，在 action 字段里")
-            append("提议帮他建 task 或 reminder。带明确时间→reminder，没时间→task。\n")
-            append("reminder 必须有明确钟点；如果用户只给了日期或完全没提时间，不要在 ")
-            append("action 里猜钟点——用 clarify 字段追问并给 4 个快捷选项")
-            append("（上午9点/中午12点/下午3点/晚上8点）。纯 task 不需要 clarify。\n")
-            append("没有可识别的行动就把 action 和 clarify 都置为 null。\n\n")
-            append("返回 JSON（不要 markdown）：\n")
-            append("{\n")
-            append("  \"questions\": [\"问题1\", \"问题2\"],\n")
-            append("  \"action\": {\"type\": \"task 或 reminder\", \"title\": \"<简短标题>\", \"datetime\": \"<本地 ISO>\"},\n")
-            append("  \"clarify\": {\"q\": \"<追问钟点>\", \"options\": [\"上午9点\", \"中午12点\", \"下午3点\", \"晚上8点\"]}\n")
-            append("}\n")
-            append("如果没有 action，action 和 clarify 都置为 null。")
+            if (qaHistory.isNotBlank()) append("此前 QA：\n$qaHistory\n\n")
+            append("基于整段对话继续提出 1-3 个不重复的新问题。若对话里出现明确的日程意图，")
+            append("按规则收集全部字段；字段齐全时调用 create_schedule。\n")
+            append(RESPONSE_RULES)
         }
         try {
-            val json = extractJson(callDeepSeekWithHistory(prompt))
-            val out = mutableListOf<String>()
-            json.optJSONArray("questions")?.let { arr ->
-                for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotBlank() }?.let { out += it }
-            }
-            val action = json.optJSONObject("action")?.let { a ->
-                val title = a.optString("title", "").trim()
-                if (title.isBlank()) null else ProposedAction(
-                    type = if (a.optString("type", "task") == "reminder") "reminder" else "task",
-                    title = title,
-                    datetimeIso = a.optString("datetime", "").trim(),
-                )
-            }
-            val clarify = if (action != null) {
-                json.optJSONObject("clarify")?.let { c ->
-                    val q = c.optString("q", "").trim()
-                    val opts = mutableListOf<String>()
-                    c.optJSONArray("options")?.let { arr ->
-                        for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotBlank() }?.let { opts += it }
-                    }
-                    if (q.isBlank()) null else Clarify(q, opts)
-                }
-            } else null
-            android.util.Log.d("TplannerDS", "followUp q=${out.size} action=${action?.type} clarify=${clarify != null}")
-            FollowUpResult(out.take(3), action, clarify)
+            val result = toThoughtResult(callDeepSeekWithHistory(prompt), originalText)
+            FollowUpResult(result.questions, result.action, result.clarify)
         } catch (e: Exception) {
-            android.util.Log.e("TplannerDS", "followUp failed: ${e.message}")
-            FollowUpResult()
+            android.util.Log.e(TAG, "followUp failed: ${e.message}")
+            FollowUpResult(FALLBACK_QUESTIONS)
         }
     }
 
-    // ── 内部 ──────────────────────────────────────────────────────────────
+    /**
+     * Append the application-owned result for a model tool call. It will be
+     * included, with the matching tool_call_id, on the next QA request.
+     */
+    @Synchronized
+    fun submitToolResult(
+        toolCallId: String,
+        status: String,
+        scheduleId: String? = null,
+        message: String,
+    ) {
+        val content = JSONObject().apply {
+            put("status", status)
+            scheduleId?.let { put("schedule_id", it) }
+            put("message", message)
+        }.toString()
+        sessionMessages.add(JSONObject().apply {
+            put("role", "tool")
+            put("tool_call_id", toolCallId)
+            put("content", content)
+        })
+    }
 
-    // 多轮感知的 API 调用：把 sessionMessages（历史 user/assistant 交替）
-    // 拼到当前 user message 前面一起发送。收到响应后把本轮 user+assistant
-    // 追加到 sessionMessages，供后续调用使用。
-    private fun callDeepSeekWithHistory(currentUserMessage: String): String {
+    private fun toThoughtResult(turn: ModelTurn, fallbackText: String): ThoughtResult {
+        val content = parseContent(turn.content, fallbackText)
+        val tool = parseScheduleTool(turn.toolCalls.firstOrNull())
+        // The current UI confirms one schedule at a time. Always answer every
+        // extra tool_call_id so the next Chat Completions request remains valid.
+        turn.toolCalls.drop(1).forEach { extra ->
+            submitToolResult(
+                toolCallId = extra.id,
+                status = "failed",
+                message = "一次只能创建一条日程，请逐条确认",
+            )
+        }
+        val questions = content.questions.ifEmpty { FALLBACK_QUESTIONS }
+        val clarify = tool.clarify ?: content.clarify
+        val mode = when {
+            tool.action != null -> "action"
+            clarify != null -> "questions"
+            else -> "questions"
+        }
+        android.util.Log.d(
+            TAG,
+            "turn mode=$mode q=${questions.size} tool=${tool.action != null} clarify=${clarify != null}",
+        )
+        return ThoughtResult(mode, content.text, questions, tool.action, clarify)
+    }
+
+    private fun parseContent(raw: String, fallbackText: String): ParsedContent {
+        if (raw.isBlank()) return ParsedContent(fallbackText, FALLBACK_QUESTIONS, null)
+        return try {
+            val json = extractJson(raw)
+            val questions = mutableListOf<String>()
+            json.optJSONArray("questions")?.let { array ->
+                for (i in 0 until array.length()) {
+                    array.optString(i).trim().takeIf { it.isNotBlank() }?.let { questions += it }
+                }
+            }
+            val clarify = json.optJSONObject("clarify")?.let { obj ->
+                val q = obj.optString("q").trim()
+                val options = mutableListOf<String>()
+                obj.optJSONArray("options")?.let { array ->
+                    for (i in 0 until array.length()) {
+                        array.optString(i).trim().takeIf { it.isNotBlank() }?.let { options += it }
+                    }
+                }
+                q.takeIf { it.isNotBlank() }?.let { Clarify(it, options.take(6)) }
+            }
+            ParsedContent(
+                text = json.optString("text", fallbackText).ifBlank { fallbackText },
+                questions = questions.take(3),
+                clarify = clarify,
+            )
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "assistant content was not valid JSON: ${e.message}")
+            ParsedContent(fallbackText, FALLBACK_QUESTIONS, null)
+        }
+    }
+
+    private fun parseScheduleTool(call: ToolInvocation?): ParsedTool {
+        if (call == null) return ParsedTool()
+        if (call.name != CREATE_SCHEDULE_TOOL) {
+            submitToolResult(call.id, "failed", message = "未知工具：${call.name}")
+            return ParsedTool(
+                clarify = Clarify("这个操作暂时不支持。你希望我继续帮你整理哪一部分？", emptyList()),
+            )
+        }
+
+        return try {
+            val args = JSONObject(call.arguments)
+            val errors = mutableListOf<String>()
+            val type = args.optString("type").trim()
+            val title = args.optString("title").trim()
+            val startIso = args.optString("start_at").trim()
+            val endIso = args.optString("end_at").trim()
+            val note = args.optString("note", "")
+            val colorId = args.optInt("color_id", -1)
+            val checklist = mutableListOf<String>()
+            args.optJSONArray("checklist")?.let { array ->
+                for (i in 0 until array.length()) {
+                    array.optString(i).trim().takeIf { it.isNotBlank() }?.let { checklist += it }
+                }
+            }
+
+            if (type !in SCHEDULE_TYPES) errors += "类型（提醒、状态或任务）"
+            if (title.isBlank()) errors += "标题"
+            val start = runCatching { LocalDateTime.parse(startIso) }.getOrNull()
+            val end = runCatching { LocalDateTime.parse(endIso) }.getOrNull()
+            if (start == null) errors += "有效的开始时间"
+            if (end == null || start != null && !end.isAfter(start)) errors += "晚于开始时间的结束时间"
+            if (colorId !in 0..7) errors += "颜色"
+            if (!args.has("note")) errors += "备注（不需要可留空）"
+            if (!args.has("checklist")) errors += "清单（不需要可为空）"
+
+            if (errors.isNotEmpty()) {
+                submitToolResult(call.id, "failed", message = "参数不完整：${errors.joinToString("、")}")
+                ParsedTool(
+                    clarify = Clarify(
+                        "创建前还需要确认：${errors.distinct().joinToString("、")}。请补充；不需要的可说“使用默认值”。",
+                        listOf("使用默认值", "我来补充"),
+                    ),
+                )
+            } else {
+                ParsedTool(
+                    action = ProposedAction(
+                        toolCallId = call.id,
+                        type = type,
+                        title = title,
+                        startIso = startIso,
+                        endIso = endIso,
+                        note = note,
+                        colorId = colorId,
+                        checklist = if (type == "task") checklist else emptyList(),
+                    ),
+                )
+            }
+        } catch (e: Exception) {
+            submitToolResult(call.id, "failed", message = "工具参数不是有效 JSON")
+            ParsedTool(
+                clarify = Clarify("日程参数格式不完整，请重新说明类型、标题、起止时间、备注、颜色和清单。", emptyList()),
+            )
+        }
+    }
+
+    private fun callDeepSeekWithHistory(currentUserMessage: String): ModelTurn {
         val conn = URL(DEEPSEEK_URL).openConnection() as HttpURLConnection
         conn.requestMethod = "POST"
-        conn.connectTimeout = 30000
-        conn.readTimeout = 60000
+        conn.connectTimeout = 30_000
+        conn.readTimeout = 60_000
         conn.doOutput = true
         conn.setRequestProperty("Content-Type", "application/json")
         conn.setRequestProperty("Authorization", "Bearer $apiKey")
-        try {
-            // 构建完整消息数组：[system] + [历史 user/assistant ...] + [当前 user]
-            val messages = org.json.JSONArray().apply {
-                put(JSONObject().apply { put("role", "system"); put("content", sessionSystemPrompt) })
-                sessionMessages.forEach { put(it) }
-                put(JSONObject().apply { put("role", "user"); put("content", currentUserMessage) })
-            }
 
+        val userMessage = JSONObject().apply {
+            put("role", "user")
+            put("content", currentUserMessage)
+        }
+        try {
+            val messages = JSONArray().apply {
+                put(JSONObject().apply {
+                    put("role", "system")
+                    put("content", sessionSystemPrompt)
+                })
+                sessionMessages.forEach { put(it) }
+                put(userMessage)
+            }
             val body = JSONObject().apply {
                 put("model", MODEL)
                 put("messages", messages)
-                put("max_tokens", 2048)
-                put("temperature", 0.7)
+                put("tools", buildTools())
+                put("tool_choice", "auto")
+                put("max_tokens", 3072)
+                put("temperature", 0.5)
             }.toString()
 
-            android.util.Log.d("TplannerDS", "callDeepSeek historyTurns=${sessionMessages.size / 2}")
+            android.util.Log.d(TAG, "callDeepSeek historyMessages=${sessionMessages.size}")
             OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { it.write(body) }
-
             if (conn.responseCode !in 200..299) {
-                val err = conn.errorStream?.bufferedReader(Charsets.UTF_8)?.readText() ?: "HTTP ${conn.responseCode}"
-                throw Exception("DeepSeek API error: $err")
+                val error = conn.errorStream?.bufferedReader(Charsets.UTF_8)?.readText()
+                    ?: "HTTP ${conn.responseCode}"
+                throw Exception("DeepSeek API error: $error")
             }
 
-            val resp = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
-            val choice = JSONObject(resp).getJSONArray("choices").getJSONObject(0)
-            val msg = choice.getJSONObject("message")
-            val content = msg.getString("content").trim()
+            val response = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
+            val message = JSONObject(response)
+                .getJSONArray("choices")
+                .getJSONObject(0)
+                .getJSONObject("message")
+            val content = if (message.isNull("content")) "" else message.optString("content", "").trim()
+            val calls = mutableListOf<ToolInvocation>()
+            message.optJSONArray("tool_calls")?.let { array ->
+                for (i in 0 until array.length()) {
+                    val rawCall = array.getJSONObject(i)
+                    val function = rawCall.getJSONObject("function")
+                    calls += ToolInvocation(
+                        id = rawCall.getString("id"),
+                        name = function.getString("name"),
+                        arguments = function.optString("arguments", "{}"),
+                    )
+                }
+            }
 
-            // 把本轮对话追加到会话历史
-            addUserTurn(currentUserMessage)
-            addAssistantTurn(content)
-
-            return content
+            sessionMessages.add(userMessage)
+            // Keep the complete assistant message. Thinking models require
+            // reasoning_content to be passed back alongside tool_calls.
+            sessionMessages.add(JSONObject(message.toString()))
+            return ModelTurn(content, calls)
         } finally {
             conn.disconnect()
         }
     }
 
-    // 有时 LLM 返回的 JSON 被包在 ```json ... ``` 里
+    private fun buildTools(): JSONArray = JSONArray().put(
+        JSONObject().apply {
+            put("type", "function")
+            put("function", JSONObject().apply {
+                put("name", CREATE_SCHEDULE_TOOL)
+                put(
+                    "description",
+                    "创建 tPlanner 日程。只有类型、标题、开始、结束、备注、颜色以及任务清单都已向用户询问，" +
+                        "或用户明确接受默认值后才可调用。应用仍会在执行前向用户做最终确认。",
+                )
+                put("parameters", JSONObject().apply {
+                    put("type", "object")
+                    put("properties", JSONObject().apply {
+                        put("type", JSONObject().apply {
+                            put("type", "string")
+                            put("enum", JSONArray(SCHEDULE_TYPES.toList()))
+                            put("description", "event=定时提醒，status=状态或动态，task=可勾选任务")
+                        })
+                        put("title", JSONObject().apply {
+                            put("type", "string")
+                            put("description", "简短明确的标题")
+                        })
+                        put("start_at", JSONObject().apply {
+                            put("type", "string")
+                            put("description", "本地时间 ISO 8601，例如 2026-07-18T09:00:00")
+                        })
+                        put("end_at", JSONObject().apply {
+                            put("type", "string")
+                            put("description", "晚于 start_at 的本地时间 ISO 8601")
+                        })
+                        put("note", JSONObject().apply {
+                            put("type", "string")
+                            put("description", "备注；用户不需要时传空字符串")
+                        })
+                        put("color_id", JSONObject().apply {
+                            put("type", "integer")
+                            put("minimum", 0)
+                            put("maximum", 7)
+                            put("description", "0蓝、1金、2粉、3绿、4紫、5橙、6青、7灰")
+                        })
+                        put("checklist", JSONObject().apply {
+                            put("type", "array")
+                            put("items", JSONObject().put("type", "string"))
+                            put("description", "task 的清单文本；其他类型或无清单时传空数组")
+                        })
+                    })
+                    put(
+                        "required",
+                        JSONArray(listOf("type", "title", "start_at", "end_at", "note", "color_id", "checklist")),
+                    )
+                    put("additionalProperties", false)
+                })
+            })
+        },
+    )
+
     private fun extractJson(raw: String): JSONObject {
         val trimmed = raw.trim()
         return when {
@@ -329,30 +425,42 @@ class DeepSeekAnalysisService(private val apiKey: String) {
         }
     }
 
+    private fun nowDescription(): String {
+        val now = LocalDateTime.now()
+        val week = arrayOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")[now.dayOfWeek.value - 1]
+        return "%04d-%02d-%02d %02d:%02d %s".format(
+            now.year,
+            now.monthValue,
+            now.dayOfMonth,
+            now.hour,
+            now.minute,
+            week,
+        )
+    }
+
     companion object {
+        private const val TAG = "TplannerDS"
         private const val DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
-        // deepseek-chat：快速响应，不做推理/thinking
-        private const val MODEL = "deepseek-chat"
+        private const val MODEL = "deepseek-v4-flash"
+        private const val CREATE_SCHEDULE_TOOL = "create_schedule"
+        private val SCHEDULE_TYPES = linkedSetOf("event", "status", "task")
+        private val FALLBACK_QUESTIONS = listOf("这段话里，你最想先理清或继续展开的是哪一部分？")
 
-        private const val SYSTEM_THOUGHT =
-            "你在帮用户处理随手写下的文字，分四种：默认 record（只修错别字/语法，当笔记" +
-            "记下，不提问不分析）；questions（文字里带问句/困惑就进来做场景判断，反过来提问" +
-            "帮他定位困惑——但若没什么值得反问的就返回空问题、退回 record；不给答案不剖析他" +
-            "这个人）；action（文字明显是要做/要记住的事时，提议帮他建 task/reminder）。" +
-            "action 判断从严；questions 只要是问句就先进来判断。有副作用的动作最终都要用户" +
-            "确认才执行。永远只返回有效 JSON，不要 markdown 代码块。"
+        private const val SYSTEM_AGENT =
+            "你是 tPlanner 的 QA 助手。你的核心行为是反过来追问，帮助用户理清想法，而不是替用户下结论。" +
+                "每次响应都必须产生至少一个与当前上下文相关的新追问。你可以使用 create_schedule 工具，" +
+                "但工具、参数校验、确认与执行均由应用负责。识别到日程意图时，必须询问所有可填写字段：" +
+                "类型、标题、开始、结束、备注、颜色；task 还要询问清单。没有提供的值绝不猜测，除非用户" +
+                "明确接受默认值。字段不全时不要调用工具，而是在 clarify 中一次列出全部缺失字段。字段齐全" +
+                "后调用 create_schedule。每次最多调用一次工具、创建一条日程；多条日程必须逐条确认。" +
+                "普通回复只输出有效 JSON，不要 markdown。"
 
-        private const val SYSTEM_REFINE =
-            "你根据用户对澄清追问的回答，补全一个日程操作（把答的钟点并进已知日期算成绝对时间）。" +
-            "永远只返回有效 JSON，不要 markdown 代码块。"
-
-        private const val SYSTEM_FOLLOWUP =
-            "你在帮用户理清思路。你已经问过几轮问题、得到了用户的一些回答。" +
-            "现在基于整段对话做两件事（可以都做，也可以只做一件）：" +
-            "1) 往更深处再追问 1-3 个问题——扎在具体接缝上，真开放不诱导；" +
-            "如果确实没有更多值得问的，返回空数组。" +
-            "2) 如果对话中明确出现了【要做/要记住的事】，同时提议帮他建 task/reminder——" +
-            "这是你的 agent 能力，随时可用，不用等对话结束才提议。" +
-            "永远只返回有效 JSON，不要 markdown 代码块。"
+        private const val RESPONSE_RULES =
+            "普通回复必须是以下 JSON（不要输出 action，创建日程只能使用 create_schedule 工具）：\n" +
+                "{\"text\":\"保持原意、仅修正明显错字后的文字\",\"questions\":[\"1-3 个新追问\"]," +
+                "\"clarify\":null}\n" +
+                "每次普通回复 questions 都不得为空。若有日程意图但字段不全，clarify 改为" +
+                "{\"q\":\"一次列出全部缺失字段的问题\",\"options\":[\"合适的快捷答案\",\"使用默认值\"]}。" +
+                "日程字段齐全后不要再输出日程 JSON，直接调用 create_schedule。"
     }
 }

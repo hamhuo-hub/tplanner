@@ -1,5 +1,6 @@
 package com.hamhuo.tplanner
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,7 +33,9 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.util.UUID
 
@@ -113,7 +116,6 @@ fun MainScreen(
     var sheetQuestions by remember { mutableStateOf<List<String>?>(null) }  // 非空 → 显示追问
     var sheetAction by remember { mutableStateOf<DeepSeekAnalysisService.ProposedAction?>(null) }  // 非空 → 显示"加日程"提议
     var sheetClarify by remember { mutableStateOf<DeepSeekAnalysisService.Clarify?>(null) }  // 非空 → 先追问补全参数
-    var pendingAction by remember { mutableStateOf<DeepSeekAnalysisService.ProposedAction?>(null) }  // 待补全的部分操作
     var pendingText by remember { mutableStateOf("") }  // 原文，供 refineAction / 多轮追问用
     var qaHistory by remember { mutableStateOf("") }  // 多轮追问对话记录（供 followUp 上下文）
     var pendingFollowUpQuestions by remember { mutableStateOf<List<String>?>(null) }  // followUp 同时返回问题和 action 时，暂存问题
@@ -128,7 +130,7 @@ fun MainScreen(
         if (anxietyTriggerCount > 0) {
             showAnxietySheet = true
             thinking = false; sheetQuestions = null; sheetAction = null
-            sheetClarify = null; pendingAction = null; pendingText = ""; qaHistory = ""  // 新会话回到编辑态
+            sheetClarify = null; pendingText = ""; qaHistory = ""  // 新会话回到编辑态
             pendingFollowUpQuestions = null
             prefillLocation = ""; watchLat = 0.0; watchLng = 0.0   // 本次会话重置，面板显示"Locating..."
 
@@ -263,7 +265,7 @@ fun MainScreen(
                 pendingText = text
                 scope.launch {
                     val res = deepseekService?.processThought(text, stamp, loc)
-                        ?: DeepSeekAnalysisService.ThoughtResult("record", text, emptyList())
+                        ?: DeepSeekAnalysisService.ThoughtResult("questions", text, DEFAULT_QA_QUESTIONS)
 
                     // 只记录用户原文到 Insight（与 journal 一致），不记录 LLM 修正后的版本
                     insightStore.addEvent(StructuredEntry(
@@ -275,57 +277,86 @@ fun MainScreen(
                         questions = emptyList(),  // AI questions are not user input
                     ))
 
+                    thinking = false
                     when {
-                        res.mode == "questions" && res.questions.isNotEmpty() -> {
-                            thinking = false
-                            sheetQuestions = res.questions
+                        res.action != null -> {
+                            // Native Tool Call 已包含完整参数；UI 仍保留最终确认。
+                            pendingFollowUpQuestions = res.questions.takeIf { it.isNotEmpty() }
+                            sheetAction = res.action
                         }
-                        res.mode == "action" && res.action != null -> {
-                            thinking = false
-                            if (res.clarify != null) {
-                                // 缺关键参数（如提醒时间）→ 先追问，答完再补全
-                                pendingAction = res.action
-                                sheetClarify = res.clarify
-                            } else {
-                                // 参数齐全 → 直接提议，等用户确认
-                                sheetAction = res.action
-                            }
+                        res.clarify != null -> {
+                            // 字段不全时模型不会调用工具，而是先一次问完全部缺失项。
+                            pendingFollowUpQuestions = res.questions.takeIf { it.isNotEmpty() }
+                            sheetClarify = res.clarify
                         }
-                        else -> {
-                            // record 模式（或失败）：已记下，直接关面板
-                            thinking = false
-                            showAnxietySheet = false
-                        }
+                        else -> sheetQuestions = res.questions.ifEmpty { DEFAULT_QA_QUESTIONS }
                     }
                     insightRefreshTrigger++
                 }
             }
 
-            // 用户确认"加入日程"：把 AI 提议的动作落成 TaskEvent，落盘并同步
+            // 用户确认 Native Tool Call：立即恢复 QA，把创建任务交给后台协程。
             val confirmAction: (DeepSeekAnalysisService.ProposedAction) -> Unit = { act ->
-                val start = parseAgentDatetime(act.datetimeIso)
-                val ev = TaskEvent(
-                    id = UUID.randomUUID().toString(),
-                    title = act.title,
-                    type = if (act.type == "reminder") "event" else "task",
-                    start = start,
-                    end = start.plusSeconds(3600),
-                    completed = false,
-                    checklist = emptyList(),
-                    colorId = 0,
-                    note = "",
-                    deletedAt = 0L,
-                    updatedAt = System.currentTimeMillis(),
-                )
-                events = events + ev
-                eventStore.saveAll(events)
-                showAnxietySheet = false; sheetAction = null
-                scope.launch { events = manager.fetchEvents(serverUrl) }   // 推到服务器/其它端
+                val start = parseAgentDatetime(act.startIso)
+                val end = parseAgentDatetime(act.endIso)
+                val resumeQuestions = pendingFollowUpQuestions ?: DEFAULT_QA_QUESTIONS
+                pendingFollowUpQuestions = null
+                sheetAction = null
+                sheetQuestions = resumeQuestions
+
+                if (start == null || end == null || !end.isAfter(start)) {
+                    deepseekService?.submitToolResult(
+                        toolCallId = act.toolCallId,
+                        status = "failed",
+                        message = "开始或结束时间无效",
+                    )
+                    Toast.makeText(context, R.string.schedule_create_failed_toast, Toast.LENGTH_SHORT).show()
+                } else {
+                    val ev = TaskEvent(
+                        id = UUID.randomUUID().toString(),
+                        title = act.title,
+                        type = act.type,
+                        start = start,
+                        end = end,
+                        completed = false,
+                        checklist = act.checklist.map { item ->
+                            CheckItem(UUID.randomUUID().toString(), item, false)
+                        },
+                        colorId = act.colorId,
+                        note = act.note,
+                        deletedAt = 0L,
+                        updatedAt = System.currentTimeMillis(),
+                    )
+                    val nextEvents = events + ev
+
+                    // Tool Result 立即回传 accepted，确保 QA 下一轮具备完整工具调用链；
+                    // 真正落盘与远端同步在后台执行，完成后由 Android Toast 反馈。
+                    deepseekService?.submitToolResult(
+                        toolCallId = act.toolCallId,
+                        status = "accepted",
+                        scheduleId = ev.id,
+                        message = "日程已提交后台创建",
+                    )
+                    scope.launch {
+                        try {
+                            withContext(Dispatchers.IO) { eventStore.saveAll(nextEvents) }
+                            events = nextEvents
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.schedule_created_toast, act.title),
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                            events = manager.fetchEvents(serverUrl)
+                        } catch (e: Exception) {
+                            android.util.Log.e("TplannerTool", "create_schedule failed", e)
+                            Toast.makeText(context, R.string.schedule_create_failed_toast, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
             }
 
             // 用户回答了澄清追问：用答案补全操作，再切到确认卡
             val answerClarify: (String) -> Unit = { answer ->
-                val partial = pendingAction
                 sheetClarify = null
                 // Record user's answer (clicked option or typed) to journal and Insight
                 val now = System.currentTimeMillis()
@@ -341,14 +372,25 @@ fun MainScreen(
                     questions = emptyList(),
                 ))
                 insightRefreshTrigger++
-                if (partial == null) { showAnxietySheet = false }
-                else {
-                    thinking = true
-                    scope.launch {
-                        val refined = deepseekService?.refineAction(pendingText, partial, answer) ?: partial
-                        thinking = false
-                        pendingAction = null
-                        sheetAction = refined
+                thinking = true
+                scope.launch {
+                    val refined = deepseekService?.refineAction(pendingText, answer)
+                        ?: DeepSeekAnalysisService.ThoughtResult(
+                            "questions",
+                            pendingText,
+                            DEFAULT_QA_QUESTIONS,
+                        )
+                    thinking = false
+                    when {
+                        refined.action != null -> {
+                            pendingFollowUpQuestions = refined.questions.takeIf { it.isNotEmpty() }
+                            sheetAction = refined.action
+                        }
+                        refined.clarify != null -> {
+                            pendingFollowUpQuestions = refined.questions.takeIf { it.isNotEmpty() }
+                            sheetClarify = refined.clarify
+                        }
+                        else -> sheetQuestions = refined.questions.ifEmpty { DEFAULT_QA_QUESTIONS }
                     }
                 }
             }
@@ -376,27 +418,25 @@ fun MainScreen(
                 thinking = true
                 scope.launch {
                     val result = deepseekService?.followUp(pendingText, qaHistory)
-                        ?: DeepSeekAnalysisService.FollowUpResult()
+                        ?: DeepSeekAnalysisService.FollowUpResult(DEFAULT_QA_QUESTIONS)
                     thinking = false
 
-                    // action/clarify 优先于 questions：agent 随时可以提议插入日程
+                    // 完整字段会产生 Native Tool Call；字段不全时只返回 clarify。
                     when {
                         result.action != null -> {
-                            // 如果同时返回了问题，暂存起来，等 action 处理完再展示
                             pendingFollowUpQuestions = result.questions.takeIf { it.isNotEmpty() }
-                            if (result.clarify != null) {
-                                pendingAction = result.action
-                                sheetClarify = result.clarify
-                                sheetQuestions = null
-                            } else {
-                                sheetAction = result.action
-                                sheetQuestions = null
-                            }
+                            sheetAction = result.action
+                            sheetQuestions = null
+                        }
+                        result.clarify != null -> {
+                            pendingFollowUpQuestions = result.questions.takeIf { it.isNotEmpty() }
+                            sheetClarify = result.clarify
+                            sheetQuestions = null
                         }
                         result.questions.isNotEmpty() -> {
                             sheetQuestions = result.questions
                         }
-                        // 都为空：保持当前问题，用户可继续答或点 Done
+                        else -> sheetQuestions = DEFAULT_QA_QUESTIONS
                     }
                 }
             }
@@ -411,16 +451,20 @@ fun MainScreen(
                 onSubmit = submitThought,
                 onConfirmAction = confirmAction,
                 onDeclineAction = {
-                    // 如果 followUp 还有暂存的问题，展示它们；否则关面板
-                    val savedQuestions = pendingFollowUpQuestions
+                    // 拒绝也要补齐 Native Tool Calls 的 tool 结果，然后继续 QA。
+                    val declined = sheetAction
+                    declined?.let {
+                        deepseekService?.submitToolResult(
+                            toolCallId = it.toolCallId,
+                            status = "declined",
+                            message = "用户取消创建日程",
+                        )
+                    }
+                    val savedQuestions = pendingFollowUpQuestions ?: DEFAULT_QA_QUESTIONS
                     pendingFollowUpQuestions = null
                     sheetAction = null
-                    if (savedQuestions != null && savedQuestions.isNotEmpty()) {
-                        sheetQuestions = savedQuestions
-                    } else {
-                        showAnxietySheet = false
-                    }
-                },  // 就当笔记（想法已存），但有后续问题就继续
+                    sheetQuestions = savedQuestions
+                },
                 onAnswerClarify = answerClarify,
                 onAnswerQuestion = answerQuestion,
             )
@@ -511,9 +555,9 @@ fun MainScreen(
     }
 }
 
-// AI 提议的本地时间 ISO（如 2026-07-07T08:00:00）→ Instant；空/解析失败回退到"现在"。
-// 无明确时间的待办（task）就落在当前时刻，用户之后可在详情页调。
-private fun parseAgentDatetime(iso: String): Instant = try {
-    if (iso.isBlank()) Instant.now()
-    else java.time.LocalDateTime.parse(iso).atZone(java.time.ZoneId.systemDefault()).toInstant()
-} catch (_: Exception) { Instant.now() }
+private val DEFAULT_QA_QUESTIONS = listOf("这段话里，你最想先理清或继续展开的是哪一部分？")
+
+// 工具参数必须给出有效时间；解析失败不再静默猜成“现在”。
+private fun parseAgentDatetime(iso: String): Instant? = try {
+    java.time.LocalDateTime.parse(iso).atZone(java.time.ZoneId.systemDefault()).toInstant()
+} catch (_: Exception) { null }

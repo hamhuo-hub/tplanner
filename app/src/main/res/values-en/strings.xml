@@ -57,6 +57,8 @@
     <string name="syncing_label">Syncing…</string>
     <string name="sync_now_label">Sync Now</string>
     <string name="unknown_error">Unknown error</string>
+    <string name="schedule_created_toast">Schedule created: %1$s</string>
+    <string name="schedule_create_failed_toast">Could not create schedule. Please try again.</string>
 
     <!-- Date patterns (DateTimeFormatter pattern syntax) -->
     <string name="date_pattern_full">MMMM d, yyyy</string>

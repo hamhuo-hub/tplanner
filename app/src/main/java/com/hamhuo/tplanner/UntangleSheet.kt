@@ -42,20 +42,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// AI 提议时间的友好展示："今天/明天 HH:mm"或"M月d日 周X HH:mm"；无时间则提示。
-private fun prettyWhen(iso: String): String {
-    if (iso.isBlank()) return "没写具体时间 · 先放在今天"
+// Tool Call 起止时间的友好展示。
+private fun prettyWhen(startIso: String, endIso: String): String {
     return try {
-        val dt = java.time.LocalDateTime.parse(iso)
+        val start = java.time.LocalDateTime.parse(startIso)
+        val end = java.time.LocalDateTime.parse(endIso)
         val today = java.time.LocalDate.now()
-        val hm = "%02d:%02d".format(dt.hour, dt.minute)
-        val zh = arrayOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")[dt.dayOfWeek.value - 1]
-        when (dt.toLocalDate()) {
-            today -> "今天 $hm"
-            today.plusDays(1) -> "明天 $hm"
-            else -> "${dt.monthValue}月${dt.dayOfMonth}日 $zh $hm"
+        val startHm = "%02d:%02d".format(start.hour, start.minute)
+        val endHm = "%02d:%02d".format(end.hour, end.minute)
+        val zh = arrayOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")[start.dayOfWeek.value - 1]
+        val date = when (start.toLocalDate()) {
+            today -> "今天"
+            today.plusDays(1) -> "明天"
+            else -> "${start.monthValue}月${start.dayOfMonth}日 $zh"
         }
-    } catch (_: Exception) { iso }
+        if (start.toLocalDate() == end.toLocalDate()) "$date $startHm–$endHm"
+        else "$date $startHm – ${end.monthValue}月${end.dayOfMonth}日 $endHm"
+    } catch (_: Exception) { "$startIso – $endIso" }
 }
 
 // 全屏"理一理"面板。四态由父组件驱动：
@@ -181,9 +184,13 @@ fun UntangleSheet(
 
             // ── 加日程提议：AI 只提议，你确认了才创建 ────────────────
             action != null -> {
-                val isReminder = action.type == "reminder"
+                val typeLabel = when (action.type) {
+                    "event" -> "提醒"
+                    "status" -> "状态"
+                    else -> "任务"
+                }
                 Text(
-                    if (isReminder) "这条像是个提醒，要帮你放进日程吗？" else "这条像是件待办，要帮你建个任务吗？",
+                    "字段已收集完整，要在后台创建这条$typeLabel 吗？",
                     color = DIM, fontSize = 14.sp, modifier = Modifier.padding(bottom = 16.dp),
                 )
                 Column(
@@ -197,7 +204,12 @@ fun UntangleSheet(
                         action.title,
                         color = Color(0xFFE8E0D0), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, lineHeight = 26.sp,
                     )
-                    Text(prettyWhen(action.datetimeIso), color = GOLD, fontSize = 14.sp)
+                    Text("$typeLabel · ${prettyWhen(action.startIso, action.endIso)}", color = GOLD, fontSize = 14.sp)
+                    Text("颜色 ${action.colorId + 1}", color = DIM, fontSize = 13.sp)
+                    if (action.note.isNotBlank()) Text(action.note, color = DIM, fontSize = 13.sp, lineHeight = 20.sp)
+                    if (action.checklist.isNotEmpty()) {
+                        Text("清单 · ${action.checklist.joinToString("、")}", color = DIM, fontSize = 13.sp, lineHeight = 20.sp)
+                    }
                 }
                 Spacer(Modifier.weight(1f))
                 Row(
@@ -231,7 +243,6 @@ fun UntangleSheet(
                             modifier = Modifier.fillMaxWidth()
                                 .background(SURFACE, RoundedCornerShape(12.dp))
                                 .border(1.dp, BORDER, RoundedCornerShape(12.dp))
-                                .clickable { onAnswerQuestion(q) }   // 点问题即回答
                                 .padding(16.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
