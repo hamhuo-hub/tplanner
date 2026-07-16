@@ -403,6 +403,23 @@ function App() {
         });
     };
 
+    const scrollTimelineToDate = (date, behavior = 'smooth') => {
+        const dateStr = format(date, 'yyyy-MM-dd');
+        const element = document.getElementById(`row-${dateStr}`);
+        const scrollContainer = element?.closest('.timeline-scroll-area');
+        if (!element || !scrollContainer) return false;
+
+        // Only scroll the timeline body. scrollIntoView() can also move outer
+        // ancestors/the page in browsers, which pushes the banners off-screen.
+        const elementRect = element.getBoundingClientRect();
+        const containerRect = scrollContainer.getBoundingClientRect();
+        scrollContainer.scrollTo({
+            top: Math.max(0, scrollContainer.scrollTop + elementRect.top - containerRect.top),
+            behavior,
+        });
+        return true;
+    };
+
     const handleToday = () => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -412,11 +429,7 @@ function App() {
         end.setDate(today.getDate() + 30);
         setViewRange({ start, end });
         setTimeout(() => {
-            const dateStr = format(today, 'yyyy-MM-dd');
-            const element = document.getElementById(`row-${dateStr}`);
-            if (element) {
-                // Using 'nearest' for block to avoid scrolling the whole page/app container
-                element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            if (scrollTimelineToDate(today)) {
                 const startOfDay = new Date(today);
                 const endOfDay = new Date(today); endOfDay.setHours(23, 59, 59, 999);
                 setHighlight({ type: 'today', start: startOfDay, end: endOfDay });
@@ -434,12 +447,7 @@ function App() {
         end.setDate(target.getDate() + 30);
         setViewRange({ start, end });
         setTimeout(() => {
-            const dateStr = format(target, 'yyyy-MM-dd');
-            const element = document.getElementById(`row-${dateStr}`);
-            if (element) {
-                // Using 'nearest' for block
-                element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }
+            scrollTimelineToDate(target);
         }, 100);
     };
 
@@ -875,6 +883,7 @@ function App() {
             {/* Main Content */}
             <main style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '12px', minHeight: 0, gap: '8px' }}>
                 {activeTab === 'calendar' && <>
+                    <div className="calendar-banners">
                     <ReminderBanner
                         events={visibleEvents}
                         travelTimezone={travelTimezone}
@@ -903,6 +912,7 @@ function App() {
                             setTimeout(() => setHighlight(null), 3000);
                         }}
                     />
+                    </div>
                     <Timeline
                         startDate={viewRange.start || new Date()}
                         endDate={viewRange.end || new Date()}

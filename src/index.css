@@ -664,6 +664,12 @@ input[type="number"] {
 }
 
 /* ── Banners ────────────────────────────────────────────────────────────── */
+.calendar-banners {
+    flex: 0 0 auto;
+    position: relative;
+    z-index: 40;
+}
+
 .banner {
     display: flex;
     align-items: flex-start;
