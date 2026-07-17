@@ -329,6 +329,9 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             }
             val body = JSONObject().apply {
                 put("model", MODEL)
+                // DeepSeek V4 defaults to thinking mode. QA and tool routing are
+                // latency-sensitive, so keep Flash explicitly in non-thinking mode.
+                put("thinking", JSONObject().put("type", "disabled"))
                 put("messages", messages)
                 put("tools", buildTools())
                 put("tool_choice", "auto")
@@ -364,8 +367,8 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             }
 
             sessionMessages.add(userMessage)
-            // Keep the complete assistant message. Thinking models require
-            // reasoning_content to be passed back alongside tool_calls.
+            // Keep the complete assistant message so its tool_calls remain paired
+            // with subsequent tool results (and reasoning_content if re-enabled).
             sessionMessages.add(JSONObject(message.toString()))
             return ModelTurn(content, calls)
         } finally {

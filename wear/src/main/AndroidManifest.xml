@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <uses-feature android:name="android.hardware.type.watch" android:required="false" />
+    <uses-feature android:name="android.hardware.type.watch" android:required="true" />
 
     <uses-permission android:name="android.permission.VIBRATE" />
 
@@ -25,7 +25,7 @@
             </intent-filter>
         </activity>
 
-        <!-- ── tPlanner 七款表盘：时环 / 星轨 / 余烬 / 潮汐 / 脉动 / 光弦 / 月相 ── -->
+        <!-- ── tPlanner 五款表盘：时环 / 星轨 / 余烬 / 潮汐 / 光弦 ── -->
 
         <service android:name=".WatchFaceRingService" android:exported="true"
             android:label="@string/wf_ring" android:permission="android.permission.BIND_WALLPAPER">
@@ -75,18 +75,6 @@
             <meta-data android:name="androidx.wear.watchface.MULTIPLE_INSTANCES_ALLOWED" android:value="false" />
         </service>
 
-        <service android:name=".WatchFacePulseService" android:exported="true"
-            android:label="@string/wf_pulse" android:permission="android.permission.BIND_WALLPAPER">
-            <intent-filter>
-                <action android:name="android.service.wallpaper.WallpaperService" />
-                <category android:name="com.google.android.wearable.watchface.category.WATCH_FACE" />
-            </intent-filter>
-            <meta-data android:name="android.service.wallpaper" android:resource="@xml/watch_face" />
-            <meta-data android:name="com.google.android.wearable.watchface.preview" android:resource="@drawable/preview_pulse" />
-            <meta-data android:name="com.google.android.wearable.watchface.preview_circular" android:resource="@drawable/preview_pulse" />
-            <meta-data android:name="androidx.wear.watchface.MULTIPLE_INSTANCES_ALLOWED" android:value="false" />
-        </service>
-
         <service android:name=".WatchFaceLuminaService" android:exported="true"
             android:label="@string/wf_lumina" android:permission="android.permission.BIND_WALLPAPER">
             <intent-filter>
@@ -96,18 +84,6 @@
             <meta-data android:name="android.service.wallpaper" android:resource="@xml/watch_face" />
             <meta-data android:name="com.google.android.wearable.watchface.preview" android:resource="@drawable/preview_lumina" />
             <meta-data android:name="com.google.android.wearable.watchface.preview_circular" android:resource="@drawable/preview_lumina" />
-            <meta-data android:name="androidx.wear.watchface.MULTIPLE_INSTANCES_ALLOWED" android:value="false" />
-        </service>
-
-        <service android:name=".WatchFaceMoonService" android:exported="true"
-            android:label="@string/wf_moon" android:permission="android.permission.BIND_WALLPAPER">
-            <intent-filter>
-                <action android:name="android.service.wallpaper.WallpaperService" />
-                <category android:name="com.google.android.wearable.watchface.category.WATCH_FACE" />
-            </intent-filter>
-            <meta-data android:name="android.service.wallpaper" android:resource="@xml/watch_face" />
-            <meta-data android:name="com.google.android.wearable.watchface.preview" android:resource="@drawable/preview_moon" />
-            <meta-data android:name="com.google.android.wearable.watchface.preview_circular" android:resource="@drawable/preview_moon" />
             <meta-data android:name="androidx.wear.watchface.MULTIPLE_INSTANCES_ALLOWED" android:value="false" />
         </service>
 

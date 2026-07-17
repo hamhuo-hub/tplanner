@@ -14,7 +14,7 @@ import androidx.wear.watchface.WatchState
 import androidx.wear.watchface.style.CurrentUserStyleRepository
 
 // ═══════════════════════════════════════════════════════════════════════════
-// tPlanner 七款表盘：时环（Ring）· 星轨（Orbit）· 余烬（Ember）· 潮汐（Tide）· 脉动（Pulse）· 光弦（Lumina）· 月相（Moon）。
+// tPlanner 五款表盘：时环（Ring）· 星轨（Orbit）· 余烬（Ember）· 潮汐（Tide）· 光弦（Lumina）。
 // 设计语言与桌面端一致：暗底 #0D0D0D、金 #C9A84C、米白衬线数字、青色事件点。
 // 点击表盘下方的金色按钮/短划 → 震动并经典蓝牙唤醒手机（PhoneWaker）。
 //
@@ -23,8 +23,8 @@ import androidx.wear.watchface.style.CurrentUserStyleRepository
 // 低频重绘（余烬/潮汐因呼吸光环用 100ms，其余 1000ms）。息屏（ambient）下只画
 // 暗化的极简内容，无动画、无大面积亮色（防烧屏 + 省电）。
 //
-// 各表盘的具体绘制逻辑已拆分到 FaceRing / FaceOrbit / FaceEmber / FaceTide，
-// 共享基类在 FaceBase，枚举与颜色常量在 FaceDesign，事件刻度在 WatchEventMarks。
+// 各表盘的具体绘制逻辑已拆分到独立 Face* 文件；共享基类在 FaceBase，
+// 潮汐的调起时间记录由 WakeInvocationMarks 在手表本地持久化。
 // ═══════════════════════════════════════════════════════════════════════════
 
 abstract class TPlannerFaceService : WatchFaceService() {
@@ -44,9 +44,7 @@ abstract class TPlannerFaceService : WatchFaceService() {
             FaceDesign.ORBIT  -> FaceOrbit(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
             FaceDesign.EMBER  -> FaceEmber(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
             FaceDesign.TIDE   -> FaceTide(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
-            FaceDesign.PULSE  -> FacePulse(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
             FaceDesign.LUMINA -> FaceLumina(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
-            FaceDesign.MOON   -> FaceMoon(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
         }
         return WatchFace(WatchFaceType.DIGITAL, renderer)
             .setTapListener(object : WatchFace.TapListener {
@@ -55,7 +53,7 @@ abstract class TPlannerFaceService : WatchFaceService() {
                     if (renderer.isOnWakeButton(tapEvent.xPos, tapEvent.yPos)) {
                         vibrator.cancel()
                         vibrator.vibrate(VibrationEffect.createOneShot(100, VibrationEffect.DEFAULT_AMPLITUDE))
-                        renderer.startTapAnimation()
+                        renderer.handleWakeTap()
                         PhoneWaker.wakeUpPhone(applicationContext)
                     }
                 }
@@ -67,6 +65,4 @@ class WatchFaceRingService  : TPlannerFaceService() { override val design = Face
 class WatchFaceOrbitService : TPlannerFaceService() { override val design = FaceDesign.ORBIT }
 class WatchFaceEmberService : TPlannerFaceService() { override val design = FaceDesign.EMBER }
 class WatchFaceTideService  : TPlannerFaceService() { override val design = FaceDesign.TIDE }
-class WatchFacePulseService  : TPlannerFaceService() { override val design = FaceDesign.PULSE }
 class WatchFaceLuminaService : TPlannerFaceService() { override val design = FaceDesign.LUMINA }
-class WatchFaceMoonService   : TPlannerFaceService() { override val design = FaceDesign.MOON }

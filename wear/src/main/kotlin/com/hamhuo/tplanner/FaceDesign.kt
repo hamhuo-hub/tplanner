@@ -8,9 +8,7 @@ enum class FaceDesign(val interactiveDelayMs: Long) {
     ORBIT(1000L),
     EMBER(100L),
     TIDE(100L),
-    PULSE(100L),
     LUMINA(80L),
-    MOON(100L),
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -21,7 +19,6 @@ enum class FaceDesign(val interactiveDelayMs: Long) {
 const val BOOT_MS = 800L
 const val TAP_MS  = 600L
 
-const val MOON_CLR  = 0xFFDDD6C5.toInt()
 const val BG        = 0xFF0D0D0D.toInt()
 const val GOLD      = 0xFFC9A84C.toInt()
 const val CREAM     = 0xFFE8E0D0.toInt()

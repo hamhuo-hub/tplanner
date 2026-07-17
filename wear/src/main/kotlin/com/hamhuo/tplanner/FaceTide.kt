@@ -11,13 +11,29 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 // 潮汐：24h 波浪进度——曲线从午夜开始随当前时刻向上涨，金球在浪尖。
-// 今日已过的时间 = 金色波段 + 填充；未到的 = 暗轨。事件为青色菱形点缀。
+// 今日已过的时间 = 金色波段 + 填充；未到的 = 暗轨。手机调起记录为青色菱形。
 class FaceTide(
-    context: android.content.Context,
+    private val context: android.content.Context,
     surfaceHolder: android.view.SurfaceHolder,
     currentUserStyleRepository: androidx.wear.watchface.style.CurrentUserStyleRepository,
     watchState: androidx.wear.watchface.WatchState,
 ) : FaceBase(context, surfaceHolder, currentUserStyleRepository, watchState, FaceDesign.TIDE) {
+
+    @Volatile private var wakeMinutes = emptyList<Int>()
+    @Volatile private var wakeDate: java.time.LocalDate? = null
+
+    override fun onWakeInvoked(at: ZonedDateTime) {
+        wakeDate = at.toLocalDate()
+        wakeMinutes = WakeInvocationMarks.record(context, at)
+    }
+
+    private fun refreshWakeMinutes(t: ZonedDateTime) {
+        val date = t.toLocalDate()
+        if (wakeDate != date) {
+            wakeDate = date
+            wakeMinutes = WakeInvocationMarks.load(context, date)
+        }
+    }
 
     // 提前算好共享几何，避免在 drawInteractive / drawAmbient 里重复
     private data class WaveGeo(
@@ -56,6 +72,7 @@ class FaceTide(
     }
 
     override fun drawInteractive(canvas: Canvas, t: ZonedDateTime, s: Float, cx: Float, cy: Float) {
+        refreshWakeMinutes(t)
         val boot = bootAlpha
         val g    = geo(s, cx, cy)
 
@@ -93,13 +110,13 @@ class FaceTide(
         p.alpha = (255 * boot).toInt()
         canvas.drawPath(goldPath, p)
 
-        // ── 事件菱形（全部展示，今天的还没到的是未来事件） ────────────────
-        for (m in marks.minutes) {
+        // ── 今日调起记录：按点击唤醒按钮的时间映射到 24h 潮汐线上 ────────────
+        for (m in wakeMinutes) {
             val frac  = m / 1440f
             val ex    = g.startX + frac * g.width
             val ey    = g.baseY - g.amp * cos(frac * 2.0 * PI).toFloat()
             val hd    = s * 0.016f
-            val alpha = if (frac <= dayFrac) 0.8f else 0.35f  // 已过的亮，未来的暗
+            val alpha = if (frac <= dayFrac) 0.8f else 0.35f
             val dia   = Path().apply {
                 moveTo(ex, ey - hd)
                 lineTo(ex + hd * 0.55f, ey)

@@ -18,7 +18,7 @@ import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
 
-// 三款表盘的共享 Renderer 基类：动画状态、事件刻度加载、唤醒按钮、Paint 快捷方式
+// 五款表盘的共享 Renderer 基类：动画状态、事件刻度加载、唤醒按钮、Paint 快捷方式
 // 均在此处统一管理。子类只需实现 drawInteractive / drawAmbient 两个方法。
 abstract class FaceBase(
     private val context: Context,
@@ -54,10 +54,13 @@ abstract class FaceBase(
 
     // ── 公共接口 ────────────────────────────────────────────────────────────
 
-    fun startTapAnimation() {
+    fun handleWakeTap(at: ZonedDateTime = ZonedDateTime.now()) {
         tapStart = System.currentTimeMillis()
+        onWakeInvoked(at)
         postInvalidate()
     }
+
+    protected open fun onWakeInvoked(at: ZonedDateTime) = Unit
 
     fun isOnWakeButton(x: Int, y: Int): Boolean {
         if (faceW == 0) return false
@@ -70,7 +73,7 @@ abstract class FaceBase(
 
     private fun FaceDesign.buttonYFrac() = when (this) {
         FaceDesign.RING, FaceDesign.ORBIT -> 0.326f
-        FaceDesign.EMBER, FaceDesign.TIDE, FaceDesign.PULSE, FaceDesign.MOON -> 0.395f
+        FaceDesign.EMBER, FaceDesign.TIDE -> 0.395f
         FaceDesign.LUMINA -> 0.437f
     }
 
