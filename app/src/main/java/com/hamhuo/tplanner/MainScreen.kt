@@ -22,7 +22,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -124,7 +123,20 @@ fun MainScreen(
     // submit 时直接用这两个值存进 InsightStore，不再从随笔文本正则抠坐标
     var watchLat by remember { mutableStateOf(0.0) }
     var watchLng by remember { mutableStateOf(0.0) }
-    var insightRefreshTrigger by remember { mutableIntStateOf(0) }
+
+    fun recordInsight(text: String, timestamp: Long, location: String) {
+        insightStore.addEvent(StructuredEntry(
+            id = UUID.randomUUID().toString(),
+            timestamp = timestamp,
+            text = text,
+            location = location,
+            lat = watchLat,
+            lng = watchLng,
+            questions = emptyList(),
+        ))
+        // 本地写入立即完成；跨端同步放到后台，不阻塞 QA 交互。
+        scope.launch { manager.syncInsights(serverUrl) }
+    }
 
     LaunchedEffect(anxietyTriggerCount) {
         if (anxietyTriggerCount > 0) {
@@ -258,6 +270,9 @@ fun MainScreen(
                 content = content + entryLine
                 store.saveToday(content)
 
+                // 用户提交后立即记录，不能依赖 LLM 请求是否成功返回。
+                recordInsight(text, now, loc)
+
                 thinking = true
                 sheetQuestions = null
                 sheetAction = null
@@ -266,16 +281,6 @@ fun MainScreen(
                 scope.launch {
                     val res = deepseekService?.processThought(text, stamp, loc)
                         ?: DeepSeekAnalysisService.ThoughtResult("questions", text, DEFAULT_QA_QUESTIONS)
-
-                    // 只记录用户原文到 Insight（与 journal 一致），不记录 LLM 修正后的版本
-                    insightStore.addEvent(StructuredEntry(
-                        id = UUID.randomUUID().toString(),
-                        timestamp = now,
-                        text = text,
-                        location = loc,
-                        lat = watchLat, lng = watchLng,
-                        questions = emptyList(),  // AI questions are not user input
-                    ))
 
                     thinking = false
                     when {
@@ -291,7 +296,6 @@ fun MainScreen(
                         }
                         else -> sheetQuestions = res.questions.ifEmpty { DEFAULT_QA_QUESTIONS }
                     }
-                    insightRefreshTrigger++
                 }
             }
 
@@ -326,6 +330,8 @@ fun MainScreen(
                         note = act.note,
                         deletedAt = 0L,
                         updatedAt = System.currentTimeMillis(),
+                        alarmEnabled = act.alarmEnabled,
+                        alarmOffsetMinutes = act.alarmOffsetMinutes,
                     )
                     val nextEvents = events + ev
 
@@ -335,17 +341,23 @@ fun MainScreen(
                         toolCallId = act.toolCallId,
                         status = "accepted",
                         scheduleId = ev.id,
-                        message = "日程已提交后台创建",
+                        alarmStatus = if (act.alarmEnabled) "pending" else "disabled",
+                        message = if (act.alarmEnabled) "日程与系统闹铃已提交后台创建" else "日程已提交后台创建",
                     )
                     scope.launch {
                         try {
                             withContext(Dispatchers.IO) { eventStore.saveAll(nextEvents) }
                             events = nextEvents
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.schedule_created_toast, act.title),
-                                Toast.LENGTH_SHORT,
-                            ).show()
+                            val toastMessage = when {
+                                !act.alarmEnabled -> context.getString(R.string.schedule_created_toast, act.title)
+                                TaskAlarmScheduler.canScheduleExactAlarms(context) ->
+                                    context.getString(R.string.schedule_created_with_alarm_toast, act.title)
+                                else -> context.getString(
+                                    R.string.schedule_created_with_fallback_alarm_toast,
+                                    act.title,
+                                )
+                            }
+                            Toast.makeText(context, toastMessage, Toast.LENGTH_SHORT).show()
                             events = manager.fetchEvents(serverUrl)
                         } catch (e: Exception) {
                             android.util.Log.e("TplannerTool", "create_schedule failed", e)
@@ -363,15 +375,7 @@ fun MainScreen(
                 content = store.getToday() + "\n> 你选了：$answer"
                 store.saveToday(content)
                 val loc = prefillLocation.ifBlank { "Unknown" }
-                insightStore.addEvent(StructuredEntry(
-                    id = UUID.randomUUID().toString(),
-                    timestamp = now,
-                    text = answer,
-                    location = loc,
-                    lat = watchLat, lng = watchLng,
-                    questions = emptyList(),
-                ))
-                insightRefreshTrigger++
+                recordInsight(answer, now, loc)
                 thinking = true
                 scope.launch {
                     val refined = deepseekService?.refineAction(pendingText, answer)
@@ -406,15 +410,7 @@ fun MainScreen(
                 store.saveToday(content)
                 // 同时记录用户回答到 Insight（与 journal 一致）
                 val loc = prefillLocation.ifBlank { "Unknown" }
-                insightStore.addEvent(StructuredEntry(
-                    id = UUID.randomUUID().toString(),
-                    timestamp = now,
-                    text = answer,
-                    location = loc,
-                    lat = watchLat, lng = watchLng,
-                    questions = emptyList(),
-                ))
-                insightRefreshTrigger++
+                recordInsight(answer, now, loc)
                 thinking = true
                 scope.launch {
                     val result = deepseekService?.followUp(pendingText, qaHistory)
@@ -489,7 +485,6 @@ fun MainScreen(
                     else if (phoneTab == 1) taskCardContent()
                     else InsightPanel(
                         store = insightStore, amapApiKey = amapApiKey,
-                        onRefresh = { insightRefreshTrigger++ },
                         onDelete = { entry ->
                             insightStore.deleteEvent(entry.id, entry.timestamp)   // 软删（同步）
                             scope.launch { manager.syncInsights(serverUrl) }       // 把墓碑推到服务器
@@ -538,6 +533,8 @@ fun MainScreen(
                     note      = "",
                     deletedAt = 0L,
                     updatedAt = now.toEpochMilli(),
+                    alarmEnabled = type == "event",
+                    alarmOffsetMinutes = 0,
                 )
             }
         )

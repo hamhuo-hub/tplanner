@@ -25,6 +25,8 @@ import androidx.compose.runtime.setValue
  */
 class MainActivity : ComponentActivity() {
 
+    private lateinit var eventStore: EventStore
+
     // Watch trigger counter: increments on each watch wake-up,
     // MainScreen observes changes to show the anxiety panel.
     var anxietyTriggerCount by mutableIntStateOf(0)
@@ -55,18 +57,27 @@ class MainActivity : ComponentActivity() {
         handleWakeIntent(intent)
         checkAndRequestPermissions()
         val store       = JournalStore(this)
-        val eventStore  = EventStore(this)
+        eventStore      = EventStore(this)
         val insightStore = InsightStore(this)
         val manager     = LanSyncManager(this, store, eventStore, insightStore)
         val deepseekKey = BuildConfig.DEEPSEEK_API_KEY
         val amapKey     = BuildConfig.AMAP_API_KEY
         AmapGeocoder.setApiKey(amapKey)
         val deepseekService = DeepSeekAnalysisService(deepseekKey)
+        TaskAlarmScheduler.reconcile(this, eventStore.getAll())
         setContent { MainScreen(
             store = store, eventStore = eventStore, manager = manager,
             insightStore = insightStore, deepseekService = deepseekService,
             amapApiKey = amapKey, anxietyTriggerCount = anxietyTriggerCount,
         ) }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Exact-alarm access can change in system settings while the app is paused.
+        if (::eventStore.isInitialized) {
+            TaskAlarmScheduler.reconcile(this, eventStore.getAll())
+        }
     }
 
     override fun onNewIntent(intent: Intent) {

@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -419,6 +420,14 @@ fun TaskItem(
                             fontFamily = FontFamily.Monospace
                         )
                     }
+                }
+                if (event.alarmEnabled && !isDone) {
+                    Icon(
+                        Icons.Outlined.Alarm,
+                        contentDescription = stringResource(R.string.section_alarm),
+                        tint = GOLD,
+                        modifier = Modifier.size(13.dp),
+                    )
                 }
                 if (isNow) Text(stringResource(R.string.status_now), color = Color(0xFF8BB8E8), fontSize = 11.sp)
                 else if (status == "soon") Text(stringResource(R.string.status_soon), color = GOLD, fontSize = 11.sp)

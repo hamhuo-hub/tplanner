@@ -2,6 +2,7 @@ package com.hamhuo.tplanner
 
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,6 +22,7 @@ import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -33,7 +35,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -47,8 +51,11 @@ import java.util.Locale
 // 当时 AI 抛回的追问、想法发生的地点（地图），以及一段描述性的日终回顾。
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-fun InsightPanel(store: InsightStore, amapApiKey: String, onRefresh: () -> Unit,
-                 onDelete: (StructuredEntry) -> Unit = {}) {
+fun InsightPanel(
+    store: InsightStore,
+    amapApiKey: String,
+    onDelete: (StructuredEntry) -> Unit = {},
+) {
     val scrollState = rememberScrollState()
     var dateOffset by remember { mutableIntStateOf(0) }
     val date = remember(dateOffset) { LocalDate.now().plusDays(dateOffset.toLong()) }
@@ -57,7 +64,15 @@ fun InsightPanel(store: InsightStore, amapApiKey: String, onRefresh: () -> Unit,
     // 左滑删除的条目立即从视图隐藏（按 id）——不在手势过程中重读 store，避免
     // 重组连锁误删。墓碑软删由 onDelete 异步落盘 + 同步。
     val deletedIds = remember { mutableStateListOf<String>() }
-    val entries = remember(dateStr) { store.getEvents(dateStr) }
+    var storeRevision by remember { mutableIntStateOf(0) }
+    DisposableEffect(store) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+            storeRevision++
+        }
+        store.registerListener(listener)
+        onDispose { store.unregisterListener(listener) }
+    }
+    val entries = remember(dateStr, storeRevision) { store.getEvents(dateStr) }
 
     val dateDisplay = remember(date) {
         when (dateOffset) {
@@ -125,7 +140,7 @@ fun InsightPanel(store: InsightStore, amapApiKey: String, onRefresh: () -> Unit,
 
         // ── Location scatter map ─────────────────────────────────────────
         Spacer(Modifier.height(16.dp))
-        AmapScatterMap(entries = entries, amapApiKey = amapApiKey,
+        AmapScatterMap(entries = visible, amapApiKey = amapApiKey,
             modifier = Modifier.fillMaxWidth())
 
         // ── Top location / time slot（本地统计，不依赖已删除的 Day Review 报告）──
@@ -145,16 +160,32 @@ fun InsightPanel(store: InsightStore, amapApiKey: String, onRefresh: () -> Unit,
 
 @Composable
 private fun ThoughtCard(e: StructuredEntry) {
+    var expanded by remember(e.id) { mutableStateOf(false) }
     val time = remember(e.timestamp) {
         java.text.SimpleDateFormat("HH:mm", Locale.US).format(java.util.Date(e.timestamp))
     }
+    val metadata = remember(time, e.location) {
+        listOfNotNull(time, e.location.takeIf { it.isNotBlank() }).joinToString(" · ")
+    }
     Column(
-        modifier = Modifier.fillMaxWidth().background(SURFACE, RoundedCornerShape(10.dp)).padding(14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize()
+            .background(SURFACE, RoundedCornerShape(10.dp))
+            .clickable { expanded = !expanded }
+            .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text("$time · ${e.location}", color = DIM, fontSize = 11.sp)
-        Text(e.text, color = Color(0xFFE8E0D0), fontSize = 15.sp, lineHeight = 24.sp)
-        if (e.questions.isNotEmpty()) {
+        Text(metadata, color = DIM, fontSize = 11.sp)
+        Text(
+            text = e.text,
+            color = Color(0xFFE8E0D0),
+            fontSize = 15.sp,
+            lineHeight = 24.sp,
+            maxLines = if (expanded) Int.MAX_VALUE else 2,
+            overflow = if (expanded) TextOverflow.Clip else TextOverflow.Ellipsis,
+        )
+        if (expanded && e.questions.isNotEmpty()) {
             Spacer(Modifier.height(2.dp))
             e.questions.forEach { q ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -163,6 +194,14 @@ private fun ThoughtCard(e: StructuredEntry) {
                 }
             }
         }
+        Text(
+            text = stringResource(
+                if (expanded) R.string.insight_collapse_card else R.string.insight_expand_card,
+            ),
+            color = if (expanded) DIM else GOLD,
+            fontSize = 12.sp,
+            modifier = Modifier.align(Alignment.End),
+        )
     }
 }
 

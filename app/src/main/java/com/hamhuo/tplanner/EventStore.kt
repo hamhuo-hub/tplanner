@@ -23,6 +23,8 @@ data class TaskEvent(
     val note: String,
     val deletedAt: Long,
     val updatedAt: Long = 0L,
+    val alarmEnabled: Boolean = false,
+    val alarmOffsetMinutes: Int = 0,
     // 桌面端/服务器的其余字段（timezone/groupId/recurrence* 等）原样透传。
     // 安卓端不理解的字段不代表可以丢弃——早先回写时丢字段 + 时间戳丢毫秒，
     // 会把服务器上的副本改写成与桌面端"内容相同但字节不同"的形态，导致
@@ -31,12 +33,15 @@ data class TaskEvent(
 )
 
 class EventStore(ctx: Context) {
-    private val prefs = ctx.getSharedPreferences("tplanner_events", Context.MODE_PRIVATE)
+    private val appContext = ctx.applicationContext
+    private val prefs = appContext.getSharedPreferences("tplanner_events", Context.MODE_PRIVATE)
 
     fun getAll(): List<TaskEvent> = parse(prefs.getString("events", "[]") ?: "[]")
 
     fun saveAll(events: List<TaskEvent>) {
         prefs.edit().putString("events", serialize(events)).apply()
+        // 所有本地编辑和远端合并最终都会经过这里，统一重排可避免孤儿闹铃。
+        runCatching { TaskAlarmScheduler.reconcile(appContext, events) }
     }
 
     fun fromJson(json: String): List<TaskEvent> = parse(json)
@@ -80,6 +85,8 @@ class EventStore(ctx: Context) {
             note      = optString("note", ""),
             deletedAt = optLong("deletedAt", 0L),
             updatedAt = optLong("updatedAt", 0L),
+            alarmEnabled = optBoolean("alarmEnabled", false),
+            alarmOffsetMinutes = optInt("alarmOffsetMinutes", 0).coerceIn(0, MAX_ALARM_OFFSET_MINUTES),
             extras    = extras,
         )
     }
@@ -88,6 +95,7 @@ class EventStore(ctx: Context) {
         private val KNOWN_KEYS = setOf(
             "id", "title", "type", "start", "end", "completed",
             "checklist", "colorId", "note", "deletedAt", "updatedAt",
+            "alarmEnabled", "alarmOffsetMinutes",
         )
     }
 }
@@ -111,6 +119,8 @@ internal fun TaskEvent.toJson(): JSONObject {
     obj.put("note", note)
     obj.put("deletedAt", deletedAt)
     obj.put("updatedAt", updatedAt)
+    obj.put("alarmEnabled", alarmEnabled)
+    obj.put("alarmOffsetMinutes", alarmOffsetMinutes.coerceIn(0, MAX_ALARM_OFFSET_MINUTES))
     val arr = JSONArray()
     checklist.forEach { item ->
         val o = JSONObject()
@@ -120,6 +130,8 @@ internal fun TaskEvent.toJson(): JSONObject {
     obj.put("checklist", arr)
     return obj
 }
+
+internal const val MAX_ALARM_OFFSET_MINUTES = 7 * 24 * 60
 
 fun List<TaskEvent>.forToday(): List<TaskEvent> = forDate(LocalDate.now())
 

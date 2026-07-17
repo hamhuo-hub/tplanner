@@ -28,6 +28,8 @@ class DeepSeekAnalysisService(private val apiKey: String) {
         val note: String,
         val colorId: Int,
         val checklist: List<String>,
+        val alarmEnabled: Boolean = false,
+        val alarmOffsetMinutes: Int = 0,
     )
 
     data class Clarify(val q: String, val options: List<String>)
@@ -151,11 +153,13 @@ class DeepSeekAnalysisService(private val apiKey: String) {
         toolCallId: String,
         status: String,
         scheduleId: String? = null,
+        alarmStatus: String? = null,
         message: String,
     ) {
         val content = JSONObject().apply {
             put("status", status)
             scheduleId?.let { put("schedule_id", it) }
+            alarmStatus?.let { put("alarm_status", it) }
             put("message", message)
         }.toString()
         sessionMessages.add(JSONObject().apply {
@@ -240,6 +244,8 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             val endIso = args.optString("end_at").trim()
             val note = args.optString("note", "")
             val colorId = args.optInt("color_id", -1)
+            val alarmEnabled = args.optBoolean("alarm_enabled", false)
+            val alarmOffsetMinutes = args.optInt("alarm_offset_minutes", -1)
             val checklist = mutableListOf<String>()
             args.optJSONArray("checklist")?.let { array ->
                 for (i in 0 until array.length()) {
@@ -256,6 +262,13 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             if (colorId !in 0..7) errors += "颜色"
             if (!args.has("note")) errors += "备注（不需要可留空）"
             if (!args.has("checklist")) errors += "清单（不需要可为空）"
+            if (!args.has("alarm_enabled")) errors += "是否开启系统闹铃"
+            if (!args.has("alarm_offset_minutes") || alarmOffsetMinutes !in 0..MAX_ALARM_OFFSET_MINUTES) {
+                errors += "闹铃提前分钟（0 到 $MAX_ALARM_OFFSET_MINUTES）"
+            }
+            if (!alarmEnabled && alarmOffsetMinutes > 0) {
+                errors += "关闭闹铃时提前分钟应为 0"
+            }
 
             if (errors.isNotEmpty()) {
                 submitToolResult(call.id, "failed", message = "参数不完整：${errors.joinToString("、")}")
@@ -276,13 +289,18 @@ class DeepSeekAnalysisService(private val apiKey: String) {
                         note = note,
                         colorId = colorId,
                         checklist = if (type == "task") checklist else emptyList(),
+                        alarmEnabled = alarmEnabled,
+                        alarmOffsetMinutes = if (alarmEnabled) alarmOffsetMinutes else 0,
                     ),
                 )
             }
         } catch (e: Exception) {
             submitToolResult(call.id, "failed", message = "工具参数不是有效 JSON")
             ParsedTool(
-                clarify = Clarify("日程参数格式不完整，请重新说明类型、标题、起止时间、备注、颜色和清单。", emptyList()),
+                clarify = Clarify(
+                    "日程参数格式不完整，请重新说明类型、标题、起止时间、备注、颜色、清单和系统闹铃。",
+                    emptyList(),
+                ),
             )
         }
     }
@@ -362,7 +380,7 @@ class DeepSeekAnalysisService(private val apiKey: String) {
                 put("name", CREATE_SCHEDULE_TOOL)
                 put(
                     "description",
-                    "创建 tPlanner 日程。只有类型、标题、开始、结束、备注、颜色以及任务清单都已向用户询问，" +
+                    "创建 tPlanner 日程。只有类型、标题、开始、结束、备注、颜色、任务清单以及系统闹铃都已向用户询问，" +
                         "或用户明确接受默认值后才可调用。应用仍会在执行前向用户做最终确认。",
                 )
                 put("parameters", JSONObject().apply {
@@ -400,10 +418,25 @@ class DeepSeekAnalysisService(private val apiKey: String) {
                             put("items", JSONObject().put("type", "string"))
                             put("description", "task 的清单文本；其他类型或无清单时传空数组")
                         })
+                        put("alarm_enabled", JSONObject().apply {
+                            put("type", "boolean")
+                            put("description", "是否为这条日程创建 Android 系统闹铃")
+                        })
+                        put("alarm_offset_minutes", JSONObject().apply {
+                            put("type", "integer")
+                            put("minimum", 0)
+                            put("maximum", MAX_ALARM_OFFSET_MINUTES)
+                            put("description", "闹铃比 start_at 提前的分钟数；开始时为 0，alarm_enabled=false 时必须为 0")
+                        })
                     })
                     put(
                         "required",
-                        JSONArray(listOf("type", "title", "start_at", "end_at", "note", "color_id", "checklist")),
+                        JSONArray(
+                            listOf(
+                                "type", "title", "start_at", "end_at", "note", "color_id", "checklist",
+                                "alarm_enabled", "alarm_offset_minutes",
+                            ),
+                        ),
                     )
                     put("additionalProperties", false)
                 })
@@ -450,8 +483,9 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             "你是 tPlanner 的 QA 助手。你的核心行为是反过来追问，帮助用户理清想法，而不是替用户下结论。" +
                 "每次响应都必须产生至少一个与当前上下文相关的新追问。你可以使用 create_schedule 工具，" +
                 "但工具、参数校验、确认与执行均由应用负责。识别到日程意图时，必须询问所有可填写字段：" +
-                "类型、标题、开始、结束、备注、颜色；task 还要询问清单。没有提供的值绝不猜测，除非用户" +
-                "明确接受默认值。字段不全时不要调用工具，而是在 clarify 中一次列出全部缺失字段。字段齐全" +
+                "类型、标题、开始、结束、备注、颜色、是否开启系统闹铃；开启闹铃时还要询问提前多少分钟；" +
+                "task 还要询问清单。关闭闹铃时 alarm_offset_minutes 必须为 0。没有提供的值绝不猜测，除非用户" +
+                "明确接受默认值；接受默认值时系统闹铃默认关闭（false/0）。字段不全时不要调用工具，而是在 clarify 中一次列出全部缺失字段。字段齐全" +
                 "后调用 create_schedule。每次最多调用一次工具、创建一条日程；多条日程必须逐条确认。" +
                 "普通回复只输出有效 JSON，不要 markdown。"
 

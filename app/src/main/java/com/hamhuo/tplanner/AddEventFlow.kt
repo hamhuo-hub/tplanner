@@ -6,6 +6,7 @@ import android.app.TimePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,6 +45,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -62,6 +65,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -373,6 +377,8 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
     var note      by remember { mutableStateOf(event.note) }
     var colorId   by remember { mutableStateOf(event.colorId) }
     var type      by remember { mutableStateOf(event.type) }
+    var alarmEnabled by remember { mutableStateOf(event.alarmEnabled) }
+    var alarmOffsetMinutes by remember { mutableStateOf(event.alarmOffsetMinutes) }
 
     var showTypeSheet by remember { mutableStateOf(false) }
     val typeSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -401,6 +407,8 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
         completed = if (type == "task") event.completed else false,
         note      = note,
         colorId   = colorId,
+        alarmEnabled = alarmEnabled,
+        alarmOffsetMinutes = alarmOffsetMinutes.coerceIn(0, MAX_ALARM_OFFSET_MINUTES),
         updatedAt = System.currentTimeMillis(),
     )
 
@@ -521,6 +529,89 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
                         )
                     }
 
+                    Spacer(Modifier.height(24.dp))
+                    HorizontalDivider(color = BORDER)
+                    Spacer(Modifier.height(20.dp))
+
+                    // 与任务生命周期绑定的系统闹铃：改时间自动重排，完成/删除自动取消。
+                    DetailSectionLabel(stringResource(R.string.section_alarm))
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                stringResource(R.string.alarm_enabled_title),
+                                color = Color(0xFFE0D8C8),
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                stringResource(R.string.alarm_enabled_description),
+                                color = DIM,
+                                fontSize = 12.sp,
+                                lineHeight = 18.sp,
+                            )
+                        }
+                        Switch(
+                            checked = alarmEnabled,
+                            onCheckedChange = { alarmEnabled = it },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFF0E0E0E),
+                                checkedTrackColor = GOLD,
+                                uncheckedThumbColor = DIM,
+                                uncheckedTrackColor = Color(0xFF252525),
+                            ),
+                        )
+                    }
+                    if (alarmEnabled) {
+                        val offsets = remember(alarmOffsetMinutes) {
+                            (listOf(0, 5, 10, 15, 30, 60) + alarmOffsetMinutes)
+                                .filter { it in 0..MAX_ALARM_OFFSET_MINUTES }
+                                .distinct()
+                                .sorted()
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            offsets.forEach { minutes ->
+                                val selected = minutes == alarmOffsetMinutes
+                                Box(
+                                    modifier = Modifier
+                                        .background(
+                                            if (selected) GOLD else Color(0xFF1F1F1F),
+                                            RoundedCornerShape(20.dp),
+                                        )
+                                        .border(1.dp, if (selected) GOLD else BORDER, RoundedCornerShape(20.dp))
+                                        .clickable { alarmOffsetMinutes = minutes }
+                                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                                ) {
+                                    Text(
+                                        alarmOffsetLabel(minutes),
+                                        color = if (selected) Color(0xFF0E0E0E) else Color(0xFFE0D8C8),
+                                        fontSize = 13.sp,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                    )
+                                }
+                            }
+                        }
+                        if (!TaskAlarmScheduler.canScheduleExactAlarms(context)) {
+                            Text(
+                                stringResource(R.string.alarm_exact_permission_hint),
+                                color = GOLD,
+                                fontSize = 12.sp,
+                                lineHeight = 18.sp,
+                                modifier = Modifier
+                                    .padding(top = 10.dp)
+                                    .clickable { TaskAlarmScheduler.requestExactAlarmAccess(context) },
+                            )
+                        }
+                    }
+
                     // 清单只对「任务」类型有意义——事件/提醒不是待办事项，不需要子项打勾。
                     if (type == "task") {
                         Spacer(Modifier.height(24.dp))
@@ -633,6 +724,17 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
 @Composable
 private fun DetailSectionLabel(text: String) {
     Text(text, color = Color(0xFF6B5928), fontSize = 13.sp, letterSpacing = 0.12.sp, fontWeight = FontWeight.SemiBold)
+}
+
+@Composable
+private fun alarmOffsetLabel(minutes: Int): String = when {
+    minutes == 0 -> stringResource(R.string.alarm_at_start)
+    minutes % (24 * 60) == 0 -> {
+        val days = minutes / (24 * 60)
+        pluralStringResource(R.plurals.alarm_days_before, days, days)
+    }
+    minutes % 60 == 0 -> stringResource(R.string.alarm_hours_before, minutes / 60)
+    else -> stringResource(R.string.alarm_minutes_before, minutes)
 }
 
 @Composable

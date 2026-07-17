@@ -61,6 +61,14 @@ private fun prettyWhen(startIso: String, endIso: String): String {
     } catch (_: Exception) { "$startIso – $endIso" }
 }
 
+private fun prettyAlarm(enabled: Boolean, offsetMinutes: Int): String = when {
+    !enabled -> "系统闹铃 · 关闭"
+    offsetMinutes == 0 -> "系统闹铃 · 开始时"
+    offsetMinutes % (24 * 60) == 0 -> "系统闹铃 · 提前 ${offsetMinutes / (24 * 60)} 天"
+    offsetMinutes % 60 == 0 -> "系统闹铃 · 提前 ${offsetMinutes / 60} 小时"
+    else -> "系统闹铃 · 提前 $offsetMinutes 分钟"
+}
+
 // 全屏"理一理"面板。四态由父组件驱动：
 //   编辑（都为空 && !thinking）→ 写下凌乱的想法/随手记
 //   思考（thinking）           → AI 正在读你的片段
@@ -206,6 +214,11 @@ fun UntangleSheet(
                     )
                     Text("$typeLabel · ${prettyWhen(action.startIso, action.endIso)}", color = GOLD, fontSize = 14.sp)
                     Text("颜色 ${action.colorId + 1}", color = DIM, fontSize = 13.sp)
+                    Text(
+                        prettyAlarm(action.alarmEnabled, action.alarmOffsetMinutes),
+                        color = if (action.alarmEnabled) GOLD else DIM,
+                        fontSize = 13.sp,
+                    )
                     if (action.note.isNotBlank()) Text(action.note, color = DIM, fontSize = 13.sp, lineHeight = 20.sp)
                     if (action.checklist.isNotEmpty()) {
                         Text("清单 · ${action.checklist.joinToString("、")}", color = DIM, fontSize = 13.sp, lineHeight = 20.sp)

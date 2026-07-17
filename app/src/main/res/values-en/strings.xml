@@ -13,6 +13,7 @@
     <string name="tab_journal">Notes</string>
     <string name="tab_tasks">Schedule</string>
     <string name="section_time">Time</string>
+    <string name="section_alarm">System alarm</string>
     <string name="section_checklist">Checklist</string>
     <string name="section_note">Note</string>
     <string name="section_color">Color</string>
@@ -59,6 +60,23 @@
     <string name="unknown_error">Unknown error</string>
     <string name="schedule_created_toast">Schedule created: %1$s</string>
     <string name="schedule_create_failed_toast">Could not create schedule. Please try again.</string>
+    <string name="schedule_created_with_alarm_toast">Schedule and system alarm created: %1$s</string>
+    <string name="schedule_created_with_fallback_alarm_toast">Schedule created: %1$s. Exact alarm access is off, so the reminder may be delayed.</string>
+    <string name="alarm_enabled_title">Remind me before it starts</string>
+    <string name="alarm_enabled_description">Time changes reschedule it; completion or deletion cancels it</string>
+    <string name="alarm_at_start">At start</string>
+    <string name="alarm_minutes_before">%1$d min before</string>
+    <string name="alarm_hours_before">%1$d hr before</string>
+    <plurals name="alarm_days_before">
+        <item quantity="one">%1$d day before</item>
+        <item quantity="other">%1$d days before</item>
+    </plurals>
+    <string name="alarm_exact_permission_hint">Enable Alarms &amp; reminders for precise delivery; tap to open system settings</string>
+    <string name="alarm_channel_name">Task alarms</string>
+    <string name="alarm_channel_description">Alarm reminders before scheduled items start</string>
+    <string name="alarm_notification_starts_at">Starts at %1$s</string>
+    <string name="insight_expand_card">Show full entry  ▾</string>
+    <string name="insight_collapse_card">Collapse  ▴</string>
 
     <!-- Date patterns (DateTimeFormatter pattern syntax) -->
     <string name="date_pattern_full">MMMM d, yyyy</string>

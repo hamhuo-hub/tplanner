@@ -14,6 +14,7 @@
     <string name="journal_edit_hint">记录今天的想法、灵感…</string>
     <string name="tab_tasks">日程</string>
     <string name="section_time">时间</string>
+    <string name="section_alarm">系统闹铃</string>
     <string name="section_checklist">清单</string>
     <string name="section_note">备注</string>
     <string name="section_color">颜色</string>
@@ -60,6 +61,22 @@
     <string name="unknown_error">未知错误</string>
     <string name="schedule_created_toast">已创建日程：%1$s</string>
     <string name="schedule_create_failed_toast">日程创建失败，请重试</string>
+    <string name="schedule_created_with_alarm_toast">已创建日程并设置系统闹铃：%1$s</string>
+    <string name="schedule_created_with_fallback_alarm_toast">已创建日程：%1$s；精确闹铃权限未开启，提醒可能延迟</string>
+    <string name="alarm_enabled_title">开始前提醒我</string>
+    <string name="alarm_enabled_description">修改时间会自动重排，完成或删除后自动取消</string>
+    <string name="alarm_at_start">开始时</string>
+    <string name="alarm_minutes_before">%1$d 分钟前</string>
+    <string name="alarm_hours_before">%1$d 小时前</string>
+    <plurals name="alarm_days_before">
+        <item quantity="other">%1$d 天前</item>
+    </plurals>
+    <string name="alarm_exact_permission_hint">开启“闹钟和提醒”权限可准时触发；点击前往系统设置</string>
+    <string name="alarm_channel_name">任务闹铃</string>
+    <string name="alarm_channel_description">在日程开始前发出闹铃提醒</string>
+    <string name="alarm_notification_starts_at">%1$s 开始</string>
+    <string name="insight_expand_card">展开查看完整内容  ▾</string>
+    <string name="insight_collapse_card">收起  ▴</string>
 
     <!-- 日期格式（DateTimeFormatter 模式） -->
     <string name="date_pattern_full">yyyy年M月d日</string>
