@@ -105,8 +105,9 @@ const expandBtnStyle = {
  *   onChange   (val) => void   每次按键即时更新（受控）
  *   onCommit   (val) => void   失焦 / 关闭全屏时保存（可选）
  *   placeholder string
+ *   readOnly   boolean         只展示渲染结果，不允许进入编辑模式
  */
-export default function NoteEditor({ value = '', onChange, onCommit, placeholder }) {
+export default function NoteEditor({ value = '', onChange, onCommit, placeholder, readOnly = false }) {
     const { t } = useTranslation();
     const ph = placeholder ?? t('event.notePlaceholder');
 
@@ -114,9 +115,13 @@ export default function NoteEditor({ value = '', onChange, onCommit, placeholder
     const [fullscreen, setFullscreen] = useState(false);
 
     const rendered = useMemo(() => {
-        const r = marked.parse(value || '', { async: false, breaks: true, renderer });
+        const r = marked.parse(value || '', {
+            async: false,
+            breaks: true,
+            ...(readOnly ? {} : { renderer }),
+        });
         return typeof r === 'string' ? r : '';
-    }, [value]);
+    }, [value, readOnly]);
 
     const handlePreviewClick = (e) => {
         const newVal = toggleCheckbox(e, e.currentTarget, value);
@@ -133,7 +138,9 @@ export default function NoteEditor({ value = '', onChange, onCommit, placeholder
         onCommit?.(value);
     };
 
-    const openFullscreen = () => setFullscreen(true);
+    const openFullscreen = () => {
+        if (!readOnly) setFullscreen(true);
+    };
 
     const closeFullscreen = () => {
         setFullscreen(false);
@@ -266,6 +273,10 @@ export default function NoteEditor({ value = '', onChange, onCommit, placeholder
                     <div
                         className="journal-md-preview"
                         onClick={e => {
+                            if (readOnly) {
+                                if (e.target.type === 'checkbox') e.preventDefault();
+                                return;
+                            }
                             const newVal = toggleCheckbox(e, e.currentTarget, value);
                             if (newVal !== null) {
                                 onChange?.(newVal);
@@ -274,20 +285,27 @@ export default function NoteEditor({ value = '', onChange, onCommit, placeholder
                                 setEditing(true);
                             }
                         }}
-                        style={previewStyle}
+                        style={{
+                            ...previewStyle,
+                            cursor: readOnly ? 'default' : previewStyle.cursor,
+                            paddingRight: readOnly ? 14 : previewStyle.paddingRight,
+                        }}
+                        aria-readonly={readOnly}
                         dangerouslySetInnerHTML={{ __html: value ? rendered : placeholderHtml }}
                     />
                 )}
 
                 {/* 全屏按钮 — preventDefault 防止点击时触发 textarea blur */}
-                <button
-                    onMouseDown={e => e.preventDefault()}
-                    onClick={openFullscreen}
-                    style={expandBtnStyle}
-                    title={t('note.fullscreen')}
-                >
-                    <Maximize2 size={12} />
-                </button>
+                {!readOnly && (
+                    <button
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={openFullscreen}
+                        style={expandBtnStyle}
+                        title={t('note.fullscreen')}
+                    >
+                        <Maximize2 size={12} />
+                    </button>
+                )}
             </div>
         </>
     );

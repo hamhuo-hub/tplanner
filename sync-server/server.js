@@ -22,11 +22,26 @@ const path  = require('path');
 const PORT = parseInt(process.env.PORT || '37401', 10);
 const DATA_DIR  = process.env.DATA_DIR  || path.join(__dirname, 'data');
 const WEB_DIR   = process.env.WEB_DIR   || path.join(__dirname, 'dist-web');
+const WEB_HOSTS = new Set(
+    (process.env.WEB_HOSTS || 'plan.hamhuo.top')
+        .split(',')
+        .map(normalizeHostname)
+        .filter(Boolean)
+);
 const DATA_FILE     = path.join(DATA_DIR, 'events.json');
 const JOURNALS_FILE = path.join(DATA_DIR, 'journals.json');
 const GOALS_FILE    = path.join(DATA_DIR, 'goals.json');
 const INSIGHTS_FILE = path.join(DATA_DIR, 'insights.json');
 const LOG_FILE      = path.join(DATA_DIR, 'server.log');
+
+function normalizeHostname(rawHost) {
+    const host = String(rawHost || '').trim().toLowerCase();
+    if (host.startsWith('[')) {
+        const closingBracket = host.indexOf(']');
+        return (closingBracket === -1 ? host : host.slice(1, closingBracket)).replace(/\.$/, '');
+    }
+    return host.split(':')[0].replace(/\.$/, '');
+}
 
 // 最多保留多少个备份
 const MAX_BACKUPS = 5;
@@ -515,6 +530,14 @@ async function handleRequest(req, res) {
     // ── Static file serving (web app) + SPA fallback ─────────────────────────
     // 仅处理 GET 请求；API 路由已在前面的 handler 中全部 return。
     // 路径不包含 /tplanner/ 且不是 /health /tplanner/time 时才到这里。
+    // Web UI 只允许从 plan.hamhuo.top（或 WEB_HOSTS 配置的域名）访问；
+    // sync.hamhuo.top 与未知 Host 对非 API 路径只返回 JSON 404。
+    const hostname = normalizeHostname(req.headers.host);
+    if (!WEB_HOSTS.has(hostname)) {
+        json(res, 404, { error: 'Not found' });
+        return;
+    }
+
     if (method !== 'GET') {
         json(res, 405, { error: 'Method not allowed' });
         return;

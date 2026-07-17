@@ -12,10 +12,8 @@ export default function EventDetailsModal({ event, travelTimezone, onClose, onDe
     const locale = getDateLocale(i18n.language);
     const [deleteScope, setDeleteScope] = useState('single');
     const [confirmingDelete, setConfirmingDelete] = useState(false);
-    const [localNote, setLocalNote] = useState(event?.note || '');
 
     useEffect(() => { setConfirmingDelete(false); }, [event?.id]);
-    useEffect(() => { setLocalNote(event?.note || ''); }, [event?.id]);
 
     if (!event) return null;
 
@@ -71,13 +69,8 @@ export default function EventDetailsModal({ event, travelTimezone, onClose, onDe
                     <div>
                         <span className="modal-label">{t('event.note')}</span>
                         <NoteEditor
-                            value={localNote}
-                            onChange={setLocalNote}
-                            onCommit={val => {
-                                if (val !== (event.note || '')) {
-                                    onSave?.({ ...event, note: val });
-                                }
-                            }}
+                            value={event.note || ''}
+                            readOnly
                         />
                     </div>
 

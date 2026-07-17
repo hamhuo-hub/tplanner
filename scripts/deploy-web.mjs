@@ -43,20 +43,22 @@ console.log('\n=== Step 2: Deploy to Pi ===');
 
 // scp to a temp location in hamhuo's home (avoids /root permission issues)
 const TMP_DIR = '/tmp/tplanner-deploy';
+const TMP_WEB_DIR = `${TMP_DIR}/web`;
 console.log('Uploading files...');
-run(`ssh ${SSH_TARGET} "rm -rf ${TMP_DIR} && mkdir -p ${TMP_DIR}"`);
-run(`scp -r dist/* ${SSH_TARGET}:${TMP_DIR}/`);
+run(`ssh ${SSH_TARGET} "rm -rf ${TMP_DIR} && mkdir -p ${TMP_WEB_DIR}"`);
+run(`scp -r dist/* ${SSH_TARGET}:${TMP_WEB_DIR}/`);
 
 // Also copy updated server.js
 const serverJs = join(rootDir, 'sync-server', 'server.js');
-if (existsSync(serverJs)) {
-    console.log('Including updated server.js...');
-    run(`scp "${serverJs}" ${SSH_TARGET}:${TMP_DIR}/server.js`);
+if (!existsSync(serverJs)) {
+    throw new Error(`Missing sync server entry point: ${serverJs}`);
 }
+console.log('Including updated server.js...');
+run(`scp "${serverJs}" ${SSH_TARGET}:${TMP_DIR}/server.js`);
 
 // Move from temp to /root/tplanner-sync/ with sudo
 console.log('Installing to /root/tplanner-sync/...');
-run(`ssh ${SSH_TARGET} "sudo rm -rf ${WEB_DIR}/* && sudo mkdir -p ${WEB_DIR} && sudo cp -r ${TMP_DIR}/* ${WEB_DIR}/ && sudo cp ${TMP_DIR}/server.js ${PI_PATH}/server.js 2>/dev/null; rm -rf ${TMP_DIR}"`);
+run(`ssh ${SSH_TARGET} "sudo rm -rf ${WEB_DIR} && sudo mkdir -p ${WEB_DIR} && sudo cp -r ${TMP_WEB_DIR}/. ${WEB_DIR}/ && sudo cp ${TMP_DIR}/server.js ${PI_PATH}/server.js && rm -rf ${TMP_DIR}"`);
 
 // ── 3. Restart service ────────────────────────────────────────────────────
 console.log('\n=== Step 3: Restart sync server ===');
@@ -69,5 +71,5 @@ try {
 }
 
 console.log('\n=== Done ===');
-console.log(`Web app deployed to http://${PI_HOST}:37401/`);
-console.log('Public URL: https://plan.hamhuo.top (after Cloudflare Tunnel config)');
+console.log('Web app deployed successfully.');
+console.log('Public URL: https://plan.hamhuo.top');
