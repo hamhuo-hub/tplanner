@@ -67,15 +67,6 @@ export function canonicalEvent(e) {
     return c;
 }
 
-export function canonicalGoal(g) {
-    const c = { ...g,
-        note: g.note ?? '', icon: g.icon ?? '', order: g.order ?? 0,
-        updatedAt: g.updatedAt || 0, deletedAt: g.deletedAt ?? 0,
-    };
-    delete c.version;
-    return c;
-}
-
 function canonicalJournalEntry(entry) {
     const e = entry || {};
     return { text: e.text || '', updatedAt: e.updatedAt || 0, deletedAt: e.deletedAt ?? null };
@@ -205,7 +196,6 @@ export function mergeEntitiesWithBase(local, remote, baseKeys = null, resolution
 
 // ── 实体映射 ─────────────────────────────────────────────────────────────────
 const toEventEntity   = e => ({ id: e.id, payload: canonicalEvent(e),   updatedAt: e.updatedAt || 0, deletedAt: e.deletedAt || null });
-const toGoalEntity    = g => ({ id: g.id, payload: canonicalGoal(g),    updatedAt: g.updatedAt || 0, deletedAt: g.deletedAt || null });
 const toJournalEntity = (date, entry) => ({ id: date, payload: canonicalJournalEntry(entry), updatedAt: entry?.updatedAt || 0, deletedAt: entry?.deletedAt ?? null });
 const fromEntity        = e => e.payload;
 const journalFromEntity = e => ({ date: e.id, ...e.payload });
@@ -214,18 +204,12 @@ const journalFromEntity = e => ({ date: e.id, ...e.payload });
 export function analyzeConflict(local, remote) {
     return convertResults(analyzeEntities(local.map(toEventEntity), remote.map(toEventEntity)), fromEntity);
 }
-export function analyzeGoalConflict(local, remote) {
-    return convertResults(analyzeEntities(local.map(toGoalEntity), remote.map(toGoalEntity)), fromEntity);
-}
 export function analyzeJournalConflict(local, remote) {
     const je = obj => Object.entries(obj || {}).map(([d, e]) => toJournalEntity(d, e));
     return convertResults(analyzeEntities(je(local), je(remote)), journalFromEntity);
 }
 export function mergeEvents(local, remote) {
     return mergeEntities(local.map(toEventEntity), remote.map(toEventEntity)).map(fromEntity);
-}
-export function mergeGoals(local, remote) {
-    return mergeEntities(local.map(toGoalEntity), remote.map(toGoalEntity)).map(fromEntity);
 }
 export function mergeJournals(local, remote) {
     const je = obj => Object.entries(obj || {}).map(([d, e]) => toJournalEntity(d, e));
@@ -322,11 +306,6 @@ const _eventsAdapter = createSyncAdapter({
     toEntity: toEventEntity, fromEntity, itemLabel: e => e?.title ?? '',
 });
 
-const _goalsAdapter = createSyncAdapter({
-    type: 'goals', endpoint: '/tplanner/goals', unitName: '个',
-    toEntity: toGoalEntity, fromEntity, itemLabel: g => g?.title ?? '',
-});
-
 const _journalsAdapter = createSyncAdapter({
     type: 'journals', endpoint: '/tplanner/journals', unitName: '篇',
     toEntity: _je, fromEntity: journalFromEntity,
@@ -336,4 +315,4 @@ const _journalsAdapter = createSyncAdapter({
     itemLabel: item => { const t = (item?.text || '').replace(/\s+/g, ' ').trim().slice(0, 20); return t ? `${item.date} · ${t}${item.text?.length > 20 ? '…' : ''}` : item?.date ?? ''; },
 });
 
-export const BUILTIN_ADAPTERS = { events: _eventsAdapter, goals: _goalsAdapter, journals: _journalsAdapter };
+export const BUILTIN_ADAPTERS = { events: _eventsAdapter, journals: _journalsAdapter };

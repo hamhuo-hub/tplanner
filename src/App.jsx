@@ -3,8 +3,6 @@ import { debounceTime } from 'rxjs'
 import { format } from 'date-fns'
 import { useTranslation } from 'react-i18next'
 import Timeline from './components/Timeline'
-import DecadePlan from './components/DecadePlan'
-import DecadeFab from './components/DecadeFab'
 import AddEventModal from './components/AddEventModal'
 import EventDetailsModal from './components/EventDetailsModal'
 import ClashBanner from './components/ClashBanner'
@@ -19,7 +17,6 @@ import { checkForClashes } from './utils/dateUtils'
 import { TIMEZONES } from './utils/constants'
 import { Plus, Languages, Printer, Globe, Download, Upload, Power, X } from 'lucide-react'
 import { getDatabase } from './database/db'
-import { makeGoal } from './utils/goalUtils'
 import { now as clockNow } from './utils/clock'
 import { BUILTIN_ADAPTERS } from './utils/syncLogic'
 import * as webApi from './utils/webDataAdapter'
@@ -40,12 +37,6 @@ function App() {
     const [editingEvent, setEditingEvent] = useState(null);
     const [isLoaded, setIsLoaded] = useState(false);
     const [db, setDb] = useState(null);
-    const [activeTab, setActiveTab] = useState('calendar');
-
-    // ── Decade Plan ───────────────────────────────────────────────────────
-    const [goals, setGoals] = useState([]);
-    const [selectedGoalId, setSelectedGoalId] = useState(null);
-
     // Detect Electron environment
     const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
 
@@ -75,12 +66,8 @@ function App() {
             return () => { if (subscription) subscription.unsubscribe(); };
         } else {
             // Web mode: load directly from server API
-            Promise.all([
-                webApi.loadEvents(),
-                webApi.loadGoals(),
-            ]).then(([ev, g]) => {
+            webApi.loadEvents().then(ev => {
                 setEvents(ev);
-                setGoals(g);
                 setIsLoaded(true);
             }).catch(err => {
                 console.error('Failed to load from server', err);
@@ -163,90 +150,6 @@ function App() {
         });
         return () => { if (typeof off === 'function') off(); };
     }, [db, isElectron]);
-
-    // ── Goals subscription ───────────────────────────────────────────────
-    useEffect(() => {
-        if (!db) return;
-        const sub = db.goals.find().$.pipe(debounceTime(50)).subscribe(docs => {
-            setGoals(docs.map(d => d.toJSON()));
-        });
-        return () => sub.unsubscribe();
-    }, [db]);
-
-    const visibleGoals = useMemo(() => goals.filter(g => !g.deletedAt), [goals]);
-
-    const handleAddGoal = async ({ q, r, s }) => {
-        if (!db) {
-            const goal = makeGoal({ order: visibleGoals.length, q, r, s });
-            setGoals(prev => [...prev, goal]);
-            setSelectedGoalId(goal.id);
-            return;
-        }
-        const goal = makeGoal({ order: visibleGoals.length, q, r, s });
-        await db.goals.insert(goal);
-        setSelectedGoalId(goal.id);
-    };
-
-    const handleUpdateGoal = async (id, patch) => {
-        if (!db) {
-            const now = clockNow();
-            setGoals(prev => prev.map(g =>
-                g.id === id ? { ...g, ...patch, version: (g.version || 0) + 1, updatedAt: now } : g
-            ));
-            return;
-        }
-        try {
-            const doc = await db.goals.findOne(id).exec();
-            if (doc) {
-                const v = (doc.get('version') || 0) + 1;
-                await doc.incrementalPatch({ ...patch, version: v, updatedAt: clockNow() });
-            }
-        } catch (err) {
-            console.error('Update goal failed', err);
-        }
-    };
-
-    const handleDeleteGoal = async (id) => {
-        if (!db) {
-            const now = clockNow();
-            setGoals(prev => prev.map(g =>
-                g.id === id ? { ...g, version: (g.version || 0) + 1, deletedAt: now, updatedAt: now } : g
-            ));
-            if (selectedGoalId === id) setSelectedGoalId(null);
-            return;
-        }
-        try {
-            const doc = await db.goals.findOne(id).exec();
-            if (doc) {
-                const v = (doc.get('version') || 0) + 1;
-                await doc.update({ $set: { version: v, deletedAt: clockNow(), updatedAt: clockNow() } });
-            }
-        } catch (err) {
-            console.error('Delete goal failed', err);
-        }
-        if (selectedGoalId === id) setSelectedGoalId(null);
-    };
-
-    // ── Debug console commands ────────────────────────────────────────────
-    useEffect(() => {
-        if (!db) return;
-        window.__tplanner = {
-            ...(window.__tplanner ?? {}),
-            clearEmptyGoals: async () => {
-                const docs = await db.goals.find().exec();
-                const empty = docs.filter(d => {
-                    const title = (d.get('title') ?? '').trim();
-                    const note  = (d.get('note')  ?? '').trim();
-                    const dead  = d.get('deletedAt') > 0;
-                    return !dead && note === '' && (title === '' || title === '新目标' || title === 'New Goal');
-                });
-                if (!empty.length) { console.log('[tplanner] 没有空目标'); return; }
-                const ts = clockNow();
-                await Promise.all(empty.map(d => d.incrementalPatch({ deletedAt: ts, updatedAt: ts })));
-                console.log(`[tplanner] 已清除 ${empty.length} 个空目标`);
-            },
-        };
-    }, [db]);
 
     // ── Journal (随笔) ────────────────────────────────────────────────────
     // 条目格式：{ text, updatedAt, deletedAt }，与 events 的 tombstone 模型一致。
@@ -332,18 +235,6 @@ function App() {
             return { ...prev, [dateStr]: entry };
         });
     };
-
-    // ── Web-mode auto-save goals to server ────────────────────────────────
-    const webGoalSaveTimerRef = useRef(null);
-    useEffect(() => {
-        if (isElectron || !isLoaded) return;
-        clearTimeout(webGoalSaveTimerRef.current);
-        webGoalSaveTimerRef.current = setTimeout(() => {
-            webApi.saveGoals(goals).catch(err =>
-                console.error('Failed to save goals to server', err)
-            );
-        }, 300);
-    }, [goals, isLoaded, isElectron]);
 
     // ── Web-mode auto-save journals to server ─────────────────────────────
     const webJournalSaveTimerRef = useRef(null);
@@ -744,8 +635,7 @@ function App() {
             {/* Custom Title Bar (Electron only) */}
             {isElectron && <TitleBar />}
 
-            {/* App Header — hidden on decade tab, but kept mounted so LanSync state persists */}
-            <header className="app-header" style={{ display: activeTab === 'decade' ? 'none' : undefined }}>
+            <header className="app-header">
                 <div className="app-header-left">
                     {/* App title — only show if NOT in electron (TitleBar already shows it) */}
                     {!isElectron && (
@@ -842,14 +732,6 @@ function App() {
                                     },
                                 },
                                 {
-                                    ...BUILTIN_ADAPTERS.goals,
-                                    _getLocal: () => goals,
-                                    _writeLocal: async (merged) => {
-                                        if (!db) return;
-                                        try { await db.goals.bulkUpsert(merged); } catch (err) { console.error('LAN goals merge failed', err); }
-                                    },
-                                },
-                                {
                                     ...BUILTIN_ADAPTERS.journals,
                                     _getLocal: () => journals,
                                     _writeLocal: (merged) => {
@@ -882,8 +764,7 @@ function App() {
 
             {/* Main Content */}
             <main style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '12px', minHeight: 0, gap: '8px' }}>
-                {activeTab === 'calendar' && <>
-                    <div className="calendar-banners">
+                <div className="calendar-banners">
                     <ReminderBanner
                         events={visibleEvents}
                         travelTimezone={travelTimezone}
@@ -912,8 +793,8 @@ function App() {
                             setTimeout(() => setHighlight(null), 3000);
                         }}
                     />
-                    </div>
-                    <Timeline
+                </div>
+                <Timeline
                         startDate={viewRange.start || new Date()}
                         endDate={viewRange.end || new Date()}
                         events={visibleEvents}
@@ -931,69 +812,8 @@ function App() {
                         onSaveJournal={handleSaveJournal}
                         selectedIds={selectedIds}
                         onSelectionChange={setSelectedIds}
-                    />
-                </>}
-                {activeTab === 'decade' && (
-                    <DecadePlan
-                        goals={visibleGoals}
-                        selectedId={selectedGoalId}
-                        onSelect={setSelectedGoalId}
-                        onAddGoal={handleAddGoal}
-                        onUpdateGoal={handleUpdateGoal}
-                        onDeleteGoal={handleDeleteGoal}
-                    />
-                )}
-            </main>
-
-            {activeTab === 'decade' && (
-                <DecadeFab
-                    lang={i18n.language}
-                    onToggleLanguage={toggleLanguage}
-                    onPrint={handlePrint}
-                    onExport={handleExport}
-                    onImport={handleImport}
                 />
-            )}
-
-            {/* Bottom Tab Bar */}
-            <div style={{
-                display: 'flex',
-                alignItems: 'flex-end',
-                gap: 2,
-                padding: '0 12px',
-                background: 'var(--clr-void)',
-                borderTop: '1px solid var(--clr-border)',
-                flexShrink: 0,
-            }}>
-                {[
-                    { id: 'calendar', label: t('tabs.calendar') },
-                    { id: 'decade',   label: t('tabs.decade') },
-                ].map(tab => (
-                    <button
-                        key={tab.id}
-                        onClick={() => setActiveTab(tab.id)}
-                        style={{
-                            padding: '5px 16px',
-                            fontSize: 11,
-                            fontFamily: 'var(--font-display)',
-                            letterSpacing: '0.08em',
-                            textTransform: 'uppercase',
-                            cursor: 'pointer',
-                            border: '1px solid var(--clr-border)',
-                            borderBottom: 'none',
-                            borderRadius: '3px 3px 0 0',
-                            background: activeTab === tab.id ? 'var(--clr-surface)' : 'var(--clr-void)',
-                            color: activeTab === tab.id ? 'var(--clr-gold)' : 'var(--clr-text-dim)',
-                            borderColor: activeTab === tab.id ? 'var(--clr-gold-dim)' : 'var(--clr-border)',
-                            transition: 'color 120ms ease, background 120ms ease',
-                            position: 'relative',
-                            bottom: activeTab === tab.id ? -1 : 0,
-                        }}
-                    >
-                        {tab.label}
-                    </button>
-                ))}
-            </div>
+            </main>
 
             <AddEventModal
                 isOpen={isAddModalOpen}

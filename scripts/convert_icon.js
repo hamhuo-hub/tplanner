@@ -8,10 +8,10 @@ const __dirname = path.dirname(__filename);
 
 // Root dir is one level up from scripts/
 const rootDir = path.join(__dirname, '..');
-const landscapePath = path.join(rootDir, 'landscape.png');
+const iconPngPath = path.join(rootDir, 'icon.png');
 const iconPath = path.join(rootDir, 'icon.ico');
 
-console.log('Generating icon...');
+console.log('Generating icon.ico from icon.png...');
 
 // Simple python script content
 const pythonScriptContent = `
@@ -20,7 +20,7 @@ import sys
 import os
 
 try:
-    img_path = r"${landscapePath.replace(/\\/g, '\\\\')}"
+    img_path = r"${iconPngPath.replace(/\\/g, '\\\\')}"
     icon_dest = r"${iconPath.replace(/\\/g, '\\\\')}"
     
     if not os.path.exists(img_path):
@@ -43,7 +43,7 @@ try {
     execSync(`python "${tempScriptPath}"`, { stdio: 'inherit' });
 } catch (e) {
     console.error('Failed to generate icon:', e);
-    process.exit(1);
+    process.exitCode = 1;
 } finally {
     if (fs.existsSync(tempScriptPath)) {
         fs.unlinkSync(tempScriptPath);

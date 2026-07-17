@@ -173,12 +173,5 @@ function resolveAdapters(props) {
         ads.push(a);
     }
 
-    if (props.goals !== undefined || props.onMergeGoals) {
-        const a = { ...BUILTIN_ADAPTERS.goals };
-        a._getLocal  = () => props.goals || [];
-        a._writeLocal = (m) => props.onMergeGoals?.(m);
-        ads.push(a);
-    }
-
     return ads;
 }

@@ -4,7 +4,7 @@ import useLanSync from '../hooks/useLanSync';
 
 // ── 子组件：冲突预览弹窗 ──────────────────────────────────────────────────────
 
-const TYPE_LABELS = { events: '事件', goals: '目标', journals: '日志', insights: '洞察' };
+const TYPE_LABELS = { events: '事件', journals: '日志', insights: '洞察' };
 function adapterTitle(a) { return TYPE_LABELS[a.type] || a.type; }
 
 function fmtTs(ts) {

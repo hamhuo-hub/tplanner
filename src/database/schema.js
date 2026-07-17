@@ -1,25 +1,3 @@
-export const goalSchema = {
-    title: 'goal schema',
-    version: 1,
-    primaryKey: 'id',
-    type: 'object',
-    properties: {
-        id:        { type: 'string', maxLength: 100 },
-        title:     { type: 'string' },
-        color:     { type: 'string' },
-        note:      { type: 'string' },
-        icon:      { type: 'string' },
-        q:         { type: 'number' },
-        r:         { type: 'number' },
-        s:         { type: 'number' },
-        order:     { type: 'number' },
-        version:   { type: 'number' },
-        updatedAt: { type: 'number' },
-        deletedAt: { type: 'number' },
-    },
-    required: ['id', 'title', 'color', 'order'],
-};
-
 export const eventSchema = {
     title: 'event schema',
     version: 2,

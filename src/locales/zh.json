@@ -107,17 +107,6 @@
         "jump": "跳转至",
         "unknown": "未知"
     },
-    "tabs": {
-        "calendar": "日历",
-        "decade": "十年计划"
-    },
-    "decade": {
-        "titlePlaceholder": "目标标题…",
-        "notePlaceholder": "点击开始写作…",
-        "deleteGoal": "删除目标",
-        "defaultTitle": "新目标",
-        "goalFallback": "目标 {{n}}"
-    },
     "timeline": {
         "localTime": "本地时间",
         "localTimeShort": "本地"
@@ -145,10 +134,8 @@
         "done": "完成",
         "events": "事件",
         "journals": "日志",
-        "goals": "目标",
         "unitEvents": "条",
         "unitJournals": "篇",
-        "unitGoals": "个",
         "showDetail": "查看详情",
         "hideDetail": "收起详情",
         "pullFromPeer": "从对端拉取 {{count}} {{unit}}",

@@ -107,17 +107,6 @@
         "jump": "Jump to",
         "unknown": "Unknown"
     },
-    "tabs": {
-        "calendar": "Calendar",
-        "decade": "Decade Plan"
-    },
-    "decade": {
-        "titlePlaceholder": "Goal title…",
-        "notePlaceholder": "Click to start writing…",
-        "deleteGoal": "Delete Goal",
-        "defaultTitle": "New Goal",
-        "goalFallback": "Goal {{n}}"
-    },
     "timeline": {
         "localTime": "Local Time",
         "localTimeShort": "LOCAL"
@@ -145,10 +134,8 @@
         "done": "Done",
         "events": "Events",
         "journals": "Journals",
-        "goals": "Goals",
         "unitEvents": "items",
         "unitJournals": "entries",
-        "unitGoals": "items",
         "showDetail": "Details",
         "hideDetail": "Hide Details",
         "pullFromPeer": "Pull {{count}} {{unit}} from peer",

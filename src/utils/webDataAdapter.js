@@ -12,7 +12,7 @@ const API = ''; // same origin — the server IS the web host
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-/** Hydrate ISO date strings back to Date objects (events/golas have start/end). */
+/** Hydrate ISO date strings back to Date objects. */
 function hydrateDates(obj) {
     if (!obj) return obj;
     if (Array.isArray(obj)) return obj.map(hydrateDates);
@@ -83,38 +83,6 @@ export async function saveJournals(journals) {
     });
     if (!res.ok) throw new Error(`PUT journals: HTTP ${res.status}`);
     return res.json();
-}
-
-// ── Goals ──────────────────────────────────────────────────────────────────
-
-export async function loadGoals() {
-    const res = await fetch(`${API}/tplanner/goals`);
-    if (!res.ok) throw new Error(`GET goals: HTTP ${res.status}`);
-    const raw = await res.json();
-    return hydrateDates(raw).filter(g => !g.deletedAt);
-}
-
-export async function saveGoals(goals) {
-    const res = await fetch(`${API}/tplanner/goals`);
-    if (!res.ok) throw new Error(`GET goals before save: HTTP ${res.status}`);
-    const serverGoals = await res.json();
-
-    const map = new Map(serverGoals.map(g => [g.id, g]));
-    for (const g of goals) {
-        const existing = map.get(g.id);
-        if (!existing || (g.updatedAt || 0) >= (existing.updatedAt || 0)) {
-            map.set(g.id, serializeForWire(g));
-        }
-    }
-    const merged = Array.from(map.values());
-
-    const putRes = await fetch(`${API}/tplanner/goals`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(merged),
-    });
-    if (!putRes.ok) throw new Error(`PUT goals: HTTP ${putRes.status}`);
-    return putRes.json();
 }
 
 // ── Insights (read-only for web) ───────────────────────────────────────────

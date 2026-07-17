@@ -2,7 +2,7 @@ import { createRxDatabase, addRxPlugin } from 'rxdb';
 import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
 import { RxDBUpdatePlugin } from 'rxdb/plugins/update';
 import { RxDBMigrationSchemaPlugin } from 'rxdb/plugins/migration-schema';
-import { eventSchema, goalSchema } from './schema';
+import { eventSchema } from './schema';
 
 addRxPlugin(RxDBUpdatePlugin);
 addRxPlugin(RxDBMigrationSchemaPlugin);
@@ -34,13 +34,6 @@ export const getDatabase = async () => {
                     1: (oldDoc) => ({ ...oldDoc, deletedAt: 0 }),
                     // v1 → v2: add version field (seed from updatedAt for legacy data)
                     2: (oldDoc) => ({ ...oldDoc, version: oldDoc.updatedAt || 0 }),
-                },
-            },
-            goals: {
-                schema: goalSchema,
-                migrationStrategies: {
-                    // v0 → v1: add version field
-                    1: (oldDoc) => ({ ...oldDoc, version: oldDoc.updatedAt || 0 }),
                 },
             },
         });
