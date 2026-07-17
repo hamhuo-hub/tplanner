@@ -59,7 +59,7 @@ export default defineConfig({
         // Main process
         entry: 'electron/main.js',
         onstart(options) {
-          try { options.startup(); } catch (e) { /* Electron process may have exited */ }
+          try { options.startup(); } catch { /* Electron process may have exited */ }
         },
         vite: {
           build: {
@@ -77,7 +77,7 @@ export default defineConfig({
         // Main-window preload
         entry: 'electron/preload.js',
         onstart(options) {
-          try { options.reload(); } catch (e) { /* Electron process may have exited */ }
+          try { options.reload(); } catch { /* Electron process may have exited */ }
         },
         vite: {
           build: {
@@ -95,7 +95,7 @@ export default defineConfig({
         // Today-widget preload
         entry: 'electron/widget-preload.js',
         onstart(options) {
-          try { options.reload(); } catch (e) { /* Electron process may have exited */ }
+          try { options.reload(); } catch { /* Electron process may have exited */ }
         },
         vite: {
           build: {
@@ -113,7 +113,7 @@ export default defineConfig({
         // Notes-widget preload
         entry: 'electron/notes-widget-preload.js',
         onstart(options) {
-          try { options.reload(); } catch (e) { /* Electron process may have exited */ }
+          try { options.reload(); } catch { /* Electron process may have exited */ }
         },
         vite: {
           build: {
