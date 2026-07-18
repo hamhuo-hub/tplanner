@@ -68,7 +68,6 @@ class FaceOrbit(
         p.setText(CREAM, s * 0.105f, serif)
         canvas.drawText(timeStr(t), cx, cy - s * 0.0947f, p)
 
-        drawWakeButton(canvas, s, cx, cy + s * 0.326f)
     }
 
     override fun drawAmbient(canvas: Canvas, t: ZonedDateTime, s: Float, cx: Float, cy: Float) {

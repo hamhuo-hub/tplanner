@@ -51,7 +51,6 @@ class FaceRing(
             canvas.drawText("%02d:%02d %s".format(marks.nextMinute!! / 60, marks.nextMinute!! % 60, marks.nextTitle), cx, cy + s * 0.163f, p)
         }
 
-        drawWakeButton(canvas, s, cx, cy + s * 0.326f)
     }
 
     override fun drawAmbient(canvas: Canvas, t: ZonedDateTime, s: Float, cx: Float, cy: Float) {

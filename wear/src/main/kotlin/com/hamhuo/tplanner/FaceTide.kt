@@ -6,9 +6,12 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Shader
 import java.time.ZonedDateTime
+import java.time.ZoneId
 import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.min
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 // 潮汐：24h 波浪进度——曲线从午夜开始随当前时刻向上涨，金球在浪尖。
 // 今日已过的时间 = 金色波段 + 填充；未到的 = 暗轨。手机调起记录为青色菱形。
@@ -25,6 +28,23 @@ class FaceTide(
     override fun onWakeInvoked(at: ZonedDateTime) {
         wakeDate = at.toLocalDate()
         wakeMinutes = WakeInvocationMarks.record(context, at)
+    }
+
+    // 浪尖金球命中检测——替代底部珍珠锚点
+    override fun isOnWakeButton(x: Int, y: Int): Boolean {
+        if (faceW == 0) return false
+        val s  = min(faceW, faceH).toFloat()
+        val cx = faceW / 2f
+        val cy = faceH / 2f
+        val g  = geo(s, cx, cy)
+        val now = ZonedDateTime.now(ZoneId.systemDefault())
+        val dayFrac = (now.hour * 3600f + now.minute * 60f + now.second) / 86400f
+        val frac = dayFrac.coerceIn(0f, 1f)
+        val tx = g.startX + frac * g.width
+        val ty = g.baseY - g.amp * cos(frac * 2.0 * PI).toFloat()
+        val dx = x - tx; val dy = y - ty
+        val hitR = s * 0.08f  // 金球半径 0.035f 的三倍宽容区
+        return sqrt((dx * dx + dy * dy).toDouble()) <= hitR
     }
 
     private fun refreshWakeMinutes(t: ZonedDateTime) {
@@ -151,22 +171,6 @@ class FaceTide(
         p.setText(DIM, s * 0.046f)
         canvas.drawText(t.format(dateFmt), cx, cy - s * 0.06f, p)
 
-        // ── 底部珍珠（唤醒锚点） ──────────────────────────────────────────
-        val pearlY = cy + s * 0.395f
-        val pearlR = s * 0.032f
-        if (tapElapsed in 0 until TAP_MS) {
-            val q = tapElapsed / TAP_MS.toFloat()
-            p.setStroke(GOLD, s * 0.0042f)
-            p.alpha = (255 * 0.4f * (1f - q)).toInt()
-            canvas.drawCircle(cx, pearlY, pearlR * 4f * q + pearlR, p)
-        }
-        p.setStroke(GOLD, s * 0.0032f)
-        p.alpha = (255 * 0.5f).toInt()
-        canvas.drawCircle(cx, pearlY, pearlR * 1.8f, p)
-        p.setFill(GOLD)
-        canvas.drawCircle(cx, pearlY, pearlR, p)
-        p.setFill(0xFFEDD890.toInt())
-        canvas.drawCircle(cx - pearlR * 0.25f, pearlY - pearlR * 0.3f, pearlR * 0.28f, p)
     }
 
     override fun drawAmbient(canvas: Canvas, t: ZonedDateTime, s: Float, cx: Float, cy: Float) {

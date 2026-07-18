@@ -62,19 +62,14 @@ abstract class FaceBase(
 
     protected open fun onWakeInvoked(at: ZonedDateTime) = Unit
 
-    fun isOnWakeButton(x: Int, y: Int): Boolean {
+    /** 默认中心区域——避免与系统媒体控件重叠。潮汐覆写为浪尖金球。 */
+    open fun isOnWakeButton(x: Int, y: Int): Boolean {
         if (faceW == 0) return false
         val s  = min(faceW, faceH).toFloat()
         val cx = faceW / 2f
-        val cy = faceH / 2f + s * design.buttonYFrac()
+        val cy = faceH / 2f
         val dx = x - cx; val dy = y - cy
-        return sqrt((dx * dx + dy * dy).toDouble()) <= s * 0.11f
-    }
-
-    private fun FaceDesign.buttonYFrac() = when (this) {
-        FaceDesign.RING, FaceDesign.ORBIT -> 0.326f
-        FaceDesign.EMBER, FaceDesign.TIDE -> 0.395f
-        FaceDesign.LUMINA -> 0.437f
+        return sqrt((dx * dx + dy * dy).toDouble()) <= s * 0.15f
     }
 
     // ── 主渲染入口 ──────────────────────────────────────────────────────────
@@ -118,23 +113,6 @@ abstract class FaceBase(
 
     protected abstract fun drawInteractive(canvas: Canvas, t: ZonedDateTime, s: Float, cx: Float, cy: Float)
     protected abstract fun drawAmbient(canvas: Canvas, t: ZonedDateTime, s: Float, cx: Float, cy: Float)
-
-    // ── 共用绘制元素 ────────────────────────────────────────────────────────
-
-    // 圆钮 + 点按涟漪（时环/星轨共用）
-    protected fun drawWakeButton(canvas: Canvas, s: Float, bx: Float, by: Float) {
-        if (tapElapsed in 0 until TAP_MS) {
-            val q = tapElapsed / TAP_MS.toFloat()
-            p.setStroke(GOLD, s * 0.006f)
-            p.alpha = (255 * 0.5f * (1f - q)).toInt()
-            canvas.drawCircle(bx, by, s * (0.07f + 0.30f * q), p)
-        }
-        val pop = if (tapElapsed in 0 until 300)
-            1f + 0.25f * sin(PI * (tapElapsed / 300f)).toFloat() else 1f
-        p.setFill(BTN_FILL);   canvas.drawCircle(bx, by, s * 0.0632f * pop, p)
-        p.setStroke(GOLD, s * 0.0063f); canvas.drawCircle(bx, by, s * 0.0632f * pop, p)
-        p.setFill(GOLD);       canvas.drawCircle(bx, by, s * 0.021f * pop, p)
-    }
 
     protected fun timeStr(t: ZonedDateTime) = "%02d:%02d".format(t.hour, t.minute)
 

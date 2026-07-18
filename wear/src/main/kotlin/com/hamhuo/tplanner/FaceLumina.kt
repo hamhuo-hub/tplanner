@@ -150,23 +150,6 @@ class FaceLumina(
             }
         }
 
-        // ── 底部光点唤醒锚 ─────────────────────────────────────────────────
-        val pearlY = cy + s * 0.437f
-        val pearlR = s * 0.029f
-
-        if (tapElapsed in 0 until TAP_MS) {
-            val q = tapElapsed.toFloat() / TAP_MS
-            p.setStroke(GOLD, s * 0.0053f)
-            p.alpha = (255 * 0.65f * (1f - q.pow(2))).toInt()
-            canvas.drawCircle(cx, pearlY, pearlR * (2.8f + 1.6f * q), p)
-        }
-
-        p.setFill(0xFF2A3A4A.toInt())
-        canvas.drawCircle(cx, pearlY, pearlR * 1.9f, p)
-        p.setStroke(GOLD, s * 0.0042f)
-        canvas.drawCircle(cx, pearlY, pearlR * 1.9f, p)
-        p.setFill(GOLD)
-        canvas.drawCircle(cx, pearlY, pearlR, p)
     }
 
     override fun drawAmbient(canvas: Canvas, t: ZonedDateTime, s: Float, cx: Float, cy: Float) {

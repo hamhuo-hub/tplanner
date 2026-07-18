@@ -35,9 +35,6 @@ class FaceEmber(
         p.setText(DIM, s * 0.0526f)
         canvas.drawText(t.format(dateFmt), cx, cy + s * 0.3053f, p)
 
-        // 底部短划 = 唤醒热区的视觉锚点（余烬不用 drawWakeButton 的圆钮）
-        p.setStroke(GOLD, s * 0.0079f, Paint.Cap.ROUND)
-        canvas.drawLine(cx - s * 0.0632f, cy + s * 0.395f, cx + s * 0.0632f, cy + s * 0.395f, p)
     }
 
     override fun drawAmbient(canvas: Canvas, t: ZonedDateTime, s: Float, cx: Float, cy: Float) {
