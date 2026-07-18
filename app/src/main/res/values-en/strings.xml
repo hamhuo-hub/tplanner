@@ -11,7 +11,9 @@
 
     <!-- Tabs / section titles -->
     <string name="tab_journal">Notes</string>
-    <string name="tab_tasks">Schedule</string>
+    <string name="list_inbox">Inbox</string>
+    <string name="list_today">Today</string>
+    <string name="list_new">New List…</string>
     <string name="section_time">Time</string>
     <string name="section_alarm">System alarm</string>
     <string name="section_checklist">Checklist</string>

@@ -67,6 +67,7 @@ private fun taskStatus(e: TaskEvent, now: Instant): String {
 @Composable
 fun TaskWidget(
     events: List<TaskEvent>,
+    list: EventList,
     onToggle: (String, Boolean) -> Unit,
     onAddEvent: (String) -> Unit,
     onDelete: (String) -> Unit,
@@ -84,34 +85,56 @@ fun TaskWidget(
     var typeChangeTarget by remember { mutableStateOf<TaskEvent?>(null) }
     val typeChangeSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    val todayEvents    = remember(events) { events.forToday() }
+    val isToday = list is EventList.Today
+    val source  = remember(events, isToday) {
+        if (isToday) events.forToday() else events.filter { it.deletedAt == 0L }
+    }
 
     val groupNowLabel   = stringResource(R.string.group_now)
     val groupLaterLabel = stringResource(R.string.group_later)
     val groupPastLabel  = stringResource(R.string.group_past)
     val groupDoneLabel  = stringResource(R.string.group_done)
 
-    val groups = remember(events, groupNowLabel, groupLaterLabel, groupPastLabel, groupDoneLabel) {
+    val groups = remember(source, events, isToday, groupNowLabel, groupLaterLabel, groupPastLabel, groupDoneLabel) {
         val current  = mutableListOf<TaskEvent>()
         val upcoming = mutableListOf<TaskEvent>()
         val past     = mutableListOf<TaskEvent>()
         val done     = mutableListOf<TaskEvent>()
-        // Past & Later: 取全部未删除事件，不限于今天。
-        // 未完成就是未完成——不管哪天。
-        events.filter { it.deletedAt == 0L }.forEach { e ->
+        // Now / Later / Done: 按 source（Today=当天, Inbox=全部）过滤
+        // Past 只展示任务类型——提醒和状态过了就过了，不需要追踪。
+        source.forEach { e ->
             if (e.type == "task" && e.completed) { done += e; return@forEach }
             when (taskStatus(e, now)) {
                 "now"  -> current += e
                 "soon" -> upcoming += e
-                "past" -> past += e
+                "past" -> if (e.type == "task") past += e
                 else   -> upcoming += e
             }
         }
-        mapOf(groupNowLabel to current, groupLaterLabel to upcoming, groupPastLabel to past, groupDoneLabel to done)
+        // Past: 始终取全部未完成任务——不管哪天，没做完就该显示
+        val pastIds = past.map { it.id }.toSet()
+        events.filter { it.deletedAt == 0L }.forEach { e ->
+            if (e.id in pastIds) return@forEach
+            if (e.type != "task") return@forEach
+            if (e.completed) return@forEach
+            if (taskStatus(e, now) == "past") past += e
+        }
+        // Today: Now → Later → Past → Done. Inbox: Past → Now → Later → Done.
+        if (isToday) {
+            mapOf(groupNowLabel to current, groupLaterLabel to upcoming, groupPastLabel to past, groupDoneLabel to done)
+        } else {
+            mapOf(groupPastLabel to past, groupNowLabel to current, groupLaterLabel to upcoming, groupDoneLabel to done)
+        }
     }
 
     val pastExpanded = remember { mutableStateOf(true) }
     val laterExpanded = remember { mutableStateOf(false) }
+    val doneExpanded = remember { mutableStateOf(false) }
+
+    val listLabel = when (list) {
+        is EventList.Today -> stringResource(R.string.list_today)
+        is EventList.Inbox -> stringResource(R.string.list_inbox)
+    }
 
     val taskTotal = events.count { it.deletedAt == 0L && it.type == "task" }
     val taskDone  = events.count { it.deletedAt == 0L && it.type == "task" && it.completed }
@@ -124,7 +147,7 @@ fun TaskWidget(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(stringResource(R.string.tab_tasks), color = GOLD, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text(listLabel, color = GOLD, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Text(
                     today.format(DateTimeFormatter.ofPattern(stringResource(R.string.date_pattern_month_day_weekday))),
                     color = DIM, fontSize = 15.sp
@@ -150,27 +173,24 @@ fun TaskWidget(
 
         HorizontalDivider(color = BORDER, thickness = 1.dp)
 
-        if (todayEvents.isEmpty() && groups.values.all { it.isEmpty() }) {
+        if (source.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(stringResource(R.string.task_empty), color = Color(0xFF3A342A), fontSize = 16.sp)
             }
         } else {
             LazyColumn(Modifier.fillMaxSize().padding(vertical = 4.dp)) {
-                if (todayEvents.isEmpty()) {
-                    item {
-                        Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 16.dp)) {
-                            Text(stringResource(R.string.task_empty), color = Color(0xFF3A342A), fontSize = 14.sp)
-                        }
-                    }
-                }
                 groups.forEach { (label, list) ->
                     if (list.isEmpty()) return@forEach
                     val isPast  = label == groupPastLabel
                     val isLater = label == groupLaterLabel
-                    val collapsible = isPast || isLater
+                    val isDone  = label == groupDoneLabel
+                    // Inbox: Past/Done 可折叠；Today: 全部不可折叠
+                    val collapsible = !isToday && (isPast || isLater || isDone)
                     val expanded = when {
+                        !collapsible -> true
                         isPast  -> pastExpanded.value
                         isLater -> laterExpanded.value
+                        isDone  -> doneExpanded.value
                         else    -> true
                     }
                     item {
@@ -183,6 +203,7 @@ fun TaskWidget(
                                 when {
                                     isPast  -> pastExpanded.value  = !pastExpanded.value
                                     isLater -> laterExpanded.value = !laterExpanded.value
+                                    isDone  -> doneExpanded.value  = !doneExpanded.value
                                 }
                             }
                         )

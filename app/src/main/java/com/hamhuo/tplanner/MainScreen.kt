@@ -2,22 +2,38 @@ package com.hamhuo.tplanner
 
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.Today
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -28,10 +44,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -39,6 +58,7 @@ import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.util.UUID
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
     store: JournalStore,
@@ -105,7 +125,15 @@ fun MainScreen(
     }
 
     val isPhone = LocalConfiguration.current.screenWidthDp < 840
-    var phoneTab by remember { mutableStateOf(0) }   // 0=Journal, 1=Tasks
+    var phoneTab by remember { mutableStateOf(0) }   // 0=Journal, 1=EventList
+    var selectedList by remember { mutableStateOf<EventList>(EventList.Inbox) }
+    var showListSheet by remember { mutableStateOf(false) }
+    val listSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    val listLabel = when (selectedList) {
+        is EventList.Inbox -> stringResource(R.string.list_inbox)
+        is EventList.Today -> stringResource(R.string.list_today)
+    }
 
     // ── Schedule extraction sheet ───────────────────────────────────────
     var showScheduleSheet by remember { mutableStateOf(false) }
@@ -182,6 +210,7 @@ fun MainScreen(
     val taskCardContent: @Composable () -> Unit = {
         TaskWidget(
             events   = events,
+            list     = selectedList,
             onToggle = { eventId, completed ->
                 events = events.map {
                     if (it.id == eventId) it.copy(completed = completed, updatedAt = System.currentTimeMillis()) else it
@@ -321,10 +350,13 @@ fun MainScreen(
                 PhoneTabBar(
                     tabs      = listOf(
                         stringResource(R.string.tab_journal),
-                        stringResource(R.string.tab_tasks),
+                        listLabel,
                     ),
                     selected  = phoneTab,
-                    onSelect  = { phoneTab = it }
+                    onSelect  = { selected ->
+                        if (selected == 1 && phoneTab == 1) showListSheet = true
+                        phoneTab = selected
+                    }
                 )
                 Card(
                     modifier  = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp).padding(bottom = 10.dp),
@@ -352,6 +384,107 @@ fun MainScreen(
                         colors    = CardDefaults.cardColors(containerColor = SURFACE),
                         elevation = CardDefaults.cardElevation(0.dp)
                     ) { taskCardContent() }
+                }
+            }
+        }
+    }
+
+    // ── List picker (same style as AddEventTypeSheet) ──────────────────
+    if (showListSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showListSheet = false },
+            sheetState       = listSheetState,
+            containerColor   = Color(0xFF1A1A1A),
+            dragHandle       = null,
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 32.dp),
+            ) {
+                // 拖拽把手
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 18.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        Modifier.width(36.dp).height(4.dp)
+                            .background(Color(0xFF444444), RoundedCornerShape(2.dp))
+                    )
+                }
+                // 标题行
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("清单", color = Color(0xFFE0D8C8), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Icon(
+                        Icons.Default.Close, contentDescription = "Close", tint = DIM,
+                        modifier = Modifier.size(18.dp).clickable { showListSheet = false },
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                // 清单项
+                val current = selectedList
+                EventList.ALL.forEach { item ->
+                    val icon = when (item) {
+                        is EventList.Today -> Icons.Filled.Today
+                        is EventList.Inbox -> Icons.Filled.Inbox
+                    }
+                    val itemLabel = when (item) {
+                        is EventList.Today -> stringResource(R.string.list_today)
+                        is EventList.Inbox -> stringResource(R.string.list_inbox)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            selectedList = item; showListSheet = false
+                        }.padding(horizontal = 20.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier.size(52.dp)
+                                .background(Color(0xFF2E2E2E), CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(icon, contentDescription = null,
+                                tint = if (current.key == item.key) GOLD else Color(0xFFE0D8C8),
+                                modifier = Modifier.size(26.dp))
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(itemLabel, color = if (current.key == item.key) GOLD else Color(0xFFE0D8C8),
+                                fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                when (item) {
+                                    is EventList.Today -> "仅显示今天的事项"
+                                    is EventList.Inbox -> "所有未删除的事项"
+                                },
+                                color = DIM, fontSize = 13.sp,
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                // 预留：新建清单（同样式）
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable {
+                        showListSheet = false
+                    }.padding(horizontal = 20.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    Box(
+                        modifier = Modifier.size(52.dp)
+                            .background(Color(0xFF2E2E2E), CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = null,
+                            tint = DIM, modifier = Modifier.size(26.dp))
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(stringResource(R.string.list_new), color = DIM,
+                            fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                        Text("创建自定义清单", color = DIM, fontSize = 13.sp)
+                    }
                 }
             }
         }
