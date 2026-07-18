@@ -77,6 +77,7 @@ private fun prettyAlarm(enabled: Boolean, offsetMinutes: Int): String = when {
  */
 @Composable
 fun UntangleSheet(
+    prefillLocation: String,
     thinking: Boolean,
     action: DeepSeekAnalysisService.ProposedAction?,
     onDismiss: () -> Unit,
@@ -114,6 +115,16 @@ fun UntangleSheet(
                 Icon(Icons.Default.Close, contentDescription = "Close", tint = DIM,
                     modifier = Modifier.size(18.dp).clickable { onDismiss() })
             }
+        }
+
+        // ── Location ─────────────────────────────────────────────────
+        if (showEditor) {
+            Text(
+                prefillLocation.ifBlank { "Locating..." },
+                color = if (prefillLocation.isNotBlank()) GOLD else DIM,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+            )
         }
 
         when {

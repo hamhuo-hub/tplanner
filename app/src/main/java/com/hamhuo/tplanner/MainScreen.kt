@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -44,6 +45,7 @@ fun MainScreen(
     eventStore: EventStore,
     manager: LanSyncManager,
     deepseekService: DeepSeekAnalysisService?,
+    amapApiKey: String,
     scheduleTriggerCount: Int,
 ) {
     val scope  = rememberCoroutineScope()
@@ -109,12 +111,37 @@ fun MainScreen(
     var showScheduleSheet by remember { mutableStateOf(false) }
     var thinking by remember { mutableStateOf(false) }
     var sheetAction by remember { mutableStateOf<DeepSeekAnalysisService.ProposedAction?>(null) }
+    var prefillLocation by remember { mutableStateOf("") }
+    var gpsLat by remember { mutableStateOf(0.0) }
+    var gpsLng by remember { mutableStateOf(0.0) }
 
     LaunchedEffect(scheduleTriggerCount) {
         if (scheduleTriggerCount > 0) {
             showScheduleSheet = true
             thinking = false
             sheetAction = null
+            prefillLocation = ""
+            gpsLat = 0.0; gpsLng = 0.0
+
+            // Start foreground location capture. primeFreshCache was already
+            // called by WakeDataLayerService before the Activity was visible.
+            val handle = LocationCapture.start(context)
+
+            // Poll WatchLocationStore for a fix matching this capture generation.
+            val deadline = System.currentTimeMillis() + 12_000
+            var fix: WatchLocationStore.Fix? = null
+            while (System.currentTimeMillis() < deadline && fix == null) {
+                delay(500)
+                val cur = WatchLocationStore.get(context)
+                if (cur != null && cur.requestId == handle.requestId) fix = cur
+            }
+            // Reverse-geocode if we got a fix.
+            if (fix != null) {
+                gpsLat = fix.lat; gpsLng = fix.lng
+                if (amapApiKey.isNotBlank()) {
+                    prefillLocation = AmapGeocoder.reverseGeocode(fix.lat, fix.lng, amapApiKey)
+                }
+            }
         }
     }
 
@@ -192,10 +219,12 @@ fun MainScreen(
     // ── Schedule extraction flow ────────────────────────────────────────
 
     val submitForExtraction: (String) -> Unit = { text ->
-        // Append to journal
+        // Append to journal with location line
         val now = System.currentTimeMillis()
         val stamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date(now))
-        val entryLine = "\n\n---\n\n### $stamp\n\n$text"
+        val loc = prefillLocation.ifBlank { "" }
+        val locationPart = if (loc.isNotBlank()) " · $loc" else ""
+        val entryLine = "\n\n---\n\n### $stamp$locationPart\n\n$text"
         content = content + entryLine
         store.saveToday(content)
 
@@ -238,6 +267,8 @@ fun MainScreen(
             updatedAt = System.currentTimeMillis(),
             alarmEnabled = act.alarmEnabled,
             alarmOffsetMinutes = act.alarmOffsetMinutes,
+            lat = gpsLat,
+            lng = gpsLng,
         )
         val nextEvents = events + ev
         scope.launch {
@@ -269,6 +300,7 @@ fun MainScreen(
     Box(Modifier.fillMaxSize().background(BG).windowInsetsPadding(WindowInsets.systemBars)) {
         if (showScheduleSheet) {
             UntangleSheet(
+                prefillLocation = prefillLocation,
                 thinking = thinking,
                 action = sheetAction,
                 onDismiss = {

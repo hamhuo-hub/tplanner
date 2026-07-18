@@ -81,6 +81,8 @@ class MainActivity : ComponentActivity() {
         eventStore      = EventStore(this)
         val manager     = LanSyncManager(this, store, eventStore)
         val deepseekKey = BuildConfig.DEEPSEEK_API_KEY
+        val amapKey     = BuildConfig.AMAP_API_KEY
+        AmapGeocoder.setApiKey(amapKey)
         val deepseekService = deepseekKey
             .takeIf { it.isNotBlank() }
             ?.let(::DeepSeekAnalysisService)
@@ -88,6 +90,7 @@ class MainActivity : ComponentActivity() {
         setContent { MainScreen(
             store = store, eventStore = eventStore, manager = manager,
             deepseekService = deepseekService,
+            amapApiKey = amapKey,
             scheduleTriggerCount = scheduleTriggerCount,
         ) }
     }
