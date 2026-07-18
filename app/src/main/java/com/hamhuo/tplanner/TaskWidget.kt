@@ -127,9 +127,10 @@ fun TaskWidget(
         }
     }
 
-    val pastExpanded = remember { mutableStateOf(true) }
+    val nowExpanded   = remember { mutableStateOf(true) }
+    val pastExpanded  = remember { mutableStateOf(true) }
     val laterExpanded = remember { mutableStateOf(false) }
-    val doneExpanded = remember { mutableStateOf(false) }
+    val doneExpanded  = remember { mutableStateOf(false) }
 
     val listLabel = when (list) {
         is EventList.Today -> stringResource(R.string.list_today)
@@ -181,13 +182,12 @@ fun TaskWidget(
             LazyColumn(Modifier.fillMaxSize().padding(vertical = 4.dp)) {
                 groups.forEach { (label, list) ->
                     if (list.isEmpty()) return@forEach
+                    val isNow  = label == groupNowLabel
                     val isPast  = label == groupPastLabel
                     val isLater = label == groupLaterLabel
                     val isDone  = label == groupDoneLabel
-                    // Inbox: Past/Done 可折叠；Today: 全部不可折叠
-                    val collapsible = !isToday && (isPast || isLater || isDone)
                     val expanded = when {
-                        !collapsible -> true
+                        isNow   -> nowExpanded.value
                         isPast  -> pastExpanded.value
                         isLater -> laterExpanded.value
                         isDone  -> doneExpanded.value
@@ -197,10 +197,11 @@ fun TaskWidget(
                         GroupHeader(
                             label = label,
                             count = list.size,
-                            collapsible = collapsible,
+                            collapsible = true,
                             expanded = expanded,
                             onToggleExpanded = {
                                 when {
+                                    isNow   -> nowExpanded.value   = !nowExpanded.value
                                     isPast  -> pastExpanded.value  = !pastExpanded.value
                                     isLater -> laterExpanded.value = !laterExpanded.value
                                     isDone  -> doneExpanded.value  = !doneExpanded.value
@@ -209,7 +210,7 @@ fun TaskWidget(
                         )
                     }
                     if (expanded) {
-                        items(list, key = { e -> if (collapsible) "${label}-${e.id}" else e.id }) { e ->
+                        items(list, key = { "${label}-${it.id}" }) { e ->
                             SwipeableTaskRow(
                                 event = e, fmt = fmt, zone = zone, now = now,
                                 onToggle = onToggle, onDelete = onDelete, onItemClick = onItemClick,
