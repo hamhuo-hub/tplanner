@@ -4,3 +4,6 @@
 /wear/build
 /.vscode
 local.properties
+/node_modules
+/dist
+/dist-electron

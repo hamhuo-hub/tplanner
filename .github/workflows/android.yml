@@ -16,8 +16,6 @@ jobs:
   build:
     name: Build Android APK
     runs-on: ubuntu-latest
-    env:
-      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -32,14 +30,6 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 9.4.1   # 与 gradle/wrapper/gradle-wrapper.properties 保持一致
-
-      - name: Verify AI configuration
-        shell: bash
-        run: |
-          if [ -z "$DEEPSEEK_API_KEY" ]; then
-            echo "::error::Missing repository secret: DEEPSEEK_API_KEY"
-            exit 1
-          fi
 
       - name: Build debug APK
         run: gradle assembleDebug
