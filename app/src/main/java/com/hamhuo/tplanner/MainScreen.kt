@@ -280,10 +280,18 @@ fun MainScreen(
                 pendingText = text
                 scope.launch {
                     val res = deepseekService?.processThought(text, stamp, loc)
-                        ?: DeepSeekAnalysisService.ThoughtResult("questions", text, DEFAULT_QA_QUESTIONS)
+                        ?: DeepSeekAnalysisService.ThoughtResult(
+                            "questions",
+                            text,
+                            emptyList(),
+                            error = true,
+                        )
 
                     thinking = false
                     when {
+                        res.error -> {
+                            Toast.makeText(context, R.string.ai_service_unavailable, Toast.LENGTH_LONG).show()
+                        }
                         res.action != null -> {
                             // Native Tool Call 已包含完整参数；UI 仍保留最终确认。
                             pendingFollowUpQuestions = res.questions.takeIf { it.isNotEmpty() }
@@ -382,10 +390,14 @@ fun MainScreen(
                         ?: DeepSeekAnalysisService.ThoughtResult(
                             "questions",
                             pendingText,
-                            DEFAULT_QA_QUESTIONS,
+                            emptyList(),
+                            error = true,
                         )
                     thinking = false
                     when {
+                        refined.error -> {
+                            Toast.makeText(context, R.string.ai_service_unavailable, Toast.LENGTH_LONG).show()
+                        }
                         refined.action != null -> {
                             pendingFollowUpQuestions = refined.questions.takeIf { it.isNotEmpty() }
                             sheetAction = refined.action
@@ -414,11 +426,15 @@ fun MainScreen(
                 thinking = true
                 scope.launch {
                     val result = deepseekService?.followUp(pendingText, qaHistory)
-                        ?: DeepSeekAnalysisService.FollowUpResult(DEFAULT_QA_QUESTIONS)
+                        ?: DeepSeekAnalysisService.FollowUpResult(error = true)
                     thinking = false
 
                     // 完整字段会产生 Native Tool Call；字段不全时只返回 clarify。
                     when {
+                        result.error -> {
+                            sheetQuestions = null
+                            Toast.makeText(context, R.string.ai_service_unavailable, Toast.LENGTH_LONG).show()
+                        }
                         result.action != null -> {
                             pendingFollowUpQuestions = result.questions.takeIf { it.isNotEmpty() }
                             sheetAction = result.action

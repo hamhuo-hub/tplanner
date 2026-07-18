@@ -25,12 +25,18 @@ class TaskAlarmReceiver : BroadcastReceiver() {
 
         // A stale PendingIntent must never ring after an edit, completion or deletion.
         if (!event.isAlarmActive() || event.alarmSignature() != expectedSignature) return
-        TaskAlarmScheduler.markDelivered(context, eventId, expectedSignature)
         createChannel(context)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
+        ) return
+
+        val notificationManager = NotificationManagerCompat.from(context)
+        if (!notificationManager.areNotificationsEnabled()) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            context.getSystemService(NotificationManager::class.java)
+                ?.getNotificationChannel(CHANNEL_ID)?.importance == NotificationManager.IMPORTANCE_NONE
         ) return
 
         val startTime = DateFormat.getTimeFormat(context).format(Date(event.start.toEpochMilli()))
@@ -49,8 +55,9 @@ class TaskAlarmReceiver : BroadcastReceiver() {
             .build()
 
         runCatching {
-            NotificationManagerCompat.from(context)
-                .notify(TaskAlarmScheduler.notificationId(eventId), notification)
+            notificationManager.notify(TaskAlarmScheduler.notificationId(eventId), notification)
+        }.onSuccess {
+            TaskAlarmScheduler.markDelivered(context, eventId, expectedSignature)
         }
     }
 

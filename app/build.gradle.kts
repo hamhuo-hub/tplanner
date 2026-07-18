@@ -11,6 +11,10 @@ val localProperties = Properties().apply {
     if (file.exists()) file.inputStream().use { load(it) }
 }
 
+val deepseekApiKey = providers.environmentVariable("DEEPSEEK_API_KEY").orNull
+    ?.takeIf { it.isNotBlank() }
+    ?: localProperties.getProperty("deepseek.api.key", "")
+
 android {
     namespace = "com.hamhuo.tplanner"
     compileSdk = 35
@@ -22,7 +26,7 @@ android {
         versionCode = 2
         versionName = "mobile_2.0.0"
 
-        buildConfigField("String", "DEEPSEEK_API_KEY", "\"${localProperties.getProperty("deepseek.api.key", "")}\"")
+        buildConfigField("String", "DEEPSEEK_API_KEY", "\"$deepseekApiKey\"")
         buildConfigField("String", "AMAP_API_KEY", "\"${localProperties.getProperty("amap.api.key", "")}\"")
     }
 
@@ -63,4 +67,5 @@ dependencies {
     // Wearable Data Layer — 手表 ↔ 手机通过 GMS 通信（国际版 Wear OS 设备）。
     // 国行三星无 GMS 时走经典蓝牙 RFCOMM fallback。
     implementation(libs.play.services.wearable)
+    testImplementation("junit:junit:4.13.2")
 }

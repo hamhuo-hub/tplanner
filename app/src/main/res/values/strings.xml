@@ -61,6 +61,7 @@
     <string name="unknown_error">未知错误</string>
     <string name="schedule_created_toast">已创建日程：%1$s</string>
     <string name="schedule_create_failed_toast">日程创建失败，请重试</string>
+    <string name="ai_service_unavailable">AI 服务未配置或连接失败，请检查 API Key 或网络后重试</string>
     <string name="schedule_created_with_alarm_toast">已创建日程并设置系统闹铃：%1$s</string>
     <string name="schedule_created_with_fallback_alarm_toast">已创建日程：%1$s；精确闹铃权限未开启，提醒可能延迟</string>
     <string name="alarm_enabled_title">开始前提醒我</string>
@@ -75,9 +76,6 @@
     <string name="alarm_channel_name">任务闹铃</string>
     <string name="alarm_channel_description">在日程开始前发出闹铃提醒</string>
     <string name="alarm_notification_starts_at">%1$s 开始</string>
-    <string name="insight_expand_card">展开查看完整内容  ▾</string>
-    <string name="insight_collapse_card">收起  ▴</string>
-
     <!-- 日期格式（DateTimeFormatter 模式） -->
     <string name="date_pattern_full">yyyy年M月d日</string>
     <string name="date_pattern_month_day_weekday">M月d日 · E</string>

@@ -60,6 +60,7 @@
     <string name="unknown_error">Unknown error</string>
     <string name="schedule_created_toast">Schedule created: %1$s</string>
     <string name="schedule_create_failed_toast">Could not create schedule. Please try again.</string>
+    <string name="ai_service_unavailable">AI service is not configured or could not connect. Check the API key or network and try again.</string>
     <string name="schedule_created_with_alarm_toast">Schedule and system alarm created: %1$s</string>
     <string name="schedule_created_with_fallback_alarm_toast">Schedule created: %1$s. Exact alarm access is off, so the reminder may be delayed.</string>
     <string name="alarm_enabled_title">Remind me before it starts</string>
@@ -75,9 +76,6 @@
     <string name="alarm_channel_name">Task alarms</string>
     <string name="alarm_channel_description">Alarm reminders before scheduled items start</string>
     <string name="alarm_notification_starts_at">Starts at %1$s</string>
-    <string name="insight_expand_card">Show full entry  ▾</string>
-    <string name="insight_collapse_card">Collapse  ▴</string>
-
     <!-- Date patterns (DateTimeFormatter pattern syntax) -->
     <string name="date_pattern_full">MMMM d, yyyy</string>
     <string name="date_pattern_month_day_weekday">MMM d · E</string>

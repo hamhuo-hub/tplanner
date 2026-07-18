@@ -31,17 +31,24 @@ class MainActivity : ComponentActivity() {
     // MainScreen observes changes to show the anxiety panel.
     var anxietyTriggerCount by mutableIntStateOf(0)
 
-    // Multi-permission launcher for foreground location + notifications
+    private enum class PermissionStep {
+        RUNTIME,
+        BACKGROUND_LOCATION,
+        OVERLAY,
+        BATTERY_OPTIMIZATION,
+        EXACT_ALARM,
+    }
+
+    private var permissionLauncherInFlight = false
+    private var pendingSpecialPermissionStep: PermissionStep? = null
+
+    // Foreground location (coarse + fine) and notifications share one runtime request.
     private val requestPermissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
         Log.d(TAG, "permissions result: $results")
-        val locationGranted = results[Manifest.permission.ACCESS_FINE_LOCATION]
-            ?: hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)
-        if (locationGranted) {
-            // Foreground location granted → chain to background location
-            maybeRequestBackgroundLocation()
-        }
+        permissionLauncherInFlight = false
+        advancePermissionSetup()
     }
 
     // Background location must be requested separately after foreground is granted
@@ -49,13 +56,26 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         Log.d(TAG, "background location granted=$granted")
+        permissionLauncherInFlight = false
+        advancePermissionSetup()
+    }
+
+    // Special-access screens don't return a meaningful result code. Always re-enter
+    // the pipeline and rely on the platform state checks used by app features.
+    private val requestSpecialAccess = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        Log.d(TAG, "special access returned: $pendingSpecialPermissionStep")
+        pendingSpecialPermissionStep = null
+        permissionLauncherInFlight = false
+        advancePermissionSetup()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         handleWakeIntent(intent)
-        checkAndRequestPermissions()
+        advancePermissionSetup()
         val store       = JournalStore(this)
         eventStore      = EventStore(this)
         val insightStore = InsightStore(this)
@@ -63,7 +83,9 @@ class MainActivity : ComponentActivity() {
         val deepseekKey = BuildConfig.DEEPSEEK_API_KEY
         val amapKey     = BuildConfig.AMAP_API_KEY
         AmapGeocoder.setApiKey(amapKey)
-        val deepseekService = DeepSeekAnalysisService(deepseekKey)
+        val deepseekService = deepseekKey
+            .takeIf { it.isNotBlank() }
+            ?.let(::DeepSeekAnalysisService)
         TaskAlarmScheduler.reconcile(this, eventStore.getAll())
         setContent { MainScreen(
             store = store, eventStore = eventStore, manager = manager,
@@ -97,85 +119,127 @@ class MainActivity : ComponentActivity() {
     // ── Permissions ─────────────────────────────────────────────
 
     /**
-     * Check all required permissions / exemptions on startup in dependency order:
-     *   1. SYSTEM_ALERT_WINDOW (special – settings intent)
-     *   2. Battery optimization exemption (settings intent, keeps process alive)
-     *   3. Foreground location + notifications (bundled runtime permission)
-     *   4. Background location (chained after foreground)
+     * Advances each startup permission step at most once per process. A denial is
+     * not a hard gate: launcher callbacks continue to the next independent step.
+     * Special-access screens are serialized through [requestSpecialAccess].
      */
-    private fun checkAndRequestPermissions() {
-        if (requestOverlayPermissionIfNeeded()) return
-        if (requestBatteryOptimizationExemption()) return
+    private fun advancePermissionSetup() {
+        if (permissionLauncherInFlight || isFinishing || isDestroyed) return
 
-        val missing = mutableListOf<String>()
+        while (!permissionLauncherInFlight && !isFinishing && !isDestroyed) {
+            val step = PermissionStep.entries
+                .firstOrNull { it !in attemptedPermissionSteps }
+                ?: return
+            attemptedPermissionSteps += step
 
-        if (!hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)) {
-            missing.add(Manifest.permission.ACCESS_FINE_LOCATION)
-        }
+            when (step) {
+                PermissionStep.RUNTIME -> {
+                    val missing = mutableListOf<String>()
+                    if (!hasForegroundLocation()) {
+                        // Android 12+ ignores a fine-only request on some releases.
+                        missing += Manifest.permission.ACCESS_COARSE_LOCATION
+                        missing += Manifest.permission.ACCESS_FINE_LOCATION
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        !hasPermission(Manifest.permission.POST_NOTIFICATIONS)
+                    ) {
+                        missing += Manifest.permission.POST_NOTIFICATIONS
+                    }
+                    if (missing.isNotEmpty() && launchRuntimePermissions(missing)) return
+                }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (!hasPermission(Manifest.permission.POST_NOTIFICATIONS)) {
-                missing.add(Manifest.permission.POST_NOTIFICATIONS)
+                PermissionStep.BACKGROUND_LOCATION -> {
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+                        !hasForegroundLocation() ||
+                        hasPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                    ) continue
+
+                    if (Build.VERSION.SDK_INT == Build.VERSION_CODES.Q) {
+                        if (launchBackgroundLocationPermission()) return
+                    } else {
+                        // Android 11+ exposes "Allow all the time" only in app settings.
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.parse("package:$packageName")
+                        }
+                        if (launchSpecialAccess(PermissionStep.BACKGROUND_LOCATION, intent)) return
+                    }
+                }
+
+                PermissionStep.OVERLAY -> {
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
+                        Settings.canDrawOverlays(this)
+                    ) continue
+                    val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                    if (launchSpecialAccess(PermissionStep.OVERLAY, intent)) return
+                }
+
+                PermissionStep.BATTERY_OPTIMIZATION -> {
+                    val powerManager = getSystemService(PowerManager::class.java)
+                    if (powerManager == null ||
+                        powerManager.isIgnoringBatteryOptimizations(packageName)
+                    ) continue
+                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                    if (launchSpecialAccess(PermissionStep.BATTERY_OPTIMIZATION, intent)) return
+                }
+
+                PermissionStep.EXACT_ALARM -> {
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                        TaskAlarmScheduler.canScheduleExactAlarms(this)
+                    ) continue
+                    val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                    if (launchSpecialAccess(PermissionStep.EXACT_ALARM, intent)) return
+                }
             }
         }
+    }
 
-        if (missing.isNotEmpty()) {
+    private fun launchRuntimePermissions(missing: List<String>): Boolean {
+        permissionLauncherInFlight = true
+        return try {
             requestPermissionsLauncher.launch(missing.toTypedArray())
-        } else {
-            // All foreground permissions already granted → check background
-            maybeRequestBackgroundLocation()
-        }
-    }
-
-    /**
-     * SYSTEM_ALERT_WINDOW is required for the invisible overlay that
-     * [WakeDataLayerService] attaches before launching the proxy Activity.
-     * Without it, Samsung BAL blocks every watch→phone wake-up.
-     * The user must grant this once in system settings.
-     */
-    private fun requestOverlayPermissionIfNeeded(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
-        if (Settings.canDrawOverlays(this)) return false
-        if (isFinishing || isDestroyed) return false
-
-        return try {
-            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
-                data = Uri.parse("package:$packageName")
-            })
             true
         } catch (e: Exception) {
-            Log.e(TAG, "requestOverlayPermission: failed", e)
+            permissionLauncherInFlight = false
+            Log.e(TAG, "runtime permission request failed", e)
             false
         }
     }
 
-    /**
-     * Battery optimization exemption keeps the process alive so GMS can deliver
-     * Data Layer messages.  On Samsung / Chinese ROMs the process gets killed
-     * within minutes of going to background without this.
-     */
-    private fun requestBatteryOptimizationExemption(): Boolean {
-        val pm = getSystemService(PowerManager::class.java)
-        if (pm?.isIgnoringBatteryOptimizations(packageName) == true) return false
-        if (isFinishing || isDestroyed) return false
-
+    private fun launchBackgroundLocationPermission(): Boolean {
+        permissionLauncherInFlight = true
         return try {
-            startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                data = Uri.parse("package:$packageName")
-            })
+            requestBgLocation.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
             true
         } catch (e: Exception) {
-            Log.e(TAG, "requestBatteryOptimization: failed", e)
+            permissionLauncherInFlight = false
+            Log.e(TAG, "background location request failed", e)
             false
         }
     }
 
-    private fun maybeRequestBackgroundLocation() {
-        if (isFinishing || isDestroyed) return
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
-        if (hasPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION)) return
-        requestBgLocation.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+    private fun launchSpecialAccess(step: PermissionStep, intent: Intent): Boolean {
+        permissionLauncherInFlight = true
+        pendingSpecialPermissionStep = step
+        return try {
+            requestSpecialAccess.launch(intent)
+            true
+        } catch (e: Exception) {
+            pendingSpecialPermissionStep = null
+            permissionLauncherInFlight = false
+            Log.e(TAG, "special access request failed: $step", e)
+            false
+        }
     }
+
+    private fun hasForegroundLocation(): Boolean =
+        hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION) ||
+            hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)
 
     private fun hasPermission(permission: String): Boolean =
         ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
@@ -183,5 +247,8 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_WAKE_FROM_WATCH = "wake_from_watch"
         private const val TAG = "TplannerMain"
+
+        // Process-scoped attempt history survives Activity recreation without retaining launcher state.
+        private val attemptedPermissionSteps = mutableSetOf<PermissionStep>()
     }
 }

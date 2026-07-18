@@ -245,8 +245,6 @@ fun UntangleSheet(
             // ── 追问：AI 把问题递还给你 ──────────────────────────────
             questions != null -> {
                 var answer by remember { mutableStateOf("") }
-                Text("这些不是答案，是帮你找到自己卡在哪。带着它们去试。",
-                    color = DIM, fontSize = 13.sp, modifier = Modifier.padding(bottom = 14.dp))
                 Column(
                     modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -306,12 +304,6 @@ fun UntangleSheet(
                         cursorBrush = SolidColor(GOLD),
                         modifier = Modifier.fillMaxSize().focusRequester(focusRequester),
                         decorationBox = { inner ->
-                            if (text.isEmpty()) {
-                                Text(
-                                    "随手记点什么——默认只帮你顺一下错别字、存成笔记，不打扰你。\n\n想让它帮你理清思路、反过来问你几个问题，就在里面说一声（比如\"帮我理理\"\"问我几个问题\"）。",
-                                    color = DIM, fontSize = 17.sp, lineHeight = 28.sp,
-                                )
-                            }
                             inner()
                         }
                     )

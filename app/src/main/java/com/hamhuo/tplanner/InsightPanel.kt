@@ -194,14 +194,6 @@ private fun ThoughtCard(e: StructuredEntry) {
                 }
             }
         }
-        Text(
-            text = stringResource(
-                if (expanded) R.string.insight_collapse_card else R.string.insight_expand_card,
-            ),
-            color = if (expanded) DIM else GOLD,
-            fontSize = 12.sp,
-            modifier = Modifier.align(Alignment.End),
-        )
     }
 }
 

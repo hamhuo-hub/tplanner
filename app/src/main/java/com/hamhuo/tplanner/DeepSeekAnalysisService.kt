@@ -40,12 +40,14 @@ class DeepSeekAnalysisService(private val apiKey: String) {
         val questions: List<String>,
         val action: ProposedAction? = null,
         val clarify: Clarify? = null,
+        val error: Boolean = false,
     )
 
     data class FollowUpResult(
         val questions: List<String> = emptyList(),
         val action: ProposedAction? = null,
         val clarify: Clarify? = null,
+        val error: Boolean = false,
     )
 
     private data class ToolInvocation(
@@ -72,10 +74,14 @@ class DeepSeekAnalysisService(private val apiKey: String) {
 
     private var sessionSystemPrompt: String = ""
     private val sessionMessages = mutableListOf<JSONObject>()
+    private var scheduleInProgress = false
+    private var scheduleEvidence = ""
 
     private fun resetSession(systemPrompt: String) {
         sessionSystemPrompt = systemPrompt
         sessionMessages.clear()
+        scheduleInProgress = false
+        scheduleEvidence = ""
     }
 
     suspend fun processThought(
@@ -84,16 +90,20 @@ class DeepSeekAnalysisService(private val apiKey: String) {
         location: String,
     ): ThoughtResult = withContext(Dispatchers.IO) {
         resetSession(SYSTEM_AGENT)
+        val forceScheduleTool = ScheduleIntentRouter.isExplicitRequest(text)
+        scheduleInProgress = forceScheduleTool
+        if (forceScheduleTool) scheduleEvidence = text
         val prompt = buildString {
             append("现在：${nowDescription()}\n地点：$location\n记录时间：$timestamp\n")
             append("用户写下的文字：\n\"\"\"\n$text\n\"\"\"\n\n")
             append(RESPONSE_RULES)
         }
         try {
-            toThoughtResult(callDeepSeekWithHistory(prompt), text)
+            val turn = callDeepSeekWithHistory(prompt, forceScheduleTool)
+            if (forceScheduleTool) toInitialScheduleResult(turn, text) else toThoughtResult(turn, text)
         } catch (e: Exception) {
             android.util.Log.e(TAG, "processThought failed: ${e.message}")
-            ThoughtResult("questions", text, FALLBACK_QUESTIONS)
+            ThoughtResult("questions", text, emptyList(), error = true)
         }
     }
 
@@ -102,23 +112,27 @@ class DeepSeekAnalysisService(private val apiKey: String) {
         originalText: String,
         answer: String,
     ): ThoughtResult = withContext(Dispatchers.IO) {
+        scheduleInProgress = true
+        scheduleEvidence = listOf(scheduleEvidence, answer)
+            .filter { it.isNotBlank() }
+            .joinToString("\n")
         val prompt = buildString {
             append("现在：${nowDescription()}\n")
             append("最初文字：$originalText\n")
             append("用户对日程字段追问的回答：$answer\n\n")
-            append("合并这次回答与会话中已经确认的字段。仍有未询问或未确认的可填写项时，")
-            append("继续通过 clarify 一次列出全部缺失项；禁止猜值。全部字段明确后才调用 create_schedule。\n")
+            append("首轮 create_schedule 参数只是意图草稿，不代表用户确认。只合并最初文字和用户后续明确回答；")
+            append("禁止猜值。无论字段是否完整都调用 create_schedule：已确认字段传入，未知字段省略，由应用继续追问。\n")
             append(RESPONSE_RULES)
         }
         try {
-            toThoughtResult(callDeepSeekWithHistory(prompt), originalText)
+            toThoughtResult(callDeepSeekWithHistory(prompt, forceScheduleTool = true), originalText)
         } catch (e: Exception) {
             android.util.Log.e(TAG, "refineAction failed: ${e.message}")
             ThoughtResult(
                 mode = "questions",
                 text = originalText,
-                questions = FALLBACK_QUESTIONS,
-                clarify = Clarify("刚才没能处理这些日程信息，请再补充一次。", emptyList()),
+                questions = emptyList(),
+                error = true,
             )
         }
     }
@@ -127,20 +141,38 @@ class DeepSeekAnalysisService(private val apiKey: String) {
         originalText: String,
         qaHistory: String,
     ): FollowUpResult = withContext(Dispatchers.IO) {
+        val wasScheduleInProgress = scheduleInProgress
+        val userQaHistory = qaHistory.lineSequence()
+            .filter { it.startsWith("用户答：") }
+            .joinToString("\n") { it.removePrefix("用户答：") }
+        val forceScheduleTool = wasScheduleInProgress ||
+            ScheduleIntentRouter.isExplicitRequest(originalText) ||
+            ScheduleIntentRouter.isExplicitRequest(userQaHistory)
+        if (forceScheduleTool) scheduleInProgress = true
+        if (forceScheduleTool && userQaHistory.isNotBlank()) {
+            scheduleEvidence = listOf(scheduleEvidence, originalText, userQaHistory)
+                .filter { it.isNotBlank() }
+                .joinToString("\n")
+        }
         val prompt = buildString {
             append("现在：${nowDescription()}\n\n")
             append("用户最初写下的文字：\n\"\"\"\n$originalText\n\"\"\"\n\n")
             if (qaHistory.isNotBlank()) append("此前 QA：\n$qaHistory\n\n")
             append("基于整段对话继续提出 1-3 个不重复的新问题。若对话里出现明确的日程意图，")
-            append("按规则收集全部字段；字段齐全时调用 create_schedule。\n")
+            append("立即调用 create_schedule：已确认字段传入，未知字段省略，由应用继续追问。\n")
             append(RESPONSE_RULES)
         }
         try {
-            val result = toThoughtResult(callDeepSeekWithHistory(prompt), originalText)
+            val turn = callDeepSeekWithHistory(prompt, forceScheduleTool)
+            val result = if (forceScheduleTool && !wasScheduleInProgress) {
+                toInitialScheduleResult(turn, originalText)
+            } else {
+                toThoughtResult(turn, originalText)
+            }
             FollowUpResult(result.questions, result.action, result.clarify)
         } catch (e: Exception) {
             android.util.Log.e(TAG, "followUp failed: ${e.message}")
-            FollowUpResult(FALLBACK_QUESTIONS)
+            FollowUpResult(error = true)
         }
     }
 
@@ -167,6 +199,10 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             put("tool_call_id", toolCallId)
             put("content", content)
         })
+        if (status == "accepted" || status == "declined") {
+            scheduleInProgress = false
+            scheduleEvidence = ""
+        }
     }
 
     private fun toThoughtResult(turn: ModelTurn, fallbackText: String): ThoughtResult {
@@ -183,6 +219,7 @@ class DeepSeekAnalysisService(private val apiKey: String) {
         }
         val questions = content.questions.ifEmpty { FALLBACK_QUESTIONS }
         val clarify = tool.clarify ?: content.clarify
+        if (tool.action != null || clarify != null) scheduleInProgress = true
         val mode = when {
             tool.action != null -> "action"
             clarify != null -> "questions"
@@ -193,6 +230,36 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             "turn mode=$mode q=${questions.size} tool=${tool.action != null} clarify=${clarify != null}",
         )
         return ThoughtResult(mode, content.text, questions, tool.action, clarify)
+    }
+
+    /**
+     * A first-pass tool call only signals schedule intent. Always ask the full
+     * field set before showing the confirmation card, because model arguments
+     * may contain inferred values that the user never supplied.
+     */
+    private fun toInitialScheduleResult(turn: ModelTurn, fallbackText: String): ThoughtResult {
+        val content = parseContent(turn.content, fallbackText)
+        turn.toolCalls.forEachIndexed { index, call ->
+            submitToolResult(
+                toolCallId = call.id,
+                status = if (index == 0 && call.name == CREATE_SCHEDULE_TOOL) "needs_input" else "failed",
+                message = if (index == 0 && call.name == CREATE_SCHEDULE_TOOL) {
+                    "首次工具参数仅用于识别日程意图，所有字段必须由用户确认后再创建"
+                } else {
+                    "一次只能处理一条 create_schedule 调用"
+                },
+            )
+        }
+        scheduleInProgress = true
+        return ThoughtResult(
+            mode = "questions",
+            text = content.text,
+            questions = content.questions.ifEmpty { FALLBACK_QUESTIONS },
+            clarify = Clarify(
+                q = INITIAL_SCHEDULE_QUESTION,
+                options = listOf("其余使用默认值", "我来补充"),
+            ),
+        )
     }
 
     private fun parseContent(raw: String, fallbackText: String): ParsedContent {
@@ -253,15 +320,20 @@ class DeepSeekAnalysisService(private val apiKey: String) {
                 }
             }
 
-            if (type !in SCHEDULE_TYPES) errors += "类型（提醒、状态或任务）"
+            val explicitType = ScheduleIntentRouter.explicitType(scheduleEvidence)
+            if (type !in SCHEDULE_TYPES || explicitType != null && type != explicitType) {
+                errors += "类型（提醒、状态或任务）"
+            }
             if (title.isBlank()) errors += "标题"
             val start = runCatching { LocalDateTime.parse(startIso) }.getOrNull()
             val end = runCatching { LocalDateTime.parse(endIso) }.getOrNull()
-            if (start == null) errors += "有效的开始时间"
+            if (start == null || !ScheduleIntentRouter.hasExplicitClock(scheduleEvidence)) {
+                errors += "有效的开始时间（包括具体钟点）"
+            }
             if (end == null || start != null && !end.isAfter(start)) errors += "晚于开始时间的结束时间"
             if (colorId !in 0..7) errors += "颜色"
             if (!args.has("note")) errors += "备注（不需要可留空）"
-            if (!args.has("checklist")) errors += "清单（不需要可为空）"
+            if (type == "task" && !args.has("checklist")) errors += "任务清单（不需要可为空）"
             if (!args.has("alarm_enabled")) errors += "是否开启系统闹铃"
             if (!args.has("alarm_offset_minutes") || alarmOffsetMinutes !in 0..MAX_ALARM_OFFSET_MINUTES) {
                 errors += "闹铃提前分钟（0 到 $MAX_ALARM_OFFSET_MINUTES）"
@@ -305,7 +377,10 @@ class DeepSeekAnalysisService(private val apiKey: String) {
         }
     }
 
-    private fun callDeepSeekWithHistory(currentUserMessage: String): ModelTurn {
+    private fun callDeepSeekWithHistory(
+        currentUserMessage: String,
+        forceScheduleTool: Boolean = false,
+    ): ModelTurn {
         val conn = URL(DEEPSEEK_URL).openConnection() as HttpURLConnection
         conn.requestMethod = "POST"
         conn.connectTimeout = 30_000
@@ -334,7 +409,8 @@ class DeepSeekAnalysisService(private val apiKey: String) {
                 put("thinking", JSONObject().put("type", "disabled"))
                 put("messages", messages)
                 put("tools", buildTools())
-                put("tool_choice", "auto")
+                put("tool_choice", if (forceScheduleTool) "required" else "auto")
+                put("response_format", JSONObject().put("type", "json_object"))
                 put("max_tokens", 3072)
                 put("temperature", 0.5)
             }.toString()
@@ -348,10 +424,10 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             }
 
             val response = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
-            val message = JSONObject(response)
+            val choice = JSONObject(response)
                 .getJSONArray("choices")
                 .getJSONObject(0)
-                .getJSONObject("message")
+            val message = choice.getJSONObject("message")
             val content = if (message.isNull("content")) "" else message.optString("content", "").trim()
             val calls = mutableListOf<ToolInvocation>()
             message.optJSONArray("tool_calls")?.let { array ->
@@ -365,6 +441,10 @@ class DeepSeekAnalysisService(private val apiKey: String) {
                     )
                 }
             }
+            android.util.Log.d(
+                TAG,
+                "finish=${choice.optString("finish_reason")} content=${content.isNotBlank()} toolCalls=${calls.size}",
+            )
 
             sessionMessages.add(userMessage)
             // Keep the complete assistant message so its tool_calls remain paired
@@ -383,8 +463,8 @@ class DeepSeekAnalysisService(private val apiKey: String) {
                 put("name", CREATE_SCHEDULE_TOOL)
                 put(
                     "description",
-                    "创建 tPlanner 日程。只有类型、标题、开始、结束、备注、颜色、任务清单以及系统闹铃都已向用户询问，" +
-                        "或用户明确接受默认值后才可调用。应用仍会在执行前向用户做最终确认。",
+                    "识别到用户明确希望创建、安排、提醒或记录日程时立即调用。把已知参数传入，未知参数省略且禁止猜测；" +
+                        "应用会校验缺失字段、继续询问，并在执行前向用户做最终确认。",
                 )
                 put("parameters", JSONObject().apply {
                     put("type", "object")
@@ -432,15 +512,6 @@ class DeepSeekAnalysisService(private val apiKey: String) {
                             put("description", "闹铃比 start_at 提前的分钟数；开始时为 0，alarm_enabled=false 时必须为 0")
                         })
                     })
-                    put(
-                        "required",
-                        JSONArray(
-                            listOf(
-                                "type", "title", "start_at", "end_at", "note", "color_id", "checklist",
-                                "alarm_enabled", "alarm_offset_minutes",
-                            ),
-                        ),
-                    )
                     put("additionalProperties", false)
                 })
             })
@@ -481,23 +552,30 @@ class DeepSeekAnalysisService(private val apiKey: String) {
         private const val CREATE_SCHEDULE_TOOL = "create_schedule"
         private val SCHEDULE_TYPES = linkedSetOf("event", "status", "task")
         private val FALLBACK_QUESTIONS = listOf("这段话里，你最想先理清或继续展开的是哪一部分？")
+        private const val INITIAL_SCHEDULE_QUESTION =
+            "我识别到你想创建日程。请一次确认：类型（提醒、状态或任务）、标题、开始时间（日期和钟点）、" +
+                "结束时间、备注、颜色、是否开启系统闹铃（开启时还需提前分钟数）；任务还请提供清单。" +
+                "不需要的项目可说“其余使用默认值”，但类型、标题和开始时间仍需明确。"
 
         private const val SYSTEM_AGENT =
-            "你是 tPlanner 的 QA 助手。你的核心行为是反过来追问，帮助用户理清想法，而不是替用户下结论。" +
-                "每次响应都必须产生至少一个与当前上下文相关的新追问。你可以使用 create_schedule 工具，" +
-                "但工具、参数校验、确认与执行均由应用负责。识别到日程意图时，必须询问所有可填写字段：" +
-                "类型、标题、开始、结束、备注、颜色、是否开启系统闹铃；开启闹铃时还要询问提前多少分钟；" +
-                "task 还要询问清单。关闭闹铃时 alarm_offset_minutes 必须为 0。没有提供的值绝不猜测，除非用户" +
-                "明确接受默认值；接受默认值时系统闹铃默认关闭（false/0）。字段不全时不要调用工具，而是在 clarify 中一次列出全部缺失字段。字段齐全" +
-                "后调用 create_schedule。每次最多调用一次工具、创建一条日程；多条日程必须逐条确认。" +
+            "你是 tPlanner 的 QA 与日程助手。第一步必须先判断用户是否明确希望创建、安排、记录或提醒一条日程。" +
+                "日程意图优先于普通 QA；即使它是陈述句，也不能被通用追问吞掉。提醒我、记得、别忘、待办、任务、" +
+                "加入日程、安排、设闹钟、明天要做某事等表达都属于强日程信号。" +
+                "一旦存在明确日程意图，本轮必须调用 create_schedule：把用户已经给出的字段传入，未知字段直接省略，" +
+                "禁止为了满足参数格式而猜值，也不要只返回普通 questions。应用会验证工具参数并一次列出全部缺失项。" +
+                "日程可填写项包括类型、标题、开始、结束、备注、颜色、是否开启系统闹铃；开启闹铃时还要提前分钟数；" +
+                "task 还包括清单。关闭闹铃时 alarm_offset_minutes 为 0。用户明确说“使用默认值”时，允许使用：" +
+                "end_at=start_at+1小时、note=空字符串、color_id=0、checklist=空数组、alarm_enabled=false、" +
+                "alarm_offset_minutes=0；type、title、start_at 仍必须来自用户文字或继续询问。每次最多创建一条日程。" +
+                "只有非日程输入才进入普通 QA：反过来追问，帮助用户理清想法而不替用户下结论；每次至少产生一个新追问。" +
                 "普通回复只输出有效 JSON，不要 markdown。"
 
         private const val RESPONSE_RULES =
-            "普通回复必须是以下 JSON（不要输出 action，创建日程只能使用 create_schedule 工具）：\n" +
+            "先判断日程意图。只要有明确日程意图，必须立即调用 create_schedule；已知字段传入、未知字段省略，" +
+                "不要在 content 中模拟工具调用，也不要只返回 questions。\n" +
+                "只有非日程普通回复才输出以下 JSON（不要输出 action）：\n" +
                 "{\"text\":\"保持原意、仅修正明显错字后的文字\",\"questions\":[\"1-3 个新追问\"]," +
                 "\"clarify\":null}\n" +
-                "每次普通回复 questions 都不得为空。若有日程意图但字段不全，clarify 改为" +
-                "{\"q\":\"一次列出全部缺失字段的问题\",\"options\":[\"合适的快捷答案\",\"使用默认值\"]}。" +
-                "日程字段齐全后不要再输出日程 JSON，直接调用 create_schedule。"
+                "普通回复 questions 不得为空。日程缺失字段由应用校验工具参数后统一追问。"
     }
 }
