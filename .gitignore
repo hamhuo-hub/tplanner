@@ -1,0 +1,6 @@
+/.gradle
+/.idea
+/app/build
+/wear/build
+/.vscode
+local.properties
