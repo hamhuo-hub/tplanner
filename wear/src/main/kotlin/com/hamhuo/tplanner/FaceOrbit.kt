@@ -49,7 +49,7 @@ class FaceOrbit(
             val a = Math.toRadians(m / 1440.0 * 360.0 - 90.0)
             val stagger = (((now - bootStart) - i * 100L).coerceIn(0, 300) / 300f)
             val isNext = m == marks.nextMinute
-            p.setFill(if (isNext) GOLD else TEAL, stagger)
+            p.setFill(if (isNext) GOLD else EVENT_DOT, stagger)
             canvas.drawCircle(
                 cx + orbitR * cos(a).toFloat(), cy + orbitR * sin(a).toFloat(),
                 s * (if (isNext) 0.021f else 0.0158f), p,

@@ -35,6 +35,16 @@ class FaceEmber(
         p.setText(DIM, s * 0.0526f)
         canvas.drawText(t.format(dateFmt), cx, cy + s * 0.3053f, p)
 
+        // ── 日程事件：屏幕底部一行蓝色半透明小点 ──────────────────────────
+        val dotY = cy + s * 0.38f
+        val dotLeft = cx - s * 0.32f
+        val dotWidth = s * 0.64f
+        for (m in marks.minutes) {
+            val x = dotLeft + (m / 1440f) * dotWidth
+            p.setFill(EVENT_DOT)
+            canvas.drawCircle(x, dotY, s * 0.012f, p)
+        }
+
     }
 
     override fun drawAmbient(canvas: Canvas, t: ZonedDateTime, s: Float, cx: Float, cy: Float) {

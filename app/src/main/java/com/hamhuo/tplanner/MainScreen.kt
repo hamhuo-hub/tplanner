@@ -102,6 +102,7 @@ fun MainScreen(
                     content = r.todayText
                     syncStatus = "success"; syncMsg = syncedTemplate.format(serverHost(serverUrl))
                     events = manager.fetchEvents(serverUrl)
+                    WatchScheduleSync.push(context, events)
                 }
                 is LanSyncManager.SyncResult.Error -> {
                     syncStatus = "error"; syncMsg = r.message
@@ -117,6 +118,7 @@ fun MainScreen(
                 content = r.todayText
                 syncStatus = "success"; syncMsg = syncedTemplate.format(serverHost(serverUrl))
                 events = manager.fetchEvents(serverUrl)
+                WatchScheduleSync.push(context, events)
             }
             is LanSyncManager.SyncResult.Error -> {
                 syncStatus = "idle"
@@ -315,6 +317,7 @@ fun MainScreen(
                 }
                 Toast.makeText(context, toastMessage, Toast.LENGTH_SHORT).show()
                 events = manager.fetchEvents(serverUrl)
+                WatchScheduleSync.push(context, events)
             } catch (e: Exception) {
                 android.util.Log.e("TplannerTool", "create_schedule failed", e)
                 Toast.makeText(context, R.string.schedule_create_failed_toast, Toast.LENGTH_SHORT).show()

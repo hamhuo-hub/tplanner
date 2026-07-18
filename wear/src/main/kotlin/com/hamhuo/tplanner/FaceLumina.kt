@@ -128,7 +128,7 @@ class FaceLumina(
                 canvas.drawCircle(ex, ey, s * 0.037f, p)
             }
 
-            p.setFill(if (isNext) GOLD else TEAL, boot * alpha)
+            p.setFill(if (isNext) GOLD else EVENT_DOT, boot * alpha)
             canvas.drawCircle(ex, ey, s * size, p)
         }
 

@@ -87,6 +87,14 @@
             <meta-data android:name="androidx.wear.watchface.MULTIPLE_INSTANCES_ALLOWED" android:value="false" />
         </service>
 
+        <!-- 接收手机推送的日程分钟数，写入 WatchEventMarks -->
+        <service android:name=".ScheduleReceiverService" android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/tplanner/schedule" />
+            </intent-filter>
+        </service>
+
     </application>
 
 </manifest>

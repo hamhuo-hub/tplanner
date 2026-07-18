@@ -148,6 +148,16 @@ class FaceTide(
             canvas.drawPath(dia, p)
         }
 
+        // ── 日程事件：蓝色半透明小点，映射到 24h 潮汐线上 ──────────────────
+        for (m in marks.minutes) {
+            val frac = m / 1440f
+            val ex   = g.startX + frac * g.width
+            val ey   = g.baseY - g.amp * cos(frac * 2.0 * PI).toFloat()
+            val dotR = s * 0.013f
+            p.setFill(EVENT_DOT, boot)
+            canvas.drawCircle(ex, ey, dotR, p)
+        }
+
         // ── 浪尖金球 ──────────────────────────────────────────────────────
         val orbR = s * 0.035f
         val breath = 0.55f + 0.9f * (0.5f + 0.5f * sin(2.0 * PI * (now % 4000L) / 4000.0).toFloat())

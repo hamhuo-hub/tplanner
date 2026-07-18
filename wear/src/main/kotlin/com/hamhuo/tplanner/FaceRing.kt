@@ -31,7 +31,7 @@ class FaceRing(
         for (m in marks.minutes) {
             if (m == marks.nextMinute) continue
             val a = Math.toRadians((m % 720) / 720.0 * 360.0 - 90.0)
-            p.setFill(TEAL, boot)
+            p.setFill(EVENT_DOT, boot)
             canvas.drawCircle(cx + ringR * cos(a).toFloat(), cy + ringR * sin(a).toFloat(), s * 0.0158f, p)
         }
         marks.nextMinute?.let { m ->
