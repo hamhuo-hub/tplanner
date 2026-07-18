@@ -3,6 +3,8 @@ package com.hamhuo.tplanner
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 
 /**
@@ -63,9 +65,10 @@ class WakeProxyActivity : Activity() {
         finish()
 
         // Detach the BAL-bypass overlay that WakeDataLayerService attached.
-        // Delayed 2s to cover the Activity transition window — removing it
-        // too early could cause Samsung to kill the transition mid-flight.
-        window.decorView.postDelayed({
+        // Must post to the process-scoped main Looper, NOT window.decorView —
+        // finish() above destroys the Activity's Handler thread before the
+        // 2 s delay fires, causing "Handler on a dead thread" crashes on Samsung.
+        Handler(Looper.getMainLooper()).postDelayed({
             WakeDataLayerService.detachOverlayFromProxy()
         }, 2_000L)
     }

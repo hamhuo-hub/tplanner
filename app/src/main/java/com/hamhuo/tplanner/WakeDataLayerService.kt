@@ -1,24 +1,15 @@
 package com.hamhuo.tplanner
 
-import android.Manifest
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.graphics.PixelFormat
-import android.location.Location
-import android.location.LocationListener
-import android.location.LocationManager
 import android.os.Build
-import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import android.view.WindowManager
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.WearableListenerService
-import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Phone-side Data Layer listener — the sole watch→phone channel.
@@ -27,8 +18,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  *   1. Attach a 1×1 invisible overlay — puts the process into a "has visible
  *      window" state, bypassing Samsung's BAL checker (same trick the old
  *      BluetoothWakeService used, confirmed working).
- *   2. Fetch current location (fire-and-forget, saved to [WatchLocationStore]).
- *   3. Launch [WakeProxyActivity], which delegates to [MainActivity] with
+ *   2. Save only a qualified last-known cache; do not start background sensors here.
+ *   3. Launch [WakeProxyActivity]; MainScreen starts the foreground capture.
  *      REORDER_TO_FRONT.
  *
  * The overlay is detached by [WakeProxyActivity] once MainActivity is visible
@@ -50,8 +41,9 @@ class WakeDataLayerService : WearableListenerService() {
         // Must happen BEFORE startActivity; BAL checks hasVisibleWindow at call time.
         attachOverlay()
 
-        // Step 2: fetch location (fire-and-forget).
-        fetchCurrentLocation()
+        // Step 2: sensor-free cache prime. The singleton also invalidates an older capture;
+        // active fused/network/GPS listeners are started only after MainScreen is visible.
+        LocationCapture.primeFreshCache(this)
 
         // Step 3: launch proxy.
         val intent = Intent(this, WakeProxyActivity::class.java).apply {
@@ -66,10 +58,6 @@ class WakeDataLayerService : WearableListenerService() {
             Log.e(TAG, "onMessageReceived: startActivity failed", e)
             detachOverlay() // clean up on failure
         }
-
-        // Safety timeout: if WakeProxyActivity doesn't detach the overlay within
-        // 5 seconds (crashed / killed before delegation), remove it here.
-        handler.postDelayed({ detachOverlay() }, 5_000L)
     }
 
     // ── BAL bypass overlay ────────────────────────────────────────────────
@@ -122,87 +110,11 @@ class WakeDataLayerService : WearableListenerService() {
 
     override fun onDestroy() {
         super.onDestroy()
-        detachOverlay()
+        // Do NOT detach the overlay here. The system stops this service immediately
+        // after onMessageReceived returns (~1.4 s), which is before WakeProxyActivity's
+        // 2 s transition window.  WakeProxyActivity handles the detach via
+        // detachOverlayFromProxy() posted to the process-scoped main Looper.
         handler.removeCallbacksAndMessages(null)
-    }
-
-    // ── Location (same cascading logic as old BluetoothWakeService) ────────
-
-    private fun fetchCurrentLocation() {
-        val fine = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        val coarse = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!fine && !coarse) {
-            Log.w(TAG, "fetchCurrentLocation: no location permission")
-            return
-        }
-        val lm = getSystemService(LocationManager::class.java) ?: return
-
-        val candidates = buildList {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                lm.allProviders.contains(LocationManager.FUSED_PROVIDER))
-                add(LocationManager.FUSED_PROVIDER)
-            if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER))
-                add(LocationManager.NETWORK_PROVIDER)
-            if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER))
-                add(LocationManager.GPS_PROVIDER)
-        }
-        if (candidates.isEmpty()) {
-            saveLastKnown(lm)
-            return
-        }
-        tryNext(lm, candidates, 0)
-    }
-
-    private fun tryNext(lm: LocationManager, candidates: List<String>, idx: Int) {
-        if (idx >= candidates.size) { saveLastKnown(lm); return }
-        val provider = candidates[idx]
-        val done = AtomicBoolean(false)
-        val timeout = if (provider == LocationManager.FUSED_PROVIDER) 6_000L else 10_000L
-
-        val onTimeout = Runnable {
-            if (done.compareAndSet(false, true)) tryNext(lm, candidates, idx + 1)
-        }
-        handler.postDelayed(onTimeout, timeout)
-
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                lm.getCurrentLocation(provider, null, ContextCompat.getMainExecutor(this)) { loc ->
-                    if (done.compareAndSet(false, true)) {
-                        handler.removeCallbacks(onTimeout)
-                        if (loc != null) save(loc) else tryNext(lm, candidates, idx + 1)
-                    }
-                }
-            } else {
-                @Suppress("DEPRECATION")
-                lm.requestSingleUpdate(provider, object : LocationListener {
-                    override fun onLocationChanged(loc: Location) {
-                        if (done.compareAndSet(false, true)) {
-                            handler.removeCallbacks(onTimeout)
-                            save(loc)
-                        }
-                    }
-                    @Deprecated("Deprecated in Java")
-                    override fun onStatusChanged(p: String?, s: Int, e: Bundle?) {}
-                    override fun onProviderEnabled(p: String) {}
-                    override fun onProviderDisabled(p: String) {}
-                }, Looper.getMainLooper())
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "fetchCurrentLocation: $provider failed", e)
-            handler.removeCallbacks(onTimeout)
-            if (done.compareAndSet(false, true)) tryNext(lm, candidates, idx + 1)
-        }
-    }
-
-    private fun saveLastKnown(lm: LocationManager) {
-        try {
-            val best = lm.allProviders.mapNotNull { lm.getLastKnownLocation(it) }.maxByOrNull { it.time }
-            if (best != null) WatchLocationStore.save(this, best.latitude, best.longitude)
-        } catch (_: SecurityException) {}
-    }
-
-    private fun save(loc: Location) {
-        WatchLocationStore.save(this, loc.latitude, loc.longitude)
     }
 
     companion object {

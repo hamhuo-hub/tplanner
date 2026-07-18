@@ -29,18 +29,6 @@ internal object ScheduleIntentRouter {
 
     fun explicitType(text: String): String? {
         val normalized = text.lowercase()
-        Regex("(?:类型|type)\\s*[:：是为]?\\s*(提醒|状态|任务|event|reminder|status|task|todo)")
-            .findAll(normalized)
-            .lastOrNull()
-            ?.groupValues
-            ?.get(1)
-            ?.let { value ->
-                return when (value) {
-                    "提醒", "event", "reminder" -> "event"
-                    "状态", "status" -> "status"
-                    else -> "task"
-                }
-            }
         val candidates = listOf(
             "event" to listOf("提醒", "闹钟", "event", "reminder"),
             "status" to listOf("状态", "status"),

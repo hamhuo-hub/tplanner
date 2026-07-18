@@ -25,6 +25,8 @@ data class TaskEvent(
     val updatedAt: Long = 0L,
     val alarmEnabled: Boolean = false,
     val alarmOffsetMinutes: Int = 0,
+    val lat: Double = 0.0,     // 手表调起时的 GPS 纬度（WGS-84）
+    val lng: Double = 0.0,     // 手表调起时的 GPS 经度（WGS-84）
     // 桌面端/服务器的其余字段（timezone/groupId/recurrence* 等）原样透传。
     // 安卓端不理解的字段不代表可以丢弃——早先回写时丢字段 + 时间戳丢毫秒，
     // 会把服务器上的副本改写成与桌面端"内容相同但字节不同"的形态，导致
@@ -87,6 +89,8 @@ class EventStore(ctx: Context) {
             updatedAt = optLong("updatedAt", 0L),
             alarmEnabled = optBoolean("alarmEnabled", false),
             alarmOffsetMinutes = optInt("alarmOffsetMinutes", 0).coerceIn(0, MAX_ALARM_OFFSET_MINUTES),
+            lat       = optDouble("lat", 0.0),
+            lng       = optDouble("lng", 0.0),
             extras    = extras,
         )
     }
@@ -95,7 +99,7 @@ class EventStore(ctx: Context) {
         private val KNOWN_KEYS = setOf(
             "id", "title", "type", "start", "end", "completed",
             "checklist", "colorId", "note", "deletedAt", "updatedAt",
-            "alarmEnabled", "alarmOffsetMinutes",
+            "alarmEnabled", "alarmOffsetMinutes", "lat", "lng",
         )
     }
 }
@@ -121,6 +125,8 @@ internal fun TaskEvent.toJson(): JSONObject {
     obj.put("updatedAt", updatedAt)
     obj.put("alarmEnabled", alarmEnabled)
     obj.put("alarmOffsetMinutes", alarmOffsetMinutes.coerceIn(0, MAX_ALARM_OFFSET_MINUTES))
+    if (lat != 0.0) obj.put("lat", lat)
+    if (lng != 0.0) obj.put("lng", lng)
     val arr = JSONArray()
     checklist.forEach { item ->
         val o = JSONObject()

@@ -8,6 +8,7 @@ import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import android.util.Log
 
 // 高德 Web API 逆地理编码：GPS (WGS-84) → 人类可读位置名。
 // 三级回落：建筑名 → 兴趣点名 → 街道门牌 → 区县
@@ -30,6 +31,10 @@ object AmapGeocoder {
         lng: Double,
         apiKey: String = cachedApiKey ?: "",
     ): String = withContext(Dispatchers.IO) {
+        if (apiKey.isBlank()) {
+            Log.w(TAG, "reverseGeocode: API key is blank, returning fallback")
+            return@withContext fallback(lat, lng)
+        }
         try {
             val params = buildString {
                 append("key=$apiKey")
@@ -41,14 +46,21 @@ object AmapGeocoder {
             val url = "$AMAP_REVERSE_GEO_URL?$params"
             val conn = URL(url).openConnection() as HttpURLConnection
             conn.requestMethod = "GET"
-            conn.connectTimeout = 8000
-            conn.readTimeout = 8000
+            conn.connectTimeout = 5000
+            conn.readTimeout = 5000
             try {
-                if (conn.responseCode != 200) return@withContext fallback(lat, lng)
+                if (conn.responseCode != 200) {
+                    Log.w(TAG, "reverseGeocode: HTTP ${conn.responseCode}, falling back")
+                    return@withContext fallback(lat, lng)
+                }
                 val resp = BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8))
                     .readText()
                 val json = JSONObject(resp)
-                if (json.optInt("status") != 1) return@withContext fallback(lat, lng)
+                if (json.optInt("status") != 1) {
+                    Log.w(TAG, "reverseGeocode: API status=${json.optInt("status")} info=${json.optString("info")}")
+                    return@withContext fallback(lat, lng)
+                }
+                Log.d(TAG, "reverseGeocode: API success")
 
                 val comp = json.getJSONObject("regeocode")
                     .getJSONObject("addressComponent")
@@ -100,10 +112,13 @@ object AmapGeocoder {
             } finally {
                 conn.disconnect()
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.e(TAG, "reverseGeocode failed: ${e.message}")
             fallback(lat, lng)
         }
     }
+
+    private const val TAG = "TplannerAmap"
 
     private fun fallback(lat: Double, lng: Double): String {
         // 最后的兜底：显示坐标本身

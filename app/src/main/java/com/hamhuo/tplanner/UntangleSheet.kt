@@ -6,8 +6,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,10 +14,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.CircularProgressIndicator
@@ -42,7 +38,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// Tool Call 起止时间的友好展示。
+// ── Helpers ────────────────────────────────────────────────────────────────
+
 private fun prettyWhen(startIso: String, endIso: String): String {
     return try {
         val start = java.time.LocalDateTime.parse(startIso)
@@ -69,31 +66,28 @@ private fun prettyAlarm(enabled: Boolean, offsetMinutes: Int): String = when {
     else -> "系统闹铃 · 提前 $offsetMinutes 分钟"
 }
 
-// 全屏"理一理"面板。四态由父组件驱动：
-//   编辑（都为空 && !thinking）→ 写下凌乱的想法/随手记
-//   思考（thinking）           → AI 正在读你的片段
-//   追问（questions!=null）    → AI 抛回的问题；不是答案，是帮你定位卡点
-//   加日程（action!=null）     → AI 识别出待办/提醒，提议帮你建日程（你确认才建）
-// 产品刻意不给"答案/分析/结论"，只把问题递还给你；有副作用的动作（建日程）
-// 一律先提议、由你确认，绝不自作主张。
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+/**
+ * Full-screen schedule-extraction panel. Three states:
+ *
+ *   EDIT    — write text describing what you want on your schedule
+ *   THINKING — LLM is extracting schedule fields from your text
+ *   CONFIRM  — review the extracted schedule and confirm or decline
+ *
+ * No QA, no clarifying questions — the tool always produces a schedule proposal.
+ */
 @Composable
 fun UntangleSheet(
     prefillLocation: String,
     thinking: Boolean,
-    questions: List<String>?,
     action: DeepSeekAnalysisService.ProposedAction?,
-    clarify: DeepSeekAnalysisService.Clarify?,
     onDismiss: () -> Unit,
     onSubmit: (text: String) -> Unit,
     onConfirmAction: (DeepSeekAnalysisService.ProposedAction) -> Unit,
     onDeclineAction: () -> Unit,
-    onAnswerClarify: (String) -> Unit,
-    onAnswerQuestion: (String) -> Unit = {},
 ) {
     var text by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
-    val showEditor = questions == null && action == null && clarify == null && !thinking
+    val showEditor = action == null && !thinking
     LaunchedEffect(showEditor) { if (showEditor) focusRequester.requestFocus() }
 
     Column(
@@ -107,100 +101,51 @@ fun UntangleSheet(
         ) {
             Text(
                 when {
-                    clarify != null -> "还差一点"
                     action != null -> "加个日程？"
-                    questions != null -> "Questions to sit with"
-                    else -> "Untangle"
+                    thinking -> "识别中…"
+                    else -> "写日程"
                 },
                 color = GOLD, fontSize = 18.sp, fontWeight = FontWeight.Bold,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (showEditor) {
-                    Text("记下", color = if (text.isNotBlank()) GOLD else DIM, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                    Text("提取", color = if (text.isNotBlank()) GOLD else DIM, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.clickable { if (text.isNotBlank()) onSubmit(text) })
-                }
-                if (questions != null) {
-                    Text("Done", color = GOLD, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.clickable { onDismiss() })
                 }
                 Icon(Icons.Default.Close, contentDescription = "Close", tint = DIM,
                     modifier = Modifier.size(18.dp).clickable { onDismiss() })
             }
         }
 
-        Text(prefillLocation.ifBlank { "Locating…" }, color = DIM, fontSize = 13.sp,
-            modifier = Modifier.padding(bottom = 12.dp))
+        // ── Location ─────────────────────────────────────────────────
+        if (showEditor) {
+            Text(
+                prefillLocation.ifBlank { "Locating..." },
+                color = if (prefillLocation.isNotBlank()) GOLD else DIM,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+            )
+        }
 
         when {
-            // ── 思考中 ──────────────────────────────────────────────
-            // 放在最前：只要在读内容（含点了问题后拉取下一轮），就盖过其它态显示动画
+            // ── thinking ─────────────────────────────────────────────
             thinking -> {
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         CircularProgressIndicator(color = GOLD, strokeWidth = 2.dp, modifier = Modifier.size(28.dp))
-                        Text("在读你写的…", color = DIM, fontSize = 14.sp)
+                        Text("识别日程信息…", color = DIM, fontSize = 14.sp)
                     }
                 }
             }
 
-            // ── 澄清追问：缺关键参数，先问你，答完再补全操作 ──────────
-            clarify != null -> {
-                var custom by remember { mutableStateOf("") }
-                Text(clarify.q, color = Color(0xFFE8E0D0), fontSize = 18.sp, lineHeight = 26.sp,
-                    modifier = Modifier.padding(bottom = 16.dp))
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    clarify.options.forEach { opt ->
-                        Box(
-                            modifier = Modifier
-                                .background(Color(0xFF222222), RoundedCornerShape(20.dp))
-                                .border(1.dp, GOLD.copy(alpha = 0.4f), RoundedCornerShape(20.dp))
-                                .clickable { onAnswerClarify(opt) }
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
-                        ) { Text(opt, color = Color(0xFFE0D8C0), fontSize = 15.sp) }
-                    }
-                }
-                Spacer(Modifier.height(16.dp))
-                // 自定义回答
-                Row(
-                    modifier = Modifier.fillMaxWidth()
-                        .background(SURFACE, RoundedCornerShape(12.dp))
-                        .border(1.dp, BORDER, RoundedCornerShape(12.dp))
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(Modifier.weight(1f)) {
-                        BasicTextField(
-                            value = custom, onValueChange = { custom = it }, singleLine = true,
-                            textStyle = TextStyle(color = Color(0xFFE8E0D0), fontSize = 15.sp),
-                            cursorBrush = SolidColor(GOLD), modifier = Modifier.fillMaxWidth(),
-                            decorationBox = { inner ->
-                                if (custom.isEmpty()) Text("或自己写，比如「明早7点半」", color = DIM, fontSize = 15.sp)
-                                inner()
-                            },
-                        )
-                    }
-                    if (custom.isNotBlank()) {
-                        Text("确定", color = GOLD, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.clickable { onAnswerClarify(custom) }.padding(start = 10.dp))
-                    }
-                }
-            }
-
-            // ── 加日程提议：AI 只提议，你确认了才创建 ────────────────
+            // ── schedule confirmation card ───────────────────────────
             action != null -> {
                 val typeLabel = when (action.type) {
                     "event" -> "提醒"
                     "status" -> "状态"
                     else -> "任务"
                 }
-                Text(
-                    "字段已收集完整，要在后台创建这条$typeLabel 吗？",
-                    color = DIM, fontSize = 14.sp, modifier = Modifier.padding(bottom = 16.dp),
-                )
+                Text("提取到以下日程，确认创建吗？", color = DIM, fontSize = 14.sp, modifier = Modifier.padding(bottom = 16.dp))
                 Column(
                     modifier = Modifier.fillMaxWidth()
                         .background(SURFACE, RoundedCornerShape(12.dp))
@@ -208,10 +153,7 @@ fun UntangleSheet(
                         .padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Text(
-                        action.title,
-                        color = Color(0xFFE8E0D0), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, lineHeight = 26.sp,
-                    )
+                    Text(action.title, color = Color(0xFFE8E0D0), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, lineHeight = 26.sp)
                     Text("$typeLabel · ${prettyWhen(action.startIso, action.endIso)}", color = GOLD, fontSize = 14.sp)
                     Text("颜色 ${action.colorId + 1}", color = DIM, fontSize = 13.sp)
                     Text(
@@ -242,54 +184,7 @@ fun UntangleSheet(
                 }
             }
 
-            // ── 追问：AI 把问题递还给你 ──────────────────────────────
-            questions != null -> {
-                var answer by remember { mutableStateOf("") }
-                Column(
-                    modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    questions.forEachIndexed { i, q ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth()
-                                .background(SURFACE, RoundedCornerShape(12.dp))
-                                .border(1.dp, BORDER, RoundedCornerShape(12.dp))
-                                .padding(16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            Text("${i + 1}", color = GOLD, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                            Text(q, color = Color(0xFFE8E0D0), fontSize = 16.sp, lineHeight = 26.sp)
-                        }
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    // 回答输入 —— 用户答完可以点"继续"，AI 会基于整段对话往更深处再问
-                    Row(
-                        modifier = Modifier.fillMaxWidth()
-                            .background(SURFACE, RoundedCornerShape(12.dp))
-                            .border(1.dp, BORDER, RoundedCornerShape(12.dp))
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(Modifier.weight(1f)) {
-                            BasicTextField(
-                                value = answer, onValueChange = { answer = it }, singleLine = false,
-                                textStyle = TextStyle(color = Color(0xFFE8E0D0), fontSize = 15.sp, lineHeight = 24.sp),
-                                cursorBrush = SolidColor(GOLD), modifier = Modifier.fillMaxWidth(),
-                                decorationBox = { inner ->
-                                    if (answer.isEmpty()) Text("写下你的回答…", color = DIM, fontSize = 15.sp)
-                                    inner()
-                                },
-                            )
-                        }
-                        if (answer.isNotBlank()) {
-                            Text("继续", color = GOLD, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.clickable { onAnswerQuestion(answer); answer = "" }.padding(start = 10.dp))
-                        }
-                    }
-                }
-            }
-
-            // ── 编辑：写下凌乱的想法 ────────────────────────────────
+            // ── editor ───────────────────────────────────────────────
             else -> {
                 Box(
                     modifier = Modifier.weight(1f).fillMaxWidth()
@@ -303,9 +198,7 @@ fun UntangleSheet(
                         textStyle = TextStyle(color = Color(0xFFE8E0D0), fontSize = 17.sp, lineHeight = 28.sp),
                         cursorBrush = SolidColor(GOLD),
                         modifier = Modifier.fillMaxSize().focusRequester(focusRequester),
-                        decorationBox = { inner ->
-                            inner()
-                        }
+                        decorationBox = { inner -> inner() }
                     )
                 }
                 Spacer(Modifier.height(20.dp))

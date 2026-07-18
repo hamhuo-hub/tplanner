@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -28,8 +29,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var eventStore: EventStore
 
     // Watch trigger counter: increments on each watch wake-up,
-    // MainScreen observes changes to show the anxiety panel.
-    var anxietyTriggerCount by mutableIntStateOf(0)
+    // MainScreen observes changes to show the schedule extraction sheet.
+    var scheduleTriggerCount by mutableIntStateOf(0)
 
     private enum class PermissionStep {
         RUNTIME,
@@ -78,8 +79,7 @@ class MainActivity : ComponentActivity() {
         advancePermissionSetup()
         val store       = JournalStore(this)
         eventStore      = EventStore(this)
-        val insightStore = InsightStore(this)
-        val manager     = LanSyncManager(this, store, eventStore, insightStore)
+        val manager     = LanSyncManager(this, store, eventStore)
         val deepseekKey = BuildConfig.DEEPSEEK_API_KEY
         val amapKey     = BuildConfig.AMAP_API_KEY
         AmapGeocoder.setApiKey(amapKey)
@@ -89,14 +89,17 @@ class MainActivity : ComponentActivity() {
         TaskAlarmScheduler.reconcile(this, eventStore.getAll())
         setContent { MainScreen(
             store = store, eventStore = eventStore, manager = manager,
-            insightStore = insightStore, deepseekService = deepseekService,
-            amapApiKey = amapKey, anxietyTriggerCount = anxietyTriggerCount,
+            deepseekService = deepseekService,
+            amapApiKey = amapKey,
+            scheduleTriggerCount = scheduleTriggerCount,
         ) }
     }
 
     override fun onResume() {
         super.onResume()
-        // Exact-alarm access can change in system settings while the app is paused.
+        // Permissions may have been granted via system settings while the app was paused
+        // (e.g. background location "Allow all the time", overlay toggle, battery exemption).
+        advancePermissionSetup()
         if (::eventStore.isInitialized) {
             TaskAlarmScheduler.reconcile(this, eventStore.getAll())
         }
@@ -110,7 +113,7 @@ class MainActivity : ComponentActivity() {
 
     private fun handleWakeIntent(intent: Intent?) {
         if (intent?.getBooleanExtra(EXTRA_WAKE_FROM_WATCH, false) == true) {
-            anxietyTriggerCount++
+            scheduleTriggerCount++
             setShowWhenLocked(true)
             setTurnScreenOn(true)
         }
@@ -158,6 +161,11 @@ class MainActivity : ComponentActivity() {
                         if (launchBackgroundLocationPermission()) return
                     } else {
                         // Android 11+ exposes "Allow all the time" only in app settings.
+                        Toast.makeText(
+                            this,
+                            getString(R.string.bg_location_guide),
+                            Toast.LENGTH_LONG,
+                        ).show()
                         val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                             data = Uri.parse("package:$packageName")
                         }
