@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<!-- Leaflet 打包进 assets：不依赖任何 CDN（jsdelivr/unpkg 在国内不稳，
+     加载失败会导致整图空白）。瓦片用高德在线源（无需 Key）。 -->
+<link rel="stylesheet" href="leaflet/leaflet.min.css">
+<style>
+  /* 不用 height:100% 百分比链——WebView 在可滚动容器里视口高度解析为 0，
+     会让 Leaflet 算出零高度、整图空白。#map 给固定像素高度兜底（先保证
+     非零、瓦片立即渲染），Kotlin 在 onPageFinished 按 WebView 实际高度
+     调用 setMapHeight() 精确校准。 */
+  html,body{margin:0;padding:0;background:#1A1A1A}
+  #map{width:100%;height:300px}
+  .leaflet-control-attribution{display:none!important}
+  .leaflet-control-zoom{display:none!important}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<script src="leaflet/leaflet.min.js"></script>
+<script>
+  var _map = null, _markers = [], _ready = false, _pending = null;
+  function log(m){ try { console.log('[map] ' + m); } catch(e){} }
+
+  // Kotlin 按 WebView 实际高度调用（CSS px），把 #map 校准到充满整个卡片。
+  function setMapHeight(px){
+    if (!px || px < 40) return;
+    var el = document.getElementById('map');
+    el.style.height = px + 'px';
+    if (_map) { _map.invalidateSize(); log('setMapHeight ' + px + ' -> h=' + el.clientHeight); }
+  }
+
+  var GOLD_ICON;
+
+  function initMap() {
+    if (typeof L === 'undefined') { log('Leaflet L undefined!'); return; }
+    log('L ok, init');
+    GOLD_ICON = L.divIcon({
+      className: '', html: '<svg width="14" height="14">' +
+        '<circle cx="7" cy="7" r="6" fill="#C9A84C" stroke="#1A1A1A" stroke-width="2"/></svg>',
+      iconSize: [14, 14], iconAnchor: [7, 7],
+    });
+
+    _map = L.map('map', { zoomControl: false, attributionControl: false })
+      .setView([39.9, 116.4], 12);
+
+    var layer = L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+      subdomains: ['1','2','3','4'], maxZoom: 18,
+    });
+    layer.on('tileerror', function(e){ log('TILE_ERROR ' + (e && e.tile && e.tile.src)); });
+    var okOnce = false;
+    layer.on('tileload', function(){ if(!okOnce){ okOnce = true; log('TILE_OK'); } });
+    layer.addTo(_map);
+    _ready = true;
+
+    // WebView 关键修复：Leaflet 在容器尚未完成布局（clientHeight=0）时初始化，
+    // 会算出 0 个瓦片、整图空白。等一帧让布局落定后 invalidateSize 重算，
+    // 并用 ResizeObserver 兜住后续任何尺寸变化。
+    var kick = function(){ if(_map){ _map.invalidateSize(); log('invalidateSize h=' + document.getElementById('map').clientHeight); } };
+    setTimeout(kick, 100);
+    setTimeout(kick, 400);
+    try { new ResizeObserver(kick).observe(document.getElementById('map')); } catch(e){ log('no ResizeObserver'); }
+
+    if (_pending) { applyMarkers(_pending); _pending = null; }
+    try { window.AmapBridge.onMapReady(); } catch(e) {}
+  }
+
+  function applyMarkers(points) {
+    _markers.forEach(function(m) { _map.removeLayer(m); });
+    _markers = [];
+    if (!points || points.length === 0) return;
+    var bounds = [];
+    points.forEach(function(p) {
+      var m = L.marker([p.lat, p.lng], { icon: GOLD_ICON })
+        .bindTooltip(p.location || 'Unknown',
+          { direction: 'top', offset: [0, -8] })
+        .addTo(_map);
+      _markers.push(m);
+      bounds.push([p.lat, p.lng]);
+    });
+    if (bounds.length === 1) _map.setView(bounds[0], 15);
+    else _map.fitBounds(bounds, { padding: [60, 60] });
+    log('markers=' + points.length);
+  }
+
+  // Kotlin 侧用数组字面量内插调用：updateMarkers([{...},{...}])
+  // 参数已是 JS 数组对象，直接使用（此前误做 JSON.parse，数组会先 toString
+  // 再 parse，必然抛异常导致标记画不出来）。
+  function updateMarkers(points) {
+    if (!_ready) { _pending = points; return; }
+    applyMarkers(points);
+  }
+
+  window.addEventListener('DOMContentLoaded', initMap);
+  if (document.readyState !== 'loading') initMap();
+</script>
+</body>
+</html>
