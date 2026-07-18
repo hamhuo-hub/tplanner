@@ -85,21 +85,20 @@ fun TaskWidget(
     val typeChangeSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val todayEvents    = remember(events) { events.forToday() }
-    val tomorrowEvents = remember(events) { events.forDate(LocalDate.now().plusDays(1)) }
-    var tomorrowExpanded by remember { mutableStateOf(false) }
 
     val groupNowLabel   = stringResource(R.string.group_now)
     val groupLaterLabel = stringResource(R.string.group_later)
     val groupPastLabel  = stringResource(R.string.group_past)
     val groupDoneLabel  = stringResource(R.string.group_done)
-    val groupTomorrowLabel = stringResource(R.string.group_tomorrow)
 
-    val groups = remember(todayEvents, groupNowLabel, groupLaterLabel, groupPastLabel, groupDoneLabel) {
+    val groups = remember(events, groupNowLabel, groupLaterLabel, groupPastLabel, groupDoneLabel) {
         val current  = mutableListOf<TaskEvent>()
         val upcoming = mutableListOf<TaskEvent>()
         val past     = mutableListOf<TaskEvent>()
         val done     = mutableListOf<TaskEvent>()
-        todayEvents.forEach { e ->
+        // Past & Later: 取全部未删除事件，不限于今天。
+        // 未完成就是未完成——不管哪天。
+        events.filter { it.deletedAt == 0L }.forEach { e ->
             if (e.type == "task" && e.completed) { done += e; return@forEach }
             when (taskStatus(e, now)) {
                 "now"  -> current += e
@@ -111,8 +110,11 @@ fun TaskWidget(
         mapOf(groupNowLabel to current, groupLaterLabel to upcoming, groupPastLabel to past, groupDoneLabel to done)
     }
 
-    val taskTotal = todayEvents.count { it.type == "task" }
-    val taskDone  = todayEvents.count { it.type == "task" && it.completed }
+    val pastExpanded = remember { mutableStateOf(true) }
+    val laterExpanded = remember { mutableStateOf(false) }
+
+    val taskTotal = events.count { it.deletedAt == 0L && it.type == "task" }
+    val taskDone  = events.count { it.deletedAt == 0L && it.type == "task" && it.completed }
 
     Column(Modifier.fillMaxSize()) {
         // 标题行
@@ -148,7 +150,7 @@ fun TaskWidget(
 
         HorizontalDivider(color = BORDER, thickness = 1.dp)
 
-        if (todayEvents.isEmpty() && tomorrowEvents.isEmpty()) {
+        if (todayEvents.isEmpty() && groups.values.all { it.isEmpty() }) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(stringResource(R.string.task_empty), color = Color(0xFF3A342A), fontSize = 16.sp)
             }
@@ -163,29 +165,30 @@ fun TaskWidget(
                 }
                 groups.forEach { (label, list) ->
                     if (list.isEmpty()) return@forEach
-                    item { GroupHeader(label = label, count = list.size) }
-                    items(list, key = { it.id }) { e ->
-                        SwipeableTaskRow(
-                            event = e, fmt = fmt, zone = zone, now = now,
-                            onToggle = onToggle, onDelete = onDelete, onItemClick = onItemClick,
-                            onTypeChangeRequest = { typeChangeTarget = e }
-                        )
+                    val isPast  = label == groupPastLabel
+                    val isLater = label == groupLaterLabel
+                    val collapsible = isPast || isLater
+                    val expanded = when {
+                        isPast  -> pastExpanded.value
+                        isLater -> laterExpanded.value
+                        else    -> true
                     }
-                }
-
-                // 明天预览——默认折叠，点击标题展开/收起，避免把今天的清单挤得太靠下。
-                if (tomorrowEvents.isNotEmpty()) {
                     item {
                         GroupHeader(
-                            label = groupTomorrowLabel,
-                            count = tomorrowEvents.size,
-                            collapsible = true,
-                            expanded = tomorrowExpanded,
-                            onToggleExpanded = { tomorrowExpanded = !tomorrowExpanded }
+                            label = label,
+                            count = list.size,
+                            collapsible = collapsible,
+                            expanded = expanded,
+                            onToggleExpanded = {
+                                when {
+                                    isPast  -> pastExpanded.value  = !pastExpanded.value
+                                    isLater -> laterExpanded.value = !laterExpanded.value
+                                }
+                            }
                         )
                     }
-                    if (tomorrowExpanded) {
-                        items(tomorrowEvents, key = { "tomorrow-${it.id}" }) { e ->
+                    if (expanded) {
+                        items(list, key = { e -> if (collapsible) "${label}-${e.id}" else e.id }) { e ->
                             SwipeableTaskRow(
                                 event = e, fmt = fmt, zone = zone, now = now,
                                 onToggle = onToggle, onDelete = onDelete, onItemClick = onItemClick,
