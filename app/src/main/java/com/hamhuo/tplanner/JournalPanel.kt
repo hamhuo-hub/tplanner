@@ -13,10 +13,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -45,6 +48,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -211,6 +216,7 @@ fun MarkdownViewer(content: String, onTap: () -> Unit = {}, modifier: Modifier =
 // 点击 WebView 或编辑按钮进入编辑，返回手势保存并退出编辑。
 // 随手记和任务详情页的备注共用这一套组件——安卓端手动输入不需要 MD 工具栏，
 // 但同步过来的内容可能携带 PC 端写的 MD，查看时要能正确渲染。
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MarkdownField(
     content: String,
@@ -218,17 +224,33 @@ fun MarkdownField(
     placeholder: String,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(start = 26.dp, end = 26.dp, top = 22.dp, bottom = 32.dp),
+    onDraftChange: (String) -> Unit = {},
 ) {
     var isEditing by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf(content) }
+    var imeWasVisible by remember { mutableStateOf(false) }
+    val imeVisible = WindowInsets.isImeVisible
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
 
-    // 返回手势保存并退出编辑
-    if (isEditing) {
-        BackHandler {
-            isEditing = false
-            onSave(draft)
+    fun saveAndExitEditing() {
+        if (!isEditing) return
+        isEditing = false
+        focusManager.clearFocus(force = true)
+        keyboardController?.hide()
+        onSave(draft)
+    }
+
+    // IME 会优先消费第一次返回。键盘由可见变为隐藏时立即提交，
+    // 因而一次返回即可同时保存、退出编辑并关闭键盘。
+    LaunchedEffect(isEditing, imeVisible) {
+        when {
+            !isEditing -> imeWasVisible = false
+            imeVisible -> imeWasVisible = true
+            imeWasVisible -> saveAndExitEditing()
         }
     }
+    BackHandler(enabled = isEditing) { saveAndExitEditing() }
 
     // 调用方的 modifier 必须自带确定的尺寸（weight()/明确的 height()），
     // 否则在可滚动的无限高度父级里会测不出尺寸。
@@ -237,7 +259,10 @@ fun MarkdownField(
             val focusRequester = remember { FocusRequester() }
             BasicTextField(
                 value = draft,
-                onValueChange = { draft = it },
+                onValueChange = {
+                    draft = it
+                    onDraftChange(it)
+                },
                 textStyle = TextStyle(color = Color(0xFFE8E0D0), fontSize = 15.sp, lineHeight = 26.sp),
                 cursorBrush = SolidColor(GOLD),
                 modifier = Modifier

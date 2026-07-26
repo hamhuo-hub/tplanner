@@ -225,6 +225,7 @@ fun MainScreen(
                 MarkdownField(
                     content = content,
                     onSave = { text -> content = text; store.saveToday(text) },
+                    onDraftChange = { content = it },
                     placeholder = stringResource(R.string.journal_edit_hint),
                     modifier = Modifier.weight(1f)
                 )

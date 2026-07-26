@@ -1,8 +1,9 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 package com.hamhuo.tplanner
 
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -10,6 +11,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
@@ -63,6 +66,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.TextRange
@@ -386,6 +391,7 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
     val dateTimePattern = stringResource(R.string.date_pattern_month_day_time)
     val dateFmt = remember(dateTimePattern) { DateTimeFormatter.ofPattern(dateTimePattern) }
     val context = LocalContext.current
+    var saveRequested by remember { mutableStateOf(false) }
 
     fun pickDateTime(initial: Instant, onPicked: (Instant) -> Unit) {
         val cal = Calendar.getInstance().apply { timeInMillis = initial.toEpochMilli() }
@@ -411,10 +417,38 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
         updatedAt = System.currentTimeMillis(),
     )
 
+    fun commitResult() {
+        if (saveRequested) return
+        saveRequested = true
+        onSave(buildResult())
+    }
+
     Dialog(
-        onDismissRequest = { onSave(buildResult()) },
+        onDismissRequest = ::commitResult,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
+        val focusManager = LocalFocusManager.current
+        val keyboardController = LocalSoftwareKeyboardController.current
+        val imeVisible = WindowInsets.isImeVisible
+        var titleImeWasVisible by remember { mutableStateOf(false) }
+
+        fun saveAndClose() {
+            renaming = false
+            focusManager.clearFocus(force = true)
+            keyboardController?.hide()
+            commitResult()
+        }
+
+        // 标题输入时第一次返回先由 IME 消费。监听键盘关闭即可在同一次手势中保存详情。
+        LaunchedEffect(renaming, imeVisible) {
+            when {
+                !renaming -> titleImeWasVisible = false
+                imeVisible -> titleImeWasVisible = true
+                titleImeWasVisible -> saveAndClose()
+            }
+        }
+        BackHandler(enabled = !showTypeSheet) { saveAndClose() }
+
         Box(
             Modifier
                 .fillMaxSize()
@@ -428,13 +462,13 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = { onSave(buildResult()) }) {
+                    IconButton(onClick = ::saveAndClose) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back), tint = Color(0xFFE0D8C8))
                     }
                     Box(
                         modifier = Modifier
                             .background(GOLD, RoundedCornerShape(50.dp))
-                            .clickable { onSave(buildResult()) }
+                            .clickable(onClick = ::saveAndClose)
                             .padding(horizontal = 22.dp, vertical = 8.dp)
                     ) {
                         Text(stringResource(R.string.action_done), color = Color(0xFF0E0E0E), fontSize = 14.sp, fontWeight = FontWeight.Bold)
@@ -460,7 +494,12 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
                                     EVENT_COLORS.getOrElse(colorId) { EVENT_COLORS[0] },
                                     RoundedCornerShape(14.dp)
                                 )
-                                .clickable { showTypeSheet = true },
+                                .clickable {
+                                    renaming = false
+                                    focusManager.clearFocus(force = true)
+                                    keyboardController?.hide()
+                                    showTypeSheet = true
+                                },
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
@@ -480,7 +519,7 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
                                     cursorBrush = SolidColor(GOLD),
                                     singleLine  = true,
                                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                                    keyboardActions = KeyboardActions(onDone = { renaming = false }),
+                                    keyboardActions = KeyboardActions(onDone = { saveAndClose() }),
                                     modifier    = Modifier
                                         .fillMaxWidth()
                                         .focusRequester(titleFocusRequester)
@@ -661,6 +700,7 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
                     MarkdownField(
                         content = note,
                         onSave = { newNote -> note = newNote },
+                        onDraftChange = { newNote -> note = newNote },
                         placeholder = stringResource(R.string.note_placeholder),
                         contentPadding = PaddingValues(0.dp),
                         // 必须给确定的高度——这层外面是 verticalScroll 的无限高度容器，
