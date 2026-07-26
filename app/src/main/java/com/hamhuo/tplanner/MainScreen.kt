@@ -39,9 +39,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,6 +64,13 @@ import java.time.Instant
 import java.util.UUID
 
 private const val LLM_LOG_TAG = "TplannerLLM"
+private const val PRIMARY_NAVIGATION_VISIBLE_MILLIS = 2_500L
+
+private enum class ChromeMode {
+    Minimal,
+    PrimaryNavigation,
+    TimelineNavigation,
+}
 
 private fun Throwable.locationForLog(): String {
     val frame = stackTrace.firstOrNull { it.className.startsWith("com.hamhuo.tplanner") }
@@ -138,15 +148,16 @@ fun MainScreen(
     }
 
     val isPhone = LocalConfiguration.current.screenWidthDp < 840
-    var phoneTab by remember { mutableStateOf(0) }   // 0=Journal, 1=EventList, 2=Timeline
-    var selectedList by remember { mutableStateOf<EventList>(EventList.Inbox) }
+    var phoneTab by rememberSaveable { mutableStateOf(0) } // 0=Notes, 1=Inbox, 2=Timeline
+    var chromeMode by remember { mutableStateOf(ChromeMode.PrimaryNavigation) }
+    var primaryNavigationGeneration by remember { mutableIntStateOf(0) }
+    var selectedListKey by rememberSaveable { mutableStateOf(EventList.Inbox.key) }
+    val selectedList = EventList.fromKey(selectedListKey)
     var showListSheet by remember { mutableStateOf(false) }
+    var taskWidgetModalVisible by remember { mutableStateOf(false) }
+    var timelineModalVisible by remember { mutableStateOf(false) }
     val listSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-    val listLabel = when (selectedList) {
-        is EventList.Inbox -> stringResource(R.string.list_inbox)
-        is EventList.Today -> stringResource(R.string.list_today)
-    }
+    val phoneTabStateHolder = rememberSaveableStateHolder()
 
     // ── Schedule extraction sheet ───────────────────────────────────────
     var showScheduleSheet by remember { mutableStateOf(false) }
@@ -235,6 +246,27 @@ fun MainScreen(
 
     var pendingAddType by remember { mutableStateOf<String?>(null) }
     var editingEvent   by remember { mutableStateOf<TaskEvent?>(null) }
+    val chromeHidden = showScheduleSheet ||
+        showListSheet ||
+        taskWidgetModalVisible ||
+        timelineModalVisible ||
+        pendingAddType != null ||
+        editingEvent != null
+
+    LaunchedEffect(chromeHidden) {
+        if (chromeHidden) chromeMode = ChromeMode.Minimal
+    }
+    LaunchedEffect(
+        chromeMode,
+        phoneTab,
+        primaryNavigationGeneration,
+        chromeHidden,
+    ) {
+        if (!chromeHidden && chromeMode == ChromeMode.PrimaryNavigation) {
+            delay(PRIMARY_NAVIGATION_VISIBLE_MILLIS)
+            chromeMode = ChromeMode.Minimal
+        }
+    }
 
     val taskCardContent: @Composable () -> Unit = {
         TaskWidget(
@@ -257,6 +289,7 @@ fun MainScreen(
                 scope.launch { events = manager.fetchEvents(serverUrl) }
             },
             onItemClick = { event -> editingEvent = event },
+            onListFilterClick = { showListSheet = true },
             onTypeChange = { eventId, newType ->
                 events = events.map {
                     if (it.id == eventId) {
@@ -270,7 +303,8 @@ fun MainScreen(
                 }
                 eventStore.saveAll(events)
                 scope.launch { events = manager.fetchEvents(serverUrl) }
-            }
+            },
+            onModalVisibilityChange = { taskWidgetModalVisible = it },
         )
     }
 
@@ -292,6 +326,16 @@ fun MainScreen(
                 eventStore.saveAll(nextEvents)
                 WatchScheduleSync.push(context, nextEvents)
             },
+            allowExpandedNavigation =
+                !chromeHidden && chromeMode != ChromeMode.PrimaryNavigation,
+            onNavigationExpandedChange = { expanded ->
+                when {
+                    expanded -> chromeMode = ChromeMode.TimelineNavigation
+                    chromeMode == ChromeMode.TimelineNavigation ->
+                        chromeMode = ChromeMode.Minimal
+                }
+            },
+            onModalVisibilityChange = { timelineModalVisible = it },
         )
     }
 
@@ -455,31 +499,48 @@ fun MainScreen(
                 },
             )
         } else if (isPhone) {
-            Column(Modifier.fillMaxSize().imePadding()) {
-                PhoneTabBar(
-                    tabs      = listOf(
-                        stringResource(R.string.tab_journal),
-                        listLabel,
-                        stringResource(R.string.tab_timeline),
-                    ),
-                    selected  = phoneTab,
-                    onSelect  = { selected ->
-                        if (selected == 1 && phoneTab == 1) showListSheet = true
-                        phoneTab = selected
-                    }
-                )
+            Box(Modifier.fillMaxSize().imePadding()) {
                 Card(
-                    modifier  = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp).padding(bottom = 10.dp),
-                    shape     = RoundedCornerShape(20.dp),
-                    colors    = CardDefaults.cardColors(containerColor = SURFACE),
-                    elevation = CardDefaults.cardElevation(0.dp)
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 10.dp)
+                        .padding(bottom = 10.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = SURFACE),
+                    elevation = CardDefaults.cardElevation(0.dp),
                 ) {
-                    when (phoneTab) {
-                        0 -> notesCardContent()
-                        1 -> taskCardContent()
-                        else -> timelineCardContent()
+                    phoneTabStateHolder.SaveableStateProvider(phoneTab) {
+                        when (phoneTab) {
+                            0 -> notesCardContent()
+                            1 -> taskCardContent()
+                            2 -> timelineCardContent()
+                            else -> notesCardContent()
+                        }
                     }
                 }
+
+                PhoneTabBar(
+                    selected = phoneTab,
+                    onSelect = { selected ->
+                        if (selected == 1 && phoneTab == 1) showListSheet = true
+                        phoneTab = selected
+                        primaryNavigationGeneration++
+                        chromeMode = ChromeMode.PrimaryNavigation
+                    },
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                    presentation = when {
+                        chromeHidden -> PhoneTabBarPresentation.Hidden
+                        chromeMode == ChromeMode.PrimaryNavigation ->
+                            PhoneTabBarPresentation.Expanded
+                        else -> PhoneTabBarPresentation.HandleOnly
+                    },
+                    onExpandRequest = {
+                        if (!chromeHidden) {
+                            primaryNavigationGeneration++
+                            chromeMode = ChromeMode.PrimaryNavigation
+                        }
+                    },
+                )
             }
         } else {
             Box(Modifier.fillMaxSize().padding(10.dp).imePadding()) {
@@ -549,7 +610,7 @@ fun MainScreen(
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth().clickable {
-                            selectedList = item; showListSheet = false
+                            selectedListKey = item.key; showListSheet = false
                         }.padding(horizontal = 20.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(16.dp),

@@ -1,21 +1,25 @@
 package com.hamhuo.tplanner.timeline
 
+import android.app.DatePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import com.hamhuo.tplanner.BG
 import com.hamhuo.tplanner.TaskEvent
 import com.hamhuo.tplanner.timeline.components.TimelineAddButton
 import com.hamhuo.tplanner.timeline.components.TimelineBody
 import com.hamhuo.tplanner.timeline.components.TimelineDayHeader
-import com.hamhuo.tplanner.timeline.components.TimelineNavigationHeader
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 
 /**
@@ -29,8 +33,12 @@ fun TimelineScreen(
     onAddEvent: (String) -> Unit,
     onEventMove: (TaskEvent, Instant, Instant) -> Unit,
     modifier: Modifier = Modifier,
+    allowExpandedNavigation: Boolean = true,
+    onNavigationExpandedChange: (Boolean) -> Unit = {},
+    onModalVisibilityChange: (Boolean) -> Unit = {},
 ) {
     val zone = remember { ZoneId.systemDefault() }
+    val context = LocalContext.current
     val now = rememberTimelineNow(zone)
     val today = now.toLocalDate()
     val state = rememberTimelineState(zone, today)
@@ -56,24 +64,40 @@ fun TimelineScreen(
         hourHeightPx = hourHeightPx,
     )
 
+    fun openDatePicker() {
+        val initialDate = days.getOrElse(days.size / 2) { LocalDate.now(zone) }
+        val dialog = DatePickerDialog(
+            context,
+            { _, year, month, dayOfMonth ->
+                state.goToDate(LocalDate.of(year, month + 1, dayOfMonth))
+            },
+            initialDate.year,
+            initialDate.monthValue - 1,
+            initialDate.dayOfMonth,
+        )
+        dialog.setOnDismissListener { onModalVisibilityChange(false) }
+        onModalVisibilityChange(true)
+        dialog.show()
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(BG),
     ) {
         Column(Modifier.fillMaxSize()) {
-            TimelineNavigationHeader(
-                days = days,
-                today = today,
-                onPrevious = state::previousPage,
-                onToday = { state.goToToday(today) },
-                onNext = state::nextPage,
-            )
             TimelineDayHeader(
                 days = days,
                 today = today,
                 events = visibleEvents,
                 zone = zone,
+                onPrevious = state::previousPage,
+                onToday = {
+                    if (today in days) openDatePicker() else state.goToToday(today)
+                },
+                onNext = state::nextPage,
+                allowExpandedControls = allowExpandedNavigation,
+                onExpandedControlsChange = onNavigationExpandedChange,
             )
             TimelineBody(
                 days = days,
@@ -92,7 +116,9 @@ fun TimelineScreen(
 
         TimelineAddButton(
             onClick = { onAddEvent("event") },
-            modifier = Modifier.align(Alignment.BottomEnd),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(bottom = 52.dp),
         )
     }
 }

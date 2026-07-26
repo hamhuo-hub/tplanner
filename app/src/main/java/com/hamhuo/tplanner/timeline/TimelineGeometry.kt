@@ -11,7 +11,7 @@ internal object TimelineGeometry {
 
     val timeGutterWidth = 43.dp
     val hourHeight = 72.dp
-    val dayHeaderHeight = 68.dp
+    val dayHeaderHeight = 50.dp
     val minEventHeight = 24.dp
 
     val eventHorizontalPadding = 3.dp

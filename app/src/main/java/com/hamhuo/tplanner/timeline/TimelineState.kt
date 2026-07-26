@@ -53,20 +53,24 @@ internal class TimelineState(
 
     fun previousPage() {
         firstDayEpochState.value = firstDay
-            .minusDays(TimelineGeometry.visibleDayCount.toLong())
+            .minusDays(1)
             .toEpochDay()
         clearHighlight()
     }
 
     fun nextPage() {
         firstDayEpochState.value = firstDay
-            .plusDays(TimelineGeometry.visibleDayCount.toLong())
+            .plusDays(1)
             .toEpochDay()
         clearHighlight()
     }
 
     fun goToToday(today: LocalDate) {
-        firstDayEpochState.value = today.minusDays(1).toEpochDay()
+        goToDate(today)
+    }
+
+    fun goToDate(date: LocalDate) {
+        firstDayEpochState.value = date.minusDays(1).toEpochDay()
         clearHighlight()
     }
 

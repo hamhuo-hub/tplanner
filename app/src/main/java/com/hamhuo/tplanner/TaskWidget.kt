@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.outlined.Alarm
@@ -33,9 +34,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,6 +78,8 @@ fun TaskWidget(
     onDelete: (String) -> Unit,
     onItemClick: (TaskEvent) -> Unit,
     onTypeChange: (String, String) -> Unit = { _, _ -> },
+    onListFilterClick: () -> Unit = {},
+    onModalVisibilityChange: (Boolean) -> Unit = {},
 ) {
     val now    = remember { Instant.now() }
     val today  = remember { LocalDate.now() }
@@ -84,6 +91,15 @@ fun TaskWidget(
 
     var typeChangeTarget by remember { mutableStateOf<TaskEvent?>(null) }
     val typeChangeSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val currentOnModalVisibilityChange by rememberUpdatedState(onModalVisibilityChange)
+    val hasVisibleModal = showTypeSheet || typeChangeTarget != null
+
+    LaunchedEffect(hasVisibleModal) {
+        currentOnModalVisibilityChange(hasVisibleModal)
+    }
+    DisposableEffect(Unit) {
+        onDispose { currentOnModalVisibilityChange(false) }
+    }
 
     val isToday = list is EventList.Today
     val source  = remember(events, isToday) {
@@ -127,10 +143,10 @@ fun TaskWidget(
         }
     }
 
-    val nowExpanded   = remember { mutableStateOf(true) }
-    val pastExpanded  = remember { mutableStateOf(true) }
-    val laterExpanded = remember { mutableStateOf(false) }
-    val doneExpanded  = remember { mutableStateOf(false) }
+    val nowExpanded   = rememberSaveable { mutableStateOf(true) }
+    val pastExpanded  = rememberSaveable { mutableStateOf(true) }
+    val laterExpanded = rememberSaveable { mutableStateOf(false) }
+    val doneExpanded  = rememberSaveable { mutableStateOf(false) }
 
     val listLabel = when (list) {
         is EventList.Today -> stringResource(R.string.list_today)
@@ -148,7 +164,28 @@ fun TaskWidget(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(listLabel, color = GOLD, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier
+                        .background(Color(0xFF252525), RoundedCornerShape(50.dp))
+                        .border(1.dp, BORDER, RoundedCornerShape(50.dp))
+                        .clickable(onClick = onListFilterClick)
+                        .padding(start = 10.dp, end = 5.dp, top = 4.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        listLabel,
+                        color = GOLD,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Icon(
+                        Icons.Default.ArrowDropDown,
+                        contentDescription = null,
+                        tint = GOLD,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
                 Text(
                     today.format(DateTimeFormatter.ofPattern(stringResource(R.string.date_pattern_month_day_weekday))),
                     color = DIM, fontSize = 15.sp
