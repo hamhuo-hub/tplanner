@@ -11,6 +11,12 @@
 
     <!-- Tabs / section titles -->
     <string name="tab_journal">Notes</string>
+    <string name="tab_timeline">Timeline</string>
+    <string name="timeline_today">Today</string>
+    <string name="timeline_previous_days">Previous 3 days</string>
+    <string name="timeline_next_days">Next 3 days</string>
+    <string name="timeline_conflict_count">Conflicts with %1$d items</string>
+    <string name="timeline_drag_hint">Long press to move · snaps every 10 min</string>
     <string name="list_inbox">Inbox</string>
     <string name="list_today">Today</string>
     <string name="list_new">New List…</string>
@@ -53,6 +59,7 @@
     <!-- Accessibility content descriptions -->
     <string name="cd_back">Back</string>
     <string name="cd_delete">Delete</string>
+    <string name="cd_add_event">Add item</string>
 
     <!-- Sync -->
     <string name="sync_success_with_name">Synced · %1$s</string>

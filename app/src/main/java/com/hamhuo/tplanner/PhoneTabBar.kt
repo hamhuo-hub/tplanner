@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -31,6 +32,7 @@ fun PhoneTabBar(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit) {
             val isSelected = index == selected
             Box(
                 modifier = Modifier
+                    .weight(1f)
                     .background(
                         color = if (isSelected) GOLD else Color(0xFF252525),
                         shape = RoundedCornerShape(50.dp)
@@ -41,7 +43,7 @@ fun PhoneTabBar(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit) {
                         shape = RoundedCornerShape(50.dp)
                     )
                     .clickable { onSelect(index) }
-                    .padding(horizontal = 22.dp, vertical = 9.dp),
+                    .padding(horizontal = 8.dp, vertical = 9.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -49,7 +51,9 @@ fun PhoneTabBar(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit) {
                     color      = if (isSelected) Color(0xFF0E0E0E) else DIM,
                     fontSize   = 14.sp,
                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                    letterSpacing = 0.3.sp
+                    letterSpacing = 0.3.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }

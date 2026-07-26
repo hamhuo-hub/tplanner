@@ -1,5 +1,6 @@
 package com.hamhuo.tplanner
 
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -51,12 +52,22 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import com.hamhuo.tplanner.timeline.TimelineScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.util.UUID
+
+private const val LLM_LOG_TAG = "TplannerLLM"
+
+private fun Throwable.locationForLog(): String {
+    val frame = stackTrace.firstOrNull { it.className.startsWith("com.hamhuo.tplanner") }
+        ?: stackTrace.firstOrNull()
+        ?: return "unknown"
+    return "${frame.className.substringAfterLast('.')}.${frame.methodName}:${frame.lineNumber}"
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -127,7 +138,7 @@ fun MainScreen(
     }
 
     val isPhone = LocalConfiguration.current.screenWidthDp < 840
-    var phoneTab by remember { mutableStateOf(0) }   // 0=Journal, 1=EventList
+    var phoneTab by remember { mutableStateOf(0) }   // 0=Journal, 1=EventList, 2=Timeline
     var selectedList by remember { mutableStateOf<EventList>(EventList.Inbox) }
     var showListSheet by remember { mutableStateOf(false) }
     val listSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -141,21 +152,32 @@ fun MainScreen(
     var showScheduleSheet by remember { mutableStateOf(false) }
     var thinking by remember { mutableStateOf(false) }
     var sheetAction by remember { mutableStateOf<DeepSeekAnalysisService.ProposedAction?>(null) }
+    var sheetRequestId by remember { mutableStateOf("") }
     var prefillLocation by remember { mutableStateOf("") }
     var gpsLat by remember { mutableStateOf(0.0) }
     var gpsLng by remember { mutableStateOf(0.0) }
 
     LaunchedEffect(scheduleTriggerCount) {
         if (scheduleTriggerCount > 0) {
+            Log.i(
+                LLM_LOG_TAG,
+                "phase=sheet_open triggerCount=$scheduleTriggerCount " +
+                    "serviceConfigured=${deepseekService != null} locationApiConfigured=${amapApiKey.isNotBlank()}",
+            )
             showScheduleSheet = true
             thinking = false
             sheetAction = null
+            sheetRequestId = ""
             prefillLocation = ""
             gpsLat = 0.0; gpsLng = 0.0
 
             // Start foreground location capture. primeFreshCache was already
             // called by WakeDataLayerService before the Activity was visible.
             val handle = LocationCapture.start(context)
+            Log.d(
+                LLM_LOG_TAG,
+                "phase=location_capture result=started requestId=${handle.requestId}",
+            )
 
             // Poll WatchLocationStore for a fix matching this capture generation.
             val deadline = System.currentTimeMillis() + 12_000
@@ -172,6 +194,11 @@ fun MainScreen(
                     prefillLocation = AmapGeocoder.reverseGeocode(fix.lat, fix.lng, amapApiKey)
                 }
             }
+            Log.i(
+                LLM_LOG_TAG,
+                "phase=location_capture result=${if (fix == null) "timeout" else "fix"} " +
+                    "reverseGeocoded=${prefillLocation.isNotBlank()}",
+            )
         }
     }
 
@@ -247,9 +274,32 @@ fun MainScreen(
         )
     }
 
+    val timelineCardContent: @Composable () -> Unit = {
+        TimelineScreen(
+            events = events,
+            onEventClick = { event -> editingEvent = event },
+            onAddEvent = { type -> pendingAddType = type },
+            onEventMove = { event, newStart, newEnd ->
+                val updated = event.copy(
+                    start = newStart,
+                    end = newEnd,
+                    updatedAt = System.currentTimeMillis(),
+                )
+                val nextEvents = events.map { current ->
+                    if (current.id == updated.id) updated else current
+                }
+                events = nextEvents
+                eventStore.saveAll(nextEvents)
+                WatchScheduleSync.push(context, nextEvents)
+            },
+        )
+    }
+
     // ── Schedule extraction flow ────────────────────────────────────────
 
     val submitForExtraction: (String) -> Unit = { text ->
+        val requestId = "ui-${UUID.randomUUID().toString().take(8)}"
+        sheetRequestId = requestId
         // Append to journal with location line
         val now = System.currentTimeMillis()
         val stamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date(now))
@@ -259,14 +309,30 @@ fun MainScreen(
         content = content + entryLine
         store.saveToday(content)
 
+        Log.i(
+            LLM_LOG_TAG,
+            "request=$requestId phase=submit inputChars=${text.length} locationProvided=${loc.isNotBlank()} " +
+                "serviceConfigured=${deepseekService != null}",
+        )
         thinking = true
         sheetAction = null
         scope.launch {
-            val action = deepseekService?.extractSchedule(text, stamp)
+            val action = deepseekService?.extractSchedule(text, stamp, loc, requestId)
             thinking = false
             if (action != null) {
+                Log.i(
+                    LLM_LOG_TAG,
+                    "request=${action.requestId} phase=route result=proposal type=${action.type} " +
+                        "titlePresent=${action.title.isNotBlank()} checklistCount=${action.checklist.size} " +
+                        "alarmEnabled=${action.alarmEnabled}",
+                )
                 sheetAction = action
             } else {
+                Log.w(
+                    LLM_LOG_TAG,
+                    "request=$requestId phase=route result=unavailable " +
+                        "serviceConfigured=${deepseekService != null}",
+                )
                 Toast.makeText(context, R.string.ai_service_unavailable, Toast.LENGTH_LONG).show()
                 showScheduleSheet = false
                 thinking = false
@@ -275,13 +341,26 @@ fun MainScreen(
     }
 
     fun confirmAction(act: DeepSeekAnalysisService.ProposedAction) {
+        val requestId = act.requestId
         val start = parseAgentDatetime(act.startIso)
         val end = parseAgentDatetime(act.endIso)
         if (start == null || end == null || !end.isAfter(start)) {
+            Log.w(
+                LLM_LOG_TAG,
+                "request=$requestId phase=tool_validate tool=create_schedule result=invalid_datetime " +
+                    "startParsed=${start != null} endParsed=${end != null} " +
+                    "endAfterStart=${start != null && end != null && end.isAfter(start)}",
+            )
             Toast.makeText(context, R.string.schedule_create_failed_toast, Toast.LENGTH_SHORT).show()
             sheetAction = null
             return
         }
+        Log.i(
+            LLM_LOG_TAG,
+            "request=$requestId phase=tool_validate tool=create_schedule result=accepted type=${act.type} " +
+                "titlePresent=${act.title.isNotBlank()} checklistCount=${act.checklist.size} " +
+                "alarmEnabled=${act.alarmEnabled} alarmOffsetMinutes=${act.alarmOffsetMinutes}",
+        )
         val ev = TaskEvent(
             id = UUID.randomUUID().toString(),
             title = act.title,
@@ -306,6 +385,11 @@ fun MainScreen(
             try {
                 withContext(Dispatchers.IO) { eventStore.saveAll(nextEvents) }
                 events = nextEvents
+                Log.i(
+                    LLM_LOG_TAG,
+                    "request=$requestId phase=tool_execute tool=create_schedule result=local_saved " +
+                        "eventCount=${nextEvents.size} alarmEnabled=${act.alarmEnabled}",
+                )
                 val toastMessage = when {
                     !act.alarmEnabled -> context.getString(R.string.schedule_created_toast, act.title)
                     TaskAlarmScheduler.canScheduleExactAlarms(context) ->
@@ -318,14 +402,24 @@ fun MainScreen(
                 Toast.makeText(context, toastMessage, Toast.LENGTH_SHORT).show()
                 events = manager.fetchEvents(serverUrl)
                 WatchScheduleSync.push(context, events)
+                Log.i(
+                    LLM_LOG_TAG,
+                    "request=$requestId phase=tool_execute tool=create_schedule " +
+                        "result=completed syncedEventCount=${events.size}",
+                )
             } catch (e: Exception) {
-                android.util.Log.e("TplannerTool", "create_schedule failed", e)
+                Log.e(
+                    LLM_LOG_TAG,
+                    "request=$requestId phase=tool_execute tool=create_schedule result=failed " +
+                        "errorType=${e.javaClass.simpleName} at=${e.locationForLog()}",
+                )
                 Toast.makeText(context, R.string.schedule_create_failed_toast, Toast.LENGTH_SHORT).show()
             }
         }
         showScheduleSheet = false
         thinking = false
         sheetAction = null
+        sheetRequestId = ""
     }
 
     // ── Main layout ──────────────────────────────────────────────────────
@@ -336,16 +430,28 @@ fun MainScreen(
                 thinking = thinking,
                 action = sheetAction,
                 onDismiss = {
+                    Log.d(
+                        LLM_LOG_TAG,
+                        "request=${sheetAction?.requestId ?: sheetRequestId.ifBlank { "none" }} " +
+                            "phase=sheet_close reason=dismissed",
+                    )
                     showScheduleSheet = false
                     thinking = false
                     sheetAction = null
+                    sheetRequestId = ""
                 },
                 onSubmit = submitForExtraction,
                 onConfirmAction = ::confirmAction,
                 onDeclineAction = {
+                    Log.d(
+                        LLM_LOG_TAG,
+                        "request=${sheetAction?.requestId ?: sheetRequestId.ifBlank { "none" }} " +
+                            "phase=sheet_close reason=proposal_declined",
+                    )
                     showScheduleSheet = false
                     thinking = false
                     sheetAction = null
+                    sheetRequestId = ""
                 },
             )
         } else if (isPhone) {
@@ -354,6 +460,7 @@ fun MainScreen(
                     tabs      = listOf(
                         stringResource(R.string.tab_journal),
                         listLabel,
+                        stringResource(R.string.tab_timeline),
                     ),
                     selected  = phoneTab,
                     onSelect  = { selected ->
@@ -367,8 +474,11 @@ fun MainScreen(
                     colors    = CardDefaults.cardColors(containerColor = SURFACE),
                     elevation = CardDefaults.cardElevation(0.dp)
                 ) {
-                    if (phoneTab == 0) notesCardContent()
-                    else taskCardContent()
+                    when (phoneTab) {
+                        0 -> notesCardContent()
+                        1 -> taskCardContent()
+                        else -> timelineCardContent()
+                    }
                 }
             }
         } else {

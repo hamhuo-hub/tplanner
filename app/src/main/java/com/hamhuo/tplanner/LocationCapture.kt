@@ -44,6 +44,7 @@ object LocationCapture {
     @Volatile private var activeGeneration = 0L
     private var active: ActiveCapture? = null // main thread only
 
+    @ConsistentCopyVisibility
     data class Handle internal constructor(
         val generation: Long,
         val requestId: String,

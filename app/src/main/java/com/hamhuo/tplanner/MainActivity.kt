@@ -86,6 +86,11 @@ class MainActivity : ComponentActivity() {
         val deepseekService = deepseekKey
             .takeIf { it.isNotBlank() }
             ?.let(::DeepSeekAnalysisService)
+        Log.i(
+            LLM_LOG_TAG,
+            "phase=init provider=deepseek keyConfigured=${deepseekKey.isNotBlank()} " +
+                "serviceCreated=${deepseekService != null}",
+        )
         TaskAlarmScheduler.reconcile(this, eventStore.getAll())
         setContent { MainScreen(
             store = store, eventStore = eventStore, manager = manager,
@@ -255,6 +260,7 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_WAKE_FROM_WATCH = "wake_from_watch"
         private const val TAG = "TplannerMain"
+        private const val LLM_LOG_TAG = "TplannerLLM"
 
         // Process-scoped attempt history survives Activity recreation without retaining launcher state.
         private val attemptedPermissionSteps = mutableSetOf<PermissionStep>()

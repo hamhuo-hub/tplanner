@@ -1,5 +1,7 @@
 package com.hamhuo.tplanner
 
+import android.os.SystemClock
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -8,6 +10,7 @@ import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 import java.time.LocalDateTime
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * DeepSeek-backed schedule extractor.
@@ -28,13 +31,22 @@ class DeepSeekAnalysisService(private val apiKey: String) {
         val checklist: List<String>,
         val alarmEnabled: Boolean,
         val alarmOffsetMinutes: Int,
+        val requestId: String,
     )
 
     suspend fun extractSchedule(
         text: String,
         timestamp: String = "",
         location: String = "",
+        requestId: String = "",
     ): ProposedAction? = withContext(Dispatchers.IO) {
+        val logRequestId = requestIdForLog(requestId)
+        val startedAt = SystemClock.elapsedRealtime()
+        Log.i(
+            TAG,
+            "request=$logRequestId phase=extract_start inputChars=${text.length} " +
+                "timestampProvided=${timestamp.isNotBlank()} locationProvided=${location.isNotBlank()}",
+        )
         val prompt = buildString {
             append("现在：${nowDescription()}\n")
             if (location.isNotBlank()) append("地点：$location\n")
@@ -43,24 +55,50 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             append("请立即调用 create_schedule。所有字段都必须填写——缺失字段用合理默认值。")
         }
         try {
-            val action = callDeepSeek(prompt)
+            val action = callDeepSeek(prompt, logRequestId)
             // Fill defaults for any missing fields the model may have omitted
-            if (action != null) fillDefaults(action, text) else null
+            if (action == null) {
+                Log.w(
+                    TAG,
+                    "request=$logRequestId phase=extract_result result=no_action " +
+                        "elapsedMs=${SystemClock.elapsedRealtime() - startedAt}",
+                )
+                null
+            } else {
+                val normalized = fillDefaults(action, text)
+                Log.i(
+                    TAG,
+                    "request=$logRequestId phase=extract_result result=proposal type=${normalized.type} " +
+                        "titlePresent=${normalized.title.isNotBlank()} noteChars=${normalized.note.length} " +
+                        "checklistCount=${normalized.checklist.size} alarmEnabled=${normalized.alarmEnabled} " +
+                        "alarmOffsetMinutes=${normalized.alarmOffsetMinutes} " +
+                        "elapsedMs=${SystemClock.elapsedRealtime() - startedAt}",
+                )
+                normalized
+            }
         } catch (e: Exception) {
-            android.util.Log.e(TAG, "extractSchedule failed: ${e.message}")
+            Log.e(
+                TAG,
+                "request=$logRequestId phase=extract_failed errorType=${e.javaClass.simpleName} " +
+                    "at=${exceptionLocationForLog(e)} " +
+                    "elapsedMs=${SystemClock.elapsedRealtime() - startedAt}",
+            )
             null
         }
     }
 
     // ── defaults ─────────────────────────────────────────────────────────────
 
-    private fun fillDefaults(raw: ProposedAction, text: String): ProposedAction {
+    private fun fillDefaults(
+        raw: ProposedAction,
+        text: String,
+    ): ProposedAction {
         val now = LocalDateTime.now()
-        val start = runCatching { LocalDateTime.parse(raw.startIso) }
-            .getOrDefault(now.plusHours(1).withMinute(0).withSecond(0))
-        val end = runCatching { LocalDateTime.parse(raw.endIso) }
-            .getOrDefault(start.plusHours(1))
-        return ProposedAction(
+        val parsedStart = runCatching { LocalDateTime.parse(raw.startIso) }.getOrNull()
+        val start = parsedStart ?: now.plusHours(1).withMinute(0).withSecond(0)
+        val parsedEnd = runCatching { LocalDateTime.parse(raw.endIso) }.getOrNull()
+        val end = parsedEnd ?: start.plusHours(1)
+        val normalized = ProposedAction(
             type = raw.type.takeIf { it in SCHEDULE_TYPES } ?: "event",
             title = raw.title.ifBlank { text.take(40).ifBlank { "未命名事项" } },
             startIso = start.toString(),
@@ -70,12 +108,27 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             checklist = raw.checklist,
             alarmEnabled = raw.alarmEnabled,
             alarmOffsetMinutes = if (raw.alarmEnabled) raw.alarmOffsetMinutes.coerceIn(0, MAX_ALARM_OFFSET_MINUTES) else 0,
+            requestId = raw.requestId,
         )
+        val normalizedFields = buildList {
+            if (normalized.type != raw.type) add("type")
+            if (raw.title.isBlank()) add("title")
+            if (parsedStart == null) add("start_at")
+            if (parsedEnd == null || !end.isAfter(start)) add("end_at")
+            if (normalized.colorId != raw.colorId) add("color_id")
+            if (normalized.alarmOffsetMinutes != raw.alarmOffsetMinutes) add("alarm_offset_minutes")
+        }
+        Log.d(
+            TAG,
+            "request=${raw.requestId} phase=defaults normalizedFields=" +
+                normalizedFields.ifEmpty { listOf("none") }.joinToString(","),
+        )
+        return normalized
     }
 
     // ── API call ─────────────────────────────────────────────────────────────
 
-    private fun callDeepSeek(userMessage: String): ProposedAction? {
+    private fun callDeepSeek(userMessage: String, requestId: String): ProposedAction? {
         val conn = URL(DEEPSEEK_URL).openConnection() as HttpURLConnection
         conn.requestMethod = "POST"
         conn.connectTimeout = 30_000
@@ -104,27 +157,79 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             put("temperature", 0.3)
         }.toString()
 
+        val startedAt = SystemClock.elapsedRealtime()
+        Log.d(
+            TAG,
+            "request=$requestId phase=http_request model=$MODEL promptChars=${userMessage.length} " +
+                "bodyChars=${body.length} tool=$CREATE_SCHEDULE_TOOL toolChoice=required " +
+                "connectTimeoutMs=${conn.connectTimeout} readTimeoutMs=${conn.readTimeout}",
+        )
         try {
             OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { it.write(body) }
-            if (conn.responseCode !in 200..299) {
+            val responseCode = conn.responseCode
+            Log.i(
+                TAG,
+                "request=$requestId phase=http_response status=$responseCode " +
+                    "elapsedMs=${SystemClock.elapsedRealtime() - startedAt}",
+            )
+            if (responseCode !in 200..299) {
                 val error = conn.errorStream?.bufferedReader(Charsets.UTF_8)?.readText()
-                    ?: "HTTP ${conn.responseCode}"
-                throw Exception("DeepSeek API error: $error")
+                    ?: "HTTP $responseCode"
+                Log.w(
+                    TAG,
+                    "request=$requestId phase=http_error status=$responseCode " +
+                        "bodyChars=${error.length}",
+                )
+                throw Exception("DeepSeek API error: HTTP $responseCode")
             }
             val response = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
-            val choice = JSONObject(response)
-                .getJSONArray("choices")
-                .getJSONObject(0)
+            val choices = JSONObject(response).optJSONArray("choices")
+            if (choices == null || choices.length() == 0) {
+                Log.w(
+                    TAG,
+                    "request=$requestId phase=response_parse result=missing_choices responseChars=${response.length}",
+                )
+                return null
+            }
+            val choice = choices.getJSONObject(0)
             val message = choice.getJSONObject("message")
-            val calls = message.optJSONArray("tool_calls") ?: return null
-            if (calls.length() == 0) return null
+            val calls = message.optJSONArray("tool_calls")
+            val finishReason = choice.optString("finish_reason")
+                .takeIf { it in KNOWN_FINISH_REASONS }
+                ?: "other"
+            Log.d(
+                TAG,
+                "request=$requestId phase=response_parse finishReason=$finishReason " +
+                    "responseChars=${response.length} contentChars=${message.optString("content", "").length} " +
+                    "reasoningChars=${message.optString("reasoning_content", "").length} " +
+                    "toolCallCount=${calls?.length() ?: 0}",
+            )
+            if (calls == null || calls.length() == 0) {
+                Log.w(TAG, "request=$requestId phase=tool_call result=missing")
+                return null
+            }
 
             val rawCall = calls.getJSONObject(0)
             val function = rawCall.getJSONObject("function")
-            if (function.getString("name") != CREATE_SCHEDULE_TOOL) return null
+            val toolName = function.optString("name")
+            val rawArguments = function.optString("arguments", "{}")
+            if (toolName != CREATE_SCHEDULE_TOOL) {
+                Log.w(
+                    TAG,
+                    "request=$requestId phase=tool_call result=unexpected_tool",
+                )
+                return null
+            }
 
-            val args = JSONObject(function.optString("arguments", "{}"))
-            return ProposedAction(
+            val args = JSONObject(rawArguments)
+            val knownArgumentCount = TOOL_ARGUMENT_KEYS.count(args::has)
+            Log.i(
+                TAG,
+                "request=$requestId phase=tool_call result=received tool=$toolName " +
+                    "argumentChars=${rawArguments.length} argumentKeyCount=${args.length()} " +
+                    "knownArgumentCount=$knownArgumentCount",
+            )
+            val proposal = ProposedAction(
                 type = args.optString("type", "event").trim(),
                 title = args.optString("title", "").trim(),
                 startIso = args.optString("start_at", "").trim(),
@@ -134,7 +239,17 @@ class DeepSeekAnalysisService(private val apiKey: String) {
                 checklist = parseChecklist(args),
                 alarmEnabled = args.optBoolean("alarm_enabled", false),
                 alarmOffsetMinutes = args.optInt("alarm_offset_minutes", 0),
+                requestId = requestId,
             )
+            Log.d(
+                TAG,
+                "request=$requestId phase=tool_parse typeKnown=${proposal.type in SCHEDULE_TYPES} " +
+                    "titlePresent=${proposal.title.isNotBlank()} startPresent=${proposal.startIso.isNotBlank()} " +
+                    "endPresent=${proposal.endIso.isNotBlank()} noteChars=${proposal.note.length} " +
+                    "checklistCount=${proposal.checklist.size} alarmEnabled=${proposal.alarmEnabled} " +
+                    "alarmOffsetMinutes=${proposal.alarmOffsetMinutes}",
+            )
+            return proposal
         } finally {
             conn.disconnect()
         }
@@ -227,12 +342,46 @@ class DeepSeekAnalysisService(private val apiKey: String) {
         )
     }
 
+    private fun requestIdForLog(requestId: String): String {
+        val safe = requestId
+            .filter { it.isLetterOrDigit() || it == '-' || it == '_' }
+            .take(MAX_REQUEST_ID_CHARS)
+        return safe.ifBlank { "service-${REQUEST_SEQUENCE.incrementAndGet()}" }
+    }
+
+    private fun exceptionLocationForLog(error: Throwable): String {
+        val frame = error.stackTrace.firstOrNull { it.className.startsWith("com.hamhuo.tplanner") }
+            ?: error.stackTrace.firstOrNull()
+            ?: return "unknown"
+        return "${frame.className.substringAfterLast('.')}.${frame.methodName}:${frame.lineNumber}"
+    }
+
     companion object {
-        private const val TAG = "TplannerDS"
+        private const val TAG = "TplannerLLM"
         private const val DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
         private const val MODEL = "deepseek-v4-flash"
         private const val CREATE_SCHEDULE_TOOL = "create_schedule"
+        private const val MAX_REQUEST_ID_CHARS = 48
         private val SCHEDULE_TYPES = linkedSetOf("event", "status", "task")
+        private val TOOL_ARGUMENT_KEYS = setOf(
+            "type",
+            "title",
+            "start_at",
+            "end_at",
+            "note",
+            "color_id",
+            "checklist",
+            "alarm_enabled",
+            "alarm_offset_minutes",
+        )
+        private val KNOWN_FINISH_REASONS = setOf(
+            "stop",
+            "length",
+            "tool_calls",
+            "content_filter",
+            "insufficient_system_resource",
+        )
+        private val REQUEST_SEQUENCE = AtomicInteger(0)
         private const val MAX_ALARM_OFFSET_MINUTES = 1440 * 30 // 30 days
 
         private const val SYSTEM_PROMPT =
