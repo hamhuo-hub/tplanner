@@ -39,6 +39,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,6 +58,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.zIndex
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -168,15 +170,22 @@ fun MonoInput(value: String, placeholder: String, onValue: (String) -> Unit, mod
 
 @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
 @Composable
-fun MarkdownViewer(content: String, onTap: () -> Unit = {}, modifier: Modifier = Modifier) {
+fun MarkdownViewer(
+    content: String,
+    onTap: () -> Unit = {},
+    onRendered: (String) -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
     var webView   by remember { mutableStateOf<WebView?>(null) }
     var pageReady by remember { mutableStateOf(false) }
+    val currentOnTap by rememberUpdatedState(onTap)
+    val currentOnRendered by rememberUpdatedState(onRendered)
 
     val context = LocalContext.current
     val gestureDetector = remember {
         GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
             override fun onSingleTapUp(e: MotionEvent): Boolean {
-                onTap()
+                currentOnTap()
                 return false
             }
         })
@@ -185,7 +194,9 @@ fun MarkdownViewer(content: String, onTap: () -> Unit = {}, modifier: Modifier =
     LaunchedEffect(pageReady, content) {
         if (!pageReady) return@LaunchedEffect
         val b64 = Base64.encodeToString(content.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-        webView?.evaluateJavascript("renderBase64('$b64')", null)
+        webView?.evaluateJavascript("renderBase64('$b64')") {
+            currentOnRendered(content)
+        }
     }
 
     AndroidView(
@@ -229,16 +240,23 @@ fun MarkdownField(
     var isEditing by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf(content) }
     var imeWasVisible by remember { mutableStateOf(false) }
+    var exitRequested by remember { mutableStateOf(false) }
+    var lastRenderedContent by remember { mutableStateOf<String?>(null) }
+    var previewContent by remember { mutableStateOf(content) }
     val imeVisible = WindowInsets.isImeVisible
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
 
     fun saveAndExitEditing() {
-        if (!isEditing) return
-        isEditing = false
+        if (!isEditing || exitRequested) return
+        exitRequested = true
         focusManager.clearFocus(force = true)
         keyboardController?.hide()
         onSave(draft)
+        if (lastRenderedContent == draft) {
+            exitRequested = false
+            isEditing = false
+        }
     }
 
     // IME 会优先消费第一次返回。键盘由可见变为隐藏时立即提交，
@@ -255,6 +273,32 @@ fun MarkdownField(
     // 调用方的 modifier 必须自带确定的尺寸（weight()/明确的 height()），
     // 否则在可滚动的无限高度父级里会测不出尺寸。
     Box(modifier) {
+        MarkdownViewer(
+            content = when {
+                exitRequested -> draft
+                isEditing -> previewContent
+                else -> content
+            },
+            onTap = {
+                if (!isEditing) {
+                    draft = content
+                    previewContent = content
+                    exitRequested = false
+                    isEditing = true
+                }
+            },
+            onRendered = { renderedContent ->
+                lastRenderedContent = renderedContent
+                if (exitRequested && renderedContent == draft) {
+                    exitRequested = false
+                    isEditing = false
+                }
+            },
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPadding)
+        )
+
         if (isEditing) {
             val focusRequester = remember { FocusRequester() }
             BasicTextField(
@@ -267,8 +311,10 @@ fun MarkdownField(
                 cursorBrush = SolidColor(GOLD),
                 modifier = Modifier
                     .fillMaxSize()
-                    .focusRequester(focusRequester)
-                    .padding(contentPadding),
+                    .zIndex(1f)
+                    .padding(contentPadding)
+                    .background(SURFACE)
+                    .focusRequester(focusRequester),
                 decorationBox = { inner ->
                     if (draft.isEmpty()) {
                         Text(placeholder, color = DIM, fontSize = 15.sp, lineHeight = 26.sp)
@@ -278,16 +324,13 @@ fun MarkdownField(
             )
             LaunchedEffect(Unit) { focusRequester.requestFocus() }
         } else {
-            MarkdownViewer(
-                content = content,
-                onTap = { draft = content; isEditing = true },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(contentPadding)
-            )
-            // 编辑按钮
             IconButton(
-                onClick = { draft = content; isEditing = true },
+                onClick = {
+                    draft = content
+                    previewContent = content
+                    exitRequested = false
+                    isEditing = true
+                },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp)
             ) {
                 Icon(Icons.Default.Edit, contentDescription = "Edit", tint = GOLD, modifier = Modifier.size(18.dp))

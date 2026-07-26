@@ -696,8 +696,9 @@ fun MainScreen(
         EventDetailScreen(
             event = ev,
             onSave = { updated ->
-                events = events.filter { it.id != updated.id } + updated
-                eventStore.saveAll(events)
+                val nextEvents = upsertEventPreservingOrder(events, updated)
+                events = nextEvents
+                eventStore.saveAll(nextEvents)
                 editingEvent = null
             }
         )

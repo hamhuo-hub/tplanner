@@ -433,7 +433,6 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
         var titleImeWasVisible by remember { mutableStateOf(false) }
 
         fun saveAndClose() {
-            renaming = false
             focusManager.clearFocus(force = true)
             keyboardController?.hide()
             commitResult()
