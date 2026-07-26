@@ -157,7 +157,7 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
             <div
                 className="event-row-date"
                 ref={dateColRef}
-                style={{ position: 'relative', cursor: 'pointer' }}
+                style={{ cursor: 'pointer' }}
                 onClick={() => setJournalOpen(v => !v)}
                 title={t('journal.label')}
             >

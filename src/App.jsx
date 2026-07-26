@@ -304,8 +304,9 @@ function App() {
         // ancestors/the page in browsers, which pushes the banners off-screen.
         const elementRect = element.getBoundingClientRect();
         const containerRect = scrollContainer.getBoundingClientRect();
+        const stickyHeaderHeight = scrollContainer.querySelector('.timeline-header')?.offsetHeight || 0;
         scrollContainer.scrollTo({
-            top: Math.max(0, scrollContainer.scrollTop + elementRect.top - containerRect.top),
+            top: Math.max(0, scrollContainer.scrollTop + elementRect.top - containerRect.top - stickyHeaderHeight),
             behavior,
         });
         return true;

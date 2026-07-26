@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 export default function Timeline({ startDate, endDate, events, onEventClick, onAddEvent, highlight, onLoadPrev, onLoadNext, onUpdateEvent, clashes, travelTimezone, onToggleTaskComplete, journals, onSaveJournal, onContextMenu, selectedIds, onSelectionChange }) {
     const { t } = useTranslation();
     const scrollContainerRef = useRef(null);
+    const previousScrollTopRef = useRef(0);
     const [days, setDays] = useState([]);
     const prevStartDateRef = useRef(startDate);
 
@@ -19,6 +20,9 @@ export default function Timeline({ startDate, endDate, events, onEventClick, onA
 
     const handleScroll = (e) => {
         const { scrollTop, scrollHeight, clientHeight } = e.target;
+        if (scrollTop === previousScrollTopRef.current) return;
+        previousScrollTopRef.current = scrollTop;
+
         if (scrollTop < 50) {
             setPreviousScrollHeight(scrollHeight);
             if (onLoadPrev) onLoadPrev();
@@ -203,51 +207,55 @@ export default function Timeline({ startDate, endDate, events, onEventClick, onA
 
     return (
         <div className="timeline-root">
-            {/* Time Axis Header */}
-            <div className="timeline-header">
-                <div className="timeline-header-label">
-                    <span title={travelTimezone || t('timeline.localTime')}>
-                        {travelTimezone
-                            ? (travelTimezone === 'Asia/Shanghai' ? 'BEIJING' : travelTimezone.split('/').pop().replace(/_/g, ' ').toUpperCase())
-                            : t('timeline.localTimeShort')}
-                    </span>
-                </div>
-                <div className="timeline-header-axis" style={{ position: 'relative', minWidth: 1200 }}>
-                    {Array.from({ length: 25 }).map((_, i) => {
-                        // The axis always represents hours 0–23 in the display timezone.
-                        // Each EventRow row = one day in that timezone, and positions
-                        // inside the row are computed via formatInTimeZone in EventBlock.
-                        const hourText = `${String(i).padStart(2, '0')}:00`;
-                        return (
-                            <div key={i} className="timeline-hour-tick" style={{ left: `${(i / 24) * 100}%` }}>
-                                {hourText}
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
+            {/* Header and rows share one scroll canvas so their time coordinates cannot diverge. */}
+            <div className="timeline-scroll-area" onScroll={handleScroll} ref={scrollContainerRef}>
+                <div className="timeline-canvas">
+                    {/* Time Axis Header */}
+                    <div className="timeline-header">
+                        <div className="timeline-header-label">
+                            <span title={travelTimezone || t('timeline.localTime')}>
+                                {travelTimezone
+                                    ? (travelTimezone === 'Asia/Shanghai' ? 'BEIJING' : travelTimezone.split('/').pop().replace(/_/g, ' ').toUpperCase())
+                                    : t('timeline.localTimeShort')}
+                            </span>
+                        </div>
+                        <div className="timeline-header-axis">
+                            {Array.from({ length: 25 }).map((_, i) => {
+                                // The axis always represents hours 0–23 in the display timezone.
+                                // Each EventRow row = one day in that timezone, and positions
+                                // inside the row are computed via formatInTimeZone in EventBlock.
+                                const hourText = `${String(i).padStart(2, '0')}:00`;
+                                return (
+                                    <div key={i} className="timeline-hour-tick" style={{ left: `${(i / 24) * 100}%` }}>
+                                        {hourText}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
 
-            {/* Scrollable Body */}
-            <div className="timeline-scroll-area" onScroll={handleScroll} ref={scrollContainerRef} onMouseDown={handleSelectionMouseDown}>
-                {days.map(day => (
-                    <EventRow
-                        key={day.toISOString()}
-                        date={day}
-                        events={events}
-                        clashes={clashes}
-                        onEventClick={handleEventClickProxy}
-                        onAddEvent={handleAddEventProxy}
-                        highlight={highlight}
-                        onDragStart={handleDragStart}
-                        dragState={dragState}
-                        displayTimezone={travelTimezone || 'Asia/Shanghai'}
-                        onToggleTaskComplete={onToggleTaskComplete}
-                        journalText={journals?.[format(day, 'yyyy-MM-dd')] || ''}
-                        onSaveJournal={(text) => onSaveJournal?.(format(day, 'yyyy-MM-dd'), text)}
-                        onContextMenu={onContextMenu}
-                        selectedIds={selectedIds}
-                    />
-                ))}
+                    <div className="timeline-body" onMouseDown={handleSelectionMouseDown}>
+                        {days.map(day => (
+                            <EventRow
+                                key={day.toISOString()}
+                                date={day}
+                                events={events}
+                                clashes={clashes}
+                                onEventClick={handleEventClickProxy}
+                                onAddEvent={handleAddEventProxy}
+                                highlight={highlight}
+                                onDragStart={handleDragStart}
+                                dragState={dragState}
+                                displayTimezone={travelTimezone || 'Asia/Shanghai'}
+                                onToggleTaskComplete={onToggleTaskComplete}
+                                journalText={journals?.[format(day, 'yyyy-MM-dd')] || ''}
+                                onSaveJournal={(text) => onSaveJournal?.(format(day, 'yyyy-MM-dd'), text)}
+                                onContextMenu={onContextMenu}
+                                selectedIds={selectedIds}
+                            />
+                        ))}
+                    </div>
+                </div>
             </div>
 
             {/* Rubber-band selection box overlay */}

@@ -389,6 +389,8 @@ input[type="number"] {
 
 /* ── Timeline ───────────────────────────────────────────────────────────── */
 .timeline-root {
+    --timeline-date-width: 96px;
+    --timeline-axis-min-width: 1200px;
     display: flex;
     flex-direction: column;
     flex: 1; /* Fix: use flex instead of fixed height */
@@ -413,13 +415,15 @@ input[type="number"] {
     display: flex;
     border-bottom: 1px solid var(--clr-border);
     background: var(--clr-void);
+    position: sticky;
+    top: 0;
     z-index: 30;
     height: 32px;
     flex-shrink: 0;
 }
 
 .timeline-header-label {
-    width: 96px;
+    width: var(--timeline-date-width);
     flex-shrink: 0;
     border-right: 1px solid var(--clr-border);
     display: flex;
@@ -441,7 +445,7 @@ input[type="number"] {
 
 .timeline-header-axis {
     flex: 1;
-    min-width: 1200px;
+    min-width: var(--timeline-axis-min-width);
     position: relative;
 }
 
@@ -460,6 +464,18 @@ input[type="number"] {
     overflow: auto;
     position: relative;
     /* Disable drag selection on scroll area */
+}
+
+.timeline-canvas {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-width: calc(var(--timeline-date-width) + var(--timeline-axis-min-width));
+    min-height: 100%;
+}
+
+.timeline-body {
+    flex: 0 0 auto;
 }
 
 /* ── Event Row ──────────────────────────────────────────────────────────── */
@@ -482,7 +498,7 @@ input[type="number"] {
 }
 
 .event-row-date {
-    width: 96px;
+    width: var(--timeline-date-width);
     flex-shrink: 0;
     padding: 6px 8px;
     border-right: 1px solid var(--clr-border);
@@ -522,7 +538,7 @@ input[type="number"] {
 .event-row-grid {
     flex: 1;
     position: relative;
-    min-width: 1200px;
+    min-width: var(--timeline-axis-min-width);
     height: 80px;
     cursor: crosshair;
 }
@@ -907,6 +923,10 @@ input[type="number"] {
         border: none !important;
         box-shadow: none !important;
         display: block !important;
+    }
+
+    .timeline-header {
+        position: static !important;
     }
 
     .timeline-scroll-area {
