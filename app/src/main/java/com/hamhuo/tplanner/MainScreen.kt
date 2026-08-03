@@ -91,14 +91,14 @@ fun MainScreen(
 ) {
     val scope  = rememberCoroutineScope()
     val context = LocalContext.current
-    var content    by remember { mutableStateOf(store.getToday()) }
+    var content    by remember { mutableStateOf(store.getTodayDraft() ?: store.getToday()) }
     var panelOpen  by remember { mutableStateOf(false) }
     var events     by remember { mutableStateOf(eventStore.getAll()) }
 
     DisposableEffect(Unit) {
         val todayKey = appToday().toString()
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == todayKey) content = store.getToday()
+            if (key == todayKey) content = store.getTodayDraft() ?: store.getToday()
         }
         store.registerListener(listener)
         onDispose { store.unregisterListener(listener) }
@@ -120,7 +120,7 @@ fun MainScreen(
             manager.saveServerUrl(serverUrl)
             when (val r = manager.syncJournals(serverUrl)) {
                 is LanSyncManager.SyncResult.Success -> {
-                    content = r.todayText
+                    content = store.getTodayDraft() ?: r.todayText
                     syncStatus = "success"; syncMsg = syncedTemplate.format(serverHost(serverUrl))
                     events = manager.fetchEvents(serverUrl)
                     WatchScheduleSync.push(context, events)
@@ -224,8 +224,14 @@ fun MainScreen(
                 HorizontalDivider(color = BORDER, thickness = 1.dp)
                 MarkdownField(
                     content = content,
-                    onSave = { text -> content = text; store.saveToday(text) },
-                    onDraftChange = { content = it },
+                    onSave = { text ->
+                        content = text
+                        store.commitTodayDraft(text)
+                    },
+                    onDraftChange = { text ->
+                        content = text
+                        store.saveTodayDraft(text)
+                    },
                     placeholder = stringResource(R.string.journal_edit_hint),
                     modifier = Modifier.weight(1f)
                 )
@@ -354,7 +360,7 @@ fun MainScreen(
         val locationPart = if (loc.isNotBlank()) " · $loc" else ""
         val entryLine = "\n\n---\n\n### $stamp$locationPart\n\n$text"
         content = content + entryLine
-        store.saveToday(content)
+        store.commitTodayDraft(content)
 
         Log.i(
             LLM_LOG_TAG,
@@ -697,16 +703,18 @@ fun MainScreen(
     editingEvent?.let { ev ->
         EventDetailScreen(
             event = ev,
+            restoredNoteDraft = eventStore.getNoteDraft(ev.id),
+            onNoteDraftChange = { text -> eventStore.saveNoteDraft(ev.id, text) },
             onSave = { updated ->
                 val nextEvents = upsertEventPreservingOrder(events, updated)
                 events = nextEvents
-                eventStore.saveAll(nextEvents)
+                eventStore.saveAllAndClearNoteDraft(nextEvents, updated.id)
                 editingEvent = null
             },
             onNoteSave = { updated ->
                 val nextEvents = upsertEventPreservingOrder(events, updated)
                 events = nextEvents
-                eventStore.saveAll(nextEvents)
+                eventStore.saveAllAndClearNoteDraft(nextEvents, updated.id)
                 editingEvent = updated
             }
         )

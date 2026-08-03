@@ -12,6 +12,7 @@ data class JournalEntry(val text: String, val updatedAt: Long = 0L, val deletedA
 class JournalStore(context: Context) {
 
     private val prefs = context.getSharedPreferences("tplanner_journals", Context.MODE_PRIVATE)
+    private val draftPrefs = context.getSharedPreferences("tplanner_journal_drafts", Context.MODE_PRIVATE)
 
     // 同步锁：appendToday / replaceInToday 读-改-写序列为原子操作，
     // 防止后台线程与 UI 主线并发写入丢失数据。
@@ -36,6 +37,32 @@ class JournalStore(context: Context) {
         return if (entry == null || entry.deletedAt != 0L) "" else entry.text
     }
 
+    /** Returns a crash-recovery draft, including an intentionally empty draft. */
+    fun getTodayDraft(): String? {
+        val today = appToday().toString()
+        return if (draftPrefs.contains(today)) draftPrefs.getString(today, "") ?: "" else null
+    }
+
+    /**
+     * Persist every editor change synchronously. Android may kill the process without invoking
+     * onStop/onDestroy, so lifecycle-only saving cannot protect the last edit.
+     */
+    fun saveTodayDraft(text: String) {
+        synchronized(lock) {
+            draftPrefs.edit().putString(appToday().toString(), text).commit()
+        }
+    }
+
+    /** Save the final note first, then remove its recovery draft only after the write succeeds. */
+    fun commitTodayDraft(text: String) {
+        synchronized(lock) {
+            val today = appToday().toString()
+            val entry = JournalEntry(text = text, updatedAt = System.currentTimeMillis(), deletedAt = 0L)
+            val saved = prefs.edit().putString(today, entry.toJson().toString()).commit()
+            if (saved) draftPrefs.edit().remove(today).commit()
+        }
+    }
+
     // 只更新今天这一条。直接 putString 单个 key，不做全量读-改-写：
     //   1) 避免 saveAll 先 clear 再 repopulate 时丢失其他线程的并发写入；
     //   2) eliminated 全量 getAll() 的读放大。
@@ -46,7 +73,7 @@ class JournalStore(context: Context) {
         synchronized(lock) {
             val today = appToday().toString()
             val entry = JournalEntry(text = text, updatedAt = System.currentTimeMillis(), deletedAt = 0L)
-            prefs.edit().putString(today, entry.toJson().toString()).apply()
+            prefs.edit().putString(today, entry.toJson().toString()).commit()
         }
     }
 

@@ -375,17 +375,20 @@ private fun PillButton(label: String, filled: Boolean, onClick: () -> Unit) {
 @Composable
 fun EventDetailScreen(
     event: TaskEvent,
+    restoredNoteDraft: String?,
+    onNoteDraftChange: (String) -> Unit,
     onSave: (TaskEvent) -> Unit,
     onNoteSave: (TaskEvent) -> Unit,
 ) {
+    val initialNote = restoredNoteDraft ?: event.note
     var title     by remember { mutableStateOf(event.title) }
     var renaming  by remember { mutableStateOf(false) }
     var start     by remember { mutableStateOf(event.start) }
     var end       by remember { mutableStateOf(event.end) }
     var checklist by remember { mutableStateOf(event.checklist) }
     var completed by remember { mutableStateOf(event.completed) }
-    var note      by remember { mutableStateOf(event.note) }
-    var noteEditorDraft by remember { mutableStateOf(event.note) }
+    var note      by remember(event.id) { mutableStateOf(initialNote) }
+    var noteEditorDraft by remember(event.id) { mutableStateOf(initialNote) }
     var noteEditorOpen by remember { mutableStateOf(false) }
     var noteEditorCloseRequested by remember { mutableStateOf(false) }
     var renderedNotePreview by remember { mutableStateOf<String?>(null) }
@@ -833,7 +836,10 @@ fun EventDetailScreen(
             if (noteEditorOpen) {
                 MarkdownEditor(
                     value = noteEditorDraft,
-                    onValueChange = { noteEditorDraft = it },
+                    onValueChange = { text ->
+                        noteEditorDraft = text
+                        onNoteDraftChange(text)
+                    },
                     placeholder = stringResource(R.string.note_placeholder),
                     onSaveAndClose = ::closeNoteEditor,
                     modifier = Modifier

@@ -36,12 +36,38 @@ data class TaskEvent(
 class EventStore(ctx: Context) {
     private val appContext = ctx.applicationContext
     private val prefs = appContext.getSharedPreferences("tplanner_events", Context.MODE_PRIVATE)
+    private val lock = Any()
 
     fun getAll(): List<TaskEvent> = parse(prefs.getString("events", "[]") ?: "[]")
 
     fun saveAll(events: List<TaskEvent>) {
-        prefs.edit().putString("events", serialize(events)).apply()
+        synchronized(lock) {
+            prefs.edit().putString("events", serialize(events)).commit()
+        }
         // 所有本地编辑和远端合并最终都会经过这里，统一重排可避免孤儿闹铃。
+        runCatching { TaskAlarmScheduler.reconcile(appContext, events) }
+    }
+
+    fun getNoteDraft(eventId: String): String? = synchronized(lock) {
+        val key = noteDraftKey(eventId)
+        if (prefs.contains(key)) prefs.getString(key, "") ?: "" else null
+    }
+
+    /** Synchronous, small write so the latest keystroke survives abrupt process death. */
+    fun saveNoteDraft(eventId: String, text: String) {
+        synchronized(lock) {
+            prefs.edit().putString(noteDraftKey(eventId), text).commit()
+        }
+    }
+
+    /** Atomically persist the event list and remove its now-committed recovery draft. */
+    fun saveAllAndClearNoteDraft(events: List<TaskEvent>, eventId: String) {
+        synchronized(lock) {
+            prefs.edit()
+                .putString("events", serialize(events))
+                .remove(noteDraftKey(eventId))
+                .commit()
+        }
         runCatching { TaskAlarmScheduler.reconcile(appContext, events) }
     }
 
@@ -61,6 +87,8 @@ class EventStore(ctx: Context) {
         events.forEach { arr.put(it.toJson()) }
         return arr.toString()
     }
+
+    private fun noteDraftKey(eventId: String) = "note_draft:$eventId"
 
     private fun JSONObject.toEvent(): TaskEvent {
         val checklistArr = optJSONArray("checklist") ?: JSONArray()
