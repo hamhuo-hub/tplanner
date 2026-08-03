@@ -4,11 +4,7 @@ import android.graphics.Paint
 import android.graphics.Typeface
 
 enum class FaceDesign(val interactiveDelayMs: Long) {
-    RING(1000L),
-    ORBIT(1000L),
-    EMBER(100L),
     TIDE(100L),
-    LUMINA(80L),
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -26,9 +22,6 @@ const val DIM       = 0xFF857F6E.toInt()
 const val TEAL      = 0xFF4A9DA8.toInt()
 const val EVENT_DOT = 0x604A90D0.toInt()  // 日程事件：蓝色半透明小点
 const val TRACK     = 0xFF232323.toInt()
-const val TICK      = 0xFF2E2E2E.toInt()
-const val LINE      = 0xFF3A362B.toInt()
-const val BTN_FILL  = 0xFF161410.toInt()
 const val AMB_TEXT  = 0xFF8A857A.toInt()
 const val AMB_GOLD  = 0xFF55503F.toInt()
 const val AMB_TRACK = 0xFF1A1A1A.toInt()

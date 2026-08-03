@@ -14,23 +14,18 @@ import androidx.wear.watchface.WatchState
 import androidx.wear.watchface.style.CurrentUserStyleRepository
 
 // ═══════════════════════════════════════════════════════════════════════════
-// tPlanner 五款表盘：时环（Ring）· 星轨（Orbit）· 余烬（Ember）· 潮汐（Tide）· 光弦（Lumina）。
+// tPlanner 潮汐（Tide）表盘。
 // 设计语言与桌面端一致：暗底 #0D0D0D、金 #C9A84C、米白衬线数字、青色事件点。
-// 点击表盘下方的金色按钮/短划 → 震动并经典蓝牙唤醒手机（PhoneWaker）。
+// 点击浪尖金球 → 震动并经典蓝牙唤醒手机（PhoneWaker）。
 //
-// 动画均为事件驱动：入场 800ms、点按涟漪/光晕 600-800ms，动画期间通过
-// invalidate() 请求连续帧；平时按各自的 interactiveDrawModeUpdateDelayMillis
-// 低频重绘（余烬/潮汐因呼吸光环用 100ms，其余 1000ms）。息屏（ambient）下只画
+// 动画为事件驱动：入场 800ms、点按涟漪/光晕 600-800ms，动画期间通过
+// invalidate() 请求连续帧；平时每 100ms 低频重绘。息屏（ambient）下只画
 // 暗化的极简内容，无动画、无大面积亮色（防烧屏 + 省电）。
 //
-// 各表盘的具体绘制逻辑已拆分到独立 Face* 文件；共享基类在 FaceBase，
-// 潮汐的调起时间记录由 WakeInvocationMarks 在手表本地持久化。
+// 绘制逻辑位于 FaceTide；调起时间由 WakeInvocationMarks 在手表本地持久化。
 // ═══════════════════════════════════════════════════════════════════════════
 
-abstract class TPlannerFaceService : WatchFaceService() {
-
-    protected abstract val design: FaceDesign
-
+class WatchFaceTideService : WatchFaceService() {
     private val vibrator: Vibrator by lazy { getSystemService(Vibrator::class.java) }
 
     override suspend fun createWatchFace(
@@ -39,13 +34,7 @@ abstract class TPlannerFaceService : WatchFaceService() {
         complicationSlotsManager: ComplicationSlotsManager,
         currentUserStyleRepository: CurrentUserStyleRepository,
     ): WatchFace {
-        val renderer = when (design) {
-            FaceDesign.RING   -> FaceRing(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
-            FaceDesign.ORBIT  -> FaceOrbit(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
-            FaceDesign.EMBER  -> FaceEmber(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
-            FaceDesign.TIDE   -> FaceTide(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
-            FaceDesign.LUMINA -> FaceLumina(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
-        }
+        val renderer = FaceTide(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
         return WatchFace(WatchFaceType.DIGITAL, renderer)
             .setTapListener(object : WatchFace.TapListener {
                 override fun onTapEvent(tapType: Int, tapEvent: TapEvent, complicationSlot: ComplicationSlot?) {
@@ -60,9 +49,3 @@ abstract class TPlannerFaceService : WatchFaceService() {
             })
     }
 }
-
-class WatchFaceRingService  : TPlannerFaceService() { override val design = FaceDesign.RING }
-class WatchFaceOrbitService : TPlannerFaceService() { override val design = FaceDesign.ORBIT }
-class WatchFaceEmberService : TPlannerFaceService() { override val design = FaceDesign.EMBER }
-class WatchFaceTideService  : TPlannerFaceService() { override val design = FaceDesign.TIDE }
-class WatchFaceLuminaService : TPlannerFaceService() { override val design = FaceDesign.LUMINA }

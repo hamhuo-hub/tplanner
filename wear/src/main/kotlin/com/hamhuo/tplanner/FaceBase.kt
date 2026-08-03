@@ -13,13 +13,10 @@ import androidx.wear.watchface.style.CurrentUserStyleRepository
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlin.math.PI
 import kotlin.math.min
-import kotlin.math.sin
 import kotlin.math.sqrt
 
-// 五款表盘的共享 Renderer 基类：动画状态、事件刻度加载、唤醒按钮、Paint 快捷方式
-// 均在此处统一管理。子类只需实现 drawInteractive / drawAmbient 两个方法。
+// 潮汐表盘的 Renderer 基类：统一管理动画状态、事件刻度、唤醒按钮和 Paint。
 abstract class FaceBase(
     private val context: Context,
     surfaceHolder: SurfaceHolder,
