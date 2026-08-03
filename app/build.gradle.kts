@@ -3,6 +3,7 @@ import java.util.Properties
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
 }
 
 // Load API keys from local.properties (never committed to VCS)
@@ -89,5 +90,15 @@ dependencies {
     // Wearable Data Layer — 手表 ↔ 手机通过 GMS 通信（国际版 Wear OS 设备）。
     // 国行三星无 GMS 时走经典蓝牙 RFCOMM fallback。
     implementation(libs.play.services.wearable)
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+    implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.datastore.preferences)
     testImplementation("junit:junit:4.13.2")
+}
+
+ksp {
+    arg("room.schemaLocation", file("schemas").absolutePath)
+    arg("room.generateKotlin", "true")
 }
