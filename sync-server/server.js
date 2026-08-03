@@ -17,8 +17,9 @@ const fs    = require('fs');
 const path  = require('path');
 
 // ── 配置 ──────────────────────────────────────────────────────────────────────
-// 公网入口是 Cloudflare Tunnel（https://sync.hamhuo.top → localhost:37401），
-// 本服务只需监听本机端口，不再需要局域网发现。
+// 公网入口由 Cloudflare Tunnel / 本机反向代理提供。
+// 默认只监听 loopback，避免从局域网或公网 IPv6 绕过入口认证。
+const HOST = process.env.HOST || '127.0.0.1';
 const PORT = parseInt(process.env.PORT || '37401', 10);
 const DATA_DIR  = process.env.DATA_DIR  || path.join(__dirname, 'data');
 const WEB_DIR   = process.env.WEB_DIR   || path.join(__dirname, 'dist-web');
@@ -599,9 +600,9 @@ const server = http.createServer((req, res) => {
     });
 });
 
-server.listen(PORT, '::', () => {
+server.listen(PORT, HOST, () => {
     log('INFO', `tPlanner Sync Server started`);
-    log('INFO', `Port     : ${PORT}`);
+    log('INFO', `Listen   : http://${HOST}:${PORT}`);
     log('INFO', `Data dir : ${DATA_DIR}`);
     log('INFO', `Endpoint : http://localhost:${PORT}/tplanner/events (public: Cloudflare Tunnel)`);
 });
