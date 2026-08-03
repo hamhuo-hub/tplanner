@@ -54,7 +54,7 @@ android {
         }
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.findByName("project") ?: signingConfigs.getByName("debug")
+            signingConfigs.findByName("project")?.let { signingConfig = it }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

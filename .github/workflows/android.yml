@@ -32,16 +32,79 @@ jobs:
         with:
           gradle-version: 9.6.1   # 与 gradle/wrapper/gradle-wrapper.properties 保持一致
 
-      - name: Build debug APK
-        run: gradle assembleDebug
+      - name: Setup signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          AMAP_KEY: ${{ secrets.AMAP_API_KEY }}
+          DEEPSEEK_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          set -euo pipefail
+
+          # 签名是 CI 发布的硬性要求，禁止在 secret 缺失时回退到 debug 证书。
+          missing=0
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Required signing secret ${name} is not set"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+          # 如果 key password 与 store password 相同，可不配置独立的 ANDROID_KEY_PASSWORD。
+          KEY_PASSWORD="${KEY_PASSWORD:-$KEYSTORE_PASSWORD}"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > tplanner.keystore
+          keytool -list \
+            -keystore tplanner.keystore \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -alias "$KEY_ALIAS" >/dev/null
+
+          cat > keystore.properties << EOF
+          storeFile=../tplanner.keystore
+          storePassword=${KEYSTORE_PASSWORD}
+          keyAlias=${KEY_ALIAS}
+          keyPassword=${KEY_PASSWORD}
+          EOF
+
+          # 生成 local.properties（仅当 secret 存在时）
+          if [ -n "$AMAP_KEY" ] || [ -n "$DEEPSEEK_KEY" ]; then
+            cat > local.properties << EOF
+          amap.api.key=${AMAP_KEY}
+          deepseek.api.key=${DEEPSEEK_KEY}
+          EOF
+          fi
+
+      - name: Build release APK
+        run: gradle assembleRelease
+
+      - name: Verify release APK signatures
+        run: |
+          set -euo pipefail
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+          if [ -z "$APKSIGNER" ]; then
+            echo "::error::apksigner was not found in ANDROID_HOME"
+            exit 1
+          fi
+
+          for apk in app/build/outputs/apk/release/*.apk wear/build/outputs/apk/release/*.apk; do
+            if [ ! -f "$apk" ] || [[ "$apk" == *-unsigned.apk ]]; then
+              echo "::error::Missing signed release APK: ${apk}"
+              exit 1
+            fi
+            "$APKSIGNER" verify --verbose "$apk"
+          done
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: tplanner-android
           path: |
-            app/build/outputs/apk/debug/*.apk
-            wear/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/release/*.apk
+            wear/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 7
 
