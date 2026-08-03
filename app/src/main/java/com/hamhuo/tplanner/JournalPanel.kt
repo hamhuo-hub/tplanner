@@ -208,10 +208,42 @@ fun MarkdownViewer(
                 webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView, url: String) { pageReady = true }
                 }
-                // GestureDetector distinguishes tap from scroll: fires onSingleTapUp
-                // only on real taps while letting scroll gestures pass through to WebView
-                setOnTouchListener { _, event ->
+                var lastTouchY = 0f
+                // The task detail page wraps this fixed-height preview in a Compose
+                // verticalScroll. Keep drags in the WebView while it can scroll, then
+                // hand them back to the outer page at the top/bottom edge.
+                setOnTouchListener { view, event ->
                     gestureDetector.onTouchEvent(event)
+
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> {
+                            lastTouchY = event.y
+                            view.parent?.requestDisallowInterceptTouchEvent(
+                                view.canScrollVertically(-1) || view.canScrollVertically(1)
+                            )
+                        }
+
+                        MotionEvent.ACTION_MOVE -> {
+                            val deltaY = event.y - lastTouchY
+                            val scrollDirection = when {
+                                deltaY < 0f -> 1
+                                deltaY > 0f -> -1
+                                else -> 0
+                            }
+                            val canScroll = if (scrollDirection == 0) {
+                                view.canScrollVertically(-1) || view.canScrollVertically(1)
+                            } else {
+                                view.canScrollVertically(scrollDirection)
+                            }
+                            view.parent?.requestDisallowInterceptTouchEvent(canScroll)
+                            lastTouchY = event.y
+                        }
+
+                        MotionEvent.ACTION_UP,
+                        MotionEvent.ACTION_CANCEL ->
+                            view.parent?.requestDisallowInterceptTouchEvent(false)
+                    }
+
                     false // always let WebView handle the event for scrolling
                 }
                 loadUrl("file:///android_asset/md_viewer.html")
