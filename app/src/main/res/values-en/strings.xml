@@ -7,6 +7,8 @@
     <string name="action_create">Create</string>
     <string name="action_done">Done</string>
     <string name="action_add_item">Add Item</string>
+    <string name="cd_mark_complete">Mark complete</string>
+    <string name="cd_mark_incomplete">Mark incomplete</string>
     <string name="label_new">New</string>
 
     <!-- Tabs / section titles -->

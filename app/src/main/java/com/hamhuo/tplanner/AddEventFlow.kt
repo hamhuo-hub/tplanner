@@ -383,6 +383,7 @@ fun EventDetailScreen(
     var start     by remember { mutableStateOf(event.start) }
     var end       by remember { mutableStateOf(event.end) }
     var checklist by remember { mutableStateOf(event.checklist) }
+    var completed by remember { mutableStateOf(event.completed) }
     var note      by remember { mutableStateOf(event.note) }
     var noteEditorDraft by remember { mutableStateOf(event.note) }
     var noteEditorOpen by remember { mutableStateOf(false) }
@@ -420,7 +421,7 @@ fun EventDetailScreen(
         start     = start,
         end       = end,
         checklist = if (type == "task") checklist else emptyList(),
-        completed = if (type == "task") event.completed else false,
+        completed = if (type == "task") completed else false,
         note      = if (noteEditorOpen) noteEditorDraft else note,
         colorId   = colorId,
         alarmEnabled = alarmEnabled,
@@ -556,6 +557,40 @@ fun EventDetailScreen(
                                     fontWeight = FontWeight.Bold, maxLines = 1,
                                     modifier = Modifier.clickable { renaming = true }
                                 )
+                            }
+                        }
+                        if (type == "task") {
+                            IconButton(onClick = { completed = !completed }) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .background(
+                                            if (completed) GOLD else Color.Transparent,
+                                            RoundedCornerShape(5.dp),
+                                        )
+                                        .border(
+                                            1.5.dp,
+                                            if (completed) GOLD else BORDER,
+                                            RoundedCornerShape(5.dp),
+                                        ),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    if (completed) {
+                                        Icon(
+                                            Icons.Default.Check,
+                                            contentDescription = stringResource(R.string.cd_mark_incomplete),
+                                            tint = Color(0xFF0E0E0E),
+                                            modifier = Modifier.size(17.dp),
+                                        )
+                                    } else {
+                                        Icon(
+                                            Icons.Default.Check,
+                                            contentDescription = stringResource(R.string.cd_mark_complete),
+                                            tint = Color.Transparent,
+                                            modifier = Modifier.size(17.dp),
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -785,6 +820,7 @@ fun EventDetailScreen(
                                 // 切换到非任务类型时清空清单和完成状态
                                 if (newType != "task") {
                                     checklist = emptyList()
+                                    completed = false
                                 }
                             }
                             showTypeSheet = false

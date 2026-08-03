@@ -10,3 +10,4 @@ local.properties
 /.kotlin
 package-lock.json
 /release
+*.keystore
