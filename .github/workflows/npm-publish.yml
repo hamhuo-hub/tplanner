@@ -35,8 +35,6 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22       # 与你本地 nvm use 22 保持一致；需要的话改 24
-          cache: npm             # 缓存 ~/.npm，加速后续 npm ci
-          cache-dependency-path: package-lock.json
 
       # deb 打包在部分环境需要 fakeroot；AppImage 由 electron-builder 自动处理
       - name: Install Linux build deps
@@ -44,7 +42,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y fakeroot
 
       - name: Install dependencies
-        run: npm ci             # 依赖 package-lock.json，确保已提交到仓库
+        run: npm install --no-audit --no-fund  # master 不跟踪 package-lock.json
 
       - name: Build renderer & main
         run: npm run build      # tsc -b && vite build，产出 dist/ 与 dist-electron/
