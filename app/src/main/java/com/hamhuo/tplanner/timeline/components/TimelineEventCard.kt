@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -51,12 +52,15 @@ import com.hamhuo.tplanner.R
 import com.hamhuo.tplanner.RED
 import com.hamhuo.tplanner.TaskEvent
 import com.hamhuo.tplanner.timeline.calculateTimelineSnappedMove
+import com.hamhuo.tplanner.timeline.hasTimelineRecurrenceMarker
 import kotlinx.coroutines.delay
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+
+private const val TimelineEventFillAlpha = 0.50f
 
 @Composable
 internal fun TimelineEventCard(
@@ -184,7 +188,10 @@ private fun DraggableTimelineEvent(
     val visualY = with(density) { (move.visualMinuteDelta * pixelsPerMinute).toDp() }
     val currentOnDrop by rememberUpdatedState(onDrop)
     val currentOnDraggingChange by rememberUpdatedState(onDraggingChange)
-    val background = EVENT_COLORS.getOrElse(event.colorId) { EVENT_COLORS[0] }
+    val backgroundAlpha = if (isShadow || dragging) 1f else TimelineEventFillAlpha
+    val background = EVENT_COLORS
+        .getOrElse(event.colorId) { EVENT_COLORS[0] }
+        .copy(alpha = backgroundAlpha)
     val shape = RoundedCornerShape(9.dp)
 
     fun resetDragState() {
@@ -230,7 +237,7 @@ private fun DraggableTimelineEvent(
             .onGloballyPositioned { coordinates ->
                 cardWindowTopPx = coordinates.positionInWindow().y
             }
-            .alpha(if (isShadow) 0.34f else if (dragging) 0.78f else 1f)
+            .alpha(if (isShadow) 0.25f else if (dragging) 0.75f else 1f)
             .background(background, shape)
             .border(
                 width = if (isHighlighted || dragging) 2.dp else 1.dp,
@@ -367,6 +374,14 @@ private fun TimelineEventCardContent(
                 },
                 modifier = Modifier.weight(1f),
             )
+            if (event.hasTimelineRecurrenceMarker()) {
+                Icon(
+                    imageVector = Icons.Default.Repeat,
+                    contentDescription = stringResource(R.string.timeline_recurring_task),
+                    tint = Color.White.copy(alpha = 0.82f),
+                    modifier = Modifier.size(if (isCompact) 9.dp else 11.dp),
+                )
+            }
             if (conflictCount > 0) {
                 ConflictBadge(
                     count = conflictCount,

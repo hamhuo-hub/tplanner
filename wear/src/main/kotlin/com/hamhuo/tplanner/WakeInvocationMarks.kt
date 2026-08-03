@@ -31,8 +31,9 @@ object WakeInvocationMarks {
 
     @Synchronized
     fun record(context: Context, at: ZonedDateTime): List<Int> {
-        val date = at.toLocalDate()
-        val minute = at.hour * 60 + at.minute
+        val appDateTime = at.withZoneSameInstant(APP_ZONE)
+        val date = appDateTime.toLocalDate()
+        val minute = appDateTime.hour * 60 + appDateTime.minute
         val updated = (load(context, date) + minute).distinct().sorted()
         val payload = JSONObject()
             .put("date", date.toString())

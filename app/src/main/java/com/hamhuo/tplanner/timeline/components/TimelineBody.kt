@@ -59,8 +59,9 @@ internal fun TimelineBody(
             }
             .verticalScroll(state.scrollState),
     ) {
+        val visibleDayCount = days.size.coerceAtLeast(1)
         val dayWidth =
-            (maxWidth - TimelineGeometry.timeGutterWidth) / TimelineGeometry.visibleDayCount
+            (maxWidth - TimelineGeometry.timeGutterWidth) / visibleDayCount
         val dayWidthPx = with(density) { dayWidth.toPx() }
         val pixelsPerMinute = hourHeightPx / 60f
         val renderSpecs = remember(placements, dayWidth, zone, state.draggingEventId) {
@@ -78,7 +79,7 @@ internal fun TimelineBody(
                 .height(TimelineGeometry.hourHeight * 24)
                 .background(BG),
         ) {
-            TimelineGrid(days = days, today = today, now = now)
+            TimelineGrid(days = days)
             state.highlight?.let { highlight ->
                 TimelineConflictHighlight(
                     highlight = highlight,
@@ -108,6 +109,12 @@ internal fun TimelineBody(
                 onDraggingEventChange = state::setDraggingEvent,
                 onEventMove = onEventMove,
                 modifier = Modifier.zIndex(5f),
+            )
+            TimelineNowIndicator(
+                days = days,
+                today = today,
+                now = now,
+                modifier = Modifier.zIndex(200f),
             )
         }
     }

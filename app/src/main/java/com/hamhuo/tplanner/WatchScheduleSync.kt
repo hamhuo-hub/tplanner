@@ -7,7 +7,6 @@ import com.google.android.gms.wearable.PutDataRequest
 import com.google.android.gms.wearable.Wearable
 import org.json.JSONArray
 import org.json.JSONObject
-import java.time.ZoneId
 
 /**
  * Phone → Watch: 发送 past 未完成任务 + later 即将事件的开始分钟数。
@@ -20,13 +19,11 @@ object WatchScheduleSync {
     fun push(context: Context, events: List<TaskEvent>) {
         Thread {
             try {
-                val zone = ZoneId.systemDefault()
-
                 // past 未完成 + later 即将 = 所有未完成任务
                 val minutes = events
                     .filter { e -> e.deletedAt == 0L && e.type == "task" && !e.completed }
                     .map { e ->
-                        val local = e.start.atZone(zone)
+                        val local = e.start.atZone(APP_ZONE)
                         local.hour * 60 + local.minute
                     }
                     .filter { it in 0..1439 }

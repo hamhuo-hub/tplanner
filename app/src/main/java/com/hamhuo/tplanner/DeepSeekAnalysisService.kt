@@ -93,7 +93,7 @@ class DeepSeekAnalysisService(private val apiKey: String) {
         raw: ProposedAction,
         text: String,
     ): ProposedAction {
-        val now = LocalDateTime.now()
+        val now = LocalDateTime.now(APP_ZONE)
         val parsedStart = runCatching { LocalDateTime.parse(raw.startIso) }.getOrNull()
         val start = parsedStart ?: now.plusHours(1).withMinute(0).withSecond(0)
         val parsedEnd = runCatching { LocalDateTime.parse(raw.endIso) }.getOrNull()
@@ -290,11 +290,11 @@ class DeepSeekAnalysisService(private val apiKey: String) {
                         })
                         put("start_at", JSONObject().apply {
                             put("type", "string")
-                            put("description", "本地时间 ISO 8601。不明确时默认为今天最近的整点或半点（≥当前时间）")
+                            put("description", "北京时间（Asia/Shanghai）ISO 8601。不明确时默认为今天最近的整点或半点（≥当前时间）")
                         })
                         put("end_at", JSONObject().apply {
                             put("type", "string")
-                            put("description", "本地时间 ISO 8601，必须晚于 start_at。不明确时默认 start_at + 1 小时")
+                            put("description", "北京时间（Asia/Shanghai）ISO 8601，必须晚于 start_at。不明确时默认 start_at + 1 小时")
                         })
                         put("note", JSONObject().apply {
                             put("type", "string")
@@ -335,7 +335,7 @@ class DeepSeekAnalysisService(private val apiKey: String) {
     // ── helpers ─────────────────────────────────────────────────────────────
 
     private fun nowDescription(): String {
-        val now = LocalDateTime.now()
+        val now = LocalDateTime.now(APP_ZONE)
         val week = arrayOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")[now.dayOfWeek.value - 1]
         return "%04d-%02d-%02d %02d:%02d %s".format(
             now.year, now.monthValue, now.dayOfMonth, now.hour, now.minute, week,

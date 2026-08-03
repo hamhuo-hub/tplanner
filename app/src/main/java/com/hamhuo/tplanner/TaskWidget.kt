@@ -82,8 +82,8 @@ fun TaskWidget(
     onModalVisibilityChange: (Boolean) -> Unit = {},
 ) {
     val now    = remember { Instant.now() }
-    val today  = remember { LocalDate.now() }
-    val zone   = remember { ZoneId.systemDefault() }
+    val today  = remember { appToday() }
+    val zone   = remember { APP_ZONE }
     val fmt    = remember { DateTimeFormatter.ofPattern("HH:mm") }
 
     var showTypeSheet by remember { mutableStateOf(false) }

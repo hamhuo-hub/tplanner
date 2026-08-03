@@ -17,6 +17,7 @@
     <string name="timeline_next_days">后一天</string>
     <string name="timeline_conflict_count">与 %1$d 个事项冲突</string>
     <string name="timeline_drag_hint">长按拖动 · 每 10 分钟吸附</string>
+    <string name="timeline_recurring_task">循环任务</string>
     <string name="journal_edit_hint">记录今天的想法、灵感…</string>
     <string name="list_inbox">收件箱</string>
     <string name="list_today">今天</string>

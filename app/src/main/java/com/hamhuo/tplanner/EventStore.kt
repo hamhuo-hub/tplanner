@@ -5,7 +5,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
@@ -31,7 +30,7 @@ data class TaskEvent(
     // 安卓端不理解的字段不代表可以丢弃——早先回写时丢字段 + 时间戳丢毫秒，
     // 会把服务器上的副本改写成与桌面端"内容相同但字节不同"的形态，导致
     // 桌面端同步预览里同一批事件反复出现、永不收敛。
-    val extras: Map<String, Any?> = emptyMap(),
+    val extras: Map<String, Any?> = mapOf("timezone" to APP_TIME_ZONE_ID),
 )
 
 class EventStore(ctx: Context) {
@@ -139,14 +138,13 @@ internal fun TaskEvent.toJson(): JSONObject {
 
 internal const val MAX_ALARM_OFFSET_MINUTES = 7 * 24 * 60
 
-fun List<TaskEvent>.forToday(): List<TaskEvent> = forDate(LocalDate.now())
+fun List<TaskEvent>.forToday(): List<TaskEvent> = forDate(appToday())
 
 fun List<TaskEvent>.forDate(date: LocalDate): List<TaskEvent> {
-    val zone  = ZoneId.systemDefault()
     return filter { e ->
         if (e.deletedAt != 0L) return@filter false
-        val s = e.start.atZone(zone).toLocalDate()
-        val en = e.end.atZone(zone).toLocalDate()
+        val s = e.start.atZone(APP_ZONE).toLocalDate()
+        val en = e.end.atZone(APP_ZONE).toLocalDate()
         !s.isAfter(date) && !en.isBefore(date)
     }.sortedBy { it.start }
 }

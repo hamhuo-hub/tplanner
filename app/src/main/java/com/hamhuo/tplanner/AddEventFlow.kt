@@ -83,7 +83,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import java.time.Instant
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Calendar
 import java.util.UUID
@@ -387,14 +386,16 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
     var showTypeSheet by remember { mutableStateOf(false) }
     val typeSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    val zone    = remember { ZoneId.systemDefault() }
+    val zone    = remember { APP_ZONE }
     val dateTimePattern = stringResource(R.string.date_pattern_month_day_time)
     val dateFmt = remember(dateTimePattern) { DateTimeFormatter.ofPattern(dateTimePattern) }
     val context = LocalContext.current
     var saveRequested by remember { mutableStateOf(false) }
 
     fun pickDateTime(initial: Instant, onPicked: (Instant) -> Unit) {
-        val cal = Calendar.getInstance().apply { timeInMillis = initial.toEpochMilli() }
+        val cal = Calendar.getInstance(appLegacyTimeZone()).apply {
+            timeInMillis = initial.toEpochMilli()
+        }
         DatePickerDialog(context, { _, y, m, d ->
             TimePickerDialog(context, { _, h, min ->
                 cal.set(y, m, d, h, min)

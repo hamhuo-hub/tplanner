@@ -54,9 +54,9 @@ abstract class FaceBase(
 
     // ── 公共接口 ────────────────────────────────────────────────────────────
 
-    fun handleWakeTap(at: ZonedDateTime = ZonedDateTime.now()) {
+    fun handleWakeTap(at: ZonedDateTime = ZonedDateTime.now(APP_ZONE)) {
         tapStart = System.currentTimeMillis()
-        onWakeInvoked(at)
+        onWakeInvoked(at.withZoneSameInstant(APP_ZONE))
         postInvalidate()
     }
 
@@ -77,6 +77,7 @@ abstract class FaceBase(
     override fun render(canvas: Canvas, bounds: Rect, zonedDateTime: ZonedDateTime, sharedAssets: Assets) {
         faceW = bounds.width(); faceH = bounds.height()
         val ambient = renderParameters.drawMode == DrawMode.AMBIENT
+        val appDateTime = zonedDateTime.withZoneSameInstant(APP_ZONE)
         now = System.currentTimeMillis()
 
         if (!ambient && bootStart == 0L) bootStart = now
@@ -96,8 +97,8 @@ abstract class FaceBase(
         val s  = min(w, h)
         val cx = w / 2f; val cy = h / 2f
 
-        if (ambient) drawAmbient(canvas, zonedDateTime, s, cx, cy)
-        else         drawInteractive(canvas, zonedDateTime, s, cx, cy)
+        if (ambient) drawAmbient(canvas, appDateTime, s, cx, cy)
+        else         drawInteractive(canvas, appDateTime, s, cx, cy)
 
         // 入场/点按动画期间请求连续帧；结束后回落低频重绘
         if (!ambient && (now - bootStart < BOOT_MS || now - tapStart < TAP_MS)) invalidate()

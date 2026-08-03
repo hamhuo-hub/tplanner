@@ -6,7 +6,6 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Shader
 import java.time.ZonedDateTime
-import java.time.ZoneId
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.min
@@ -26,8 +25,9 @@ class FaceTide(
     @Volatile private var wakeDate: java.time.LocalDate? = null
 
     override fun onWakeInvoked(at: ZonedDateTime) {
-        wakeDate = at.toLocalDate()
-        wakeMinutes = WakeInvocationMarks.record(context, at)
+        val appDateTime = at.withZoneSameInstant(APP_ZONE)
+        wakeDate = appDateTime.toLocalDate()
+        wakeMinutes = WakeInvocationMarks.record(context, appDateTime)
     }
 
     // 浪尖金球命中检测——替代底部珍珠锚点
@@ -37,7 +37,7 @@ class FaceTide(
         val cx = faceW / 2f
         val cy = faceH / 2f
         val g  = geo(s, cx, cy)
-        val now = ZonedDateTime.now(ZoneId.systemDefault())
+        val now = ZonedDateTime.now(APP_ZONE)
         val dayFrac = (now.hour * 3600f + now.minute * 60f + now.second) / 86400f
         val frac = dayFrac.coerceIn(0f, 1f)
         val tx = g.startX + frac * g.width

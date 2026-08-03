@@ -96,7 +96,7 @@ fun MainScreen(
     var events     by remember { mutableStateOf(eventStore.getAll()) }
 
     DisposableEffect(Unit) {
-        val todayKey = java.time.LocalDate.now().toString()
+        val todayKey = appToday().toString()
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key == todayKey) content = store.getToday()
         }
@@ -347,7 +347,9 @@ fun MainScreen(
         sheetRequestId = requestId
         // Append to journal with location line
         val now = System.currentTimeMillis()
-        val stamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date(now))
+        val stamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).apply {
+            timeZone = appLegacyTimeZone()
+        }.format(java.util.Date(now))
         val loc = prefillLocation.ifBlank { "" }
         val locationPart = if (loc.isNotBlank()) " · $loc" else ""
         val entryLine = "\n\n---\n\n### $stamp$locationPart\n\n$text"
@@ -706,5 +708,5 @@ fun MainScreen(
 }
 
 private fun parseAgentDatetime(iso: String): Instant? = try {
-    java.time.LocalDateTime.parse(iso).atZone(java.time.ZoneId.systemDefault()).toInstant()
+    java.time.LocalDateTime.parse(iso).atZone(APP_ZONE).toInstant()
 } catch (_: Exception) { null }

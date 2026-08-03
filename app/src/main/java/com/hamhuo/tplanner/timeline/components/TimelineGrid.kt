@@ -24,8 +24,6 @@ import java.util.Locale
 @Composable
 internal fun TimelineGrid(
     days: List<LocalDate>,
-    today: LocalDate,
-    now: ZonedDateTime,
 ) {
     val density = LocalDensity.current
     val timeGutterPx = with(density) { TimelineGeometry.timeGutterWidth.toPx() }
@@ -42,9 +40,10 @@ internal fun TimelineGrid(
                 strokeWidth = lineWidthPx,
             )
         }
+        val visibleDayCount = days.size.coerceAtLeast(1)
         val dayWidthPx =
-            (size.width - timeGutterPx) / TimelineGeometry.visibleDayCount
-        for (dayIndex in 0..TimelineGeometry.visibleDayCount) {
+            (size.width - timeGutterPx) / visibleDayCount
+        for (dayIndex in 0..visibleDayCount) {
             val x = timeGutterPx + dayWidthPx * dayIndex
             drawLine(
                 color = BORDER,
@@ -54,23 +53,6 @@ internal fun TimelineGrid(
             )
         }
 
-        val todayIndex = days.indexOf(today)
-        if (todayIndex >= 0) {
-            val minutes = now.hour * 60 + now.minute
-            val y = minutes / 60f * hourHeightPx
-            val left = timeGutterPx + dayWidthPx * todayIndex
-            drawLine(
-                color = GOLD,
-                start = Offset(left, y),
-                end = Offset(left + dayWidthPx, y),
-                strokeWidth = with(density) { 1.5.dp.toPx() },
-            )
-            drawCircle(
-                color = GOLD,
-                radius = with(density) { 3.dp.toPx() },
-                center = Offset(left + with(density) { 3.dp.toPx() }, y),
-            )
-        }
     }
 
     for (hour in 0 until 24) {
@@ -83,6 +65,40 @@ internal fun TimelineGrid(
                 .offset(y = TimelineGeometry.hourHeight * hour + 3.dp)
                 .width(TimelineGeometry.timeGutterWidth)
                 .padding(start = 5.dp),
+        )
+    }
+}
+
+@Composable
+internal fun TimelineNowIndicator(
+    days: List<LocalDate>,
+    today: LocalDate,
+    now: ZonedDateTime,
+    modifier: Modifier = Modifier,
+) {
+    val todayIndex = days.indexOf(today)
+    if (todayIndex < 0) return
+
+    val density = LocalDensity.current
+    val timeGutterPx = with(density) { TimelineGeometry.timeGutterWidth.toPx() }
+    val hourHeightPx = with(density) { TimelineGeometry.hourHeight.toPx() }
+    val visibleDayCount = days.size.coerceAtLeast(1)
+
+    Canvas(modifier.fillMaxSize()) {
+        val dayWidthPx = (size.width - timeGutterPx) / visibleDayCount
+        val minutes = now.hour * 60 + now.minute
+        val y = minutes / 60f * hourHeightPx
+        val left = timeGutterPx + dayWidthPx * todayIndex
+        drawLine(
+            color = GOLD,
+            start = Offset(left, y),
+            end = Offset(left + dayWidthPx, y),
+            strokeWidth = with(density) { 1.5.dp.toPx() },
+        )
+        drawCircle(
+            color = GOLD,
+            radius = with(density) { 3.dp.toPx() },
+            center = Offset(left + with(density) { 3.dp.toPx() }, y),
         )
     }
 }

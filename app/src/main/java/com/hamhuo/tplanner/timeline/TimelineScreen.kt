@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import com.hamhuo.tplanner.APP_ZONE
 import com.hamhuo.tplanner.BG
 import com.hamhuo.tplanner.TaskEvent
 import com.hamhuo.tplanner.timeline.components.TimelineAddButton
@@ -20,7 +21,6 @@ import com.hamhuo.tplanner.timeline.components.TimelineBody
 import com.hamhuo.tplanner.timeline.components.TimelineDayHeader
 import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneId
 
 /**
  * A deterministic, non-AI schedule view. Conflicts are intentionally allowed:
@@ -37,14 +37,15 @@ fun TimelineScreen(
     onNavigationExpandedChange: (Boolean) -> Unit = {},
     onModalVisibilityChange: (Boolean) -> Unit = {},
 ) {
-    val zone = remember { ZoneId.systemDefault() }
+    val zone = APP_ZONE
     val context = LocalContext.current
     val now = rememberTimelineNow(zone)
     val today = now.toLocalDate()
     val state = rememberTimelineState(zone, today)
+    val selectedDay = state.firstDay
     val days = remember(state.firstDayEpoch) {
         List(TimelineGeometry.visibleDayCount) { index ->
-            state.firstDay.plusDays(index.toLong())
+            selectedDay.plusDays(index.toLong())
         }
     }
     val visibleEvents = remember(events) { events.filter { it.deletedAt == 0L } }
@@ -65,7 +66,7 @@ fun TimelineScreen(
     )
 
     fun openDatePicker() {
-        val initialDate = days.getOrElse(days.size / 2) { LocalDate.now(zone) }
+        val initialDate = selectedDay
         val dialog = DatePickerDialog(
             context,
             { _, year, month, dayOfMonth ->
@@ -87,15 +88,14 @@ fun TimelineScreen(
     ) {
         Column(Modifier.fillMaxSize()) {
             TimelineDayHeader(
-                days = days,
+                selectedDay = selectedDay,
                 today = today,
                 events = visibleEvents,
                 zone = zone,
-                onPrevious = state::previousPage,
-                onToday = {
-                    if (today in days) openDatePicker() else state.goToToday(today)
+                onDaySelected = state::goToDate,
+                onCalendarClick = {
+                    if (selectedDay == today) openDatePicker() else state.goToToday(today)
                 },
-                onNext = state::nextPage,
                 allowExpandedControls = allowExpandedNavigation,
                 onExpandedControlsChange = onNavigationExpandedChange,
             )

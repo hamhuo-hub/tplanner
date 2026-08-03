@@ -31,6 +31,9 @@ internal fun calculateTimelineSnappedMove(
     val original = event.start.atZone(zone)
     val originalMinute = original.hour * 60 + original.minute
     val rawMinuteDelta = (dragOffset.y / pixelsPerMinute).roundToInt()
+    if (targetDay == segmentDay && rawMinuteDelta == 0) {
+        return TimelineSnappedMove(event.start, event.end, 0, 0)
+    }
     val snappedMinute = (
         (originalMinute + rawMinuteDelta).toFloat() / TimelineGeometry.snapMinutes
         ).roundToInt() * TimelineGeometry.snapMinutes

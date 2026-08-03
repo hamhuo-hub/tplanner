@@ -70,7 +70,7 @@ internal class TimelineState(
     }
 
     fun goToDate(date: LocalDate) {
-        firstDayEpochState.value = date.minusDays(1).toEpochDay()
+        firstDayEpochState.value = date.toEpochDay()
         clearHighlight()
     }
 
@@ -138,7 +138,7 @@ internal fun rememberTimelineState(
     today: LocalDate,
 ): TimelineState {
     val firstDayEpochState = rememberSaveable {
-        mutableStateOf(today.minusDays(1).toEpochDay())
+        mutableStateOf(today.toEpochDay())
     }
     val initialScrollDoneState = rememberSaveable { mutableStateOf(false) }
     val scrollState = rememberScrollState()

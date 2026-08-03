@@ -39,7 +39,9 @@ class TaskAlarmReceiver : BroadcastReceiver() {
                 ?.getNotificationChannel(CHANNEL_ID)?.importance == NotificationManager.IMPORTANCE_NONE
         ) return
 
-        val startTime = DateFormat.getTimeFormat(context).format(Date(event.start.toEpochMilli()))
+        val startTime = DateFormat.getTimeFormat(context).apply {
+            timeZone = appLegacyTimeZone()
+        }.format(Date(event.start.toEpochMilli()))
         val timing = context.getString(R.string.alarm_notification_starts_at, startTime)
         val body = if (event.note.isBlank()) timing else "$timing · ${event.note}"
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)

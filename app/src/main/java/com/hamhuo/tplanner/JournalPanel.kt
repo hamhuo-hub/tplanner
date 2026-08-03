@@ -59,13 +59,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
-import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 @Composable
 fun NotesHeader(syncStatus: String, onPanelToggle: () -> Unit) {
     val datePattern = stringResource(R.string.date_pattern_full)
-    val today = LocalDate.now().format(DateTimeFormatter.ofPattern(datePattern))
+    val today = appToday().format(DateTimeFormatter.ofPattern(datePattern))
     val iconColor = when (syncStatus) {
         "success" -> TEAL
         "error"   -> RED

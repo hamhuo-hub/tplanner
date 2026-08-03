@@ -6,12 +6,12 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 internal object TimelineGeometry {
-    const val visibleDayCount = 3
+    const val visibleDayCount = 1
     const val snapMinutes = 10
 
     val timeGutterWidth = 43.dp
     val hourHeight = 72.dp
-    val dayHeaderHeight = 50.dp
+    val dayHeaderHeight = 58.dp
     val minEventHeight = 24.dp
 
     val eventHorizontalPadding = 3.dp

@@ -17,6 +17,7 @@
     <string name="timeline_next_days">Next day</string>
     <string name="timeline_conflict_count">Conflicts with %1$d items</string>
     <string name="timeline_drag_hint">Long press to move · snaps every 10 min</string>
+    <string name="timeline_recurring_task">Recurring task</string>
     <string name="list_inbox">Inbox</string>
     <string name="list_today">Today</string>
     <string name="list_new">New List…</string>

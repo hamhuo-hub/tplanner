@@ -3,7 +3,6 @@ package com.hamhuo.tplanner
 import android.content.Context
 import android.content.SharedPreferences
 import org.json.JSONObject
-import java.time.LocalDate
 
 // 与 events 的 tombstone 模型一致：deletedAt == 0L 表示存活。
 // 同步服务器已改为 { text, updatedAt, deletedAt } 格式以修复软删除回环恢复问题，
@@ -33,7 +32,7 @@ class JournalStore(context: Context) {
     }
 
     fun getToday(): String {
-        val entry = prefs.getString(LocalDate.now().toString(), null)?.let { parseEntry(it) }
+        val entry = prefs.getString(appToday().toString(), null)?.let { parseEntry(it) }
         return if (entry == null || entry.deletedAt != 0L) "" else entry.text
     }
 
@@ -45,7 +44,7 @@ class JournalStore(context: Context) {
     // synchronized 在 JVM 上是可重入的，从 appendToday 等同步块内调用安全。
     fun saveToday(text: String) {
         synchronized(lock) {
-            val today = LocalDate.now().toString()
+            val today = appToday().toString()
             val entry = JournalEntry(text = text, updatedAt = System.currentTimeMillis(), deletedAt = 0L)
             prefs.edit().putString(today, entry.toJson().toString()).apply()
         }

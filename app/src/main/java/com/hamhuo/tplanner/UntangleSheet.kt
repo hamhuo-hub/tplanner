@@ -44,7 +44,7 @@ private fun prettyWhen(startIso: String, endIso: String): String {
     return try {
         val start = java.time.LocalDateTime.parse(startIso)
         val end = java.time.LocalDateTime.parse(endIso)
-        val today = java.time.LocalDate.now()
+        val today = appToday()
         val startHm = "%02d:%02d".format(start.hour, start.minute)
         val endHm = "%02d:%02d".format(end.hour, end.minute)
         val zh = arrayOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")[start.dayOfWeek.value - 1]
