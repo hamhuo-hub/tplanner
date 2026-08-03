@@ -78,14 +78,16 @@ private fun prettyAlarm(enabled: Boolean, offsetMinutes: Int): String = when {
 @Composable
 fun UntangleSheet(
     prefillLocation: String,
+    initialText: String,
     thinking: Boolean,
     action: DeepSeekAnalysisService.ProposedAction?,
+    onTextChange: (String) -> Unit,
     onDismiss: () -> Unit,
     onSubmit: (text: String) -> Unit,
     onConfirmAction: (DeepSeekAnalysisService.ProposedAction) -> Unit,
     onDeclineAction: () -> Unit,
 ) {
-    var text by remember { mutableStateOf("") }
+    var text by remember { mutableStateOf(initialText) }
     val focusRequester = remember { FocusRequester() }
     val showEditor = action == null && !thinking
     LaunchedEffect(showEditor) { if (showEditor) focusRequester.requestFocus() }
@@ -194,7 +196,10 @@ fun UntangleSheet(
                 ) {
                     BasicTextField(
                         value = text,
-                        onValueChange = { text = it },
+                        onValueChange = {
+                            text = it
+                            onTextChange(it)
+                        },
                         textStyle = TextStyle(color = Color(0xFFE8E0D0), fontSize = 17.sp, lineHeight = 28.sp),
                         cursorBrush = SolidColor(GOLD),
                         modifier = Modifier.fillMaxSize().focusRequester(focusRequester),

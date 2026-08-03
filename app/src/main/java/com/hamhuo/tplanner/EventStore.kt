@@ -1,7 +1,20 @@
 package com.hamhuo.tplanner
 
 import android.content.Context
-import org.json.JSONArray
+import com.hamhuo.tplanner.persistence.DraftCommitResult
+import com.hamhuo.tplanner.persistence.DraftRecoveryDecision
+import com.hamhuo.tplanner.persistence.DraftRevision
+import com.hamhuo.tplanner.persistence.DraftTarget
+import com.hamhuo.tplanner.persistence.EventWireMapper
+import com.hamhuo.tplanner.persistence.EventDraftRecovery
+import com.hamhuo.tplanner.persistence.EventEditDraftCodec
+import com.hamhuo.tplanner.persistence.EventEditStage
+import com.hamhuo.tplanner.persistence.RoomDraftRepository
+import com.hamhuo.tplanner.persistence.RoomEventRepository
+import com.hamhuo.tplanner.persistence.TPlannerDatabase
+import com.hamhuo.tplanner.persistence.VersionedDraft
+import com.hamhuo.tplanner.persistence.decideDraftRecovery
+import kotlinx.coroutines.flow.Flow
 import org.json.JSONObject
 import java.time.Instant
 import java.time.LocalDate
@@ -13,7 +26,7 @@ data class CheckItem(val id: String, val text: String, val completed: Boolean)
 data class TaskEvent(
     val id: String,
     val title: String,
-    val type: String,          // "event" | "status" | "task"
+    val type: String,
     val start: Instant,
     val end: Instant,
     val completed: Boolean,
@@ -24,155 +37,201 @@ data class TaskEvent(
     val updatedAt: Long = 0L,
     val alarmEnabled: Boolean = false,
     val alarmOffsetMinutes: Int = 0,
-    val lat: Double = 0.0,     // 手表调起时的 GPS 纬度（WGS-84）
-    val lng: Double = 0.0,     // 手表调起时的 GPS 经度（WGS-84）
-    // 桌面端/服务器的其余字段（timezone/groupId/recurrence* 等）原样透传。
-    // 安卓端不理解的字段不代表可以丢弃——早先回写时丢字段 + 时间戳丢毫秒，
-    // 会把服务器上的副本改写成与桌面端"内容相同但字节不同"的形态，导致
-    // 桌面端同步预览里同一批事件反复出现、永不收敛。
+    val lat: Double = 0.0,
+    val lng: Double = 0.0,
+    /** Unknown desktop/server fields must round-trip unchanged. */
     val extras: Map<String, Any?> = mapOf("timezone" to APP_TIME_ZONE_ID),
 )
 
-class EventStore(ctx: Context) {
-    private val appContext = ctx.applicationContext
-    private val prefs = appContext.getSharedPreferences("tplanner_events", Context.MODE_PRIVATE)
-    private val lock = Any()
+/** Room-backed façade used by UI, alarms, Wear, and synchronization. */
+class EventStore(
+    context: Context,
+    database: TPlannerDatabase = TPlannerDatabase.get(context),
+) {
+    private val appContext = context.applicationContext
+    private val repository = RoomEventRepository(database)
+    private val drafts = RoomDraftRepository(database)
+    private val recoveredStages = mutableMapOf<String, EventEditStage>()
 
-    fun getAll(): List<TaskEvent> = parse(prefs.getString("events", "[]") ?: "[]")
+    fun observeAll(): Flow<List<TaskEvent>> = repository.observeAll()
 
-    fun saveAll(events: List<TaskEvent>) {
-        synchronized(lock) {
-            prefs.edit().putString("events", serialize(events)).commit()
-        }
-        // 所有本地编辑和远端合并最终都会经过这里，统一重排可避免孤儿闹铃。
-        runCatching { TaskAlarmScheduler.reconcile(appContext, events) }
+    suspend fun getAll(): List<TaskEvent> = repository.getAll()
+
+    suspend fun save(event: TaskEvent) {
+        repository.saveOneLocal(event)
+        reconcileAlarms(repository.getAll())
+        SyncOutboxScheduler.enqueue(appContext)
     }
 
-    fun getNoteDraft(eventId: String): String? = synchronized(lock) {
-        val key = noteDraftKey(eventId)
-        if (prefs.contains(key)) prefs.getString(key, "") ?: "" else null
-    }
+    /** Captures the authoritative base before the editor can diverge from it. */
+    suspend fun beginEventEdit(event: TaskEvent): TaskEvent = repository.beginEdit(event)
 
-    /** Synchronous, small write so the latest keystroke survives abrupt process death. */
-    fun saveNoteDraft(eventId: String, text: String) {
-        synchronized(lock) {
-            prefs.edit().putString(noteDraftKey(eventId), text).commit()
-        }
-    }
+    /** MainActivity currently passes only the recovered event; retain its UI stage for MainScreen. */
+    fun consumeRecoveredStage(eventId: String): EventEditStage? = recoveredStages.remove(eventId)
 
-    /** Atomically persist the event list and remove its now-committed recovery draft. */
-    fun saveAllAndClearNoteDraft(events: List<TaskEvent>, eventId: String) {
-        synchronized(lock) {
-            prefs.edit()
-                .putString("events", serialize(events))
-                .remove(noteDraftKey(eventId))
-                .commit()
-        }
-        runCatching { TaskAlarmScheduler.reconcile(appContext, events) }
-    }
-
-    fun fromJson(json: String): List<TaskEvent> = parse(json)
-
-    fun toJson(events: List<TaskEvent>): String = serialize(events)
-
-    private fun parse(json: String): List<TaskEvent> = try {
-        val arr = JSONArray(json)
-        (0 until arr.length()).mapNotNull { i ->
-            try { arr.getJSONObject(i).toEvent() } catch (_: Exception) { null }
-        }
-    } catch (_: Exception) { emptyList() }
-
-    private fun serialize(events: List<TaskEvent>): String {
-        val arr = JSONArray()
-        events.forEach { arr.put(it.toJson()) }
-        return arr.toString()
-    }
-
-    private fun noteDraftKey(eventId: String) = "note_draft:$eventId"
-
-    private fun JSONObject.toEvent(): TaskEvent {
-        val checklistArr = optJSONArray("checklist") ?: JSONArray()
-        val checklist = (0 until checklistArr.length()).map { i ->
-            val o = checklistArr.getJSONObject(i)
-            CheckItem(
-                id        = o.optString("id", ""),
-                text      = o.optString("text", ""),
-                completed = o.optBoolean("completed", false)
+    suspend fun saveEventDraft(
+        event: TaskEvent,
+        stage: EventEditStage = EventEditStage.DETAIL,
+    ) {
+        val target = DraftTarget.event(event.id)
+        val changedAt = System.currentTimeMillis()
+        val payload = EventEditDraftCodec.encode(
+            event.copy(updatedAt = event.updatedAt),
+            stage,
+        )
+        val existing = drafts.get(target)
+        val current = repository.get(event.id)
+        val draft = if (
+            existing != null &&
+            EventEditDraftCodec.decodeSnapshotOrNull(existing.content) != null
+        ) {
+            existing.withContent(payload, changedAt)
+        } else {
+            VersionedDraft.start(
+                target = target,
+                base = current?.let { stored ->
+                    DraftRevision(
+                        content = EventEditDraftCodec.encode(stored),
+                        updatedAt = stored.updatedAt,
+                        entityExists = true,
+                        deletedAt = stored.deletedAt,
+                    )
+                }?.takeUnless { it.isDeleted } ?: DraftRevision.missing(),
+                initialContent = payload,
+                changedAt = changedAt,
             )
         }
-        val extras = mutableMapOf<String, Any?>()
-        keys().forEach { k -> if (k !in KNOWN_KEYS) extras[k] = get(k) }
-        return TaskEvent(
-            id        = getString("id"),
-            title     = optString("title", ""),
-            type      = optString("type", "event"),
-            start     = Instant.parse(getString("start")),
-            end       = Instant.parse(getString("end")),
-            completed = optBoolean("completed", false),
-            checklist = checklist,
-            colorId   = optInt("colorId", 0),
-            note      = optString("note", ""),
-            deletedAt = optLong("deletedAt", 0L),
-            updatedAt = optLong("updatedAt", 0L),
-            alarmEnabled = optBoolean("alarmEnabled", false),
-            alarmOffsetMinutes = optInt("alarmOffsetMinutes", 0).coerceIn(0, MAX_ALARM_OFFSET_MINUTES),
-            lat       = optDouble("lat", 0.0),
-            lng       = optDouble("lng", 0.0),
-            extras    = extras,
-        )
+        drafts.save(draft)
     }
 
-    companion object {
-        private val KNOWN_KEYS = setOf(
-            "id", "title", "type", "start", "end", "completed",
-            "checklist", "colorId", "note", "deletedAt", "updatedAt",
-            "alarmEnabled", "alarmOffsetMinutes", "lat", "lng",
+    suspend fun recoverEventDraft(eventId: String): EventDraftRecovery {
+        val target = DraftTarget.event(eventId)
+        val draft = drafts.get(target) ?: return EventDraftRecovery.None
+        val current = repository.get(eventId)
+        val fullDraft = EventEditDraftCodec.decodeSnapshotOrNull(draft.content)
+        if (fullDraft != null) {
+            val revision = current?.let { stored ->
+                DraftRevision(
+                    content = EventEditDraftCodec.encode(stored),
+                    updatedAt = stored.updatedAt,
+                    entityExists = true,
+                    deletedAt = stored.deletedAt,
+                )
+            } ?: DraftRevision.missing()
+            return when (val decision = decideDraftRecovery(draft, revision)) {
+                is DraftRecoveryDecision.AutoRestore -> EventDraftRecovery.Recovered(
+                    event = fullDraft.event,
+                    isNew = !draft.baseEntityExists,
+                    stage = fullDraft.stage,
+                )
+                is DraftRecoveryDecision.ClearDraft -> {
+                    drafts.delete(target)
+                    EventDraftRecovery.None
+                }
+                is DraftRecoveryDecision.Conflict -> EventDraftRecovery.Conflict(
+                    details = decision.conflict,
+                    event = fullDraft.event,
+                    stage = fullDraft.stage,
+                )
+                DraftRecoveryDecision.NoDraft -> EventDraftRecovery.None
+            }
+        }
+
+        // v0 stored only the note text. Upgrade it in memory without guessing missing event fields.
+        val noteRevision = current.toNoteRevision()
+        return when (val decision = decideDraftRecovery(draft, noteRevision)) {
+            is DraftRecoveryDecision.AutoRestore -> current?.let {
+                EventDraftRecovery.Recovered(
+                    event = it.copy(note = decision.draft.content),
+                    isNew = false,
+                    stage = EventEditStage.DETAIL,
+                )
+            } ?: EventDraftRecovery.None
+            is DraftRecoveryDecision.ClearDraft -> {
+                drafts.delete(target)
+                EventDraftRecovery.None
+            }
+            is DraftRecoveryDecision.Conflict -> EventDraftRecovery.Conflict(decision.conflict)
+            DraftRecoveryDecision.NoDraft -> EventDraftRecovery.None
+        }
+    }
+
+    suspend fun latestRecoverableEventDraft(): EventDraftRecovery.Recovered? {
+        val candidates = drafts.getAll()
+            .filter { it.target.kind == com.hamhuo.tplanner.persistence.DraftEntityKind.EVENT }
+            .sortedByDescending { it.draftUpdatedAt }
+        candidates.forEach { draft ->
+            val recovered = recoverEventDraft(draft.target.entityId)
+            if (recovered is EventDraftRecovery.Recovered) {
+                recoveredStages[recovered.event.id] = recovered.stage
+                return recovered
+            }
+        }
+        return null
+    }
+
+    suspend fun discardEventDraft(eventId: String) {
+        drafts.delete(DraftTarget.event(eventId))
+    }
+
+    suspend fun saveAndClearEventDraft(event: TaskEvent): DraftCommitResult {
+        val result = repository.commitDraft(event)
+        if (result is DraftCommitResult.Saved) {
+            reconcileAlarms(repository.getAll())
+            SyncOutboxScheduler.enqueue(appContext)
+        }
+        return result
+    }
+
+    suspend fun saveAndClearPendingAction(event: TaskEvent, requestId: String): Boolean {
+        val saved = repository.saveOneLocal(event, clearPendingActionId = requestId)
+        if (saved) {
+            reconcileAlarms(repository.getAll())
+            SyncOutboxScheduler.enqueue(appContext)
+        }
+        return saved
+    }
+
+    suspend fun applySync(events: List<TaskEvent>, captured: Map<String, String>) {
+        repository.applySync(events, captured)
+        reconcileAlarms(repository.getAll())
+    }
+
+    suspend fun baseKeys(): Map<String, String>? = repository.baseKeys()
+
+    suspend fun capturedMutations(): Map<String, String> = repository.capturedMutations()
+
+    fun fromJson(json: String): List<TaskEvent> = EventWireMapper.decodeArrayStrict(json)
+
+    fun toJson(events: List<TaskEvent>): String = EventWireMapper.encodeArray(events)
+
+    private fun TaskEvent?.toNoteRevision(): DraftRevision = this?.let { event ->
+        DraftRevision(
+            content = event.note,
+            updatedAt = event.updatedAt,
+            entityExists = true,
+            deletedAt = event.deletedAt,
         )
+    } ?: DraftRevision.missing()
+
+    private fun reconcileAlarms(events: List<TaskEvent>) {
+        runCatching { TaskAlarmScheduler.reconcile(appContext, events) }
     }
 }
 
 internal val ISO_MS: DateTimeFormatter =
     DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC)
 
-// 与桌面端 Date.toISOString() 逐字一致：恒带毫秒的 UTC ISO。
-// Instant.toString() 在毫秒为零时会省略小数部分，两端字节不一致
-// 会被同步比较判为"内容不同"，是同步永不收敛的根源之一。
-internal fun TaskEvent.toJson(): JSONObject {
-    val obj = JSONObject()
-    extras.forEach { (k, v) -> obj.put(k, v) }
-    obj.put("id", id)
-    obj.put("title", title)
-    obj.put("type", type)
-    obj.put("start", ISO_MS.format(start))
-    obj.put("end", ISO_MS.format(end))
-    obj.put("completed", completed)
-    obj.put("colorId", colorId)
-    obj.put("note", note)
-    obj.put("deletedAt", deletedAt)
-    obj.put("updatedAt", updatedAt)
-    obj.put("alarmEnabled", alarmEnabled)
-    obj.put("alarmOffsetMinutes", alarmOffsetMinutes.coerceIn(0, MAX_ALARM_OFFSET_MINUTES))
-    if (lat != 0.0) obj.put("lat", lat)
-    if (lng != 0.0) obj.put("lng", lng)
-    val arr = JSONArray()
-    checklist.forEach { item ->
-        val o = JSONObject()
-        o.put("id", item.id); o.put("text", item.text); o.put("completed", item.completed)
-        arr.put(o)
-    }
-    obj.put("checklist", arr)
-    return obj
-}
+/** Matches desktop `Date.toISOString()` including a fixed millisecond component. */
+internal fun TaskEvent.toJson(): JSONObject = EventWireMapper.encodeObject(this)
 
 internal const val MAX_ALARM_OFFSET_MINUTES = 7 * 24 * 60
 
 fun List<TaskEvent>.forToday(): List<TaskEvent> = forDate(appToday())
 
-fun List<TaskEvent>.forDate(date: LocalDate): List<TaskEvent> {
-    return filter { e ->
-        if (e.deletedAt != 0L) return@filter false
-        val s = e.start.atZone(APP_ZONE).toLocalDate()
-        val en = e.end.atZone(APP_ZONE).toLocalDate()
-        !s.isAfter(date) && !en.isBefore(date)
-    }.sortedBy { it.start }
-}
+fun List<TaskEvent>.forDate(date: LocalDate): List<TaskEvent> = filter { event ->
+    if (event.deletedAt != 0L) return@filter false
+    val startDate = event.start.atZone(APP_ZONE).toLocalDate()
+    val endDate = event.end.atZone(APP_ZONE).toLocalDate()
+    !startDate.isAfter(date) && !endDate.isBefore(date)
+}.sortedBy { it.start }

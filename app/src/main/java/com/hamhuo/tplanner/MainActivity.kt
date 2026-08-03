@@ -10,6 +10,7 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -18,6 +19,13 @@ import androidx.core.content.ContextCompat
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.lifecycleScope
+import com.hamhuo.tplanner.persistence.LegacyImportResult
+import com.hamhuo.tplanner.persistence.LegacyPreferencesImporter
+import com.hamhuo.tplanner.persistence.TPlannerDatabase
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * GMS Data Layer wakes [WakeDataLayerService], which attaches a 1×1
@@ -27,6 +35,8 @@ import androidx.compose.runtime.setValue
 class MainActivity : ComponentActivity() {
 
     private lateinit var eventStore: EventStore
+    private var contentReady = false
+    private val pendingWakeRequestIds = linkedSetOf<String>()
 
     // Watch trigger counter: increments on each watch wake-up,
     // MainScreen observes changes to show the schedule extraction sheet.
@@ -77,27 +87,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         handleWakeIntent(intent)
         advancePermissionSetup()
-        val store       = JournalStore(this)
-        eventStore      = EventStore(this)
-        val manager     = LanSyncManager(this, store, eventStore)
-        val deepseekKey = BuildConfig.DEEPSEEK_API_KEY
-        val amapKey     = BuildConfig.AMAP_API_KEY
-        AmapGeocoder.setApiKey(amapKey)
-        val deepseekService = deepseekKey
-            .takeIf { it.isNotBlank() }
-            ?.let(::DeepSeekAnalysisService)
-        Log.i(
-            LLM_LOG_TAG,
-            "phase=init provider=deepseek keyConfigured=${deepseekKey.isNotBlank()} " +
-                "serviceCreated=${deepseekService != null}",
-        )
-        TaskAlarmScheduler.reconcile(this, eventStore.getAll())
-        setContent { MainScreen(
-            store = store, eventStore = eventStore, manager = manager,
-            deepseekService = deepseekService,
-            amapApiKey = amapKey,
-            scheduleTriggerCount = scheduleTriggerCount,
-        ) }
+        lifecycleScope.launch { initializeStorageAndContent() }
     }
 
     override fun onResume() {
@@ -106,7 +96,9 @@ class MainActivity : ComponentActivity() {
         // (e.g. background location "Allow all the time", overlay toggle, battery exemption).
         advancePermissionSetup()
         if (::eventStore.isInitialized) {
-            TaskAlarmScheduler.reconcile(this, eventStore.getAll())
+            lifecycleScope.launch {
+                TaskAlarmScheduler.reconcile(this@MainActivity, eventStore.getAll())
+            }
         }
     }
 
@@ -118,10 +110,101 @@ class MainActivity : ComponentActivity() {
 
     private fun handleWakeIntent(intent: Intent?) {
         if (intent?.getBooleanExtra(EXTRA_WAKE_FROM_WATCH, false) == true) {
+            val requestId = intent.getStringExtra(EXTRA_WAKE_REQUEST_ID)
+            if (requestId != null && requestId in pendingWakeRequestIds) {
+                Log.d(TAG, "handleWakeIntent: request already pending=$requestId")
+                if (contentReady) completePendingWakeRequest(requestId)
+                return
+            }
+            if (
+                requestId != null &&
+                !WakeDataLayerService.shouldConsumeWakeRequest(this, requestId)
+            ) {
+                Log.d(TAG, "handleWakeIntent: duplicate request=$requestId")
+                return
+            }
+
+            // Mutate the app-visible trigger first. Only actual MainActivity consumption,
+            // not ActivityManager accepting the proxy, is allowed to complete the request.
             scheduleTriggerCount++
-            setShowWhenLocked(true)
-            setTurnScreenOn(true)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                setShowWhenLocked(true)
+                setTurnScreenOn(true)
+            } else {
+                @Suppress("DEPRECATION")
+                window.addFlags(
+                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,
+                )
+            }
+            requestId?.let { id ->
+                pendingWakeRequestIds += id
+                if (contentReady) completePendingWakeRequest(id)
+            }
         }
+    }
+
+    private fun completePendingWakeRequest(requestId: String) {
+        val persisted = WakeDataLayerService.completeWakeRequest(this, requestId)
+        if (persisted) pendingWakeRequestIds.remove(requestId)
+        Log.d(TAG, "completePendingWakeRequest: request=$requestId persisted=$persisted")
+    }
+
+    private suspend fun initializeStorageAndContent() {
+        val database = TPlannerDatabase.get(this)
+        val migration = withContext(Dispatchers.IO) {
+            LegacyPreferencesImporter(this@MainActivity, database).importIfNeeded()
+        }
+        if (migration is LegacyImportResult.Blocked) {
+            val details = migration.issues.joinToString("; ") { issue ->
+                "${issue.source}${issue.key?.let { "/$it" }.orEmpty()}: ${issue.message}"
+            }
+            Log.e(TAG, "Storage migration blocked: $details")
+            Toast.makeText(this, "本地数据迁移失败，原数据未改动：$details", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val store = JournalStore(this, database)
+        eventStore = EventStore(this, database)
+        val manager = LanSyncManager(this, store, eventStore)
+        val untangleStore = UntangleStateStore(this, database)
+        val deepseekKey = BuildConfig.DEEPSEEK_API_KEY
+        val amapKey = BuildConfig.AMAP_API_KEY
+        AmapGeocoder.setApiKey(amapKey)
+        val deepseekService = deepseekKey.takeIf { it.isNotBlank() }?.let(::DeepSeekAnalysisService)
+        Log.i(
+            LLM_LOG_TAG,
+            "phase=init provider=deepseek keyConfigured=${deepseekKey.isNotBlank()} " +
+                "serviceCreated=${deepseekService != null} migration=${migration::class.simpleName}",
+        )
+
+        val restoredJournalDraft = store.getTodayDraft()
+        val initialContent = restoredJournalDraft ?: store.getToday()
+        val initialEvents = eventStore.getAll()
+        val initialEditingEvent = eventStore.latestRecoverableEventDraft()?.event
+        val initialUntangleState = untangleStore.latest()
+        val initialServerUrl = manager.getServerUrl()
+        SyncOutboxScheduler.enqueue(this)
+        TaskAlarmScheduler.reconcile(this, initialEvents)
+        setContent {
+            MainScreen(
+                store = store,
+                eventStore = eventStore,
+                manager = manager,
+                deepseekService = deepseekService,
+                amapApiKey = amapKey,
+                scheduleTriggerCount = scheduleTriggerCount,
+                initialContent = initialContent,
+                initialEvents = initialEvents,
+                hasRecoveredJournalDraft = restoredJournalDraft != null,
+                initialServerUrl = initialServerUrl,
+                initialEditingEvent = initialEditingEvent,
+                untangleStore = untangleStore,
+                initialUntangleState = initialUntangleState,
+            )
+        }
+        contentReady = true
+        pendingWakeRequestIds.toList().forEach(::completePendingWakeRequest)
     }
 
     // ── Permissions ─────────────────────────────────────────────
@@ -259,6 +342,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_WAKE_FROM_WATCH = "wake_from_watch"
+        const val EXTRA_WAKE_REQUEST_ID = "wake_request_id"
         private const val TAG = "TplannerMain"
         private const val LLM_LOG_TAG = "TplannerLLM"
 

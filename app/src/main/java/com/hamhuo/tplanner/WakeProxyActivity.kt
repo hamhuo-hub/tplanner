@@ -28,7 +28,8 @@ class WakeProxyActivity : Activity() {
         super.onCreate(savedInstanceState)
 
         val wakeFromWatch = intent.getBooleanExtra(EXTRA_WAKE_FROM_WATCH, false)
-        Log.d(TAG, "onCreate: wakeFromWatch=$wakeFromWatch")
+        val wakeRequestId = intent.getStringExtra(EXTRA_WAKE_REQUEST_ID)
+        Log.d(TAG, "onCreate: wakeFromWatch=$wakeFromWatch request=$wakeRequestId")
 
         val target = Intent(this, MainActivity::class.java).apply {
             // Prefer REORDER_TO_FRONT: bring existing task to front, keep backstack intact.
@@ -40,6 +41,7 @@ class WakeProxyActivity : Activity() {
             )
             if (wakeFromWatch) {
                 putExtra(MainActivity.EXTRA_WAKE_FROM_WATCH, true)
+                wakeRequestId?.let { putExtra(MainActivity.EXTRA_WAKE_REQUEST_ID, it) }
             }
         }
 
@@ -76,5 +78,6 @@ class WakeProxyActivity : Activity() {
     companion object {
         private const val TAG = "TplannerWakeProxy"
         const val EXTRA_WAKE_FROM_WATCH = MainActivity.EXTRA_WAKE_FROM_WATCH
+        const val EXTRA_WAKE_REQUEST_ID = MainActivity.EXTRA_WAKE_REQUEST_ID
     }
 }

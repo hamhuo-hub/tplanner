@@ -92,4 +92,6 @@
     <string name="date_pattern_full">MMMM d, yyyy</string>
     <string name="date_pattern_month_day_weekday">MMM d · E</string>
     <string name="date_pattern_month_day_time">MMM d, HH:mm</string>
+    <string name="journal_edit_hint">Capture today’s thoughts and ideas…</string>
+    <string name="bg_location_guide">On this page, choose Permissions → Location → Allow all the time so a watch wake-up can get location in the background.</string>
 </resources>

@@ -65,6 +65,11 @@
             </intent-filter>
         </service>
 
+        <service
+            android:name=".WatchScheduleSyncJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <receiver
             android:name=".TaskAlarmReceiver"
             android:exported="false" />

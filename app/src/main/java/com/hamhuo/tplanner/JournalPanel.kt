@@ -39,6 +39,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -59,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
+import kotlinx.coroutines.launch
 import java.time.format.DateTimeFormatter
 
 @Composable
@@ -357,11 +359,14 @@ fun MarkdownField(
     placeholder: String,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(start = 26.dp, end = 26.dp, top = 22.dp, bottom = 32.dp),
+    onEditStart: suspend () -> Unit = {},
     onDraftChange: (String) -> Unit = {},
     onEditRequest: (() -> Unit)? = null,
     onPreviewRendered: (String) -> Unit = {},
 ) {
+    val scope = rememberCoroutineScope()
     var isEditing by remember { mutableStateOf(false) }
+    var editOpening by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf(content) }
     var exitRequested by remember { mutableStateOf(false) }
     var lastRenderedContent by remember { mutableStateOf<String?>(null) }
@@ -372,10 +377,21 @@ fun MarkdownField(
             onEditRequest()
             return
         }
-        draft = content
-        previewContent = content
-        exitRequested = false
-        isEditing = true
+        if (editOpening || isEditing) return
+        editOpening = true
+        scope.launch {
+            try {
+                // Capture the authoritative revision before the editor can accept input. This
+                // keeps a sync that finishes while editing from silently becoming the draft base.
+                onEditStart()
+                draft = content
+                previewContent = content
+                exitRequested = false
+                isEditing = true
+            } finally {
+                editOpening = false
+            }
+        }
     }
 
     fun saveAndExitEditing(updatedDraft: String) {

@@ -15,13 +15,35 @@ import android.text.format.DateFormat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import com.hamhuo.tplanner.persistence.LegacyImportResult
+import com.hamhuo.tplanner.persistence.LegacyPreferencesImporter
+import com.hamhuo.tplanner.persistence.TPlannerDatabase
 import java.util.Date
 
 class TaskAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        val pendingResult = goAsync()
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
+                deliver(context, intent)
+            } finally {
+                pendingResult.finish()
+            }
+        }
+    }
+
+    private suspend fun deliver(context: Context, intent: Intent) {
         val eventId = intent.getStringExtra(TaskAlarmScheduler.EXTRA_EVENT_ID) ?: return
         val expectedSignature = intent.getStringExtra(TaskAlarmScheduler.EXTRA_SIGNATURE) ?: return
-        val event = EventStore(context).getAll().firstOrNull { it.id == eventId } ?: return
+        val database = TPlannerDatabase.get(context)
+        if (LegacyPreferencesImporter(context, database).importIfNeeded() is LegacyImportResult.Blocked) {
+            return
+        }
+        val event = EventStore(context, database).getAll().firstOrNull { it.id == eventId } ?: return
 
         // A stale PendingIntent must never ring after an edit, completion or deletion.
         if (!event.isAlarmActive() || event.alarmSignature() != expectedSignature) return

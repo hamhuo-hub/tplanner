@@ -295,13 +295,22 @@ fun TypeChangeSheet(currentType: String, onSelect: (String) -> Unit, onDismiss: 
 // ── 命名半屏面板（选完类型后，先命名再进详情页） ──────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NameInputSheet(type: String, onCancel: () -> Unit, onConfirm: (String) -> Unit) {
+fun NameInputSheet(
+    type: String,
+    initialText: String? = null,
+    onDraftChange: (String) -> Unit = {},
+    onCancel: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val label = typeLabel(type)
     val defaultName = stringResource(R.string.default_name_template, label)
-    var text by remember {
-        mutableStateOf(TextFieldValue(defaultName, selection = TextRange(0, defaultName.length)))
+    val startingText = initialText?.takeIf { it.isNotBlank() } ?: defaultName
+    var text by remember(type) {
+        mutableStateOf(TextFieldValue(startingText, selection = TextRange(0, startingText.length)))
     }
+
+    LaunchedEffect(text.text) { onDraftChange(text.text) }
 
     ModalBottomSheet(
         onDismissRequest = onCancel,
@@ -375,12 +384,11 @@ private fun PillButton(label: String, filled: Boolean, onClick: () -> Unit) {
 @Composable
 fun EventDetailScreen(
     event: TaskEvent,
-    restoredNoteDraft: String?,
-    onNoteDraftChange: (String) -> Unit,
-    onSave: (TaskEvent) -> Unit,
-    onNoteSave: (TaskEvent) -> Unit,
+    onDraftChange: (TaskEvent) -> Unit,
+    onSave: (TaskEvent, (Boolean) -> Unit) -> Unit,
+    onNoteSave: (TaskEvent, (Boolean) -> Unit) -> Unit,
 ) {
-    val initialNote = restoredNoteDraft ?: event.note
+    val initialNote = event.note
     var title     by remember { mutableStateOf(event.title) }
     var renaming  by remember { mutableStateOf(false) }
     var start     by remember { mutableStateOf(event.start) }
@@ -391,6 +399,7 @@ fun EventDetailScreen(
     var noteEditorDraft by remember(event.id) { mutableStateOf(initialNote) }
     var noteEditorOpen by remember { mutableStateOf(false) }
     var noteEditorCloseRequested by remember { mutableStateOf(false) }
+    var noteSaveFinished by remember { mutableStateOf(false) }
     var renderedNotePreview by remember { mutableStateOf<String?>(null) }
     var colorId   by remember { mutableStateOf(event.colorId) }
     var type      by remember { mutableStateOf(event.type) }
@@ -418,7 +427,7 @@ fun EventDetailScreen(
         }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
     }
 
-    fun buildResult() = event.copy(
+    fun buildResult(updatedAt: Long = System.currentTimeMillis()) = event.copy(
         title     = title.ifBlank { event.title },
         type      = type,
         start     = start,
@@ -429,24 +438,57 @@ fun EventDetailScreen(
         colorId   = colorId,
         alarmEnabled = alarmEnabled,
         alarmOffsetMinutes = alarmOffsetMinutes.coerceIn(0, MAX_ALARM_OFFSET_MINUTES),
-        updatedAt = System.currentTimeMillis(),
+        updatedAt = updatedAt,
     )
+
+    LaunchedEffect(
+        title,
+        type,
+        start,
+        end,
+        checklist,
+        completed,
+        note,
+        noteEditorDraft,
+        noteEditorOpen,
+        colorId,
+        alarmEnabled,
+        alarmOffsetMinutes,
+        event.updatedAt,
+        saveRequested,
+        noteEditorCloseRequested,
+    ) {
+        // Draft snapshots keep the base revision's timestamp; only the final fact write advances it.
+        if (!saveRequested && !noteEditorCloseRequested) {
+            onDraftChange(buildResult(updatedAt = event.updatedAt))
+        }
+    }
 
     fun commitResult() {
         if (saveRequested) return
         saveRequested = true
-        onSave(buildResult())
+        onSave(buildResult()) { completed ->
+            if (!completed) saveRequested = false
+        }
     }
 
     fun closeNoteEditor(updatedNote: String = noteEditorDraft) {
         if (!noteEditorOpen || noteEditorCloseRequested) return
         note = updatedNote
         noteEditorDraft = updatedNote
-        onNoteSave(buildResult().copy(note = updatedNote))
         noteEditorCloseRequested = true
-        if (renderedNotePreview == updatedNote) {
-            noteEditorCloseRequested = false
-            noteEditorOpen = false
+        noteSaveFinished = false
+        onNoteSave(buildResult().copy(note = updatedNote)) { completed ->
+            noteSaveFinished = completed
+            if (!completed) {
+                // The durable draft remains intact. Remount the editor so its local finish latch
+                // cannot leave the text permanently read-only after a conflict or I/O failure.
+                noteEditorCloseRequested = false
+                noteEditorOpen = false
+            } else if (renderedNotePreview == updatedNote) {
+                noteEditorCloseRequested = false
+                noteEditorOpen = false
+            }
         }
     }
 
@@ -459,7 +501,6 @@ fun EventDetailScreen(
         val focusManager = LocalFocusManager.current
         val keyboardController = LocalSoftwareKeyboardController.current
         val imeVisible = WindowInsets.isImeVisible
-        var titleImeWasVisible by remember { mutableStateOf(false) }
 
         fun saveAndClose() {
             focusManager.clearFocus(force = true)
@@ -467,15 +508,13 @@ fun EventDetailScreen(
             commitResult()
         }
 
-        // 标题输入时第一次返回先由 IME 消费。监听键盘关闭即可在同一次手势中保存详情。
-        LaunchedEffect(renaming, imeVisible) {
-            when {
-                !renaming -> titleImeWasVisible = false
-                imeVisible -> titleImeWasVisible = true
-                titleImeWasVisible -> saveAndClose()
+        BackHandler(enabled = !showTypeSheet && !noteEditorOpen) {
+            if (imeVisible) {
+                keyboardController?.hide()
+            } else {
+                saveAndClose()
             }
         }
-        BackHandler(enabled = !showTypeSheet && !noteEditorOpen) { saveAndClose() }
 
         Box(
             Modifier
@@ -773,11 +812,16 @@ fun EventDetailScreen(
                             showTypeSheet = false
                             noteEditorDraft = note
                             noteEditorCloseRequested = false
+                            noteSaveFinished = false
                             noteEditorOpen = true
                         },
                         onPreviewRendered = { renderedContent ->
                             renderedNotePreview = renderedContent
-                            if (noteEditorCloseRequested && renderedContent == noteEditorDraft) {
+                            if (
+                                noteEditorCloseRequested &&
+                                noteSaveFinished &&
+                                renderedContent == noteEditorDraft
+                            ) {
                                 noteEditorCloseRequested = false
                                 noteEditorOpen = false
                             }
@@ -838,7 +882,6 @@ fun EventDetailScreen(
                     value = noteEditorDraft,
                     onValueChange = { text ->
                         noteEditorDraft = text
-                        onNoteDraftChange(text)
                     },
                     placeholder = stringResource(R.string.note_placeholder),
                     onSaveAndClose = ::closeNoteEditor,
