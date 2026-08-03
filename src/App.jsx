@@ -661,7 +661,7 @@ function App() {
                         >
                             {TIMEZONES.map(tz => (
                                 <option key={tz.value} value={tz.value}>
-                                    {t(`timezones.${tz.value.replace('/', '_')}`, tz.label)}
+                                    {t(`timezones.${tz.value ? tz.value.replace('/', '_') : 'default'}`, tz.label)}
                                 </option>
                             ))}
                         </select>

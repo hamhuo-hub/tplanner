@@ -415,7 +415,7 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                             >
                                 {TIMEZONES.map((option) => (
                                     <option key={option.value} value={option.value}>
-                                        {t(`timezones.${option.value.replace('/', '_')}`, option.label)}
+                                        {t(`timezones.${option.value ? option.value.replace('/', '_') : 'default'}`, option.label)}
                                     </option>
                                 ))}
                             </TextField>
