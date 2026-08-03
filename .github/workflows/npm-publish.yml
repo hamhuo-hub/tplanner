@@ -1,12 +1,13 @@
 name: Build & Release
 
 # 触发条件：
-#   1. 推送任意标签 → 构建并发布
+#   1. 推送 TUI_* / desktop_* 标签 → 构建并发布
 #   2. 手动触发 → 只构建、上传产物，便于测试
 on:
   push:
     tags:
-      - '**'
+      - 'TUI_*'
+      - 'desktop_*'
   workflow_dispatch:
 
 # 创建 Release 需要写权限；放在 workflow 级即可覆盖所有 job
@@ -35,6 +36,7 @@ jobs:
         with:
           node-version: 22       # 与你本地 nvm use 22 保持一致；需要的话改 24
           cache: npm             # 缓存 ~/.npm，加速后续 npm ci
+          cache-dependency-path: package-lock.json
 
       # deb 打包在部分环境需要 fakeroot；AppImage 由 electron-builder 自动处理
       - name: Install Linux build deps
