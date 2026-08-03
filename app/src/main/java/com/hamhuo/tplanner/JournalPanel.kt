@@ -254,10 +254,101 @@ fun MarkdownViewer(
     )
 }
 
-// 查看态渲染 Markdown 预览（WebView），编辑态渲染原始文本输入框，
-// 点击 WebView 或编辑按钮进入编辑，返回手势保存并退出编辑。
-// 随手记和任务详情页的备注共用这一套组件——安卓端手动输入不需要 MD 工具栏，
-// 但同步过来的内容可能携带 PC 端写的 MD，查看时要能正确渲染。
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun MarkdownEditor(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    onSaveAndClose: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(start = 26.dp, end = 26.dp, top = 22.dp, bottom = 32.dp),
+    showToolbar: Boolean = false,
+) {
+    var finishRequested by remember { mutableStateOf(false) }
+    val imeVisible = WindowInsets.isImeVisible
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusRequester = remember { FocusRequester() }
+
+    fun finishEditing() {
+        if (finishRequested) return
+        finishRequested = true
+        focusManager.clearFocus(force = true)
+        keyboardController?.hide()
+        onSaveAndClose(value)
+    }
+
+    BackHandler {
+        if (imeVisible) {
+            keyboardController?.hide()
+        } else {
+            finishEditing()
+        }
+    }
+
+    Column(modifier.background(SURFACE)) {
+        if (showToolbar) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = ::finishEditing) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = stringResource(R.string.cd_back),
+                            tint = Color(0xFFE0D8C8),
+                        )
+                    }
+                    Text(
+                        stringResource(R.string.section_note),
+                        color = Color(0xFFE0D8C8),
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .background(GOLD, RoundedCornerShape(50.dp))
+                        .clickable(onClick = ::finishEditing)
+                        .padding(horizontal = 18.dp, vertical = 8.dp),
+                ) {
+                    Text(
+                        stringResource(R.string.action_done),
+                        color = Color(0xFF0E0E0E),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        }
+
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            readOnly = finishRequested,
+            textStyle = TextStyle(color = Color(0xFFE8E0D0), fontSize = 15.sp, lineHeight = 26.sp),
+            cursorBrush = SolidColor(GOLD),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(contentPadding)
+                .focusRequester(focusRequester),
+            decorationBox = { inner ->
+                if (value.isEmpty()) {
+                    Text(placeholder, color = DIM, fontSize = 15.sp, lineHeight = 26.sp)
+                }
+                inner()
+            }
+        )
+        LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    }
+}
+
+// 查看态渲染 Markdown 预览（WebView），编辑态复用 MarkdownEditor。
+// onEditRequest 非空时，本组件只负责预览，由调用方在更高层展示全屏编辑器。
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MarkdownField(
@@ -267,39 +358,36 @@ fun MarkdownField(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(start = 26.dp, end = 26.dp, top = 22.dp, bottom = 32.dp),
     onDraftChange: (String) -> Unit = {},
+    onEditRequest: (() -> Unit)? = null,
+    onPreviewRendered: (String) -> Unit = {},
 ) {
     var isEditing by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf(content) }
-    var imeWasVisible by remember { mutableStateOf(false) }
     var exitRequested by remember { mutableStateOf(false) }
     var lastRenderedContent by remember { mutableStateOf<String?>(null) }
     var previewContent by remember { mutableStateOf(content) }
-    val imeVisible = WindowInsets.isImeVisible
-    val focusManager = LocalFocusManager.current
-    val keyboardController = LocalSoftwareKeyboardController.current
 
-    fun saveAndExitEditing() {
+    fun beginEditing() {
+        if (onEditRequest != null) {
+            onEditRequest()
+            return
+        }
+        draft = content
+        previewContent = content
+        exitRequested = false
+        isEditing = true
+    }
+
+    fun saveAndExitEditing(updatedDraft: String) {
         if (!isEditing || exitRequested) return
+        draft = updatedDraft
         exitRequested = true
-        focusManager.clearFocus(force = true)
-        keyboardController?.hide()
-        onSave(draft)
-        if (lastRenderedContent == draft) {
+        onSave(updatedDraft)
+        if (lastRenderedContent == updatedDraft) {
             exitRequested = false
             isEditing = false
         }
     }
-
-    // IME 会优先消费第一次返回。键盘由可见变为隐藏时立即提交，
-    // 因而一次返回即可同时保存、退出编辑并关闭键盘。
-    LaunchedEffect(isEditing, imeVisible) {
-        when {
-            !isEditing -> imeWasVisible = false
-            imeVisible -> imeWasVisible = true
-            imeWasVisible -> saveAndExitEditing()
-        }
-    }
-    BackHandler(enabled = isEditing) { saveAndExitEditing() }
 
     // 调用方的 modifier 必须自带确定的尺寸（weight()/明确的 height()），
     // 否则在可滚动的无限高度父级里会测不出尺寸。
@@ -310,16 +398,10 @@ fun MarkdownField(
                 isEditing -> previewContent
                 else -> content
             },
-            onTap = {
-                if (!isEditing) {
-                    draft = content
-                    previewContent = content
-                    exitRequested = false
-                    isEditing = true
-                }
-            },
+            onTap = { if (!isEditing) beginEditing() },
             onRendered = { renderedContent ->
                 lastRenderedContent = renderedContent
+                onPreviewRendered(renderedContent)
                 if (exitRequested && renderedContent == draft) {
                     exitRequested = false
                     isEditing = false
@@ -327,42 +409,25 @@ fun MarkdownField(
             },
             modifier = Modifier
                 .fillMaxSize()
-                .padding(contentPadding)
+                .padding(contentPadding),
         )
 
         if (isEditing) {
-            val focusRequester = remember { FocusRequester() }
-            BasicTextField(
+            MarkdownEditor(
                 value = draft,
                 onValueChange = {
                     draft = it
                     onDraftChange(it)
                 },
-                textStyle = TextStyle(color = Color(0xFFE8E0D0), fontSize = 15.sp, lineHeight = 26.sp),
-                cursorBrush = SolidColor(GOLD),
-                modifier = Modifier
-                    .fillMaxSize()
-                    .zIndex(1f)
-                    .padding(contentPadding)
-                    .background(SURFACE)
-                    .focusRequester(focusRequester),
-                decorationBox = { inner ->
-                    if (draft.isEmpty()) {
-                        Text(placeholder, color = DIM, fontSize = 15.sp, lineHeight = 26.sp)
-                    }
-                    inner()
-                }
+                placeholder = placeholder,
+                onSaveAndClose = ::saveAndExitEditing,
+                modifier = Modifier.fillMaxSize().zIndex(1f),
+                contentPadding = contentPadding,
             )
-            LaunchedEffect(Unit) { focusRequester.requestFocus() }
         } else {
             IconButton(
-                onClick = {
-                    draft = content
-                    previewContent = content
-                    exitRequested = false
-                    isEditing = true
-                },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp)
+                onClick = ::beginEditing,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
             ) {
                 Icon(Icons.Default.Edit, contentDescription = "Edit", tint = GOLD, modifier = Modifier.size(18.dp))
             }

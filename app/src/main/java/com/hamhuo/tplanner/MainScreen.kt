@@ -702,6 +702,12 @@ fun MainScreen(
                 events = nextEvents
                 eventStore.saveAll(nextEvents)
                 editingEvent = null
+            },
+            onNoteSave = { updated ->
+                val nextEvents = upsertEventPreservingOrder(events, updated)
+                events = nextEvents
+                eventStore.saveAll(nextEvents)
+                editingEvent = updated
             }
         )
     }

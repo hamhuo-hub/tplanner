@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -82,6 +83,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.zIndex
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.util.Calendar
@@ -371,13 +373,21 @@ private fun PillButton(label: String, filled: Boolean, onClick: () -> Unit) {
 // ── 任务详情页：时间 / 清单 / 备注 / 颜色 ──────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
+fun EventDetailScreen(
+    event: TaskEvent,
+    onSave: (TaskEvent) -> Unit,
+    onNoteSave: (TaskEvent) -> Unit,
+) {
     var title     by remember { mutableStateOf(event.title) }
     var renaming  by remember { mutableStateOf(false) }
     var start     by remember { mutableStateOf(event.start) }
     var end       by remember { mutableStateOf(event.end) }
     var checklist by remember { mutableStateOf(event.checklist) }
     var note      by remember { mutableStateOf(event.note) }
+    var noteEditorDraft by remember { mutableStateOf(event.note) }
+    var noteEditorOpen by remember { mutableStateOf(false) }
+    var noteEditorCloseRequested by remember { mutableStateOf(false) }
+    var renderedNotePreview by remember { mutableStateOf<String?>(null) }
     var colorId   by remember { mutableStateOf(event.colorId) }
     var type      by remember { mutableStateOf(event.type) }
     var alarmEnabled by remember { mutableStateOf(event.alarmEnabled) }
@@ -411,7 +421,7 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
         end       = end,
         checklist = if (type == "task") checklist else emptyList(),
         completed = if (type == "task") event.completed else false,
-        note      = note,
+        note      = if (noteEditorOpen) noteEditorDraft else note,
         colorId   = colorId,
         alarmEnabled = alarmEnabled,
         alarmOffsetMinutes = alarmOffsetMinutes.coerceIn(0, MAX_ALARM_OFFSET_MINUTES),
@@ -424,8 +434,22 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
         onSave(buildResult())
     }
 
+    fun closeNoteEditor(updatedNote: String = noteEditorDraft) {
+        if (!noteEditorOpen || noteEditorCloseRequested) return
+        note = updatedNote
+        noteEditorDraft = updatedNote
+        onNoteSave(buildResult().copy(note = updatedNote))
+        noteEditorCloseRequested = true
+        if (renderedNotePreview == updatedNote) {
+            noteEditorCloseRequested = false
+            noteEditorOpen = false
+        }
+    }
+
     Dialog(
-        onDismissRequest = ::commitResult,
+        onDismissRequest = {
+            if (noteEditorOpen) closeNoteEditor() else commitResult()
+        },
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
         val focusManager = LocalFocusManager.current
@@ -447,7 +471,7 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
                 titleImeWasVisible -> saveAndClose()
             }
         }
-        BackHandler(enabled = !showTypeSheet) { saveAndClose() }
+        BackHandler(enabled = !showTypeSheet && !noteEditorOpen) { saveAndClose() }
 
         Box(
             Modifier
@@ -700,12 +724,26 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
                     MarkdownField(
                         content = note,
                         onSave = { newNote -> note = newNote },
-                        onDraftChange = { newNote -> note = newNote },
                         placeholder = stringResource(R.string.note_placeholder),
                         contentPadding = PaddingValues(0.dp),
-                        // 必须给确定的高度——这层外面是 verticalScroll 的无限高度容器，
-                        // heightIn(min=...) 测不出具体尺寸，会导致内部输入框点不进去。
-                        modifier = Modifier.fillMaxWidth().height(160.dp)
+                        // 详情页仅在这里预览；编辑交给根层的全屏 MarkdownEditor。
+                        modifier = Modifier.fillMaxWidth().height(160.dp),
+                        onEditRequest = {
+                            renaming = false
+                            focusManager.clearFocus(force = true)
+                            keyboardController?.hide()
+                            showTypeSheet = false
+                            noteEditorDraft = note
+                            noteEditorCloseRequested = false
+                            noteEditorOpen = true
+                        },
+                        onPreviewRendered = { renderedContent ->
+                            renderedNotePreview = renderedContent
+                            if (noteEditorCloseRequested && renderedContent == noteEditorDraft) {
+                                noteEditorCloseRequested = false
+                                noteEditorOpen = false
+                            }
+                        },
                     )
 
                     Spacer(Modifier.height(24.dp))
@@ -754,6 +792,20 @@ fun EventDetailScreen(event: TaskEvent, onSave: (TaskEvent) -> Unit) {
                         onDismiss = { showTypeSheet = false }
                     )
                 }
+            }
+
+            if (noteEditorOpen) {
+                MarkdownEditor(
+                    value = noteEditorDraft,
+                    onValueChange = { noteEditorDraft = it },
+                    placeholder = stringResource(R.string.note_placeholder),
+                    onSaveAndClose = ::closeNoteEditor,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .zIndex(10f)
+                        .imePadding(),
+                    showToolbar = true,
+                )
             }
         }
     }
