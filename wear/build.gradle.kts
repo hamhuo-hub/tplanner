@@ -1,10 +1,30 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
 }
 
+// 项目专用签名：手机和手表用同一把 keystore，Wearable Data Layer 才认
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+val hasProjectKeystore = keystoreProperties.containsKey("storeFile")
+
 android {
     namespace = "com.hamhuo.tplanner"
     compileSdk = 35
+
+    signingConfigs {
+        if (hasProjectKeystore) {
+            create("project") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
 
     defaultConfig {
         applicationId = "com.hamhuo.tplanner"
@@ -16,8 +36,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.findByName("project") ?: signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("project") ?: signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

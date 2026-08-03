@@ -11,3 +11,4 @@ local.properties
 package-lock.json
 /release
 *.keystore
+keystore.properties
