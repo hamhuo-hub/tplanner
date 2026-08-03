@@ -34,6 +34,7 @@ class WatchFaceTideService : WatchFaceService() {
         complicationSlotsManager: ComplicationSlotsManager,
         currentUserStyleRepository: CurrentUserStyleRepository,
     ): WatchFace {
+        PhoneWaker.resumePending(applicationContext)
         val renderer = FaceTide(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
         return WatchFace(WatchFaceType.DIGITAL, renderer)
             .setTapListener(object : WatchFace.TapListener {

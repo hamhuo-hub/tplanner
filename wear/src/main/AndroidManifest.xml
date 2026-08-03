@@ -4,6 +4,7 @@
     <uses-feature android:name="android.hardware.type.watch" android:required="true" />
 
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:allowBackup="true"
@@ -46,6 +47,19 @@
                 <data android:scheme="wear" android:host="*" android:pathPrefix="/tplanner/schedule" />
             </intent-filter>
         </service>
+
+        <!-- 手机确认收到持久唤醒请求后，清理手表端 outbox。 -->
+        <service android:name=".WakeAckReceiverService" android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/tplanner/wake/ack" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".WakeOutboxJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
 
     </application>
 

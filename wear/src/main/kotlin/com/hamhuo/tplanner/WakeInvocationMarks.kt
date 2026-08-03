@@ -42,7 +42,7 @@ object WakeInvocationMarks {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY, payload.toString())
-            .apply()
+            .commit()
         return updated
     }
 }
