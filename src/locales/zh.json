@@ -73,7 +73,7 @@
         "ongoing": "正在进行"
     },
     "timezones": {
-        "default": "中国时间（默认）",
+        "default": "北京时间（默认）",
         "America_Los_Angeles": "洛杉矶 (PT)",
         "America_New_York": "纽约 (ET)",
         "Europe_London": "伦敦 (GMT)",
