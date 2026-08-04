@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Today
@@ -33,6 +34,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -345,6 +347,49 @@ fun MainScreen(
         }
     }
 
+    /** Open the AI schedule-extraction sheet directly (no watch wake required). */
+    fun startDirectAiExtraction() {
+        if (deepseekService == null) {
+            Toast.makeText(context, R.string.ai_service_unavailable, Toast.LENGTH_SHORT).show()
+            return
+        }
+        scope.launch {
+            showScheduleSheet = true
+            thinking = false
+            sheetAction = null
+            val previousRequestId = sheetRequestId
+            val openedRequestId = "direct-${UUID.randomUUID()}"
+            sheetRequestId = openedRequestId
+            untangleInput = ""
+            prefillLocation = ""
+            gpsLat = 0.0; gpsLng = 0.0
+            untangleJournalDate = ""
+            untangleJournalLine = ""
+            untangleSubmissionInput = ""
+            untangleSubmissionStamp = ""
+            untangleSubmissionLocation = ""
+            untangleRequiresFreshSubmission = false
+            untangleWriteMutex.withLock {
+                untangleStore.replace(
+                    previousRequestId,
+                    UntangleRecoveryState(
+                        requestId = openedRequestId,
+                        inputText = "",
+                        location = "",
+                        lat = 0.0,
+                        lng = 0.0,
+                        phase = UntanglePhase.EDITING,
+                    ),
+                )
+            }
+            Log.i(
+                LLM_LOG_TAG,
+                "phase=sheet_open source=direct requestId=$openedRequestId " +
+                    "serviceConfigured=${deepseekService != null}",
+            )
+        }
+    }
+
     LaunchedEffect(scheduleTriggerCount) {
         if (scheduleTriggerCount > 0) {
             Log.i(
@@ -487,6 +532,23 @@ fun MainScreen(
                     onSync      = onSync,
                     onClose     = { panelOpen = false }
                 )
+            }
+            if (deepseekService != null) {
+                IconButton(
+                    onClick = { startDirectAiExtraction() },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 12.dp, bottom = 12.dp)
+                        .size(40.dp)
+                        .background(GOLD, CircleShape),
+                ) {
+                    Icon(
+                        Icons.Filled.AutoAwesome,
+                        contentDescription = stringResource(R.string.ai_schedule_extraction),
+                        tint = BG,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
             }
         }
     }

@@ -73,6 +73,7 @@
     <string name="schedule_created_toast">Schedule created: %1$s</string>
     <string name="schedule_create_failed_toast">Could not create schedule. Please try again.</string>
     <string name="ai_service_unavailable">AI service is not configured or could not connect. Check the API key or network and try again.</string>
+    <string name="ai_schedule_extraction">AI schedule extraction</string>
     <string name="schedule_created_with_alarm_toast">Schedule and system alarm created: %1$s</string>
     <string name="schedule_created_with_fallback_alarm_toast">Schedule created: %1$s. Exact alarm access is off, so the reminder may be delayed.</string>
     <string name="alarm_enabled_title">Remind me before it starts</string>

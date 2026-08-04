@@ -74,6 +74,7 @@
     <string name="schedule_created_toast">已创建日程：%1$s</string>
     <string name="schedule_create_failed_toast">日程创建失败，请重试</string>
     <string name="ai_service_unavailable">AI 服务未配置或连接失败，请检查 API Key 或网络后重试</string>
+    <string name="ai_schedule_extraction">AI 日程提取</string>
     <string name="schedule_created_with_alarm_toast">已创建日程并设置系统闹铃：%1$s</string>
     <string name="schedule_created_with_fallback_alarm_toast">已创建日程：%1$s；精确闹铃权限未开启，提醒可能延迟</string>
     <string name="alarm_enabled_title">开始前提醒我</string>
