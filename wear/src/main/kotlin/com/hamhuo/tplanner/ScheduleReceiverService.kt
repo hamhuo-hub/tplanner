@@ -27,9 +27,45 @@ class ScheduleReceiverService : WearableListenerService() {
     }
 
     private fun storeSchedule(raw: String) {
+        ScheduleStore.store(this, raw)
+    }
+
+    private fun clearSchedule() {
+        val committed = getSharedPreferences(WATCH_MARKS_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .remove(WATCH_MARKS_KEY)
+            .commit()
+        Log.d(TAG, "clearSchedule: committed=$committed")
+    }
+
+    private companion object {
+        const val TAG = "TplannerScheduleRcv"
+        const val PATH = "/tplanner/schedule"
+    }
+}
+
+// ── Shared schedule storage ────────────────────────────────────────────
+// Reused by both the GMS Data Layer receiver and the Bluetooth RFCOMM bridge.
+// All validation (schema version, hash, version monotonicity) is applied
+// identically regardless of transport.
+
+internal object ScheduleStore {
+    private const val TAG = "TplannerScheduleStore"
+    private const val SCHEMA_VERSION = 3
+    private const val MAX_SNAPSHOT_DAYS = 31
+    private const val SOURCE_LEGACY = "legacy"
+    private const val SOURCE_PHONE = "phone"
+    internal const val SOURCE_BLUETOOTH = "bluetooth"
+
+    private data class DaySnapshot(
+        val date: String,
+        val minutes: List<Int>,
+    )
+
+    fun store(context: Context, raw: String, sourceOverride: String? = null) {
         try {
             val payload = JSONObject(raw)
-            val prefs = getSharedPreferences(WATCH_MARKS_PREFS, Context.MODE_PRIVATE)
+            val prefs = context.getSharedPreferences(WATCH_MARKS_PREFS, Context.MODE_PRIVATE)
             val existing = prefs.getString(WATCH_MARKS_KEY, null)
                 ?.let { value -> runCatching { JSONObject(value) }.getOrNull() }
             val existingVersion = existing?.optLong("version", -1L) ?: -1L
@@ -75,8 +111,6 @@ class ScheduleReceiverService : WearableListenerService() {
                 }
             } else if (!payload.has("schemaVersion") && payload.has("minutes")) {
                 isLegacy = true
-                // Previous phone builds had no schema/version/date. Preserve their last snapshot
-                // for one rolling-upgrade cycle by treating it as today's single-day snapshot.
                 days = listOf(
                     DaySnapshot(
                         java.time.ZonedDateTime.now(APP_ZONE).toLocalDate().toString(),
@@ -95,8 +129,6 @@ class ScheduleReceiverService : WearableListenerService() {
                 Log.i(TAG, "storeSchedule: ignored legacy payload after versioned snapshot")
                 return
             }
-            // A normalized legacy version comes from the watch clock and is not in the phone's
-            // sequence. The first validated schema-3 snapshot must always take ownership.
             if (!(existingWasLegacy && !isLegacy)) {
                 if (existingVersion > version) {
                     Log.w(TAG, "storeSchedule: ignored stale version=$version current=$existingVersion")
@@ -113,12 +145,13 @@ class ScheduleReceiverService : WearableListenerService() {
                 }
             }
 
+            val source = sourceOverride ?: if (isLegacy) SOURCE_LEGACY else SOURCE_PHONE
             val normalizedPayload = JSONObject().apply {
                 put("schemaVersion", SCHEMA_VERSION)
                 put("version", version)
                 put("generatedAtEpochMs", payload.optLong("generatedAtEpochMs", 0L))
                 put("hash", hash)
-                put("source", if (isLegacy) SOURCE_LEGACY else SOURCE_PHONE)
+                put("source", source)
                 put("days", JSONArray().apply {
                     days.forEach { day ->
                         put(JSONObject().apply {
@@ -134,7 +167,7 @@ class ScheduleReceiverService : WearableListenerService() {
             if (committed) {
                 Log.d(
                     TAG,
-                    "storeSchedule: version=$version days=${days.first().date}..${days.last().date}",
+                    "storeSchedule: source=$source version=$version days=${days.first().date}..${days.last().date}",
                 )
             } else {
                 Log.e(TAG, "storeSchedule: SharedPreferences commit failed")
@@ -152,14 +185,6 @@ class ScheduleReceiverService : WearableListenerService() {
             .sorted()
     }
 
-    private fun clearSchedule() {
-        val committed = getSharedPreferences(WATCH_MARKS_PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .remove(WATCH_MARKS_KEY)
-            .commit()
-        Log.d(TAG, "clearSchedule: committed=$committed")
-    }
-
     private fun scheduleHash(days: List<DaySnapshot>): String {
         val canonical = buildString {
             append("schema=").append(SCHEMA_VERSION)
@@ -172,19 +197,5 @@ class ScheduleReceiverService : WearableListenerService() {
         return MessageDigest.getInstance("SHA-256")
             .digest(canonical)
             .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
-    }
-
-    private companion object {
-        const val TAG = "TplannerScheduleRcv"
-        const val PATH = "/tplanner/schedule"
-        const val SCHEMA_VERSION = 3
-        const val MAX_SNAPSHOT_DAYS = 31
-        const val SOURCE_LEGACY = "legacy"
-        const val SOURCE_PHONE = "phone"
-
-        data class DaySnapshot(
-            val date: String,
-            val minutes: List<Int>,
-        )
     }
 }
