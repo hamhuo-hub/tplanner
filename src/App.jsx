@@ -20,8 +20,9 @@ import { getDatabase } from './database/db'
 import { now as clockNow } from './utils/clock'
 import { BUILTIN_ADAPTERS } from './utils/syncLogic'
 import * as webApi from './utils/webDataAdapter'
+import LoginScreen from './components/LoginScreen'
 
-function App() {
+function PlannerApp() {
     const { t, i18n } = useTranslation();
     const [events, setEvents] = useState([]);
     const [highlight, setHighlight] = useState(null);
@@ -896,6 +897,48 @@ function App() {
             )}
         </div>
     )
+}
+
+function App() {
+    const isElectron = typeof window !== 'undefined' && !!window.electronAPI
+    const [authState, setAuthState] = useState(() => {
+        if (isElectron) return 'authenticated'
+        return webApi.hasStoredWebAuth() ? 'checking' : 'unauthenticated'
+    })
+
+    useEffect(() => {
+        if (isElectron || authState !== 'checking') return
+
+        let active = true
+        webApi.restoreWebAuth()
+            .then(authenticated => {
+                if (active) setAuthState(authenticated ? 'authenticated' : 'unauthenticated')
+            })
+            .catch(() => {
+                webApi.clearWebAuth()
+                if (active) setAuthState('unauthenticated')
+            })
+
+        return () => { active = false }
+    }, [authState, isElectron])
+
+    const handleWebLogin = async ({ account, password, remember }) => {
+        const authenticated = await webApi.authenticateWeb(account, password, remember)
+        if (authenticated) setAuthState('authenticated')
+        return authenticated
+    }
+
+    if (isElectron) return <PlannerApp />
+
+    if (authState === 'checking') {
+        return <div className="web-auth-loading" role="status">正在验证安全会话…</div>
+    }
+
+    if (authState !== 'authenticated') {
+        return <LoginScreen onLogin={handleWebLogin} />
+    }
+
+    return <PlannerApp />
 }
 
 export default App;

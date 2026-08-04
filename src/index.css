@@ -104,6 +104,18 @@ html, body, #root {
     overflow: hidden; /* Ensure container itself doesn't scroll */
 }
 
+.web-auth-loading {
+    width: 100%;
+    height: 100%;
+    display: grid;
+    place-items: center;
+    color: #8c8c8f;
+    background: #eeede9;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+}
+
 @media (orientation: landscape) {
     .app-container {
         /* In landscape, we might need extra padding for notches on the sides */

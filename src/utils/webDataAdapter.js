@@ -9,6 +9,79 @@
  */
 
 const API = ''; // same origin — the server IS the web host
+const AUTH_SESSION_KEY = 'tplanner_web_auth_session';
+const AUTH_PERSIST_KEY = 'tplanner_web_auth_persist';
+
+let authHeader = null;
+
+function readStoredAuth() {
+    if (typeof window === 'undefined') return null;
+    return sessionStorage.getItem(AUTH_SESSION_KEY) || localStorage.getItem(AUTH_PERSIST_KEY);
+}
+
+authHeader = readStoredAuth();
+
+function encodeBasicCredentials(account, password) {
+    const bytes = new TextEncoder().encode(`${account}:${password}`);
+    const binary = Array.from(bytes, byte => String.fromCharCode(byte)).join('');
+    return `Basic ${btoa(binary)}`;
+}
+
+function persistAuth(header, remember) {
+    authHeader = header;
+    sessionStorage.removeItem(AUTH_SESSION_KEY);
+    localStorage.removeItem(AUTH_PERSIST_KEY);
+    (remember ? localStorage : sessionStorage).setItem(
+        remember ? AUTH_PERSIST_KEY : AUTH_SESSION_KEY,
+        header,
+    );
+}
+
+export function hasStoredWebAuth() {
+    return !!readStoredAuth();
+}
+
+export function clearWebAuth() {
+    authHeader = null;
+    if (typeof window === 'undefined') return;
+    sessionStorage.removeItem(AUTH_SESSION_KEY);
+    localStorage.removeItem(AUTH_PERSIST_KEY);
+}
+
+async function apiFetch(input, init = {}, authorization = authHeader) {
+    const headers = new Headers(init.headers || {});
+    if (authorization) headers.set('Authorization', authorization);
+    return fetch(input, { ...init, headers });
+}
+
+async function verifyAuthorization(authorization) {
+    const response = await apiFetch(`${API}/tplanner/events`, {
+        method: 'GET',
+        cache: 'no-store',
+    }, authorization);
+
+    if (response.status === 401) return false;
+    if (!response.ok) throw new Error(`认证服务暂时不可用（HTTP ${response.status}）`);
+    return true;
+}
+
+export async function authenticateWeb(account, password, remember = true) {
+    const authorization = encodeBasicCredentials(account.trim(), password);
+    const authenticated = await verifyAuthorization(authorization);
+    if (!authenticated) return false;
+    persistAuth(authorization, remember);
+    return true;
+}
+
+export async function restoreWebAuth() {
+    const stored = readStoredAuth();
+    if (!stored) return false;
+
+    const authenticated = await verifyAuthorization(stored);
+    if (!authenticated) clearWebAuth();
+    else authHeader = stored;
+    return authenticated;
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -36,7 +109,7 @@ function serializeForWire(obj) {
 // ── Events ─────────────────────────────────────────────────────────────────
 
 export async function loadEvents() {
-    const res = await fetch(`${API}/tplanner/events`);
+    const res = await apiFetch(`${API}/tplanner/events`);
     if (!res.ok) throw new Error(`GET events: HTTP ${res.status}`);
     const raw = await res.json();
     return hydrateDates(raw).filter(e => !e.deletedAt);
@@ -45,7 +118,7 @@ export async function loadEvents() {
 export async function saveEvents(events) {
     // Merge with server: read current, upsert our changes, write back.
     // This keeps tombstones and other clients' changes intact.
-    const res = await fetch(`${API}/tplanner/events`);
+    const res = await apiFetch(`${API}/tplanner/events`);
     if (!res.ok) throw new Error(`GET events before save: HTTP ${res.status}`);
     const serverEvents = await res.json();
 
@@ -58,7 +131,7 @@ export async function saveEvents(events) {
     }
     const merged = Array.from(map.values());
 
-    const putRes = await fetch(`${API}/tplanner/events`, {
+    const putRes = await apiFetch(`${API}/tplanner/events`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(merged),
@@ -70,13 +143,13 @@ export async function saveEvents(events) {
 // ── Journals ───────────────────────────────────────────────────────────────
 
 export async function loadJournals() {
-    const res = await fetch(`${API}/tplanner/journals`);
+    const res = await apiFetch(`${API}/tplanner/journals`);
     if (!res.ok) throw new Error(`GET journals: HTTP ${res.status}`);
     return res.json();
 }
 
 export async function saveJournals(journals) {
-    const res = await fetch(`${API}/tplanner/journals`, {
+    const res = await apiFetch(`${API}/tplanner/journals`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(journals),
@@ -88,7 +161,7 @@ export async function saveJournals(journals) {
 // ── Insights (read-only for web) ───────────────────────────────────────────
 
 export async function loadInsights() {
-    const res = await fetch(`${API}/tplanner/insights`);
+    const res = await apiFetch(`${API}/tplanner/insights`);
     if (!res.ok) throw new Error(`GET insights: HTTP ${res.status}`);
     return res.json();
 }
