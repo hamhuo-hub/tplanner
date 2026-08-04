@@ -5,6 +5,8 @@ import android.app.job.JobScheduler
 import android.content.ComponentName
 import android.content.Context
 import android.util.Log
+import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.CommonStatusCodes
 import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.PutDataRequest
 import com.google.android.gms.wearable.Wearable
@@ -151,6 +153,14 @@ object WatchScheduleSync {
                         "hash=${metadata.optString("hash").take(12)}",
                 )
                 true
+            }
+        } catch (e: ApiException) {
+            if (e.statusCode == CommonStatusCodes.API_NOT_CONNECTED) {
+                Log.w(TAG, "flushPending: Wearable API unavailable, skipping retry")
+                true
+            } else {
+                Log.e(TAG, "flushPending: DataItem publish failed", e)
+                false
             }
         } catch (e: Exception) {
             Log.e(TAG, "flushPending: DataItem publish failed", e)
