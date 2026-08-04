@@ -154,6 +154,9 @@ interface PendingActionDao {
     @Query("SELECT * FROM pending_actions WHERE kind = :kind ORDER BY updated_at DESC LIMIT 1")
     suspend fun latest(kind: String): PendingActionEntity?
 
+    @Query("SELECT * FROM pending_actions WHERE kind = :kind ORDER BY updated_at DESC, created_at DESC")
+    suspend fun all(kind: String): List<PendingActionEntity>
+
     @Query("SELECT * FROM pending_actions WHERE kind = :kind AND state = :state ORDER BY updated_at")
     suspend fun find(kind: String, state: String): List<PendingActionEntity>
 

@@ -13,6 +13,8 @@ sealed interface DraftCommitResult {
     data class Conflict(val details: DraftConflict) : DraftCommitResult
 }
 
+enum class PendingActionCommitResult { SAVED, ALREADY_HANDLED, INVALID_STATE }
+
 class RoomEventRepository(private val db: TPlannerDatabase) {
     fun observeAll(): Flow<List<TaskEvent>> = db.eventDao().observeAll().map { rows ->
         rows.map(PersistenceMapper::eventToDomain)
@@ -58,15 +60,21 @@ class RoomEventRepository(private val db: TPlannerDatabase) {
         clearDraftKey: String? = null,
         clearPendingActionId: String? = null,
         now: Long = System.currentTimeMillis(),
-    ): Boolean = db.withTransaction {
+    ): PendingActionCommitResult = db.withTransaction {
             if (clearPendingActionId != null) {
                 val pending = db.pendingActionDao().get(clearPendingActionId)
-                if (pending == null ||
-                    pending.kind != CONFIRMABLE_PENDING_KIND ||
-                    pending.state != CONFIRMABLE_PENDING_STATE
-                ) {
-                    return@withTransaction false
+                if (pending == null) {
+                    // A missing pending row is terminal only when this deterministic event ID was
+                    // already committed. A dismiss/delete race must not masquerade as success.
+                    return@withTransaction if (db.eventDao().get(event.id) != null) {
+                        PendingActionCommitResult.ALREADY_HANDLED
+                    } else {
+                        PendingActionCommitResult.INVALID_STATE
+                    }
                 }
+                if (pending.kind != CONFIRMABLE_PENDING_KIND ||
+                    pending.state != CONFIRMABLE_PENDING_STATE
+                ) return@withTransaction PendingActionCommitResult.INVALID_STATE
             }
             val existing = db.eventDao().get(event.id)
             val sortIndex = existing?.sortIndex ?: (db.eventDao().maxSortIndex() + 1L)
@@ -77,7 +85,35 @@ class RoomEventRepository(private val db: TPlannerDatabase) {
             if (changed) enqueue(event, now)
             clearDraftKey?.let { db.draftDao().delete(it) }
             clearPendingActionId?.let { db.pendingActionDao().delete(it) }
-            true
+            PendingActionCommitResult.SAVED
+    }
+
+    /** Saves a recovered conflict exactly once, provided the dialog still names the current draft. */
+    suspend fun saveConflictAsCopy(
+        source: TaskEvent,
+        expected: DraftConflict,
+        now: Long = System.currentTimeMillis(),
+    ): TaskEvent? = db.withTransaction {
+        val sourceTarget = DraftTarget.event(source.id)
+        if (expected.target != sourceTarget) return@withTransaction null
+        val stored = db.draftDao().get(sourceTarget.storageKey)
+            ?.let(PersistenceMapper::draftToDomain)
+            ?: return@withTransaction null
+        if (stored.contentHash != expected.draftHash ||
+            stored.draftUpdatedAt != expected.draftUpdatedAt
+        ) return@withTransaction null
+
+        val copy = source.copy(
+            id = UUID.randomUUID().toString(),
+            title = source.title + "（冲突副本）",
+            deletedAt = 0L,
+            updatedAt = now,
+        )
+        val sortIndex = db.eventDao().maxSortIndex() + 1L
+        db.eventDao().upsert(PersistenceMapper.eventToEntity(copy, sortIndex))
+        enqueue(copy, now)
+        db.draftDao().delete(sourceTarget.storageKey)
+        copy
     }
 
     suspend fun commitDraft(
@@ -212,7 +248,6 @@ class RoomJournalRepository(private val db: TPlannerDatabase) {
     /** Captures the authoritative revision before editing can race with synchronization. */
     suspend fun beginDraft(
         date: String,
-        initialText: String,
         changedAt: Long = System.currentTimeMillis(),
     ): DraftRecoveryDecision = db.withTransaction {
         val target = DraftTarget.journal(date)
@@ -226,7 +261,15 @@ class RoomJournalRepository(private val db: TPlannerDatabase) {
             }
         }
 
-        val draft = newDraft(target, currentRow, initialText, changedAt)
+        // The database revision and the editor's initial text must come from the same read. A
+        // caller-side Compose value may lag a just-completed sync and must never be paired with a
+        // newer base, or an unchanged Done action could overwrite that sync without a conflict.
+        val draft = newDraft(
+            target,
+            currentRow,
+            currentRow.editorTextAtSessionStart(),
+            changedAt,
+        )
         db.draftDao().upsert(PersistenceMapper.draftToEntity(draft))
         DraftRecoveryDecision.AutoRestore(draft)
     }
@@ -299,6 +342,43 @@ class RoomJournalRepository(private val db: TPlannerDatabase) {
                 DraftCommitResult.Saved
             }
         }
+    }
+
+    /** Explicit conflict-resolution action: overwrite only after the UI obtains confirmation. */
+    suspend fun overwriteDraft(
+        date: String,
+        text: String,
+        expectedDraftHash: String,
+        expectedDraftUpdatedAt: Long,
+        now: Long = System.currentTimeMillis(),
+    ): Boolean = db.withTransaction {
+        val target = DraftTarget.journal(date)
+        val stored = db.draftDao().get(target.storageKey)
+            ?.let(PersistenceMapper::draftToDomain)
+            ?: return@withTransaction false
+        if (stored.contentHash != expectedDraftHash ||
+            stored.draftUpdatedAt != expectedDraftUpdatedAt
+        ) return@withTransaction false
+        val entry = JournalEntry(text = text, updatedAt = now, deletedAt = 0L)
+        db.journalDao().upsert(PersistenceMapper.journalToEntity(date, entry))
+        enqueue(date, entry, now)
+        db.draftDao().delete(target.storageKey)
+        true
+    }
+
+    suspend fun discardDraft(
+        date: String,
+        expectedDraftHash: String,
+        expectedDraftUpdatedAt: Long,
+    ): Boolean = db.withTransaction {
+        val target = DraftTarget.journal(date)
+        val stored = db.draftDao().get(target.storageKey)
+            ?.let(PersistenceMapper::draftToDomain)
+            ?: return@withTransaction false
+        if (stored.contentHash != expectedDraftHash ||
+            stored.draftUpdatedAt != expectedDraftUpdatedAt
+        ) return@withTransaction false
+        db.draftDao().delete(target.storageKey) > 0
     }
 
     suspend fun saveLocal(date: String, text: String, now: Long = System.currentTimeMillis()) {
@@ -480,4 +560,16 @@ class RoomDraftRepository(private val db: TPlannerDatabase) {
     }
 
     suspend fun delete(target: DraftTarget): Boolean = db.draftDao().delete(target.storageKey) > 0
+
+    suspend fun deleteIfMatches(target: DraftTarget, expected: DraftConflict): Boolean =
+        db.withTransaction {
+            if (expected.target != target) return@withTransaction false
+            val stored = db.draftDao().get(target.storageKey)
+                ?.let(PersistenceMapper::draftToDomain)
+                ?: return@withTransaction false
+            if (stored.contentHash != expected.draftHash ||
+                stored.draftUpdatedAt != expected.draftUpdatedAt
+            ) return@withTransaction false
+            db.draftDao().delete(target.storageKey) > 0
+        }
 }

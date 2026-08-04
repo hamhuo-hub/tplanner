@@ -79,6 +79,8 @@ object WatchScheduleSync {
                     put("version", version)
                     put("generatedAtEpochMs", generatedAt)
                     put("hash", hash)
+                    // One-release rolling-upgrade bridge: old watch builds read only this field.
+                    put("minutes", JSONArray(days.first().minutes))
                     put("days", JSONArray().apply {
                         days.forEach { day ->
                             put(JSONObject().apply {

@@ -29,66 +29,88 @@ class ScheduleReceiverService : WearableListenerService() {
     private fun storeSchedule(raw: String) {
         try {
             val payload = JSONObject(raw)
-            val schemaVersion = payload.optInt("schemaVersion", -1)
-            val version = payload.optLong("version", -1L)
-            val hash = payload.optString("hash")
-            if (schemaVersion != SCHEMA_VERSION || version < 0L || hash.isBlank()) {
-                Log.w(
-                    TAG,
-                    "storeSchedule: ignored schema=$schemaVersion version=$version",
-                )
-                return
-            }
-
-            val inputDays = payload.optJSONArray("days") ?: run {
-                Log.w(TAG, "storeSchedule: missing days version=$version")
-                return
-            }
-            if (inputDays.length() !in 1..MAX_SNAPSHOT_DAYS) {
-                Log.w(TAG, "storeSchedule: invalid day count=${inputDays.length()}")
-                return
-            }
-            val seenDates = mutableSetOf<String>()
-            val days = (0 until inputDays.length()).map { index ->
-                val inputDay = inputDays.optJSONObject(index)
-                    ?: throw IllegalArgumentException("days[$index] is not an object")
-                val date = LocalDate.parse(inputDay.optString("date")).toString()
-                if (!seenDates.add(date)) {
-                    throw IllegalArgumentException("duplicate date=$date")
-                }
-                val inputMinutes = inputDay.optJSONArray("minutes") ?: JSONArray()
-                val minutes = (0 until inputMinutes.length())
-                    .mapNotNull { minuteIndex ->
-                        inputMinutes.optInt(minuteIndex, -1).takeIf { it in 0..1439 }
-                    }
-                    .distinct()
-                    .sorted()
-                DaySnapshot(date, minutes)
-            }.sortedBy { it.date }
-
-            val expectedHash = scheduleHash(days)
-            if (hash != expectedHash) {
-                Log.w(TAG, "storeSchedule: hash mismatch version=$version")
-                return
-            }
-
             val prefs = getSharedPreferences(WATCH_MARKS_PREFS, Context.MODE_PRIVATE)
             val existing = prefs.getString(WATCH_MARKS_KEY, null)
                 ?.let { value -> runCatching { JSONObject(value) }.getOrNull() }
             val existingVersion = existing?.optLong("version", -1L) ?: -1L
             val existingHash = existing?.optString("hash")
-            if (existingVersion > version) {
-                Log.w(TAG, "storeSchedule: ignored stale version=$version current=$existingVersion")
+            val existingWasLegacy = existing != null && (
+                existing.optString("source") == SOURCE_LEGACY ||
+                    existing.optLong("generatedAtEpochMs", 0L) <= 0L
+                )
+            val schemaVersion = payload.optInt("schemaVersion", -1)
+            val days: List<DaySnapshot>
+            val version: Long
+            val hash: String
+            val isLegacy: Boolean
+            if (schemaVersion == SCHEMA_VERSION) {
+                isLegacy = false
+                version = payload.optLong("version", -1L)
+                hash = payload.optString("hash")
+                if (version < 0L || hash.isBlank()) {
+                    Log.w(TAG, "storeSchedule: invalid version/hash version=$version")
+                    return
+                }
+                val inputDays = payload.optJSONArray("days") ?: run {
+                    Log.w(TAG, "storeSchedule: missing days version=$version")
+                    return
+                }
+                if (inputDays.length() !in 1..MAX_SNAPSHOT_DAYS) {
+                    Log.w(TAG, "storeSchedule: invalid day count=${inputDays.length()}")
+                    return
+                }
+                val seenDates = mutableSetOf<String>()
+                days = (0 until inputDays.length()).map { index ->
+                    val inputDay = inputDays.optJSONObject(index)
+                        ?: throw IllegalArgumentException("days[$index] is not an object")
+                    val date = LocalDate.parse(inputDay.optString("date")).toString()
+                    if (!seenDates.add(date)) {
+                        throw IllegalArgumentException("duplicate date=$date")
+                    }
+                    DaySnapshot(date, normalizedMinutes(inputDay.optJSONArray("minutes")))
+                }.sortedBy { it.date }
+                if (hash != scheduleHash(days)) {
+                    Log.w(TAG, "storeSchedule: hash mismatch version=$version")
+                    return
+                }
+            } else if (!payload.has("schemaVersion") && payload.has("minutes")) {
+                isLegacy = true
+                // Previous phone builds had no schema/version/date. Preserve their last snapshot
+                // for one rolling-upgrade cycle by treating it as today's single-day snapshot.
+                days = listOf(
+                    DaySnapshot(
+                        java.time.ZonedDateTime.now(APP_ZONE).toLocalDate().toString(),
+                        normalizedMinutes(payload.optJSONArray("minutes")),
+                    )
+                )
+                version = maxOf(System.currentTimeMillis(), existingVersion + 1L)
+                hash = scheduleHash(days)
+                Log.i(TAG, "storeSchedule: normalized legacy payload version=$version")
+            } else {
+                Log.w(TAG, "storeSchedule: ignored unsupported schema=$schemaVersion")
                 return
             }
-            if (existingVersion == version) {
-                if (existingHash == hash) return
-                Log.e(
-                    TAG,
-                    "storeSchedule: rejected divergent content for version=$version " +
-                        "currentHash=${existingHash?.take(12)} incomingHash=${hash.take(12)}",
-                )
+
+            if (isLegacy && existing != null && !existingWasLegacy) {
+                Log.i(TAG, "storeSchedule: ignored legacy payload after versioned snapshot")
                 return
+            }
+            // A normalized legacy version comes from the watch clock and is not in the phone's
+            // sequence. The first validated schema-3 snapshot must always take ownership.
+            if (!(existingWasLegacy && !isLegacy)) {
+                if (existingVersion > version) {
+                    Log.w(TAG, "storeSchedule: ignored stale version=$version current=$existingVersion")
+                    return
+                }
+                if (existingVersion == version) {
+                    if (existingHash == hash) return
+                    Log.e(
+                        TAG,
+                        "storeSchedule: rejected divergent content for version=$version " +
+                            "currentHash=${existingHash?.take(12)} incomingHash=${hash.take(12)}",
+                    )
+                    return
+                }
             }
 
             val normalizedPayload = JSONObject().apply {
@@ -96,6 +118,7 @@ class ScheduleReceiverService : WearableListenerService() {
                 put("version", version)
                 put("generatedAtEpochMs", payload.optLong("generatedAtEpochMs", 0L))
                 put("hash", hash)
+                put("source", if (isLegacy) SOURCE_LEGACY else SOURCE_PHONE)
                 put("days", JSONArray().apply {
                     days.forEach { day ->
                         put(JSONObject().apply {
@@ -119,6 +142,14 @@ class ScheduleReceiverService : WearableListenerService() {
         } catch (e: Exception) {
             Log.e(TAG, "storeSchedule: invalid payload", e)
         }
+    }
+
+    private fun normalizedMinutes(input: JSONArray?): List<Int> {
+        val minutes = input ?: JSONArray()
+        return (0 until minutes.length())
+            .mapNotNull { index -> minutes.optInt(index, -1).takeIf { it in 0..1439 } }
+            .distinct()
+            .sorted()
     }
 
     private fun clearSchedule() {
@@ -148,6 +179,8 @@ class ScheduleReceiverService : WearableListenerService() {
         const val PATH = "/tplanner/schedule"
         const val SCHEMA_VERSION = 3
         const val MAX_SNAPSHOT_DAYS = 31
+        const val SOURCE_LEGACY = "legacy"
+        const val SOURCE_PHONE = "phone"
 
         data class DaySnapshot(
             val date: String,

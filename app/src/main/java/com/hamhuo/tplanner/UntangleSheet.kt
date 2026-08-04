@@ -77,6 +77,7 @@ private fun prettyAlarm(enabled: Boolean, offsetMinutes: Int): String = when {
  */
 @Composable
 fun UntangleSheet(
+    requestId: String,
     prefillLocation: String,
     initialText: String,
     thinking: Boolean,
@@ -87,7 +88,7 @@ fun UntangleSheet(
     onConfirmAction: (DeepSeekAnalysisService.ProposedAction) -> Unit,
     onDeclineAction: () -> Unit,
 ) {
-    var text by remember { mutableStateOf(initialText) }
+    var text by remember(requestId) { mutableStateOf(initialText) }
     val focusRequester = remember { FocusRequester() }
     val showEditor = action == null && !thinking
     LaunchedEffect(showEditor) { if (showEditor) focusRequester.requestFocus() }

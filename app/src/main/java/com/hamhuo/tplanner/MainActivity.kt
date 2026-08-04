@@ -23,6 +23,7 @@ import androidx.lifecycle.lifecycleScope
 import com.hamhuo.tplanner.persistence.LegacyImportResult
 import com.hamhuo.tplanner.persistence.LegacyPreferencesImporter
 import com.hamhuo.tplanner.persistence.TPlannerDatabase
+import com.hamhuo.tplanner.persistence.DurableWriteQueue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -35,7 +36,6 @@ import kotlinx.coroutines.withContext
 class MainActivity : ComponentActivity() {
 
     private lateinit var eventStore: EventStore
-    private var contentReady = false
     private val pendingWakeRequestIds = linkedSetOf<String>()
 
     // Watch trigger counter: increments on each watch wake-up,
@@ -113,7 +113,6 @@ class MainActivity : ComponentActivity() {
             val requestId = intent.getStringExtra(EXTRA_WAKE_REQUEST_ID)
             if (requestId != null && requestId in pendingWakeRequestIds) {
                 Log.d(TAG, "handleWakeIntent: request already pending=$requestId")
-                if (contentReady) completePendingWakeRequest(requestId)
                 return
             }
             if (
@@ -139,9 +138,14 @@ class MainActivity : ComponentActivity() {
             }
             requestId?.let { id ->
                 pendingWakeRequestIds += id
-                if (contentReady) completePendingWakeRequest(id)
             }
         }
+    }
+
+    override fun onStop() {
+        val flushed = DurableWriteQueue.flushAllOnStop()
+        if (!flushed) Log.w(TAG, "onStop: recovery writes did not flush successfully")
+        super.onStop()
     }
 
     private fun completePendingWakeRequest(requestId: String) {
@@ -178,14 +182,23 @@ class MainActivity : ComponentActivity() {
                 "serviceCreated=${deepseekService != null} migration=${migration::class.simpleName}",
         )
 
-        val restoredJournalDraft = store.getTodayDraft()
-        val initialContent = restoredJournalDraft ?: store.getToday()
-        val initialEvents = eventStore.getAll()
-        val initialEditingEvent = eventStore.latestRecoverableEventDraft()?.event
+        val initialJournalSession = store.latestDraftRecovery()
+        val initialJournalDate = initialJournalSession?.date ?: appToday().toString()
+        val initialJournalRecovery = initialJournalSession?.recovery
+            ?: store.getDraftRecovery(initialJournalDate)
+        val initialContent = when (initialJournalRecovery) {
+            JournalDraftRecovery.None -> store.get(initialJournalDate)
+            is JournalDraftRecovery.Recovered -> initialJournalRecovery.text
+            is JournalDraftRecovery.Conflict -> initialJournalRecovery.text
+        }
         val initialUntangleState = untangleStore.latest()
+        val initialEventRecovery = eventStore.latestEventDraftRecovery()
+        val initialEvents = eventStore.getAll()
         val initialServerUrl = manager.getServerUrl()
-        SyncOutboxScheduler.enqueue(this)
-        TaskAlarmScheduler.reconcile(this, initialEvents)
+        runCatching { SyncOutboxScheduler.enqueue(this) }
+            .onFailure { Log.w(TAG, "Unable to start sync outbox worker", it) }
+        runCatching { TaskAlarmScheduler.reconcile(this, initialEvents) }
+            .onFailure { Log.w(TAG, "Unable to reconcile alarms during startup", it) }
         setContent {
             MainScreen(
                 store = store,
@@ -196,15 +209,17 @@ class MainActivity : ComponentActivity() {
                 scheduleTriggerCount = scheduleTriggerCount,
                 initialContent = initialContent,
                 initialEvents = initialEvents,
-                hasRecoveredJournalDraft = restoredJournalDraft != null,
+                initialJournalDate = initialJournalDate,
+                initialJournalRecovery = initialJournalRecovery,
                 initialServerUrl = initialServerUrl,
-                initialEditingEvent = initialEditingEvent,
+                initialEventRecovery = initialEventRecovery,
                 untangleStore = untangleStore,
                 initialUntangleState = initialUntangleState,
+                onScheduleSheetReady = {
+                    pendingWakeRequestIds.toList().forEach(::completePendingWakeRequest)
+                },
             )
         }
-        contentReady = true
-        pendingWakeRequestIds.toList().forEach(::completePendingWakeRequest)
     }
 
     // ── Permissions ─────────────────────────────────────────────

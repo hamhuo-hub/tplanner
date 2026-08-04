@@ -1,7 +1,6 @@
 package com.hamhuo.tplanner
 
 import android.content.Context
-import org.json.JSONArray
 import org.json.JSONObject
 import java.time.ZonedDateTime
 
@@ -29,11 +28,18 @@ object WatchEventMarks {
                     .mapNotNull { index -> days.optJSONObject(index) }
                     .firstOrNull { day -> day.optString("date") == today }
             }
-            if (todaySnapshot == null) {
+            val minutesArray = if (days == null) {
+                // Rolling-upgrade bridge for a snapshot stored by the previous receiver.
+                obj.optJSONArray("minutes")
+            } else {
+                todaySnapshot?.optJSONArray("minutes")
+            }
+            if (minutesArray == null) {
                 EMPTY
             } else {
-                val arr = todaySnapshot.optJSONArray("minutes") ?: JSONArray()
-                val minutes = (0 until arr.length()).map { arr.getInt(it) }.filter { it in 0..1439 }
+                val minutes = (0 until minutesArray.length())
+                    .map { minutesArray.getInt(it) }
+                    .filter { it in 0..1439 }
                 Marks(
                     minutes,
                     null,

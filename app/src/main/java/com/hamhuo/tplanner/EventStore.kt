@@ -2,6 +2,8 @@ package com.hamhuo.tplanner
 
 import android.content.Context
 import com.hamhuo.tplanner.persistence.DraftCommitResult
+import com.hamhuo.tplanner.persistence.DraftConflict
+import com.hamhuo.tplanner.persistence.DurableWriteQueue
 import com.hamhuo.tplanner.persistence.DraftRecoveryDecision
 import com.hamhuo.tplanner.persistence.DraftRevision
 import com.hamhuo.tplanner.persistence.DraftTarget
@@ -9,6 +11,7 @@ import com.hamhuo.tplanner.persistence.EventWireMapper
 import com.hamhuo.tplanner.persistence.EventDraftRecovery
 import com.hamhuo.tplanner.persistence.EventEditDraftCodec
 import com.hamhuo.tplanner.persistence.EventEditStage
+import com.hamhuo.tplanner.persistence.PendingActionCommitResult
 import com.hamhuo.tplanner.persistence.RoomDraftRepository
 import com.hamhuo.tplanner.persistence.RoomEventRepository
 import com.hamhuo.tplanner.persistence.TPlannerDatabase
@@ -51,28 +54,47 @@ class EventStore(
     private val appContext = context.applicationContext
     private val repository = RoomEventRepository(database)
     private val drafts = RoomDraftRepository(database)
-    private val recoveredStages = mutableMapOf<String, EventEditStage>()
 
     fun observeAll(): Flow<List<TaskEvent>> = repository.observeAll()
 
-    suspend fun getAll(): List<TaskEvent> = repository.getAll()
+    suspend fun getAll(): List<TaskEvent> =
+        DurableWriteQueue.readAfterPending(EVENT_FACT_QUEUE_KEY) { repository.getAll() }
 
     suspend fun save(event: TaskEvent) {
-        repository.saveOneLocal(event)
-        reconcileAlarms(repository.getAll())
-        SyncOutboxScheduler.enqueue(appContext)
+        // The writer belongs to the application process, not the Activity coroutine awaiting it.
+        // Rotation/onStop may cancel the waiter but cannot cancel an accepted fact mutation.
+        DurableWriteQueue.submitAndAwait(EVENT_FACT_QUEUE_KEY) {
+            repository.saveOneLocal(event)
+            reconcileAlarms(repository.getAll())
+            scheduleSync()
+        }
     }
 
     /** Captures the authoritative base before the editor can diverge from it. */
-    suspend fun beginEventEdit(event: TaskEvent): TaskEvent = repository.beginEdit(event)
-
-    /** MainActivity currently passes only the recovered event; retain its UI stage for MainScreen. */
-    fun consumeRecoveredStage(eventId: String): EventEditStage? = recoveredStages.remove(eventId)
+    suspend fun beginEventEdit(event: TaskEvent): TaskEvent =
+        DurableWriteQueue.readAfterPending(draftQueueKey(event.id)) {
+            repository.beginEdit(event)
+        }
 
     suspend fun saveEventDraft(
         event: TaskEvent,
         stage: EventEditStage = EventEditStage.DETAIL,
     ) {
+        DurableWriteQueue.submitAndAwait(draftQueueKey(event.id)) {
+            saveEventDraftNow(event, stage)
+        }
+    }
+
+    fun enqueueEventDraft(
+        event: TaskEvent,
+        stage: EventEditStage = EventEditStage.DETAIL,
+    ) {
+        DurableWriteQueue.submit(draftQueueKey(event.id)) {
+            saveEventDraftNow(event, stage)
+        }
+    }
+
+    private suspend fun saveEventDraftNow(event: TaskEvent, stage: EventEditStage) {
         val target = DraftTarget.event(event.id)
         val changedAt = System.currentTimeMillis()
         val payload = EventEditDraftCodec.encode(
@@ -104,7 +126,12 @@ class EventStore(
         drafts.save(draft)
     }
 
-    suspend fun recoverEventDraft(eventId: String): EventDraftRecovery {
+    suspend fun recoverEventDraft(eventId: String): EventDraftRecovery =
+        DurableWriteQueue.readAfterPending(draftQueueKey(eventId)) {
+            recoverEventDraftNow(eventId)
+        }
+
+    private suspend fun recoverEventDraftNow(eventId: String): EventDraftRecovery {
         val target = DraftTarget.event(eventId)
         val draft = drafts.get(target) ?: return EventDraftRecovery.None
         val current = repository.get(eventId)
@@ -156,50 +183,105 @@ class EventStore(
         }
     }
 
-    suspend fun latestRecoverableEventDraft(): EventDraftRecovery.Recovered? {
+    suspend fun latestEventDraftRecovery(): EventDraftRecovery? {
+        DurableWriteQueue.flushPrefix(EVENT_QUEUE_PREFIX)
         val candidates = drafts.getAll()
             .filter { it.target.kind == com.hamhuo.tplanner.persistence.DraftEntityKind.EVENT }
             .sortedByDescending { it.draftUpdatedAt }
         candidates.forEach { draft ->
             val recovered = recoverEventDraft(draft.target.entityId)
-            if (recovered is EventDraftRecovery.Recovered) {
-                recoveredStages[recovered.event.id] = recovered.stage
+            if (recovered !is EventDraftRecovery.None) {
                 return recovered
             }
         }
         return null
     }
 
-    suspend fun discardEventDraft(eventId: String) {
-        drafts.delete(DraftTarget.event(eventId))
+    suspend fun discardEventDraft(eventId: String, expected: DraftConflict? = null): Boolean {
+        return DurableWriteQueue.submitAndAwait(
+            key = draftQueueKey(eventId),
+            clearsPreviousFailure = { it },
+        ) {
+            if (expected == null) {
+                drafts.delete(DraftTarget.event(eventId))
+            } else {
+                drafts.deleteIfMatches(DraftTarget.event(eventId), expected)
+            }
+        }
     }
 
     suspend fun saveAndClearEventDraft(event: TaskEvent): DraftCommitResult {
-        val result = repository.commitDraft(event)
-        if (result is DraftCommitResult.Saved) {
-            reconcileAlarms(repository.getAll())
-            SyncOutboxScheduler.enqueue(appContext)
+        val result = DurableWriteQueue.submitAndAwait(draftQueueKey(event.id)) {
+            DurableWriteQueue.submitAndAwait(EVENT_FACT_QUEUE_KEY) {
+                repository.commitDraft(event).also { committed ->
+                    if (committed is DraftCommitResult.Saved) {
+                        reconcileAlarms(repository.getAll())
+                        scheduleSync()
+                    }
+                }
+            }
         }
         return result
     }
 
-    suspend fun saveAndClearPendingAction(event: TaskEvent, requestId: String): Boolean {
-        val saved = repository.saveOneLocal(event, clearPendingActionId = requestId)
-        if (saved) {
-            reconcileAlarms(repository.getAll())
-            SyncOutboxScheduler.enqueue(appContext)
+    /** Explicit conflict resolution that preserves both the current fact and the recovered edit. */
+    suspend fun saveConflictAsCopy(event: TaskEvent, conflict: DraftConflict): TaskEvent? {
+        val copy = DurableWriteQueue.submitAndAwait(
+            key = draftQueueKey(event.id),
+            clearsPreviousFailure = { it != null },
+        ) {
+            DurableWriteQueue.submitAndAwait(
+                key = EVENT_FACT_QUEUE_KEY,
+                clearsPreviousFailure = { it != null },
+            ) {
+                repository.saveConflictAsCopy(event, conflict).also { savedCopy ->
+                    if (savedCopy != null) {
+                        reconcileAlarms(repository.getAll())
+                        scheduleSync()
+                    }
+                }
+            }
         }
-        return saved
+        return copy
+    }
+
+    suspend fun saveAndClearPendingAction(
+        event: TaskEvent,
+        requestId: String,
+    ): PendingActionCommitResult {
+        val result = DurableWriteQueue.submitAndAwait(
+            key = UNTANGLE_QUEUE_KEY,
+            clearsPreviousFailure = { it != PendingActionCommitResult.INVALID_STATE },
+        ) {
+            DurableWriteQueue.submitAndAwait(
+                key = EVENT_FACT_QUEUE_KEY,
+                clearsPreviousFailure = { it != PendingActionCommitResult.INVALID_STATE },
+            ) {
+                repository.saveOneLocal(event, clearPendingActionId = requestId).also { committed ->
+                    if (committed == PendingActionCommitResult.SAVED) {
+                        reconcileAlarms(repository.getAll())
+                        scheduleSync()
+                    }
+                }
+            }
+        }
+        return result
     }
 
     suspend fun applySync(events: List<TaskEvent>, captured: Map<String, String>) {
-        repository.applySync(events, captured)
-        reconcileAlarms(repository.getAll())
+        DurableWriteQueue.submitAndAwait(EVENT_FACT_QUEUE_KEY) {
+            repository.applySync(events, captured)
+            reconcileAlarms(repository.getAll())
+        }
     }
 
-    suspend fun baseKeys(): Map<String, String>? = repository.baseKeys()
+    suspend fun baseKeys(): Map<String, String>? =
+        DurableWriteQueue.readAfterPending(EVENT_FACT_QUEUE_KEY) { repository.baseKeys() }
 
-    suspend fun capturedMutations(): Map<String, String> = repository.capturedMutations()
+    suspend fun capturedMutations(): Map<String, String> =
+        DurableWriteQueue.readAfterPending(EVENT_FACT_QUEUE_KEY) {
+            repository.capturedMutations()
+        }
 
     fun fromJson(json: String): List<TaskEvent> = EventWireMapper.decodeArrayStrict(json)
 
@@ -216,6 +298,18 @@ class EventStore(
 
     private fun reconcileAlarms(events: List<TaskEvent>) {
         runCatching { TaskAlarmScheduler.reconcile(appContext, events) }
+    }
+
+    private fun draftQueueKey(eventId: String): String = "$EVENT_QUEUE_PREFIX$eventId"
+
+    /** The Room outbox is authoritative; WorkManager can be started again on the next launch. */
+    private fun scheduleSync() {
+        runCatching { SyncOutboxScheduler.enqueue(appContext) }
+    }
+
+    private companion object {
+        const val EVENT_QUEUE_PREFIX = "event:"
+        const val EVENT_FACT_QUEUE_KEY = "event-facts"
     }
 }
 

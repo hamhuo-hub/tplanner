@@ -62,11 +62,12 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import kotlinx.coroutines.launch
 import java.time.format.DateTimeFormatter
+import java.time.LocalDate
 
 @Composable
-fun NotesHeader(syncStatus: String, onPanelToggle: () -> Unit) {
+fun NotesHeader(date: LocalDate, syncStatus: String, onPanelToggle: () -> Unit) {
     val datePattern = stringResource(R.string.date_pattern_full)
-    val today = appToday().format(DateTimeFormatter.ofPattern(datePattern))
+    val today = date.format(DateTimeFormatter.ofPattern(datePattern))
     val iconColor = when (syncStatus) {
         "success" -> TEAL
         "error"   -> RED
@@ -359,8 +360,9 @@ fun MarkdownField(
     placeholder: String,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(start = 26.dp, end = 26.dp, top = 22.dp, bottom = 32.dp),
-    onEditStart: suspend () -> Unit = {},
+    onEditStart: suspend () -> String? = { null },
     onDraftChange: (String) -> Unit = {},
+    onEditingChange: (Boolean) -> Unit = {},
     onEditRequest: (() -> Unit)? = null,
     onPreviewRendered: (String) -> Unit = {},
 ) {
@@ -383,11 +385,12 @@ fun MarkdownField(
             try {
                 // Capture the authoritative revision before the editor can accept input. This
                 // keeps a sync that finishes while editing from silently becoming the draft base.
-                onEditStart()
-                draft = content
-                previewContent = content
+                val sessionContent = onEditStart() ?: content
+                draft = sessionContent
+                previewContent = sessionContent
                 exitRequested = false
                 isEditing = true
+                onEditingChange(true)
             } finally {
                 editOpening = false
             }
@@ -399,10 +402,11 @@ fun MarkdownField(
         draft = updatedDraft
         exitRequested = true
         onSave(updatedDraft)
-        if (lastRenderedContent == updatedDraft) {
-            exitRequested = false
-            isEditing = false
-        }
+        // Durable save/conflict handling belongs to the Store callback. WebView rendering is only
+        // presentation and must never be the gate that lets the user leave the editor.
+        exitRequested = false
+        isEditing = false
+        onEditingChange(false)
     }
 
     // 调用方的 modifier 必须自带确定的尺寸（weight()/明确的 height()），

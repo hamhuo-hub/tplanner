@@ -30,10 +30,12 @@ import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -56,9 +58,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.hamhuo.tplanner.timeline.TimelineScreen
 import com.hamhuo.tplanner.persistence.DraftCommitResult
+import com.hamhuo.tplanner.persistence.DraftConflict
 import com.hamhuo.tplanner.persistence.EventDraftRecovery
 import com.hamhuo.tplanner.persistence.EventEditStage
 import com.hamhuo.tplanner.persistence.journalOnceMarker
+import com.hamhuo.tplanner.persistence.PendingActionCommitResult
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -73,6 +77,11 @@ private enum class ChromeMode {
     Minimal,
     PrimaryNavigation,
     TimelineNavigation,
+}
+
+private data class JournalConflictPrompt(val details: DraftConflict) {
+    val date: String get() = details.target.entityId
+    val draftText: String get() = details.draftContent
 }
 
 private fun Throwable.locationForLog(): String {
@@ -93,26 +102,57 @@ fun MainScreen(
     scheduleTriggerCount: Int,
     initialContent: String,
     initialEvents: List<TaskEvent>,
-    hasRecoveredJournalDraft: Boolean,
+    initialJournalDate: String,
+    initialJournalRecovery: JournalDraftRecovery,
     initialServerUrl: String,
-    initialEditingEvent: TaskEvent?,
+    initialEventRecovery: EventDraftRecovery?,
     untangleStore: UntangleStateStore,
     initialUntangleState: UntangleRecoveryState?,
+    onScheduleSheetReady: () -> Unit,
 ) {
     val scope  = rememberCoroutineScope()
     val context = LocalContext.current
     var content    by remember { mutableStateOf(initialContent) }
     var panelOpen  by remember { mutableStateOf(false) }
     var events     by remember { mutableStateOf(initialEvents) }
-    var journalHasDraft by remember { mutableStateOf(hasRecoveredJournalDraft) }
+    var journalHasDraft by remember {
+        mutableStateOf(initialJournalRecovery !is JournalDraftRecovery.None)
+    }
+    var journalConflict by remember {
+        mutableStateOf(
+            (initialJournalRecovery as? JournalDraftRecovery.Conflict)
+                ?.let { JournalConflictPrompt(it.details) }
+        )
+    }
     val journalWriteMutex = remember { Mutex() }
     val eventWriteMutex = remember { Mutex() }
+    // Freeze only while editing/recovering a draft. An Activity kept alive across midnight should
+    // move to the new day once the previous session has safely committed.
+    var journalEditing by remember { mutableStateOf(false) }
+    var journalDate by remember {
+        mutableStateOf(
+            runCatching { java.time.LocalDate.parse(initialJournalDate) }
+                .getOrDefault(appToday())
+        )
+    }
+    val journalDateKey = journalDate.toString()
+
+    LaunchedEffect(journalEditing, journalHasDraft) {
+        while (!journalEditing && !journalHasDraft) {
+            val today = appToday()
+            if (today != journalDate) {
+                journalDate = today
+                journalConflict = null
+            }
+            delay(30_000L)
+        }
+    }
 
     LaunchedEffect(eventStore) {
         eventStore.observeAll().collect { storedEvents -> events = storedEvents }
     }
-    LaunchedEffect(store) {
-        store.observe(appToday().toString()).collect { entry ->
+    LaunchedEffect(store, journalDateKey) {
+        store.observe(journalDateKey).collect { entry ->
             if (!journalHasDraft) {
                 content = entry?.takeIf { it.deletedAt == 0L }?.text.orEmpty()
             }
@@ -121,25 +161,59 @@ fun MainScreen(
 
     fun saveJournalDraft(text: String) {
         journalHasDraft = true
-        scope.launch {
-            journalWriteMutex.withLock { store.saveTodayDraft(text) }
-        }
+        store.enqueueDraft(journalDateKey, text)
     }
 
     fun commitJournalDraft(text: String) {
+        journalHasDraft = true
+        store.enqueueDraft(journalDateKey, text)
         scope.launch {
-            val result = journalWriteMutex.withLock { store.commitTodayDraft(text) }
-            when (result) {
-                DraftCommitResult.Saved,
-                DraftCommitResult.AlreadySaved,
-                -> journalHasDraft = false
-                is DraftCommitResult.Conflict -> {
+            try {
+                val result = journalWriteMutex.withLock {
+                    store.commitDraft(journalDateKey, text)
+                }
+                when (result) {
+                    DraftCommitResult.Saved,
+                    DraftCommitResult.AlreadySaved,
+                    -> journalHasDraft = false
+                    is DraftCommitResult.Conflict -> {
+                        journalHasDraft = true
+                        journalConflict = JournalConflictPrompt(result.details)
+                        Toast.makeText(
+                            context,
+                            "内容已在其他设备修改，当前草稿已安全保留",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                }
+            } catch (_: Exception) {
+                journalHasDraft = true
+                Toast.makeText(context, "保存失败，草稿仍保留在本机", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    suspend fun refreshJournalRecovery(date: String) {
+        when (val recovery = store.getDraftRecovery(date)) {
+            JournalDraftRecovery.None -> {
+                if (journalConflict?.date == date) journalConflict = null
+                if (date == journalDateKey) {
+                    journalHasDraft = false
+                    content = store.get(date)
+                }
+            }
+            is JournalDraftRecovery.Recovered -> {
+                if (journalConflict?.date == date) journalConflict = null
+                if (date == journalDateKey) {
                     journalHasDraft = true
-                    Toast.makeText(
-                        context,
-                        "内容已在其他设备修改，当前草稿已安全保留",
-                        Toast.LENGTH_LONG,
-                    ).show()
+                    content = recovery.text
+                }
+            }
+            is JournalDraftRecovery.Conflict -> {
+                journalConflict = JournalConflictPrompt(recovery.details)
+                if (date == journalDateKey) {
+                    journalHasDraft = true
+                    content = recovery.text
                 }
             }
         }
@@ -161,9 +235,7 @@ fun MainScreen(
             manager.saveServerUrl(serverUrl)
             when (val r = manager.syncJournals(serverUrl)) {
                 is LanSyncManager.SyncResult.Success -> {
-                    val recovered = store.getTodayDraft()
-                    journalHasDraft = recovered != null
-                    content = recovered ?: r.todayText
+                    refreshJournalRecovery(journalDateKey)
                     syncStatus = "success"; syncMsg = syncedTemplate.format(serverHost(serverUrl))
                     events = manager.fetchEvents(serverUrl)
                     WatchScheduleSync.push(context, events)
@@ -179,9 +251,9 @@ fun MainScreen(
         syncStatus = "syncing"; syncMsg = ""
         when (val r = manager.syncJournals(serverUrl)) {
             is LanSyncManager.SyncResult.Success -> {
-                val recovered = store.getTodayDraft()
+                val recovered = store.getDraft(journalDateKey)
                 journalHasDraft = recovered != null
-                content = recovered ?: r.todayText
+                content = recovered ?: store.get(journalDateKey)
                 syncStatus = "success"; syncMsg = syncedTemplate.format(serverHost(serverUrl))
                 events = manager.fetchEvents(serverUrl)
                 WatchScheduleSync.push(context, events)
@@ -215,16 +287,34 @@ fun MainScreen(
     var prefillLocation by remember { mutableStateOf(initialUntangleState?.location.orEmpty()) }
     var gpsLat by remember { mutableStateOf(initialUntangleState?.lat ?: 0.0) }
     var gpsLng by remember { mutableStateOf(initialUntangleState?.lng ?: 0.0) }
+    var untangleJournalDate by remember {
+        mutableStateOf(initialUntangleState?.journalDate.orEmpty())
+    }
+    var untangleJournalLine by remember {
+        mutableStateOf(initialUntangleState?.journalLine.orEmpty())
+    }
+    var untangleSubmissionInput by remember {
+        mutableStateOf(initialUntangleState?.submissionInput.orEmpty())
+    }
+    var untangleSubmissionStamp by remember {
+        mutableStateOf(initialUntangleState?.submissionStamp.orEmpty())
+    }
+    var untangleSubmissionLocation by remember {
+        mutableStateOf(initialUntangleState?.submissionLocation.orEmpty())
+    }
+    var untangleRequiresFreshSubmission by remember {
+        mutableStateOf(initialUntangleState?.requiresFreshSubmission == true)
+    }
     val untangleWriteMutex = remember { Mutex() }
 
-    fun saveUntangleState(
+    fun untangleSnapshot(
         phase: UntanglePhase,
         proposal: DeepSeekAnalysisService.ProposedAction? = sheetAction,
-    ) {
+    ): UntangleRecoveryState {
         val requestId = sheetRequestId.ifBlank {
-            "ui-${UUID.randomUUID().toString().take(8)}".also { sheetRequestId = it }
+            "ui-${UUID.randomUUID()}".also { sheetRequestId = it }
         }
-        val snapshot = UntangleRecoveryState(
+        return UntangleRecoveryState(
             requestId = requestId,
             inputText = untangleInput,
             location = prefillLocation,
@@ -232,10 +322,20 @@ fun MainScreen(
             lng = gpsLng,
             phase = phase,
             proposal = proposal,
+            journalDate = untangleJournalDate,
+            journalLine = untangleJournalLine,
+            submissionInput = untangleSubmissionInput,
+            submissionStamp = untangleSubmissionStamp,
+            submissionLocation = untangleSubmissionLocation,
+            requiresFreshSubmission = untangleRequiresFreshSubmission,
         )
-        scope.launch {
-            untangleWriteMutex.withLock { untangleStore.save(snapshot) }
-        }
+    }
+
+    fun saveUntangleState(
+        phase: UntanglePhase,
+        proposal: DeepSeekAnalysisService.ProposedAction? = sheetAction,
+    ) {
+        untangleStore.enqueue(untangleSnapshot(phase, proposal))
     }
 
     fun discardUntangleState(requestId: String = sheetRequestId) {
@@ -256,16 +356,20 @@ fun MainScreen(
             thinking = false
             sheetAction = null
             val previousRequestId = sheetRequestId
-            val openedRequestId = "watch-${UUID.randomUUID().toString().take(8)}"
+            val openedRequestId = "watch-${UUID.randomUUID()}"
             sheetRequestId = openedRequestId
             untangleInput = ""
             prefillLocation = ""
             gpsLat = 0.0; gpsLng = 0.0
+            untangleJournalDate = ""
+            untangleJournalLine = ""
+            untangleSubmissionInput = ""
+            untangleSubmissionStamp = ""
+            untangleSubmissionLocation = ""
+            untangleRequiresFreshSubmission = false
             untangleWriteMutex.withLock {
-                if (previousRequestId.isNotBlank() && previousRequestId != openedRequestId) {
-                    untangleStore.delete(previousRequestId)
-                }
-                untangleStore.save(
+                untangleStore.replace(
+                    previousRequestId,
                     UntangleRecoveryState(
                         requestId = openedRequestId,
                         inputText = "",
@@ -273,9 +377,12 @@ fun MainScreen(
                         lat = 0.0,
                         lng = 0.0,
                         phase = UntanglePhase.EDITING,
-                    )
+                    ),
                 )
             }
+            // This is the durable-consumption boundary for watch wake requests. Activity launch or
+            // setContent alone is insufficient: only now may the phone ACK and let the watch drop it.
+            onScheduleSheetReady()
 
             // Start foreground location capture. primeFreshCache was already
             // called by WakeDataLayerService before the Activity was visible.
@@ -293,40 +400,42 @@ fun MainScreen(
                 val cur = WatchLocationStore.get(context)
                 if (cur != null && cur.requestId == handle.requestId) fix = cur
             }
-            if (!showScheduleSheet || sheetRequestId != openedRequestId || thinking || sheetAction != null) {
+            if (!showScheduleSheet || sheetRequestId != openedRequestId || thinking ||
+                sheetAction != null || untangleJournalLine.isNotBlank()
+            ) {
                 return@LaunchedEffect
             }
-            // Reverse-geocode if we got a fix.
-            if (fix != null) {
-                gpsLat = fix.lat; gpsLng = fix.lng
-                if (amapApiKey.isNotBlank()) {
-                    prefillLocation = AmapGeocoder.reverseGeocode(fix.lat, fix.lng, amapApiKey)
-                }
+            // Resolve into locals first. A submission may finish while geocoding is suspended; in
+            // that case its frozen timestamp/location must not be mutated by this late result.
+            val resolvedLocation = if (fix != null && amapApiKey.isNotBlank()) {
+                AmapGeocoder.reverseGeocode(fix.lat, fix.lng, amapApiKey)
+            } else {
+                ""
             }
             Log.i(
                 LLM_LOG_TAG,
                 "phase=location_capture result=${if (fix == null) "timeout" else "fix"} " +
-                    "reverseGeocoded=${prefillLocation.isNotBlank()}",
+                "reverseGeocoded=${resolvedLocation.isNotBlank()}",
             )
-            if (!showScheduleSheet || sheetRequestId != openedRequestId) {
+            if (!showScheduleSheet || sheetRequestId != openedRequestId || thinking ||
+                sheetAction != null || untangleJournalLine.isNotBlank()
+            ) {
                 return@LaunchedEffect
+            }
+            if (fix != null) {
+                gpsLat = fix.lat
+                gpsLng = fix.lng
+                prefillLocation = resolvedLocation
             }
             // Location belongs to the same durable request. Persist it before the user can submit
             // so a process restart does not silently drop a fix that was already displayed.
             untangleWriteMutex.withLock {
-                if (thinking || sheetAction != null || sheetRequestId != openedRequestId) {
+                if (thinking || sheetAction != null || sheetRequestId != openedRequestId ||
+                    untangleJournalLine.isNotBlank()
+                ) {
                     return@withLock
                 }
-                untangleStore.save(
-                    UntangleRecoveryState(
-                        requestId = openedRequestId,
-                        inputText = untangleInput,
-                        location = prefillLocation,
-                        lat = gpsLat,
-                        lng = gpsLng,
-                        phase = UntanglePhase.EDITING,
-                    )
-                )
+                untangleStore.save(untangleSnapshot(UntanglePhase.EDITING, proposal = null))
             }
         }
     }
@@ -336,6 +445,7 @@ fun MainScreen(
         Box(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize()) {
                 NotesHeader(
+                    date = journalDate,
                     syncStatus = syncStatus,
                     onPanelToggle = { panelOpen = !panelOpen }
                 )
@@ -343,7 +453,15 @@ fun MainScreen(
                 MarkdownField(
                     content = content,
                     onEditStart = {
-                        journalWriteMutex.withLock { store.beginTodayDraft(content) }
+                        val recovery = journalWriteMutex.withLock { store.beginDraft(journalDateKey) }
+                        val sessionText = when (recovery) {
+                            JournalDraftRecovery.None -> store.get(journalDateKey)
+                            is JournalDraftRecovery.Recovered -> recovery.text
+                            is JournalDraftRecovery.Conflict -> recovery.text
+                        }
+                        content = sessionText
+                        journalHasDraft = recovery != JournalDraftRecovery.None
+                        sessionText
                     },
                     onSave = { text ->
                         content = text
@@ -353,6 +471,7 @@ fun MainScreen(
                         content = text
                         saveJournalDraft(text)
                     },
+                    onEditingChange = { journalEditing = it },
                     placeholder = stringResource(R.string.journal_edit_hint),
                     modifier = Modifier.weight(1f)
                 )
@@ -372,15 +491,33 @@ fun MainScreen(
         }
     }
 
-    val initialEventStage = remember(eventStore, initialEditingEvent?.id) {
-        initialEditingEvent?.let { eventStore.consumeRecoveredStage(it.id) }
-            ?: EventEditStage.DETAIL
-    }
+    val initiallyRecoveredEvent = initialEventRecovery as? EventDraftRecovery.Recovered
+    val initialEventStage = initiallyRecoveredEvent?.stage ?: EventEditStage.DETAIL
     var pendingNewEvent by remember {
-        mutableStateOf(initialEditingEvent?.takeIf { initialEventStage == EventEditStage.NAMING })
+        mutableStateOf(
+            initiallyRecoveredEvent?.event?.takeIf { initialEventStage == EventEditStage.NAMING }
+        )
     }
     var editingEvent by remember {
-        mutableStateOf(initialEditingEvent?.takeUnless { initialEventStage == EventEditStage.NAMING })
+        mutableStateOf(
+            initiallyRecoveredEvent?.event?.takeUnless { initialEventStage == EventEditStage.NAMING }
+        )
+    }
+    var eventConflict by remember {
+        mutableStateOf(initialEventRecovery as? EventDraftRecovery.Conflict)
+    }
+
+    suspend fun revealNextEventDraft() {
+        when (val next = eventStore.latestEventDraftRecovery()) {
+            is EventDraftRecovery.Recovered -> {
+                if (next.stage == EventEditStage.NAMING) pendingNewEvent = next.event
+                else editingEvent = next.event
+            }
+            is EventDraftRecovery.Conflict -> eventConflict = next
+            EventDraftRecovery.None,
+            null,
+            -> Unit
+        }
     }
 
     fun beginNewEvent(type: String) {
@@ -414,30 +551,32 @@ fun MainScreen(
 
     fun openEvent(event: TaskEvent) {
         scope.launch {
-            when (val recovery = eventStore.recoverEventDraft(event.id)) {
-                is EventDraftRecovery.Recovered -> {
-                    if (recovery.stage == EventEditStage.NAMING) {
-                        pendingNewEvent = recovery.event
-                    } else {
-                        editingEvent = recovery.event
+            try {
+                when (val recovery = eventStore.recoverEventDraft(event.id)) {
+                    is EventDraftRecovery.Recovered -> {
+                        if (recovery.stage == EventEditStage.NAMING) {
+                            pendingNewEvent = recovery.event
+                        } else {
+                            editingEvent = recovery.event
+                        }
+                    }
+                    is EventDraftRecovery.Conflict -> {
+                        eventConflict = recovery
+                        Toast.makeText(
+                            context,
+                            "该事项已在其他设备修改，请选择如何处理已保留的草稿",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                    EventDraftRecovery.None -> {
+                        val current = eventWriteMutex.withLock {
+                            eventStore.beginEventEdit(event)
+                        }
+                        editingEvent = current
                     }
                 }
-                is EventDraftRecovery.Conflict -> {
-                    // Keep showing the user's exact draft. A fresh-base commit below will retain it
-                    // and reject overwriting the authoritative event until the conflict is resolved.
-                    editingEvent = recovery.event ?: event
-                    Toast.makeText(
-                        context,
-                        "该事项已在其他设备修改，旧草稿已保留且未自动覆盖",
-                        Toast.LENGTH_LONG,
-                    ).show()
-                }
-                EventDraftRecovery.None -> {
-                    val current = eventWriteMutex.withLock {
-                        eventStore.beginEventEdit(event)
-                    }
-                    editingEvent = current
-                }
+            } catch (_: Exception) {
+                Toast.makeText(context, "无法打开事项草稿，请重试", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -446,7 +585,8 @@ fun MainScreen(
         taskWidgetModalVisible ||
         timelineModalVisible ||
         pendingNewEvent != null ||
-        editingEvent != null
+        editingEvent != null ||
+        eventConflict != null
 
     LaunchedEffect(chromeHidden) {
         if (chromeHidden) chromeMode = ChromeMode.Minimal
@@ -554,17 +694,42 @@ fun MainScreen(
     // ── Schedule extraction flow ────────────────────────────────────────
 
     val submitForExtraction: (String) -> Unit = { text ->
-        val requestId = sheetRequestId.ifBlank { "ui-${UUID.randomUUID().toString().take(8)}" }
+        val originalRequestId = sheetRequestId
+        val changedSinceSubmitted = untangleRequiresFreshSubmission ||
+            (untangleJournalLine.isNotBlank() && untangleSubmissionInput != text)
+        val requestId = when {
+            changedSinceSubmitted -> "ui-${UUID.randomUUID()}"
+            sheetRequestId.isBlank() -> "ui-${UUID.randomUUID()}"
+            else -> sheetRequestId
+        }
         sheetRequestId = requestId
         untangleInput = text
+        untangleRequiresFreshSubmission = false
         val now = System.currentTimeMillis()
-        val stamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).apply {
-            timeZone = appLegacyTimeZone()
-        }.format(java.util.Date(now))
-        val loc = prefillLocation.ifBlank { "" }
+        val isExactRetry = !changedSinceSubmitted &&
+            untangleJournalLine.isNotBlank() &&
+            untangleJournalDate.isNotBlank()
+        val stamp = if (isExactRetry) {
+            untangleSubmissionStamp
+        } else {
+            java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).apply {
+                timeZone = appLegacyTimeZone()
+            }.format(java.util.Date(now))
+        }
+        val loc = if (isExactRetry) untangleSubmissionLocation else prefillLocation.ifBlank { "" }
+        val journalDate = if (isExactRetry) untangleJournalDate else appToday().toString()
         val locationPart = if (loc.isNotBlank()) " · $loc" else ""
         // appendTodayOnce adds one separator newline and its own hidden idempotency marker.
-        val entryLine = "\n---\n\n### $stamp$locationPart\n\n$text"
+        val entryLine = if (isExactRetry) {
+            untangleJournalLine
+        } else {
+            "\n---\n\n### $stamp$locationPart\n\n$text"
+        }
+        untangleJournalDate = journalDate
+        untangleJournalLine = entryLine
+        untangleSubmissionInput = text
+        untangleSubmissionStamp = stamp
+        untangleSubmissionLocation = loc
         val thinkingState = UntangleRecoveryState(
             requestId = requestId,
             inputText = text,
@@ -572,6 +737,11 @@ fun MainScreen(
             lat = gpsLat,
             lng = gpsLng,
             phase = UntanglePhase.THINKING,
+            journalDate = journalDate,
+            journalLine = entryLine,
+            submissionInput = text,
+            submissionStamp = stamp,
+            submissionLocation = loc,
         )
 
         Log.i(
@@ -585,13 +755,19 @@ fun MainScreen(
             try {
                 // Persist the request before any irreversible side effect. On recovery THINKING is
                 // presented as EDITING, so retry uses the same requestId.
-                untangleWriteMutex.withLock { untangleStore.save(thinkingState) }
+                untangleWriteMutex.withLock {
+                    if (changedSinceSubmitted && originalRequestId.isNotBlank()) {
+                        untangleStore.replace(originalRequestId, thinkingState)
+                    } else {
+                        untangleStore.save(thinkingState)
+                    }
+                }
 
-                val (durableText, hasConflict) = journalWriteMutex.withLock {
-                    val recoveredDraft = store.getTodayDraft()
+                val (durableText, journalConflictDetails) = journalWriteMutex.withLock {
+                    val recoveredDraft = store.getDraft(journalDate)
                     if (recoveredDraft == null) {
-                        store.appendTodayOnce(requestId, entryLine)
-                        store.getToday() to false
+                        store.appendOnce(journalDate, requestId, entryLine)
+                        store.get(journalDate) to null
                     } else {
                         val marker = journalOnceMarker(requestId)
                         val candidate = if (marker in recoveredDraft) {
@@ -599,14 +775,18 @@ fun MainScreen(
                         } else {
                             recoveredDraft.trimEnd() + "\n" + entryLine + "\n" + marker
                         }
-                        store.saveTodayDraft(candidate)
-                        val commit = store.commitTodayDraft(candidate)
-                        candidate to (commit is DraftCommitResult.Conflict)
+                        store.saveDraft(journalDate, candidate)
+                        val commit = store.commitDraft(journalDate, candidate)
+                        candidate to (commit as? DraftCommitResult.Conflict)?.details
                     }
                 }
-                content = durableText
-                journalHasDraft = hasConflict
+                val hasConflict = journalConflictDetails != null
+                if (journalDate == journalDateKey) {
+                    content = durableText
+                    journalHasDraft = hasConflict
+                }
                 if (hasConflict) {
+                    journalConflict = JournalConflictPrompt(requireNotNull(journalConflictDetails))
                     Toast.makeText(
                         context,
                         "日记已在其他设备修改；本次记录和原草稿均已保留，未自动覆盖",
@@ -657,8 +837,16 @@ fun MainScreen(
                             updatedAt = System.currentTimeMillis(),
                         ))
                     }
-                    thinking = false
-                    Toast.makeText(context, R.string.ai_service_unavailable, Toast.LENGTH_LONG).show()
+                    if (sheetRequestId == requestId && showScheduleSheet) {
+                        thinking = false
+                        Toast.makeText(
+                            context,
+                            R.string.ai_service_unavailable,
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    } else {
+                        untangleWriteMutex.withLock { untangleStore.delete(requestId) }
+                    }
                 }
             } catch (error: Exception) {
                 Log.e(
@@ -666,16 +854,26 @@ fun MainScreen(
                     "request=$requestId phase=submit result=failed " +
                         "errorType=${error.javaClass.simpleName} at=${error.locationForLog()}",
                 )
-                thinking = false
                 runCatching {
                     untangleWriteMutex.withLock {
-                        untangleStore.save(thinkingState.copy(
-                            phase = UntanglePhase.EDITING,
-                            updatedAt = System.currentTimeMillis(),
-                        ))
+                        if (showScheduleSheet && sheetRequestId == requestId) {
+                            untangleStore.save(thinkingState.copy(
+                                phase = UntanglePhase.EDITING,
+                                updatedAt = System.currentTimeMillis(),
+                            ))
+                        } else {
+                            untangleStore.delete(requestId)
+                        }
                     }
                 }
-                Toast.makeText(context, R.string.schedule_create_failed_toast, Toast.LENGTH_SHORT).show()
+                if (showScheduleSheet && sheetRequestId == requestId) {
+                    thinking = false
+                    Toast.makeText(
+                        context,
+                        R.string.schedule_create_failed_toast,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
             }
         }
     }
@@ -730,7 +928,7 @@ fun MainScreen(
         thinking = true
         scope.launch {
             try {
-                val created = untangleWriteMutex.withLock {
+                val commitResult = untangleWriteMutex.withLock {
                     eventWriteMutex.withLock {
                         eventStore.saveAndClearPendingAction(ev, requestId)
                     }
@@ -738,44 +936,80 @@ fun MainScreen(
                 Log.i(
                     LLM_LOG_TAG,
                     "request=$requestId phase=tool_execute tool=create_schedule " +
-                        "result=${if (created) "local_saved" else "already_handled"} " +
+                        "result=${commitResult.name.lowercase()} " +
                         "alarmEnabled=${act.alarmEnabled}",
                 )
-                if (created) {
-                    val toastMessage = when {
-                        !act.alarmEnabled -> context.getString(R.string.schedule_created_toast, act.title)
-                        TaskAlarmScheduler.canScheduleExactAlarms(context) ->
-                            context.getString(R.string.schedule_created_with_alarm_toast, act.title)
-                        else -> context.getString(
-                            R.string.schedule_created_with_fallback_alarm_toast,
-                            act.title,
-                        )
+                if (commitResult == PendingActionCommitResult.INVALID_STATE) {
+                    if (showScheduleSheet && sheetRequestId == requestId) {
+                        thinking = false
+                        Toast.makeText(
+                            context,
+                            R.string.schedule_create_failed_toast,
+                            Toast.LENGTH_SHORT,
+                        ).show()
                     }
-                    Toast.makeText(context, toastMessage, Toast.LENGTH_SHORT).show()
+                    return@launch
                 }
-                events = manager.fetchEvents(serverUrl)
-                WatchScheduleSync.push(context, events)
+                if (showScheduleSheet && sheetRequestId == requestId) {
+                    if (commitResult == PendingActionCommitResult.SAVED) {
+                        val toastMessage = when {
+                            !act.alarmEnabled ->
+                                context.getString(R.string.schedule_created_toast, act.title)
+                            TaskAlarmScheduler.canScheduleExactAlarms(context) ->
+                                context.getString(R.string.schedule_created_with_alarm_toast, act.title)
+                            else -> context.getString(
+                                R.string.schedule_created_with_fallback_alarm_toast,
+                                act.title,
+                            )
+                        }
+                        Toast.makeText(context, toastMessage, Toast.LENGTH_SHORT).show()
+                    }
+                    // Room already committed the event and consumed the proposal. Close this
+                    // generation before best-effort network/watch work, so transport failure can
+                    // never be reported as a failed creation or expose a dead confirm button.
+                    showScheduleSheet = false
+                    thinking = false
+                    sheetAction = null
+                    sheetRequestId = ""
+                    untangleInput = ""
+                    prefillLocation = ""
+                    gpsLat = 0.0
+                    gpsLng = 0.0
+                    untangleJournalDate = ""
+                    untangleJournalLine = ""
+                    untangleSubmissionInput = ""
+                    untangleSubmissionStamp = ""
+                    untangleSubmissionLocation = ""
+                    untangleRequiresFreshSubmission = false
+                }
+                runCatching { manager.fetchEvents(serverUrl) }
+                    .onSuccess { refreshed -> events = refreshed }
+                    .onFailure { error ->
+                        Log.w(LLM_LOG_TAG, "request=$requestId post-commit sync failed", error)
+                    }
+                runCatching { WatchScheduleSync.push(context, events) }
+                    .onFailure { error ->
+                        Log.w(LLM_LOG_TAG, "request=$requestId watch push failed", error)
+                    }
                 Log.i(
                     LLM_LOG_TAG,
                     "request=$requestId phase=tool_execute tool=create_schedule " +
-                    "result=completed syncedEventCount=${events.size}",
+                        "result=completed visibleEventCount=${events.size}",
                 )
-                showScheduleSheet = false
-                thinking = false
-                sheetAction = null
-                sheetRequestId = ""
-                untangleInput = ""
-                prefillLocation = ""
-                gpsLat = 0.0
-                gpsLng = 0.0
             } catch (e: Exception) {
                 Log.e(
                     LLM_LOG_TAG,
                     "request=$requestId phase=tool_execute tool=create_schedule result=failed " +
                         "errorType=${e.javaClass.simpleName} at=${e.locationForLog()}",
                 )
-                thinking = false
-                Toast.makeText(context, R.string.schedule_create_failed_toast, Toast.LENGTH_SHORT).show()
+                if (showScheduleSheet && sheetRequestId == requestId) {
+                    thinking = false
+                    Toast.makeText(
+                        context,
+                        R.string.schedule_create_failed_toast,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
             }
         }
     }
@@ -784,6 +1018,7 @@ fun MainScreen(
     Box(Modifier.fillMaxSize().background(BG).windowInsetsPadding(WindowInsets.systemBars)) {
         if (showScheduleSheet) {
             UntangleSheet(
+                requestId = sheetRequestId,
                 prefillLocation = prefillLocation,
                 initialText = untangleInput,
                 thinking = thinking,
@@ -997,32 +1232,32 @@ fun MainScreen(
             onDraftChange = { name ->
                 val updated = draftEvent.copy(title = name)
                 pendingNewEvent = updated
-                scope.launch {
-                    eventWriteMutex.withLock {
-                        eventStore.saveEventDraft(updated, EventEditStage.NAMING)
-                    }
-                }
+                eventStore.enqueueEventDraft(updated, EventEditStage.NAMING)
             },
             onCancel = {
+                // Unmount first so no later naming callback can enqueue after the ordered delete.
+                pendingNewEvent = null
                 scope.launch {
                     try {
                         eventWriteMutex.withLock { eventStore.discardEventDraft(draftEvent.id) }
-                        pendingNewEvent = null
                     } catch (_: Exception) {
+                        pendingNewEvent = draftEvent
                         Toast.makeText(context, "无法丢弃草稿，请重试", Toast.LENGTH_LONG).show()
                     }
                 }
             },
             onConfirm = { name ->
                 val updated = draftEvent.copy(title = name)
+                // Latch the naming UI before its DETAIL transition enters the same draft queue.
+                pendingNewEvent = null
                 scope.launch {
                     try {
                         eventWriteMutex.withLock {
                             eventStore.saveEventDraft(updated, EventEditStage.DETAIL)
                         }
-                        pendingNewEvent = null
                         editingEvent = updated
                     } catch (_: Exception) {
+                        pendingNewEvent = updated
                         Toast.makeText(context, "无法保存事项名称，请重试", Toast.LENGTH_LONG).show()
                     }
                 }
@@ -1034,17 +1269,15 @@ fun MainScreen(
         EventDetailScreen(
             event = ev,
             onDraftChange = { snapshot ->
-                scope.launch {
-                    eventWriteMutex.withLock {
-                        eventStore.saveEventDraft(snapshot, EventEditStage.DETAIL)
-                    }
-                }
+                eventStore.enqueueEventDraft(snapshot, EventEditStage.DETAIL)
             },
             onSave = { updated, onFinished ->
                 val nextEvents = upsertEventPreservingOrder(events, updated)
+                // Queue the exact final snapshot before starting the Activity-scoped commit.
+                eventStore.enqueueEventDraft(updated, EventEditStage.DETAIL)
                 scope.launch {
                     try {
-                        when (eventWriteMutex.withLock {
+                        when (val result = eventWriteMutex.withLock {
                             eventStore.saveAndClearEventDraft(updated)
                         }) {
                             DraftCommitResult.Saved,
@@ -1055,12 +1288,18 @@ fun MainScreen(
                                 onFinished(true)
                             }
                             is DraftCommitResult.Conflict -> {
+                                eventConflict = EventDraftRecovery.Conflict(
+                                    details = result.details,
+                                    event = updated,
+                                    stage = EventEditStage.DETAIL,
+                                )
+                                editingEvent = null
                                 Toast.makeText(
                                     context,
-                                    "事项已在其他设备修改，当前草稿已保留，请先处理冲突",
+                                    "事项已在其他设备修改；草稿已保留，请选择处理方式",
                                     Toast.LENGTH_LONG,
                                 ).show()
-                                onFinished(false)
+                                onFinished(true)
                             }
                         }
                     } catch (_: Exception) {
@@ -1071,9 +1310,10 @@ fun MainScreen(
             },
             onNoteSave = { updated, onFinished ->
                 val nextEvents = upsertEventPreservingOrder(events, updated)
+                eventStore.enqueueEventDraft(updated, EventEditStage.DETAIL)
                 scope.launch {
                     try {
-                        when (eventWriteMutex.withLock {
+                        when (val result = eventWriteMutex.withLock {
                             eventStore.saveAndClearEventDraft(updated)
                         }) {
                             DraftCommitResult.Saved,
@@ -1084,12 +1324,18 @@ fun MainScreen(
                                 onFinished(true)
                             }
                             is DraftCommitResult.Conflict -> {
+                                eventConflict = EventDraftRecovery.Conflict(
+                                    details = result.details,
+                                    event = updated,
+                                    stage = EventEditStage.DETAIL,
+                                )
+                                editingEvent = null
                                 Toast.makeText(
                                     context,
-                                    "事项已在其他设备修改，备注草稿已保留且未覆盖",
+                                    "事项已在其他设备修改；备注草稿已保留，请选择处理方式",
                                     Toast.LENGTH_LONG,
                                 ).show()
-                                onFinished(false)
+                                onFinished(true)
                             }
                         }
                     } catch (_: Exception) {
@@ -1098,6 +1344,133 @@ fun MainScreen(
                     }
                 }
             }
+        )
+    }
+
+    journalConflict?.let { conflict ->
+        AlertDialog(
+            onDismissRequest = { journalConflict = null },
+            title = { Text("日记内容冲突") },
+            text = { Text("其他设备已修改当天内容。草稿不会丢失；请选择保留草稿、使用当前版本，或明确覆盖当前版本。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        try {
+                            val overwritten = journalWriteMutex.withLock {
+                                store.overwriteDraft(conflict.details)
+                            }
+                            if (overwritten) {
+                                if (conflict.date == journalDateKey) {
+                                    content = conflict.draftText
+                                    journalHasDraft = false
+                                }
+                                journalConflict = null
+                            } else {
+                                refreshJournalRecovery(conflict.date)
+                            }
+                        } catch (_: Exception) {
+                            Toast.makeText(context, "覆盖失败，草稿仍已保留", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }) { Text("覆盖当前") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { journalConflict = null }) {
+                        Text("保留草稿")
+                    }
+                    TextButton(onClick = {
+                        scope.launch {
+                            try {
+                                val discarded = journalWriteMutex.withLock {
+                                    store.discardDraft(conflict.details)
+                                }
+                                if (!discarded) {
+                                    refreshJournalRecovery(conflict.date)
+                                    return@launch
+                                }
+                                if (conflict.date == journalDateKey) {
+                                    content = store.get(journalDateKey)
+                                    journalHasDraft = false
+                                }
+                                journalConflict = null
+                            } catch (_: Exception) {
+                                Toast.makeText(context, "读取当前版本失败", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }) { Text("使用当前版本") }
+                }
+            },
+        )
+    }
+
+    eventConflict?.let { conflict ->
+        val conflictDraft = conflict.event
+        AlertDialog(
+            onDismissRequest = { eventConflict = null },
+            title = { Text("事项草稿冲突") },
+            text = {
+                Text(
+                    if (conflictDraft == null) {
+                        "原事项已删除或缺失。草稿仍保存在本机，你可以继续保留或使用当前状态。"
+                    } else {
+                        "其他设备已修改或删除原事项。可保留草稿、使用当前版本，或把草稿另存为新事项。"
+                    }
+                )
+            },
+            confirmButton = {
+                if (conflictDraft != null) {
+                    TextButton(onClick = {
+                        scope.launch {
+                            try {
+                                val saved = eventWriteMutex.withLock {
+                                    eventStore.saveConflictAsCopy(conflictDraft, conflict.details)
+                                } != null
+                                if (!saved) {
+                                    eventConflict = null
+                                    revealNextEventDraft()
+                                    return@launch
+                                }
+                                eventConflict = null
+                                revealNextEventDraft()
+                                Toast.makeText(context, "草稿已另存为冲突副本", Toast.LENGTH_LONG).show()
+                            } catch (_: Exception) {
+                                Toast.makeText(context, "另存失败，原草稿仍已保留", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }) { Text("另存副本") }
+                } else {
+                    TextButton(onClick = { eventConflict = null }) { Text("保留草稿") }
+                }
+            },
+            dismissButton = {
+                Row {
+                    if (conflictDraft != null) {
+                        TextButton(onClick = { eventConflict = null }) { Text("保留草稿") }
+                    }
+                    TextButton(onClick = {
+                        scope.launch {
+                            try {
+                                val discarded = eventWriteMutex.withLock {
+                                    eventStore.discardEventDraft(
+                                        conflict.details.target.entityId,
+                                        conflict.details,
+                                    )
+                                }
+                                if (!discarded) {
+                                    eventConflict = null
+                                    revealNextEventDraft()
+                                    return@launch
+                                }
+                                eventConflict = null
+                                revealNextEventDraft()
+                            } catch (_: Exception) {
+                                Toast.makeText(context, "读取当前版本失败", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }) { Text("使用当前版本") }
+                }
+            },
         )
     }
 }

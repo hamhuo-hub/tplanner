@@ -41,6 +41,7 @@ object PhoneWaker {
         val requestId: String,
         val createdAtEpochMs: Long,
         val attempt: Int,
+        val legacyMessageSent: Boolean,
     )
 
     private val stateLock = Any()
@@ -59,6 +60,7 @@ object PhoneWaker {
             requestId = UUID.randomUUID().toString(),
             createdAtEpochMs = System.currentTimeMillis(),
             attempt = 0,
+            legacyMessageSent = false,
         )
         synchronized(stateLock) {
             val queue = readQueue(appContext)
@@ -176,13 +178,7 @@ object PhoneWaker {
             return null
         }
 
-        val payload = JSONObject().apply {
-            put("schemaVersion", SCHEMA_VERSION)
-            put("requestId", head.requestId)
-            put("createdAtEpochMs", head.createdAtEpochMs)
-            put("attempt", head.attempt)
-            put("publishedAtEpochMs", System.currentTimeMillis())
-        }.toString().toByteArray(Charsets.UTF_8)
+        val payload = encodeRequest(head)
 
         try {
             val request = PutDataRequest.create(REQUEST_PATH).setUrgent().apply { data = payload }
@@ -196,32 +192,73 @@ object PhoneWaker {
             Log.e(TAG, "flushHead: DataItem publish failed request=${head.requestId}", e)
         }
 
-        // Best-effort fast path. Failure is harmless because the DataItem remains durable.
-        try {
-            val nodes = Tasks.await(
-                Wearable.getNodeClient(context).connectedNodes,
-                3,
-                TimeUnit.SECONDS,
-            )
-            for (node in nodes) {
-                runCatching {
-                    Tasks.await(
-                        Wearable.getMessageClient(context)
-                            .sendMessage(node.id, MESSAGE_PATH, payload),
-                        3,
-                        TimeUnit.SECONDS,
-                    )
-                }.onFailure { error ->
-                    Log.w(TAG, "flushHead: fast path failed node=${node.displayName}", error)
-                }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "flushHead: no fast-path connection", e)
-        }
+        // Every queued request gets its own legacy fast path. An old phone never ACKs the durable
+        // DataItem, so limiting MessageClient to the queue head would block all later watch taps
+        // behind that head until its TTL expired.
+        flushLegacyMessages(context)
 
         val exponent = (head.attempt - 1).coerceIn(0, 6)
         return (INITIAL_RETRY_MS * (1L shl exponent)).coerceAtMost(MAX_RETRY_MS)
     }
+
+    private fun flushLegacyMessages(context: Context) {
+        val unsent = synchronized(stateLock) {
+            readQueue(context).filterNot(PendingRequest::legacyMessageSent)
+        }
+        if (unsent.isEmpty()) return
+        val nodes = try {
+            Tasks.await(
+                Wearable.getNodeClient(context).connectedNodes,
+                3,
+                TimeUnit.SECONDS,
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "no legacy connection", e)
+            return
+        }
+        unsent.forEach { pending ->
+            var sent = false
+            for (node in nodes) {
+                runCatching {
+                    Tasks.await(
+                        Wearable.getMessageClient(context)
+                            .sendMessage(node.id, MESSAGE_PATH, encodeRequest(pending)),
+                        3,
+                        TimeUnit.SECONDS,
+                    )
+                }.onSuccess {
+                    sent = true
+                }.onFailure { error ->
+                    Log.w(
+                        TAG,
+                        "legacy fast path failed request=${pending.requestId} " +
+                            "node=${node.displayName}",
+                        error,
+                    )
+                }
+            }
+            if (sent) {
+                synchronized(stateLock) {
+                    val queue = readQueue(context)
+                    val index = queue.indexOfFirst { it.requestId == pending.requestId }
+                    if (index >= 0 && !queue[index].legacyMessageSent) {
+                        queue[index] = queue[index].copy(legacyMessageSent = true)
+                        if (!writeQueue(context, queue)) {
+                            Log.e(TAG, "flushHead: failed to persist legacy send marker")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun encodeRequest(request: PendingRequest): ByteArray = JSONObject().apply {
+        put("schemaVersion", SCHEMA_VERSION)
+        put("requestId", request.requestId)
+        put("createdAtEpochMs", request.createdAtEpochMs)
+        put("attempt", request.attempt)
+        put("publishedAtEpochMs", System.currentTimeMillis())
+    }.toString().toByteArray(Charsets.UTF_8)
 
     private fun publishIdle(context: Context) {
         try {
@@ -289,6 +326,7 @@ object PhoneWaker {
                     requestId = requestId,
                     createdAtEpochMs = item.optLong("createdAtEpochMs", 0L),
                     attempt = item.optInt("attempt", 0).coerceAtLeast(0),
+                    legacyMessageSent = item.optBoolean("legacyMessageSent", false),
                 )
             }
         } catch (e: Exception) {
@@ -304,6 +342,7 @@ object PhoneWaker {
                 put("requestId", request.requestId)
                 put("createdAtEpochMs", request.createdAtEpochMs)
                 put("attempt", request.attempt)
+                put("legacyMessageSent", request.legacyMessageSent)
             })
         }
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

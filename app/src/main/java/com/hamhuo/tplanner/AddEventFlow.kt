@@ -310,8 +310,6 @@ fun NameInputSheet(
         mutableStateOf(TextFieldValue(startingText, selection = TextRange(0, startingText.length)))
     }
 
-    LaunchedEffect(text.text) { onDraftChange(text.text) }
-
     ModalBottomSheet(
         onDismissRequest = onCancel,
         sheetState       = sheetState,
@@ -335,7 +333,10 @@ fun NameInputSheet(
             Spacer(Modifier.height(40.dp))
             BasicTextField(
                 value         = text,
-                onValueChange = { text = it },
+                onValueChange = {
+                    text = it
+                    onDraftChange(it.text)
+                },
                 textStyle     = TextStyle(
                     color      = GOLD,
                     fontSize   = 26.sp,
@@ -399,8 +400,6 @@ fun EventDetailScreen(
     var noteEditorDraft by remember(event.id) { mutableStateOf(initialNote) }
     var noteEditorOpen by remember { mutableStateOf(false) }
     var noteEditorCloseRequested by remember { mutableStateOf(false) }
-    var noteSaveFinished by remember { mutableStateOf(false) }
-    var renderedNotePreview by remember { mutableStateOf<String?>(null) }
     var colorId   by remember { mutableStateOf(event.colorId) }
     var type      by remember { mutableStateOf(event.type) }
     var alarmEnabled by remember { mutableStateOf(event.alarmEnabled) }
@@ -441,25 +440,10 @@ fun EventDetailScreen(
         updatedAt = updatedAt,
     )
 
-    LaunchedEffect(
-        title,
-        type,
-        start,
-        end,
-        checklist,
-        completed,
-        note,
-        noteEditorDraft,
-        noteEditorOpen,
-        colorId,
-        alarmEnabled,
-        alarmOffsetMinutes,
-        event.updatedAt,
-        saveRequested,
-        noteEditorCloseRequested,
-    ) {
-        // Draft snapshots keep the base revision's timestamp; only the final fact write advances it.
+    fun persistDraft() {
         if (!saveRequested && !noteEditorCloseRequested) {
+            // Enqueue from the input callback itself. A LaunchedEffect can be cancelled before it
+            // observes the last accepted keystroke when the Activity is stopped or recreated.
             onDraftChange(buildResult(updatedAt = event.updatedAt))
         }
     }
@@ -477,15 +461,15 @@ fun EventDetailScreen(
         note = updatedNote
         noteEditorDraft = updatedNote
         noteEditorCloseRequested = true
-        noteSaveFinished = false
         onNoteSave(buildResult().copy(note = updatedNote)) { completed ->
-            noteSaveFinished = completed
             if (!completed) {
                 // The durable draft remains intact. Remount the editor so its local finish latch
                 // cannot leave the text permanently read-only after a conflict or I/O failure.
                 noteEditorCloseRequested = false
                 noteEditorOpen = false
-            } else if (renderedNotePreview == updatedNote) {
+            } else {
+                // The Room commit is the completion authority. Preview rendering may fail or be
+                // delayed and must not leave the editor permanently read-only.
                 noteEditorCloseRequested = false
                 noteEditorOpen = false
             }
@@ -579,7 +563,10 @@ fun EventDetailScreen(
                                 val titleFocusRequester = remember { FocusRequester() }
                                 BasicTextField(
                                     value = title,
-                                    onValueChange = { title = it },
+                                    onValueChange = {
+                                        title = it
+                                        persistDraft()
+                                    },
                                     textStyle = TextStyle(
                                         color = Color(0xFFE0D8C8), fontSize = 22.sp, fontWeight = FontWeight.Bold
                                     ),
@@ -602,7 +589,10 @@ fun EventDetailScreen(
                             }
                         }
                         if (type == "task") {
-                            IconButton(onClick = { completed = !completed }) {
+                            IconButton(onClick = {
+                                completed = !completed
+                                persistDraft()
+                            }) {
                                 Box(
                                     modifier = Modifier
                                         .size(24.dp)
@@ -653,6 +643,7 @@ fun EventDetailScreen(
                                 if (!newStart.isBefore(end)) {
                                     end = newStart.plusSeconds(3600)
                                 }
+                                persistDraft()
                             } }
                         )
                         TimeChip(
@@ -663,6 +654,7 @@ fun EventDetailScreen(
                                 if (!newEnd.isAfter(start)) {
                                     start = newEnd.minusSeconds(3600)
                                 }
+                                persistDraft()
                             } }
                         )
                     }
@@ -695,7 +687,10 @@ fun EventDetailScreen(
                         }
                         Switch(
                             checked = alarmEnabled,
-                            onCheckedChange = { alarmEnabled = it },
+                            onCheckedChange = {
+                                alarmEnabled = it
+                                persistDraft()
+                            },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Color(0xFF0E0E0E),
                                 checkedTrackColor = GOLD,
@@ -725,7 +720,10 @@ fun EventDetailScreen(
                                             RoundedCornerShape(20.dp),
                                         )
                                         .border(1.dp, if (selected) GOLD else BORDER, RoundedCornerShape(20.dp))
-                                        .clickable { alarmOffsetMinutes = minutes }
+                                        .clickable {
+                                            alarmOffsetMinutes = minutes
+                                            persistDraft()
+                                        }
                                         .padding(horizontal = 14.dp, vertical = 8.dp),
                                 ) {
                                     Text(
@@ -764,13 +762,16 @@ fun EventDetailScreen(
                                 onToggle = {
                                     checklist = checklist.toMutableList()
                                         .also { it[idx] = item.copy(completed = !item.completed) }
+                                    persistDraft()
                                 },
                                 onTextChange = { newText ->
                                     checklist = checklist.toMutableList()
                                         .also { it[idx] = item.copy(text = newText) }
+                                    persistDraft()
                                 },
                                 onDelete = {
                                     checklist = checklist.toMutableList().also { it.removeAt(idx) }
+                                    persistDraft()
                                 }
                             )
                         }
@@ -781,6 +782,7 @@ fun EventDetailScreen(
                                     checklist = checklist + CheckItem(
                                         id = UUID.randomUUID().toString(), text = "", completed = false
                                     )
+                                    persistDraft()
                                 },
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -800,7 +802,10 @@ fun EventDetailScreen(
                     Spacer(Modifier.height(10.dp))
                     MarkdownField(
                         content = note,
-                        onSave = { newNote -> note = newNote },
+                        onSave = { newNote ->
+                            note = newNote
+                            persistDraft()
+                        },
                         placeholder = stringResource(R.string.note_placeholder),
                         contentPadding = PaddingValues(0.dp),
                         // 详情页仅在这里预览；编辑交给根层的全屏 MarkdownEditor。
@@ -812,19 +817,7 @@ fun EventDetailScreen(
                             showTypeSheet = false
                             noteEditorDraft = note
                             noteEditorCloseRequested = false
-                            noteSaveFinished = false
                             noteEditorOpen = true
-                        },
-                        onPreviewRendered = { renderedContent ->
-                            renderedNotePreview = renderedContent
-                            if (
-                                noteEditorCloseRequested &&
-                                noteSaveFinished &&
-                                renderedContent == noteEditorDraft
-                            ) {
-                                noteEditorCloseRequested = false
-                                noteEditorOpen = false
-                            }
                         },
                     )
 
@@ -842,7 +835,10 @@ fun EventDetailScreen(
                                     .size(34.dp)
                                     .background(c, CircleShape)
                                     .border(if (idx == colorId) 2.dp else 0.dp, Color.White, CircleShape)
-                                    .clickable { colorId = idx }
+                                    .clickable {
+                                        colorId = idx
+                                        persistDraft()
+                                    }
                             )
                         }
                     }
@@ -869,6 +865,7 @@ fun EventDetailScreen(
                                     checklist = emptyList()
                                     completed = false
                                 }
+                                persistDraft()
                             }
                             showTypeSheet = false
                         },
@@ -882,6 +879,7 @@ fun EventDetailScreen(
                     value = noteEditorDraft,
                     onValueChange = { text ->
                         noteEditorDraft = text
+                        persistDraft()
                     },
                     placeholder = stringResource(R.string.note_placeholder),
                     onSaveAndClose = ::closeNoteEditor,
