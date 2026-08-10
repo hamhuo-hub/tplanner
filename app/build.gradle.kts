@@ -72,6 +72,12 @@ android {
         compose = true
         buildConfig = true
     }
+
+    sourceSets {
+        getByName("main").kotlin.directories.add(
+            rootProject.file("shared/src/main/kotlin").absolutePath,
+        )
+    }
 }
 
 dependencies {
@@ -95,7 +101,6 @@ dependencies {
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.datastore.preferences)
-    testImplementation("junit:junit:4.13.2")
 }
 
 ksp {

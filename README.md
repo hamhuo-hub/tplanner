@@ -19,9 +19,9 @@ Android 端，配合桌面端使用。手机负责随手记、任务管理、焦
 ### 多设备同步
 与桌面端共用同一同步服务器（`https://sync.hamhuo.top`），updatedAt-wins 合并、tombstone 软删除传播。
 
-## 手表唤醒
+## 手表通信
 
-手机端蓝牙前台服务常驻（开机自启），手表端通过经典蓝牙 RFCOMM 直连（绕开国行三星不可用的 GMS Wearable Data Layer）。唤醒后自动打时间戳 + GPS 到日记，弹出焦虑记录面板。
+手机向手表推送日程时优先使用 GMS Wearable Data Layer；无 GMS 时降级为经典蓝牙 RFCOMM，由手表端 `connectedDevice` 前台服务接收。手表点击表盘唤醒手机目前仍使用 Wearable Data Layer，尚未实现反向 RFCOMM 通道。
 
 ## Wear OS 表盘
 
@@ -36,7 +36,7 @@ Android 端，配合桌面端使用。手机负责随手记、任务管理、焦
 | 同步 | HttpURLConnection（无三方依赖） |
 | AI | DeepSeek API（直连，不经过树莓派） |
 | 定位 | 高德 Web API 逆地理编码 |
-| 蓝牙 | 经典蓝牙 RFCOMM (免 GMS) |
+| 蓝牙 | 经典蓝牙 RFCOMM（手机 → 手表日程同步，免 GMS） |
 | 表盘 | Wear OS WatchFaceService + Canvas 自绘 |
 
 ## 构建

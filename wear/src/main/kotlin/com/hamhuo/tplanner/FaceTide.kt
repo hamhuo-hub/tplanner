@@ -13,22 +13,13 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 // 潮汐：24h 波浪进度——曲线从午夜开始随当前时刻向上涨，金球在浪尖。
-// 今日已过的时间 = 金色波段 + 填充；未到的 = 暗轨。手机调起记录为青色菱形。
+// 今日已过的时间 = 金色波段 + 填充；未到的 = 暗轨。
 class FaceTide(
-    private val context: android.content.Context,
+    context: android.content.Context,
     surfaceHolder: android.view.SurfaceHolder,
     currentUserStyleRepository: androidx.wear.watchface.style.CurrentUserStyleRepository,
     watchState: androidx.wear.watchface.WatchState,
 ) : FaceBase(context, surfaceHolder, currentUserStyleRepository, watchState, FaceDesign.TIDE) {
-
-    @Volatile private var wakeMinutes = emptyList<Int>()
-    @Volatile private var wakeDate: java.time.LocalDate? = null
-
-    override fun onWakeInvoked(at: ZonedDateTime) {
-        val appDateTime = at.withZoneSameInstant(APP_ZONE)
-        wakeDate = appDateTime.toLocalDate()
-        wakeMinutes = WakeInvocationMarks.record(context, appDateTime)
-    }
 
     // 浪尖金球命中检测——替代底部珍珠锚点
     override fun isOnWakeButton(x: Int, y: Int): Boolean {
@@ -45,14 +36,6 @@ class FaceTide(
         val dx = x - tx; val dy = y - ty
         val hitR = s * 0.08f  // 金球半径 0.035f 的三倍宽容区
         return sqrt((dx * dx + dy * dy).toDouble()) <= hitR
-    }
-
-    private fun refreshWakeMinutes(t: ZonedDateTime) {
-        val date = t.toLocalDate()
-        if (wakeDate != date) {
-            wakeDate = date
-            wakeMinutes = WakeInvocationMarks.load(context, date)
-        }
     }
 
     // 提前算好共享几何，避免在 drawInteractive / drawAmbient 里重复
@@ -92,7 +75,6 @@ class FaceTide(
     }
 
     override fun drawInteractive(canvas: Canvas, t: ZonedDateTime, s: Float, cx: Float, cy: Float) {
-        refreshWakeMinutes(t)
         val boot = bootAlpha
         val g    = geo(s, cx, cy)
 
@@ -129,24 +111,6 @@ class FaceTide(
         p.setStroke(GOLD, s * 0.0042f, Paint.Cap.ROUND)
         p.alpha = (255 * boot).toInt()
         canvas.drawPath(goldPath, p)
-
-        // ── 今日调起记录：按点击唤醒按钮的时间映射到 24h 潮汐线上 ────────────
-        for (m in wakeMinutes) {
-            val frac  = m / 1440f
-            val ex    = g.startX + frac * g.width
-            val ey    = g.baseY - g.amp * cos(frac * 2.0 * PI).toFloat()
-            val hd    = s * 0.016f
-            val alpha = if (frac <= dayFrac) 0.8f else 0.35f
-            val dia   = Path().apply {
-                moveTo(ex, ey - hd)
-                lineTo(ex + hd * 0.55f, ey)
-                lineTo(ex, ey + hd)
-                lineTo(ex - hd * 0.55f, ey)
-                close()
-            }
-            p.setFill(TEAL, boot * alpha)
-            canvas.drawPath(dia, p)
-        }
 
         // ── 日程事件：蓝色半透明小点，映射到 24h 潮汐线上 ──────────────────
         for (m in marks.minutes) {

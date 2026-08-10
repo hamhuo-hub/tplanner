@@ -51,13 +51,10 @@ abstract class FaceBase(
 
     // ── 公共接口 ────────────────────────────────────────────────────────────
 
-    fun handleWakeTap(at: ZonedDateTime = ZonedDateTime.now(APP_ZONE)) {
+    fun handleWakeTap() {
         tapStart = System.currentTimeMillis()
-        onWakeInvoked(at.withZoneSameInstant(APP_ZONE))
         postInvalidate()
     }
-
-    protected open fun onWakeInvoked(at: ZonedDateTime) = Unit
 
     /** 默认中心区域——避免与系统媒体控件重叠。潮汐覆写为浪尖金球。 */
     open fun isOnWakeButton(x: Int, y: Int): Boolean {

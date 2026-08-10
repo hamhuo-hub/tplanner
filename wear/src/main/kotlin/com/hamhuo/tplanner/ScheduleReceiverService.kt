@@ -57,12 +57,36 @@ internal object ScheduleStore {
     private const val SOURCE_PHONE = "phone"
     internal const val SOURCE_BLUETOOTH = "bluetooth"
 
+    /**
+     * A Bluetooth sender may stop retrying only for terminal, successfully handled input.
+     * Invalid data and failed durable writes deliberately remain retryable failures.
+     */
+    internal enum class StoreResult(val shouldAcknowledge: Boolean) {
+        STORED(true),
+        ALREADY_CURRENT(true),
+        STALE(true),
+        REJECTED(false),
+        COMMIT_FAILED(false),
+    }
+
     private data class DaySnapshot(
         val date: String,
         val minutes: List<Int>,
     )
 
-    fun store(context: Context, raw: String, sourceOverride: String? = null) {
+    @Synchronized
+    fun store(
+        context: Context,
+        raw: String,
+        sourceOverride: String? = null,
+    ): StoreResult {
+        if (raw.toByteArray(Charsets.UTF_8).size > ScheduleRfcommProtocol.MAX_PAYLOAD_BYTES) {
+            Log.w(
+                TAG,
+                "storeSchedule: payload exceeds ${ScheduleRfcommProtocol.MAX_PAYLOAD_BYTES} bytes",
+            )
+            return StoreResult.REJECTED
+        }
         try {
             val payload = JSONObject(raw)
             val prefs = context.getSharedPreferences(WATCH_MARKS_PREFS, Context.MODE_PRIVATE)
@@ -85,15 +109,15 @@ internal object ScheduleStore {
                 hash = payload.optString("hash")
                 if (version < 0L || hash.isBlank()) {
                     Log.w(TAG, "storeSchedule: invalid version/hash version=$version")
-                    return
+                    return StoreResult.REJECTED
                 }
                 val inputDays = payload.optJSONArray("days") ?: run {
                     Log.w(TAG, "storeSchedule: missing days version=$version")
-                    return
+                    return StoreResult.REJECTED
                 }
                 if (inputDays.length() !in 1..MAX_SNAPSHOT_DAYS) {
                     Log.w(TAG, "storeSchedule: invalid day count=${inputDays.length()}")
-                    return
+                    return StoreResult.REJECTED
                 }
                 val seenDates = mutableSetOf<String>()
                 days = (0 until inputDays.length()).map { index ->
@@ -103,18 +127,21 @@ internal object ScheduleStore {
                     if (!seenDates.add(date)) {
                         throw IllegalArgumentException("duplicate date=$date")
                     }
-                    DaySnapshot(date, normalizedMinutes(inputDay.optJSONArray("minutes")))
+                    DaySnapshot(
+                        date,
+                        normalizedMinutes(inputDay.optJSONArray("minutes"), "days[$index].minutes"),
+                    )
                 }.sortedBy { it.date }
                 if (hash != scheduleHash(days)) {
                     Log.w(TAG, "storeSchedule: hash mismatch version=$version")
-                    return
+                    return StoreResult.REJECTED
                 }
             } else if (!payload.has("schemaVersion") && payload.has("minutes")) {
                 isLegacy = true
                 days = listOf(
                     DaySnapshot(
                         java.time.ZonedDateTime.now(APP_ZONE).toLocalDate().toString(),
-                        normalizedMinutes(payload.optJSONArray("minutes")),
+                        normalizedMinutes(payload.optJSONArray("minutes"), "minutes"),
                     )
                 )
                 version = maxOf(System.currentTimeMillis(), existingVersion + 1L)
@@ -122,26 +149,26 @@ internal object ScheduleStore {
                 Log.i(TAG, "storeSchedule: normalized legacy payload version=$version")
             } else {
                 Log.w(TAG, "storeSchedule: ignored unsupported schema=$schemaVersion")
-                return
+                return StoreResult.REJECTED
             }
 
             if (isLegacy && existing != null && !existingWasLegacy) {
                 Log.i(TAG, "storeSchedule: ignored legacy payload after versioned snapshot")
-                return
+                return StoreResult.STALE
             }
             if (!(existingWasLegacy && !isLegacy)) {
                 if (existingVersion > version) {
                     Log.w(TAG, "storeSchedule: ignored stale version=$version current=$existingVersion")
-                    return
+                    return StoreResult.STALE
                 }
                 if (existingVersion == version) {
-                    if (existingHash == hash) return
+                    if (existingHash == hash) return StoreResult.ALREADY_CURRENT
                     Log.e(
                         TAG,
                         "storeSchedule: rejected divergent content for version=$version " +
                             "currentHash=${existingHash?.take(12)} incomingHash=${hash.take(12)}",
                     )
-                    return
+                    return StoreResult.REJECTED
                 }
             }
 
@@ -169,18 +196,35 @@ internal object ScheduleStore {
                     TAG,
                     "storeSchedule: source=$source version=$version days=${days.first().date}..${days.last().date}",
                 )
+                return StoreResult.STORED
             } else {
                 Log.e(TAG, "storeSchedule: SharedPreferences commit failed")
+                return StoreResult.COMMIT_FAILED
             }
         } catch (e: Exception) {
             Log.e(TAG, "storeSchedule: invalid payload", e)
+            return StoreResult.REJECTED
         }
     }
 
-    private fun normalizedMinutes(input: JSONArray?): List<Int> {
-        val minutes = input ?: JSONArray()
+    private fun normalizedMinutes(input: JSONArray?, fieldName: String): List<Int> {
+        val minutes = input
+            ?: throw IllegalArgumentException("$fieldName is missing or is not an array")
         return (0 until minutes.length())
-            .mapNotNull { index -> minutes.optInt(index, -1).takeIf { it in 0..1439 } }
+            .map { index ->
+                val value = minutes.get(index)
+                val minute = when (value) {
+                    is Byte -> value.toInt()
+                    is Short -> value.toInt()
+                    is Int -> value
+                    is Long -> value.toInt().takeIf { it.toLong() == value }
+                    else -> null
+                }
+                require(minute != null && minute in 0..1439) {
+                    "$fieldName[$index] is not an integer minute in 0..1439"
+                }
+                minute
+            }
             .distinct()
             .sorted()
     }

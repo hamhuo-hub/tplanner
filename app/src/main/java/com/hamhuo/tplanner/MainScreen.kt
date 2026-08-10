@@ -151,7 +151,13 @@ fun MainScreen(
     }
 
     LaunchedEffect(eventStore) {
-        eventStore.observeAll().collect { storedEvents -> events = storedEvents }
+        eventStore.observeAll().collect { storedEvents ->
+            // Room is the source of truth for the watch. This initial emission also queues the
+            // local snapshot when LAN startup sync fails, while later emissions cover every
+            // committed mutation without ever publishing an optimistic UI or draft snapshot.
+            events = storedEvents
+            WatchScheduleSync.push(context, storedEvents)
+        }
     }
     LaunchedEffect(store, journalDateKey) {
         store.observe(journalDateKey).collect { entry ->
@@ -240,7 +246,6 @@ fun MainScreen(
                     refreshJournalRecovery(journalDateKey)
                     syncStatus = "success"; syncMsg = syncedTemplate.format(serverHost(serverUrl))
                     events = manager.fetchEvents(serverUrl)
-                    WatchScheduleSync.push(context, events)
                 }
                 is LanSyncManager.SyncResult.Error -> {
                     syncStatus = "error"; syncMsg = r.message
@@ -258,7 +263,6 @@ fun MainScreen(
                 content = recovered ?: store.get(journalDateKey)
                 syncStatus = "success"; syncMsg = syncedTemplate.format(serverHost(serverUrl))
                 events = manager.fetchEvents(serverUrl)
-                WatchScheduleSync.push(context, events)
             }
             is LanSyncManager.SyncResult.Error -> {
                 syncStatus = "idle"
@@ -737,7 +741,6 @@ fun MainScreen(
                 events = nextEvents
                 scope.launch {
                     eventWriteMutex.withLock { eventStore.save(updated) }
-                    WatchScheduleSync.push(context, nextEvents)
                 }
             },
             allowExpandedNavigation =
@@ -1048,10 +1051,6 @@ fun MainScreen(
                     .onSuccess { refreshed -> events = refreshed }
                     .onFailure { error ->
                         Log.w(LLM_LOG_TAG, "request=$requestId post-commit sync failed", error)
-                    }
-                runCatching { WatchScheduleSync.push(context, events) }
-                    .onFailure { error ->
-                        Log.w(LLM_LOG_TAG, "request=$requestId watch push failed", error)
                     }
                 Log.i(
                     LLM_LOG_TAG,

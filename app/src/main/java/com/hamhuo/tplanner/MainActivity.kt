@@ -53,7 +53,7 @@ class MainActivity : ComponentActivity() {
     private var permissionLauncherInFlight = false
     private var pendingSpecialPermissionStep: PermissionStep? = null
 
-    // Foreground location (coarse + fine) and notifications share one runtime request.
+    // Foreground location, nearby-device Bluetooth, and notifications share one request.
     private val requestPermissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
@@ -245,6 +245,14 @@ class MainActivity : ComponentActivity() {
                         // Android 12+ ignores a fine-only request on some releases.
                         missing += Manifest.permission.ACCESS_COARSE_LOCATION
                         missing += Manifest.permission.ACCESS_FINE_LOCATION
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
+                            missing += Manifest.permission.BLUETOOTH_CONNECT
+                        }
+                        if (!hasPermission(Manifest.permission.BLUETOOTH_SCAN)) {
+                            missing += Manifest.permission.BLUETOOTH_SCAN
+                        }
                     }
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                         !hasPermission(Manifest.permission.POST_NOTIFICATIONS)

@@ -19,7 +19,6 @@ const val BG        = 0xFF0D0D0D.toInt()
 const val GOLD      = 0xFFC9A84C.toInt()
 const val CREAM     = 0xFFE8E0D0.toInt()
 const val DIM       = 0xFF857F6E.toInt()
-const val TEAL      = 0xFF4A9DA8.toInt()
 const val EVENT_DOT = 0x604A90D0.toInt()  // 日程事件：蓝色半透明小点
 const val TRACK     = 0xFF232323.toInt()
 const val AMB_TEXT  = 0xFF8A857A.toInt()

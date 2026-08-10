@@ -53,6 +53,12 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    sourceSets {
+        getByName("main").kotlin.directories.add(
+            rootProject.file("shared/src/main/kotlin").absolutePath,
+        )
+    }
 }
 
 dependencies {
@@ -61,7 +67,7 @@ dependencies {
     // 现代表盘 API：Wear OS 3+/三星 Galaxy Watch 仅识别这一套（及 WFF），
     // 旧的 WallpaperService 表盘不会出现在表盘选择器里。
     implementation(libs.androidx.wear.watchface)
-    // Wearable Data Layer — 手表端通过 GMS 发消息给手机（国际版 Wear OS）。
-    // 国行三星无 GMS 时 fallback 到 PhoneWaker 的经典蓝牙 RFCOMM。
+    // Wearable Data Layer — 手表端通过 GMS 唤醒手机（国际版 Wear OS）。
+    // 无 GMS 的 RFCOMM 降级当前只覆盖手机 → 手表日程同步。
     implementation(libs.play.services.wearable)
 }

@@ -22,7 +22,7 @@ import androidx.wear.watchface.style.CurrentUserStyleRepository
 // invalidate() 请求连续帧；平时每 100ms 低频重绘。息屏（ambient）下只画
 // 暗化的极简内容，无动画、无大面积亮色（防烧屏 + 省电）。
 //
-// 绘制逻辑位于 FaceTide；调起时间由 WakeInvocationMarks 在手表本地持久化。
+// 绘制逻辑位于 FaceTide。
 // ═══════════════════════════════════════════════════════════════════════════
 
 class WatchFaceTideService : WatchFaceService() {
@@ -34,6 +34,7 @@ class WatchFaceTideService : WatchFaceService() {
         complicationSlotsManager: ComplicationSlotsManager,
         currentUserStyleRepository: CurrentUserStyleRepository,
     ): WatchFace {
+        BluetoothScheduleBridgeService.startIfAllowed(applicationContext)
         PhoneWaker.resumePending(applicationContext)
         val renderer = FaceTide(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
         return WatchFace(WatchFaceType.DIGITAL, renderer)

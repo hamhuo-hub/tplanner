@@ -1,24 +1,32 @@
 package com.hamhuo.tplanner
 
+import android.Manifest
+import android.annotation.SuppressLint
 import android.app.job.JobInfo
 import android.app.job.JobScheduler
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothClass
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothSocket
 import android.content.ComponentName
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.google.android.gms.common.api.ApiException
-import com.google.android.gms.common.api.CommonStatusCodes
 import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.PutDataRequest
 import com.google.android.gms.wearable.Wearable
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.SocketTimeoutException
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Phone -> Watch durable latest-task snapshot.
@@ -40,12 +48,19 @@ object WatchScheduleSync {
     private const val KEY_LAST_VERSION = "last_version"
     private const val KEY_PENDING_PAYLOAD = "pending_payload"
     private const val SYNC_JOB_ID = 0x545053
+    private const val RFCOMM_CONNECT_TIMEOUT_MS = 10_000L
+    private const val RFCOMM_ACK_TIMEOUT_MS = 5_000L
 
     /** Shared RFCOMM UUID — must match the watch-side value in BluetoothScheduleBridgeService. */
     private val RFCOMM_UUID: UUID = UUID.fromString("7f8a9b2c-3d4e-5f6a-7b8c-9d0e1f2a3b4c")
-    private const val ACK_BYTE: Int = 0x06
-
     private val stateLock = Any()
+    private val activeSocketLock = Any()
+    private val activeSockets = mutableMapOf<Thread, BluetoothSocket>()
+    private val socketWatchdog = ScheduledThreadPoolExecutor(1) { runnable ->
+        Thread(runnable, "tplanner-bt-socket-watchdog").apply { isDaemon = true }
+    }.apply {
+        setRemoveOnCancelPolicy(true)
+    }
 
     private data class DaySnapshot(
         val date: String,
@@ -130,14 +145,15 @@ object WatchScheduleSync {
         }
     }
 
-    /** Returns true when the latest committed snapshot was handed to Data Layer. */
+    /** Returns true when the latest committed snapshot was durably handed off. */
     internal fun flushPending(context: Context): Boolean {
         val appContext = context.applicationContext
         val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val payload = synchronized(stateLock) {
             prefs.getString(KEY_PENDING_PAYLOAD, null)
         } ?: return true
-        return try {
+
+        val deliveredViaDataLayer = try {
             val request = PutDataRequest.create(PATH).setUrgent().apply {
                 data = payload.toByteArray(Charsets.UTF_8)
             }
@@ -146,37 +162,61 @@ object WatchScheduleSync {
                 10,
                 TimeUnit.SECONDS,
             )
-            val cleared = synchronized(stateLock) {
-                if (prefs.getString(KEY_PENDING_PAYLOAD, null) != payload) {
-                    false
-                } else {
-                    prefs.edit().remove(KEY_PENDING_PAYLOAD).commit()
-                }
-            }
-            if (!cleared) {
-                Log.d(TAG, "flushPending: newer or uncleared payload remains")
+            // putDataItem() only confirms a durable local GMS write. On a phone that has GMS
+            // paired with a watch that does not, it can succeed forever without a receiver.
+            // Keep the pending snapshot and try RFCOMM until at least one Wear node is connected.
+            val nodes = Tasks.await(
+                Wearable.getNodeClient(appContext).connectedNodes,
+                3,
+                TimeUnit.SECONDS,
+            )
+            if (nodes.isEmpty()) {
+                Log.w(TAG, "flushPending: DataItem stored but no Wear node is connected; trying Bluetooth")
                 false
             } else {
-                val metadata = JSONObject(payload)
-                Log.d(
-                    TAG,
-                    "flushPending: stored version=${metadata.optLong("version")} " +
-                        "hash=${metadata.optString("hash").take(12)}",
-                )
                 true
             }
-        } catch (e: ApiException) {
-            if (e.statusCode == CommonStatusCodes.API_NOT_CONNECTED) {
-                Log.w(TAG, "flushPending: Wearable API unavailable, trying Bluetooth fallback")
-                flushViaBluetooth(appContext, payload)
-            } else {
-                Log.e(TAG, "flushPending: DataItem publish failed", e)
-                false
-            }
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            return false
         } catch (e: Exception) {
-            Log.e(TAG, "flushPending: DataItem publish failed", e)
+            val apiException = findApiException(e)
+            if (apiException != null) {
+                Log.w(
+                    TAG,
+                    "flushPending: Data Layer failed with status=${apiException.statusCode}; " +
+                        "trying Bluetooth fallback",
+                    e,
+                )
+            } else {
+                Log.w(TAG, "flushPending: Data Layer failed; trying Bluetooth fallback", e)
+            }
             false
         }
+
+        if (!deliveredViaDataLayer) {
+            return flushViaBluetooth(appContext, payload)
+        }
+
+        val cleared = synchronized(stateLock) {
+            if (prefs.getString(KEY_PENDING_PAYLOAD, null) != payload) {
+                false
+            } else {
+                prefs.edit().remove(KEY_PENDING_PAYLOAD).commit()
+            }
+        }
+        if (!cleared) {
+            Log.d(TAG, "flushPending: newer or uncleared payload remains")
+            return false
+        }
+
+        val metadata = JSONObject(payload)
+        Log.d(
+            TAG,
+            "flushPending: stored version=${metadata.optLong("version")} " +
+                "hash=${metadata.optString("hash").take(12)}",
+        )
+        return true
     }
 
     // ── Bluetooth RFCOMM fallback ──────────────────────────────────────
@@ -184,59 +224,180 @@ object WatchScheduleSync {
     /**
      * Sends the schedule payload to the paired watch over classic Bluetooth RFCOMM.
      *
-     * Returns `true` when the transfer succeeded and the pending payload may be cleared,
-     * or when Bluetooth is unavailable and no further retries are useful. Returns `false`
-     * on transient failures so the JobScheduler retries.
+     * Returns `true` only after the watch ACKs the exact pending payload and it is cleared.
+     * Every unavailable/error case returns `false`, preserving pending state so JobScheduler
+     * can retry after Bluetooth or permissions become available.
      */
+    @SuppressLint("MissingPermission")
     private fun flushViaBluetooth(context: Context, payload: String): Boolean {
-        val adapter = BluetoothAdapter.getDefaultAdapter()
-        if (adapter == null || !adapter.isEnabled) {
-            Log.w(TAG, "flushViaBluetooth: Bluetooth disabled or unsupported, giving up")
-            return true
+        // Runtime CONNECT/SCAN checks precede all Bluetooth calls below. Every privileged call is
+        // also inside try/runCatching so a permission-revocation race preserves pending state.
+        if (Thread.currentThread().isInterrupted) return false
+        val bytes = try {
+            ScheduleRfcommProtocol.encodePayload(payload)
+        } catch (e: IllegalArgumentException) {
+            Log.e(
+                TAG,
+                "flushViaBluetooth: invalid pending payload",
+                e,
+            )
+            return false
+        }
+
+        val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter ?: run {
+            Log.w(TAG, "flushViaBluetooth: Bluetooth unsupported; keeping pending payload")
+            return false
+        }
+        if (!hasBluetoothPermission(context, Manifest.permission.BLUETOOTH_CONNECT) ||
+            !hasBluetoothPermission(context, Manifest.permission.BLUETOOTH_SCAN)
+        ) {
+            Log.w(TAG, "flushViaBluetooth: Bluetooth permission missing; keeping pending payload")
+            return false
+        }
+        val bluetoothEnabled = runCatching { adapter.isEnabled }
+            .onFailure { Log.w(TAG, "flushViaBluetooth: cannot read Bluetooth state", it) }
+            .getOrDefault(false)
+        if (!bluetoothEnabled) {
+            Log.w(TAG, "flushViaBluetooth: Bluetooth disabled; keeping pending payload")
+            return false
         }
 
         val watch = findPairedWatch(adapter)
         if (watch == null) {
-            Log.w(TAG, "flushViaBluetooth: no paired watch found, giving up")
-            return true
+            Log.w(TAG, "flushViaBluetooth: no paired watch found; keeping pending payload")
+            return false
         }
 
         var socket: BluetoothSocket? = null
         try {
-            socket = watch.createRfcommSocketToServiceRecord(RFCOMM_UUID)
-            adapter.cancelDiscovery()
-            socket.connect()
-            // Read timeout handled via a separate watchdog; the socket itself has none.
-            val bytes = payload.toByteArray(Charsets.UTF_8)
-            socket.outputStream.write(bytes)
-            socket.outputStream.flush()
+            if (Thread.currentThread().isInterrupted) return false
+            val connectedSocket = watch.createRfcommSocketToServiceRecord(RFCOMM_UUID)
+            socket = connectedSocket
+            registerActiveSocket(connectedSocket)
+            if (Thread.currentThread().isInterrupted) throw InterruptedException("flush cancelled")
+            // cancelDiscovery() itself requires BLUETOOTH_SCAN on Android 12+. Re-check at
+            // the call site in case the permission was revoked after the initial guard.
+            if (hasBluetoothPermission(context, Manifest.permission.BLUETOOTH_SCAN)) {
+                runCatching { adapter.cancelDiscovery() }
+                    .onFailure { Log.w(TAG, "flushViaBluetooth: cancelDiscovery failed", it) }
+            }
+            withSocketWatchdog(
+                socket = connectedSocket,
+                timeoutMs = RFCOMM_CONNECT_TIMEOUT_MS,
+                operation = "connect",
+            ) {
+                connectedSocket.connect()
+            }
+
+            ScheduleRfcommProtocol.writeFrame(connectedSocket.outputStream, bytes)
 
             // Wait for the watch's single-byte ACK so we know the payload was fully consumed.
-            val ack = socket.inputStream.read()
-            if (ack == ACK_BYTE) {
-                Log.d(TAG, "flushViaBluetooth: ACK received, clearing pending payload")
-                clearPendingAfterBluetooth(context, payload)
-                return true
+            val ack = withSocketWatchdog(
+                socket = connectedSocket,
+                timeoutMs = RFCOMM_ACK_TIMEOUT_MS,
+                operation = "ACK read",
+            ) {
+                connectedSocket.inputStream.read()
+            }
+            if (ack == ScheduleRfcommProtocol.ACK_BYTE) {
+                val cleared = clearPendingAfterBluetooth(context, payload)
+                if (cleared) {
+                    Log.d(TAG, "flushViaBluetooth: ACK received, pending payload cleared")
+                    return true
+                }
+                Log.d(TAG, "flushViaBluetooth: ACK received, but newer or uncleared payload remains")
+                return false
             } else {
                 Log.w(TAG, "flushViaBluetooth: unexpected ACK byte=$ack")
                 return false
             }
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            Log.d(TAG, "flushViaBluetooth: transfer cancelled")
+            return false
         } catch (e: Exception) {
             Log.e(TAG, "flushViaBluetooth: transfer failed", e)
             return false
         } finally {
+            socket?.let(::unregisterActiveSocket)
             runCatching { socket?.close() }
         }
     }
 
     /** Clears the pending payload only if it hasn't been replaced by a newer snapshot. */
-    private fun clearPendingAfterBluetooth(context: Context, expected: String) {
+    private fun clearPendingAfterBluetooth(context: Context, expected: String): Boolean {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        synchronized(stateLock) {
+        return synchronized(stateLock) {
             if (prefs.getString(KEY_PENDING_PAYLOAD, null) == expected) {
                 prefs.edit().remove(KEY_PENDING_PAYLOAD).commit()
+            } else {
+                false
             }
         }
+    }
+
+    /**
+     * BluetoothSocket has no connect/read timeout API. Closing it from another thread is
+     * the platform-supported way to unblock a stuck connect() or InputStream.read().
+     */
+    private fun <T> withSocketWatchdog(
+        socket: BluetoothSocket,
+        timeoutMs: Long,
+        operation: String,
+        block: () -> T,
+    ): T {
+        if (Thread.currentThread().isInterrupted) throw InterruptedException("flush cancelled")
+        val expired = AtomicBoolean(false)
+        val timeout = socketWatchdog.schedule(
+            {
+                expired.set(true)
+                Log.w(TAG, "flushViaBluetooth: $operation timed out after ${timeoutMs}ms")
+                runCatching { socket.close() }
+            },
+            timeoutMs,
+            TimeUnit.MILLISECONDS,
+        )
+        return try {
+            block()
+        } catch (e: Exception) {
+            if (expired.get()) {
+                throw SocketTimeoutException("RFCOMM $operation timed out after ${timeoutMs}ms")
+                    .apply { initCause(e) }
+            }
+            throw e
+        } finally {
+            timeout.cancel(false)
+        }
+    }
+
+    private fun hasBluetoothPermission(context: Context, permission: String): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            ContextCompat.checkSelfPermission(context, permission) ==
+            PackageManager.PERMISSION_GRANTED
+
+    private fun findApiException(error: Throwable): ApiException? =
+        generateSequence<Throwable>(error) { current ->
+            current.cause?.takeUnless { cause -> cause === current }
+        }.filterIsInstance<ApiException>().firstOrNull()
+
+    private fun registerActiveSocket(socket: BluetoothSocket) {
+        synchronized(activeSocketLock) {
+            activeSockets[Thread.currentThread()] = socket
+        }
+    }
+
+    private fun unregisterActiveSocket(socket: BluetoothSocket) {
+        synchronized(activeSocketLock) {
+            val thread = Thread.currentThread()
+            if (activeSockets[thread] === socket) activeSockets.remove(thread)
+        }
+    }
+
+    /** Cancels only the transport owned by [thread], leaving any newer JobScheduler run intact. */
+    internal fun cancelFlush(thread: Thread) {
+        thread.interrupt()
+        val socket = synchronized(activeSocketLock) { activeSockets.remove(thread) }
+        runCatching { socket?.close() }
     }
 
     /**
@@ -246,6 +407,7 @@ object WatchScheduleSync {
      * in their BluetoothClass. If none match by class, the first bonded device whose
      * name contains "watch" (case-insensitive) is returned as a best-effort fallback.
      */
+    @SuppressLint("MissingPermission")
     private fun findPairedWatch(adapter: BluetoothAdapter): BluetoothDevice? {
         val bonded: Set<BluetoothDevice> = runCatching { adapter.bondedDevices }
             .getOrNull() ?: emptySet()
@@ -260,7 +422,9 @@ object WatchScheduleSync {
 
         // Fallback: any bonded device with "watch" in its name.
         bonded.firstOrNull { device ->
-            device.name?.contains("watch", ignoreCase = true) == true
+            runCatching {
+                device.name?.contains("watch", ignoreCase = true) == true
+            }.getOrDefault(false)
         }?.let { return it }
 
         Log.d(TAG, "findPairedWatch: no watch-class device among ${bonded.size} bonded")
