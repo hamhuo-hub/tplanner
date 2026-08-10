@@ -53,6 +53,11 @@ internal object ScheduleStore {
     private const val TAG = "TplannerScheduleStore"
     private const val SCHEMA_VERSION = 3
     private const val MAX_SNAPSHOT_DAYS = 31
+    private const val MAX_TASK_COUNT = 128
+    private const val MAX_TASK_TITLE_CODE_POINTS = 80
+    private const val MAX_TASK_TITLE_UTF8_BYTES = 256
+    private const val MAX_TASK_ID_UTF8_BYTES = 256
+    private const val MAX_TASKS_UTF8_BYTES = 64 * 1024
     private const val SOURCE_LEGACY = "legacy"
     private const val SOURCE_PHONE = "phone"
     internal const val SOURCE_BLUETOOTH = "bluetooth"
@@ -74,6 +79,26 @@ internal object ScheduleStore {
         val minutes: List<Int>,
     )
 
+    private data class TaskSnapshot(
+        val id: String,
+        val title: String,
+        val startEpochMs: Long,
+        val endEpochMs: Long,
+    )
+
+    private data class TaskBundle(
+        val tasks: List<TaskSnapshot>,
+        val hash: String,
+    )
+
+    private val taskOrder = compareBy<TaskSnapshot>(
+        { it.startEpochMs },
+        { it.endEpochMs },
+        { it.id },
+    )
+    private val whitespace = Regex("\\s+")
+    private val sha256 = Regex("[0-9a-f]{64}")
+
     @Synchronized
     fun store(
         context: Context,
@@ -94,6 +119,8 @@ internal object ScheduleStore {
                 ?.let { value -> runCatching { JSONObject(value) }.getOrNull() }
             val existingVersion = existing?.optLong("version", -1L) ?: -1L
             val existingHash = existing?.optString("hash")
+            val existingTasksHash = existing?.optString("tasksHash")
+                ?.takeIf { it.isNotBlank() }
             val existingWasLegacy = existing != null && (
                 existing.optString("source") == SOURCE_LEGACY ||
                     existing.optLong("generatedAtEpochMs", 0L) <= 0L
@@ -102,6 +129,8 @@ internal object ScheduleStore {
             val days: List<DaySnapshot>
             val version: Long
             val hash: String
+            val tasks: List<TaskSnapshot>?
+            val taskContentHash: String?
             val isLegacy: Boolean
             if (schemaVersion == SCHEMA_VERSION) {
                 isLegacy = false
@@ -136,6 +165,9 @@ internal object ScheduleStore {
                     Log.w(TAG, "storeSchedule: hash mismatch version=$version")
                     return StoreResult.REJECTED
                 }
+                val taskBundle = normalizedTasks(payload)
+                tasks = taskBundle?.tasks
+                taskContentHash = taskBundle?.hash
             } else if (!payload.has("schemaVersion") && payload.has("minutes")) {
                 isLegacy = true
                 days = listOf(
@@ -146,6 +178,8 @@ internal object ScheduleStore {
                 )
                 version = maxOf(System.currentTimeMillis(), existingVersion + 1L)
                 hash = scheduleHash(days)
+                tasks = null
+                taskContentHash = null
                 Log.i(TAG, "storeSchedule: normalized legacy payload version=$version")
             } else {
                 Log.w(TAG, "storeSchedule: ignored unsupported schema=$schemaVersion")
@@ -162,13 +196,33 @@ internal object ScheduleStore {
                     return StoreResult.STALE
                 }
                 if (existingVersion == version) {
-                    if (existingHash == hash) return StoreResult.ALREADY_CURRENT
-                    Log.e(
-                        TAG,
-                        "storeSchedule: rejected divergent content for version=$version " +
-                            "currentHash=${existingHash?.take(12)} incomingHash=${hash.take(12)}",
-                    )
-                    return StoreResult.REJECTED
+                    if (existingHash != hash) {
+                        Log.e(
+                            TAG,
+                            "storeSchedule: rejected divergent content for version=$version " +
+                                "currentHash=${existingHash?.take(12)} incomingHash=${hash.take(12)}",
+                        )
+                        return StoreResult.REJECTED
+                    }
+                    when {
+                        existingTasksHash == taskContentHash -> return StoreResult.ALREADY_CURRENT
+                        existingTasksHash == null && taskContentHash != null -> {
+                            Log.i(TAG, "storeSchedule: enriching version=$version with task details")
+                        }
+                        existingTasksHash != null && taskContentHash == null -> {
+                            Log.i(TAG, "storeSchedule: ignored task-detail downgrade version=$version")
+                            return StoreResult.STALE
+                        }
+                        else -> {
+                            Log.e(
+                                TAG,
+                                "storeSchedule: rejected divergent tasks for version=$version " +
+                                    "currentTasksHash=${existingTasksHash?.take(12)} " +
+                                    "incomingTasksHash=${taskContentHash?.take(12)}",
+                            )
+                            return StoreResult.REJECTED
+                        }
+                    }
                 }
             }
 
@@ -187,6 +241,10 @@ internal object ScheduleStore {
                         })
                     }
                 })
+                if (tasks != null && taskContentHash != null) {
+                    put("tasks", taskArray(tasks))
+                    put("tasksHash", taskContentHash)
+                }
             }
             val committed = prefs.edit()
                 .putString(WATCH_MARKS_KEY, normalizedPayload.toString())
@@ -194,7 +252,8 @@ internal object ScheduleStore {
             if (committed) {
                 Log.d(
                     TAG,
-                    "storeSchedule: source=$source version=$version days=${days.first().date}..${days.last().date}",
+                    "storeSchedule: source=$source version=$version " +
+                        "days=${days.first().date}..${days.last().date} tasks=${tasks?.size ?: 0}",
                 )
                 return StoreResult.STORED
             } else {
@@ -227,6 +286,103 @@ internal object ScheduleStore {
             }
             .distinct()
             .sorted()
+    }
+
+    private fun normalizedTasks(payload: JSONObject): TaskBundle? {
+        val hasTasks = payload.has("tasks")
+        val hasTasksHash = payload.has("tasksHash")
+        require(hasTasks == hasTasksHash) {
+            "tasks and tasksHash must either both be present or both be absent"
+        }
+        if (!hasTasks) return null
+
+        val input = payload.optJSONArray("tasks")
+            ?: throw IllegalArgumentException("tasks is not an array")
+        require(input.length() <= MAX_TASK_COUNT) {
+            "tasks contains ${input.length()} items; maximum is $MAX_TASK_COUNT"
+        }
+        val expectedHashValue = payload.get("tasksHash")
+        require(expectedHashValue is String && sha256.matches(expectedHashValue)) {
+            "tasksHash is not a lowercase SHA-256 value"
+        }
+
+        val seenIds = mutableSetOf<String>()
+        val tasks = (0 until input.length()).map { index ->
+            val item = input.optJSONObject(index)
+                ?: throw IllegalArgumentException("tasks[$index] is not an object")
+            val idValue = item.get("id")
+            require(idValue is String) { "tasks[$index].id is not a string" }
+            val id = idValue.trim()
+            require(id.isNotEmpty() && id.toByteArray(Charsets.UTF_8).size <= MAX_TASK_ID_UTF8_BYTES) {
+                "tasks[$index].id is empty or too large"
+            }
+            require(seenIds.add(id)) { "duplicate task id=$id" }
+
+            val titleValue = item.get("title")
+            require(titleValue is String) { "tasks[$index].title is not a string" }
+            val title = titleValue.trim().replace(whitespace, " ")
+            require(title.isNotEmpty()) { "tasks[$index].title is empty" }
+            require(title.codePointCount(0, title.length) <= MAX_TASK_TITLE_CODE_POINTS) {
+                "tasks[$index].title has too many code points"
+            }
+            require(title.toByteArray(Charsets.UTF_8).size <= MAX_TASK_TITLE_UTF8_BYTES) {
+                "tasks[$index].title is too large"
+            }
+
+            val startEpochMs = item.strictLong("startEpochMs", "tasks[$index].startEpochMs")
+            val endEpochMs = item.strictLong("endEpochMs", "tasks[$index].endEpochMs")
+            require(endEpochMs >= startEpochMs) {
+                "tasks[$index] ends before it starts"
+            }
+            TaskSnapshot(id, title, startEpochMs, endEpochMs)
+        }.sortedWith(taskOrder)
+
+        require(taskArray(tasks).toString().toByteArray(Charsets.UTF_8).size <= MAX_TASKS_UTF8_BYTES) {
+            "normalized tasks payload is too large"
+        }
+        val actualHash = tasksHash(tasks)
+        require(expectedHashValue == actualHash) { "tasksHash mismatch" }
+        return TaskBundle(tasks, actualHash)
+    }
+
+    private fun JSONObject.strictLong(field: String, description: String): Long {
+        return when (val value = get(field)) {
+            is Byte -> value.toLong()
+            is Short -> value.toLong()
+            is Int -> value.toLong()
+            is Long -> value
+            else -> throw IllegalArgumentException("$description is not an integer")
+        }
+    }
+
+    private fun taskArray(tasks: List<TaskSnapshot>): JSONArray = JSONArray().apply {
+        tasks.forEach { task ->
+            put(JSONObject().apply {
+                put("id", task.id)
+                put("title", task.title)
+                put("startEpochMs", task.startEpochMs)
+                put("endEpochMs", task.endEpochMs)
+            })
+        }
+    }
+
+    private fun tasksHash(tasks: List<TaskSnapshot>): String {
+        val canonical = buildString {
+            append("tasks=1")
+            tasks.forEach { task ->
+                append('|')
+                appendHashField(task.id)
+                appendHashField(task.title)
+                append(task.startEpochMs).append(':').append(task.endEpochMs)
+            }
+        }.toByteArray(Charsets.UTF_8)
+        return MessageDigest.getInstance("SHA-256")
+            .digest(canonical)
+            .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+    }
+
+    private fun StringBuilder.appendHashField(value: String) {
+        append(value.toByteArray(Charsets.UTF_8).size).append(':').append(value).append(':')
     }
 
     private fun scheduleHash(days: List<DaySnapshot>): String {

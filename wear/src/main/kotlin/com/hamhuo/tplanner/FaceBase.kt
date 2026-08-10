@@ -16,7 +16,7 @@ import java.util.Locale
 import kotlin.math.min
 import kotlin.math.sqrt
 
-// 潮汐表盘的 Renderer 基类：统一管理动画状态、事件刻度、唤醒按钮和 Paint。
+// tPlanner 表盘 Renderer 基类：统一管理动画状态、事件刻度、唤醒按钮和 Paint。
 abstract class FaceBase(
     private val context: Context,
     surfaceHolder: SurfaceHolder,
@@ -42,7 +42,7 @@ abstract class FaceBase(
 
     // ── 事件刻度 ────────────────────────────────────────────────────────────
     protected var marks = WatchEventMarks.EMPTY
-    private var marksLoadedMinute = -1L
+    private var marksLoadedAt = 0L
 
     // ── 绘图资源 ────────────────────────────────────────────────────────────
     protected val p     = Paint().apply { isAntiAlias = true }
@@ -78,10 +78,9 @@ abstract class FaceBase(
         bootAlpha  = easeOutCubic(((now - bootStart).coerceIn(0, BOOT_MS) / BOOT_MS.toFloat()))
         tapElapsed = now - tapStart
 
-        // 每分钟重读一次事件刻度
-        val minuteStamp = now / 60_000L
-        if (minuteStamp != marksLoadedMinute) {
-            marksLoadedMinute = minuteStamp
+        // 定期重读同步快照：新备忘会在数秒内出现，时间越过当前事项时也会自动前进。
+        if (marksLoadedAt == 0L || now < marksLoadedAt || now - marksLoadedAt >= MARKS_REFRESH_MS) {
+            marksLoadedAt = now
             marks = WatchEventMarks.load(context)
         }
 
@@ -113,5 +112,9 @@ abstract class FaceBase(
 
     class Assets : androidx.wear.watchface.Renderer.SharedAssets {
         override fun onDestroy() {}
+    }
+
+    private companion object {
+        const val MARKS_REFRESH_MS = 5_000L
     }
 }

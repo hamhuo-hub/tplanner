@@ -2,17 +2,27 @@ package com.hamhuo.tplanner
 
 import android.content.Context
 import org.json.JSONObject
+import java.time.Instant
 import java.time.ZonedDateTime
 
 internal const val WATCH_MARKS_PREFS = "tplanner_watch_marks"
 internal const val WATCH_MARKS_KEY = "marks_json"
 
-// 事件刻度数据：由手机端将当日事件写入（分钟数 0-1439 + 下一个事件）。
+// 事件刻度数据：圆点来自有限日期窗口；事项弧带从全部已同步的未完成任务中选择。
 // 手表侧暂无同步通道时为空——表盘退化为纯时间显示，不画假数据。
 object WatchEventMarks {
-    data class Marks(val minutes: List<Int>, val nextMinute: Int?, val nextTitle: String?)
+    data class NextTask(
+        val title: String,
+        val startEpochMs: Long,
+        val endEpochMs: Long,
+    )
 
-    val EMPTY = Marks(emptyList(), null, null)
+    data class Marks(val minutes: List<Int>, val items: List<NextTask>) {
+        val next: NextTask?
+            get() = items.firstOrNull()
+    }
+
+    val EMPTY = Marks(emptyList(), emptyList())
 
     fun load(context: Context): Marks = try {
         val raw = context.getSharedPreferences(WATCH_MARKS_PREFS, Context.MODE_PRIVATE)
@@ -34,18 +44,75 @@ object WatchEventMarks {
             } else {
                 todaySnapshot?.optJSONArray("minutes")
             }
-            if (minutesArray == null) {
-                EMPTY
+            val minutes = if (minutesArray == null) {
+                emptyList()
             } else {
-                val minutes = (0 until minutesArray.length())
+                (0 until minutesArray.length())
                     .map { minutesArray.getInt(it) }
                     .filter { it in 0..1439 }
-                Marks(
-                    minutes,
-                    null,
-                    null,
-                )
+                    .distinct()
+                    .sorted()
             }
+            val tasks = obj.optJSONArray("tasks")?.let { input ->
+                (0 until input.length()).mapNotNull { index ->
+                    val item = input.optJSONObject(index) ?: return@mapNotNull null
+                    val id = item.optString("id").takeIf { it.isNotBlank() }
+                        ?: return@mapNotNull null
+                    val title = item.optString("title").takeIf { it.isNotBlank() }
+                        ?: return@mapNotNull null
+                    val startEpochMs = item.optLong("startEpochMs", Long.MIN_VALUE)
+                    val endEpochMs = item.optLong("endEpochMs", Long.MIN_VALUE)
+                    if (startEpochMs == Long.MIN_VALUE || endEpochMs < startEpochMs) {
+                        return@mapNotNull null
+                    }
+                    StoredTask(id, title, startEpochMs, endEpochMs)
+                }.sortedWith(taskOrder)
+            }.orEmpty()
+            Marks(minutes, selectVisible(tasks, Instant.now().toEpochMilli()))
         }
     } catch (_: Exception) { EMPTY }
+
+    private data class StoredTask(
+        val id: String,
+        val title: String,
+        val startEpochMs: Long,
+        val endEpochMs: Long,
+    )
+
+    private val taskOrder = compareBy<StoredTask>(
+        { it.startEpochMs },
+        { it.endEpochMs },
+        { it.id },
+    )
+
+    private val recentPastOrder = compareByDescending<StoredTask> { it.endEpochMs }
+        .thenBy { it.startEpochMs }
+        .thenBy { it.id }
+
+    private fun selectVisible(tasks: List<StoredTask>, nowEpochMs: Long): List<NextTask> {
+        val current = tasks.asSequence()
+            // Every interval is [start, end): a task stops being current exactly at end.
+            .filter { it.startEpochMs <= nowEpochMs && nowEpochMs < it.endEpochMs }
+            .sortedWith(taskOrder)
+        val future = tasks.asSequence()
+            .filter { it.startEpochMs > nowEpochMs }
+            .sortedWith(taskOrder)
+        val recentPast = tasks.asSequence()
+            .filter { it.endEpochMs <= nowEpochMs }
+            .sortedWith(recentPastOrder)
+
+        return (current + future + recentPast)
+            .distinctBy { it.id }
+            .take(MAX_VISIBLE_TASKS)
+            .map { task ->
+                NextTask(
+                    title = task.title,
+                    startEpochMs = task.startEpochMs,
+                    endEpochMs = task.endEpochMs,
+                )
+            }
+            .toList()
+    }
+
+    private const val MAX_VISIBLE_TASKS = 3
 }

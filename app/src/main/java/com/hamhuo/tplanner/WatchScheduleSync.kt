@@ -44,6 +44,11 @@ object WatchScheduleSync {
     private const val PATH = "/tplanner/schedule"
     private const val SCHEMA_VERSION = 3
     private const val SNAPSHOT_DAY_COUNT = 8
+    private const val MAX_TASK_COUNT = 128
+    private const val MAX_TASK_TITLE_CODE_POINTS = 80
+    private const val MAX_TASK_TITLE_UTF8_BYTES = 256
+    private const val MAX_TASK_ID_UTF8_BYTES = 256
+    private const val MAX_TASKS_UTF8_BYTES = 64 * 1024
     private const val PREFS = "tplanner_watch_schedule_sync"
     private const val KEY_LAST_VERSION = "last_version"
     private const val KEY_PENDING_PAYLOAD = "pending_payload"
@@ -67,10 +72,25 @@ object WatchScheduleSync {
         val minutes: List<Int>,
     )
 
+    private data class TaskSnapshot(
+        val id: String,
+        val title: String,
+        val startEpochMs: Long,
+        val endEpochMs: Long,
+    )
+
+    private val taskOrder = compareBy<TaskSnapshot>(
+        { it.startEpochMs },
+        { it.endEpochMs },
+        { it.id },
+    )
+    private val taskWhitespace = Regex("\\s+")
+
     private data class QueuedSnapshot(
         val rangeStart: String,
         val version: Long,
         val hash: String,
+        val taskCount: Int,
     )
 
     fun push(context: Context, events: List<TaskEvent>) {
@@ -86,9 +106,24 @@ object WatchScheduleSync {
                 val activeTasks = events.filter { event ->
                     event.deletedAt == 0L && event.type == "task" && !event.completed
                 }
+                val windowStart = today.atStartOfDay(APP_ZONE).toInstant()
+                val windowEnd = today.plusDays(SNAPSHOT_DAY_COUNT.toLong())
+                    .atStartOfDay(APP_ZONE)
+                    .toInstant()
+                // The dial markers are an eight-day projection, while the memo title must be
+                // chosen from every unfinished task. Keeping those two views separate prevents
+                // overdue work and the first task beyond the marker window from disappearing.
+                val markerTasks = activeTasks.filter { event ->
+                    !event.start.isBefore(windowStart) && event.start.isBefore(windowEnd)
+                }
+                val tasks = buildTaskSnapshots(
+                    activeTasks.asSequence()
+                        .filter { event -> !event.end.isBefore(event.start) }
+                        .toList(),
+                )
                 val days = (0 until SNAPSHOT_DAY_COUNT).map { offset ->
                     val day = today.plusDays(offset.toLong())
-                    val minutes = activeTasks.asSequence()
+                    val minutes = markerTasks.asSequence()
                         .filter { event -> event.start.atZone(APP_ZONE).toLocalDate() == day }
                         .map { event ->
                             val local = event.start.atZone(APP_ZONE)
@@ -119,13 +154,15 @@ object WatchScheduleSync {
                             })
                         }
                     })
+                    put("tasks", taskArray(tasks))
+                    put("tasksHash", tasksHash(tasks))
                 }.toString()
                 val committed = prefs.edit()
                     .putLong(KEY_LAST_VERSION, version)
                     .putString(KEY_PENDING_PAYLOAD, payload)
                     .commit()
                 if (committed) {
-                    QueuedSnapshot(days.first().date, version, hash)
+                    QueuedSnapshot(days.first().date, version, hash, tasks.size)
                 } else {
                     null
                 }
@@ -138,7 +175,8 @@ object WatchScheduleSync {
             Log.d(
                 TAG,
                 "push: queued rangeStart=${queued.rangeStart} days=$SNAPSHOT_DAY_COUNT " +
-                    "version=${queued.version} hash=${queued.hash.take(12)}",
+                    "tasks=${queued.taskCount} version=${queued.version} " +
+                    "hash=${queued.hash.take(12)}",
             )
         } catch (e: Exception) {
             Log.e(TAG, "push: failed to build snapshot", e)
@@ -460,5 +498,81 @@ object WatchScheduleSync {
         return MessageDigest.getInstance("SHA-256")
             .digest(canonical)
             .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+    }
+
+    private fun buildTaskSnapshots(events: List<TaskEvent>): List<TaskSnapshot> {
+        val result = ArrayList<TaskSnapshot>(minOf(events.size, MAX_TASK_COUNT))
+        val candidates = events.mapNotNull { event ->
+            val id = event.id.trim().takeIf { id ->
+                id.isNotEmpty() && id.toByteArray(Charsets.UTF_8).size <= MAX_TASK_ID_UTF8_BYTES
+            } ?: return@mapNotNull null
+            val title = boundedTaskTitle(event.title).takeIf { it.isNotEmpty() }
+                ?: return@mapNotNull null
+            TaskSnapshot(
+                id = id,
+                title = title,
+                startEpochMs = event.start.toEpochMilli(),
+                endEpochMs = event.end.toEpochMilli(),
+            )
+        }.sortedWith(taskOrder)
+        for (task in candidates) {
+            if (result.size >= MAX_TASK_COUNT) break
+            val candidate = result + task
+            if (taskArray(candidate).toString().toByteArray(Charsets.UTF_8).size > MAX_TASKS_UTF8_BYTES) {
+                break
+            }
+            result += task
+        }
+        return result
+    }
+
+    private fun boundedTaskTitle(raw: String): String {
+        val normalized = raw.trim().replace(taskWhitespace, " ")
+        if (normalized.isEmpty()) return ""
+        val result = StringBuilder()
+        var index = 0
+        var codePoints = 0
+        var utf8Bytes = 0
+        while (index < normalized.length && codePoints < MAX_TASK_TITLE_CODE_POINTS) {
+            val codePoint = normalized.codePointAt(index)
+            val text = String(Character.toChars(codePoint))
+            val byteCount = text.toByteArray(Charsets.UTF_8).size
+            if (utf8Bytes + byteCount > MAX_TASK_TITLE_UTF8_BYTES) break
+            result.appendCodePoint(codePoint)
+            utf8Bytes += byteCount
+            codePoints++
+            index += Character.charCount(codePoint)
+        }
+        return result.toString()
+    }
+
+    private fun taskArray(tasks: List<TaskSnapshot>): JSONArray = JSONArray().apply {
+        tasks.forEach { task ->
+            put(JSONObject().apply {
+                put("id", task.id)
+                put("title", task.title)
+                put("startEpochMs", task.startEpochMs)
+                put("endEpochMs", task.endEpochMs)
+            })
+        }
+    }
+
+    private fun tasksHash(tasks: List<TaskSnapshot>): String {
+        val canonical = buildString {
+            append("tasks=1")
+            tasks.forEach { task ->
+                append('|')
+                appendHashField(task.id)
+                appendHashField(task.title)
+                append(task.startEpochMs).append(':').append(task.endEpochMs)
+            }
+        }.toByteArray(Charsets.UTF_8)
+        return MessageDigest.getInstance("SHA-256")
+            .digest(canonical)
+            .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+    }
+
+    private fun StringBuilder.appendHashField(value: String) {
+        append(value.toByteArray(Charsets.UTF_8).size).append(':').append(value).append(':')
     }
 }

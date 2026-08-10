@@ -5,6 +5,7 @@ import android.graphics.Typeface
 
 enum class FaceDesign(val interactiveDelayMs: Long) {
     TIDE(100L),
+    NEXT(1_000L),
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -29,17 +30,17 @@ const val AMB_TRACK = 0xFF1A1A1A.toInt()
 // 每个方法先清掉上一次的状态再设置新的，避免 PathEffect / Typeface / textAlign 残留。
 
 fun Paint.setFill(c: Int, alpha: Float = 1f) {
-    pathEffect = null; typeface = Typeface.DEFAULT
+    pathEffect = null; typeface = Typeface.DEFAULT; textSkewX = 0f
     style = Paint.Style.FILL; color = c; this.alpha = (255 * alpha).toInt().coerceIn(0, 255)
 }
 
 fun Paint.setStroke(c: Int, w: Float, cap: Paint.Cap = Paint.Cap.BUTT) {
-    pathEffect = null; typeface = Typeface.DEFAULT
+    pathEffect = null; typeface = Typeface.DEFAULT; textSkewX = 0f
     style = Paint.Style.STROKE; color = c; strokeWidth = w; strokeCap = cap
 }
 
 fun Paint.setText(c: Int, size: Float, tf: Typeface = Typeface.DEFAULT) {
-    pathEffect = null; style = Paint.Style.FILL; color = c
+    pathEffect = null; style = Paint.Style.FILL; color = c; textSkewX = 0f
     textSize = size; textAlign = Paint.Align.CENTER; typeface = tf
 }
 

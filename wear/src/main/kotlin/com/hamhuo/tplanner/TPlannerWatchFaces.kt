@@ -14,19 +14,24 @@ import androidx.wear.watchface.WatchState
 import androidx.wear.watchface.style.CurrentUserStyleRepository
 
 // ═══════════════════════════════════════════════════════════════════════════
-// tPlanner 潮汐（Tide）表盘。
-// 设计语言与桌面端一致：暗底 #0D0D0D、金 #C9A84C、米白衬线数字、青色事件点。
-// 点击浪尖金球 → 震动并经典蓝牙唤醒手机（PhoneWaker）。
+// tPlanner 潮汐（Tide）与下一项（Next）表盘。
+// 两款表盘共享同步、点击震动和唤醒手机逻辑，仅 Renderer 负责各自的视觉表达。
 //
 // 动画为事件驱动：入场 800ms、点按涟漪/光晕 600-800ms，动画期间通过
 // invalidate() 请求连续帧；平时每 100ms 低频重绘。息屏（ambient）下只画
 // 暗化的极简内容，无动画、无大面积亮色（防烧屏 + 省电）。
 //
-// 绘制逻辑位于 FaceTide。
+// 绘制逻辑分别位于 FaceTide 与 FaceNext。
 // ═══════════════════════════════════════════════════════════════════════════
 
-class WatchFaceTideService : WatchFaceService() {
+abstract class TPlannerFaceService : WatchFaceService() {
     private val vibrator: Vibrator by lazy { getSystemService(Vibrator::class.java) }
+
+    protected abstract fun createRenderer(
+        surfaceHolder: SurfaceHolder,
+        watchState: WatchState,
+        currentUserStyleRepository: CurrentUserStyleRepository,
+    ): FaceBase
 
     override suspend fun createWatchFace(
         surfaceHolder: SurfaceHolder,
@@ -36,7 +41,7 @@ class WatchFaceTideService : WatchFaceService() {
     ): WatchFace {
         BluetoothScheduleBridgeService.startIfAllowed(applicationContext)
         PhoneWaker.resumePending(applicationContext)
-        val renderer = FaceTide(applicationContext, surfaceHolder, currentUserStyleRepository, watchState)
+        val renderer = createRenderer(surfaceHolder, watchState, currentUserStyleRepository)
         return WatchFace(WatchFaceType.DIGITAL, renderer)
             .setTapListener(object : WatchFace.TapListener {
                 override fun onTapEvent(tapType: Int, tapEvent: TapEvent, complicationSlot: ComplicationSlot?) {
@@ -50,4 +55,30 @@ class WatchFaceTideService : WatchFaceService() {
                 }
             })
     }
+}
+
+class WatchFaceTideService : TPlannerFaceService() {
+    override fun createRenderer(
+        surfaceHolder: SurfaceHolder,
+        watchState: WatchState,
+        currentUserStyleRepository: CurrentUserStyleRepository,
+    ): FaceBase = FaceTide(
+        applicationContext,
+        surfaceHolder,
+        currentUserStyleRepository,
+        watchState,
+    )
+}
+
+class WatchFaceNextService : TPlannerFaceService() {
+    override fun createRenderer(
+        surfaceHolder: SurfaceHolder,
+        watchState: WatchState,
+        currentUserStyleRepository: CurrentUserStyleRepository,
+    ): FaceBase = FaceNext(
+        applicationContext,
+        surfaceHolder,
+        currentUserStyleRepository,
+        watchState,
+    )
 }
