@@ -70,7 +70,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.hamhuo.tplanner.timeline.TimelineScreen
 import com.hamhuo.tplanner.persistence.DraftCommitResult
-import com.hamhuo.tplanner.persistence.DraftConflict
 import com.hamhuo.tplanner.persistence.EventDraftRecovery
 import com.hamhuo.tplanner.persistence.EventEditStage
 import com.hamhuo.tplanner.persistence.journalOnceMarker
@@ -107,11 +106,6 @@ private enum class ChromeMode {
     Minimal,
     PrimaryNavigation,
     TimelineNavigation,
-}
-
-private data class JournalConflictPrompt(val details: DraftConflict) {
-    val date: String get() = details.target.entityId
-    val draftText: String get() = details.draftContent
 }
 
 private fun Throwable.locationForLog(): String {
@@ -175,6 +169,14 @@ fun MainScreen(
             delay(30_000L)
         }
     }
+    val journalActions = remember {
+        JournalActions(
+            scope, context, store, journalWriteMutex,
+            { journalDateKey }, { content }, { content = it },
+            { journalHasDraft }, { journalHasDraft = it },
+            { journalConflict }, { journalConflict = it },
+        )
+    }
 
     LaunchedEffect(eventStore) {
         eventStore.observeAll().collect { storedEvents ->
@@ -193,39 +195,8 @@ fun MainScreen(
         }
     }
 
-    fun saveJournalDraft(text: String) {
-        journalHasDraft = true
-        store.enqueueDraft(journalDateKey, text)
-    }
-
-    fun commitJournalDraft(text: String) {
-        journalHasDraft = true
-        store.enqueueDraft(journalDateKey, text)
-        scope.launch {
-            try {
-                val result = journalWriteMutex.withLock {
-                    store.commitDraft(journalDateKey, text)
-                }
-                when (result) {
-                    DraftCommitResult.Saved,
-                    DraftCommitResult.AlreadySaved,
-                    -> journalHasDraft = false
-                    is DraftCommitResult.Conflict -> {
-                        journalHasDraft = true
-                        journalConflict = JournalConflictPrompt(result.details)
-                        Toast.makeText(
-                            context,
-                            "内容已在其他设备修改，当前草稿已安全保留",
-                            Toast.LENGTH_LONG,
-                        ).show()
-                    }
-                }
-            } catch (_: Exception) {
-                journalHasDraft = true
-                Toast.makeText(context, "保存失败，草稿仍保留在本机", Toast.LENGTH_LONG).show()
-            }
-        }
-    }
+    fun saveJournalDraft(text: String) = journalActions.saveDraft(text)
+    fun commitJournalDraft(text: String) = journalActions.commitDraft(text)
 
     suspend fun refreshJournalRecovery(date: String) {
         when (val recovery = store.getDraftRecovery(date)) {
@@ -1378,23 +1349,9 @@ fun MainScreen(
             text = { Text("其他设备已修改当天内容。草稿不会丢失；请选择保留草稿、使用当前版本，或明确覆盖当前版本。") },
             confirmButton = {
                 TextButton(onClick = {
-                    scope.launch {
-                        try {
-                            val overwritten = journalWriteMutex.withLock {
-                                store.overwriteDraft(conflict.details)
-                            }
-                            if (overwritten) {
-                                if (conflict.date == journalDateKey) {
-                                    content = conflict.draftText
-                                    journalHasDraft = false
-                                }
-                                journalConflict = null
-                            } else {
-                                refreshJournalRecovery(conflict.date)
-                            }
-                        } catch (_: Exception) {
-                            Toast.makeText(context, "覆盖失败，草稿仍已保留", Toast.LENGTH_LONG).show()
-                        }
+                    journalActions.resolveOverwrite(conflict.details)
+                    if (journalConflict != null) {
+                        scope.launch { refreshJournalRecovery(conflict.date) }
                     }
                 }) { Text("覆盖当前") }
             },
@@ -1404,24 +1361,7 @@ fun MainScreen(
                         Text("保留草稿")
                     }
                     TextButton(onClick = {
-                        scope.launch {
-                            try {
-                                val discarded = journalWriteMutex.withLock {
-                                    store.discardDraft(conflict.details)
-                                }
-                                if (!discarded) {
-                                    refreshJournalRecovery(conflict.date)
-                                    return@launch
-                                }
-                                if (conflict.date == journalDateKey) {
-                                    content = store.get(journalDateKey)
-                                    journalHasDraft = false
-                                }
-                                journalConflict = null
-                            } catch (_: Exception) {
-                                Toast.makeText(context, "读取当前版本失败", Toast.LENGTH_LONG).show()
-                            }
-                        }
+                        journalActions.resolveDiscard(conflict.details)
                     }) { Text("使用当前版本") }
                 }
             },

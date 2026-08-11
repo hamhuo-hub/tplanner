@@ -18,9 +18,9 @@ import java.time.ZoneId
 
 // ── shared constants ───────────────────────────────────────────────────
 
-private const val TYPE_EVENT = "event"
-private const val TYPE_STATUS = "status"
-private const val TYPE_TASK = "task"
+const val TYPE_EVENT = "event"
+const val TYPE_STATUS = "status"
+const val TYPE_TASK = "task"
 const val TAG_VALUE = "task_creation_value"
 
 const val CREATION_PRIMARY = 0xFFF5F5F7.toInt()

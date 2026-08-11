@@ -1,4 +1,7 @@
 package com.hamhuo.tplanner
+import android.content.Context
+import android.content.Intent
+import android.os.Bundle
 
 /** Second destination: select one of the three task types already supported by the phone. */
 class CreateTypeActivity : WearPageActivity() {
