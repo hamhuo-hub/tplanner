@@ -21,6 +21,7 @@ import androidx.activity.ComponentActivity
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import java.time.Instant
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -42,16 +43,6 @@ class ListSelectionActivity : WearPageActivity() {
         setContentView(page)
     }
 
-    override fun onResume() {
-        super.onResume()
-        page.start()
-    }
-
-    override fun onPause() {
-        page.stop()
-        super.onPause()
-    }
-
     companion object {
         const val EXTRA_SELECTED_FILTER = "selected_filter"
         private const val EXTRA_CURRENT_FILTER = "current_filter"
@@ -59,6 +50,36 @@ class ListSelectionActivity : WearPageActivity() {
         fun createIntent(context: Context, selected: WatchListFilter): Intent =
             Intent(context, ListSelectionActivity::class.java)
                 .putExtra(EXTRA_CURRENT_FILTER, selected.key)
+    }
+}
+
+/** Independent task destination. Wear OS owns edge-swipe/back navigation. */
+class TaskDetailActivity : WearPageActivity() {
+    private lateinit var page: TaskDetailView
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val title = intent.getStringExtra(EXTRA_TITLE)
+        val startEpochMs = intent.getLongExtra(EXTRA_START, Long.MIN_VALUE)
+        val endEpochMs = intent.getLongExtra(EXTRA_END, Long.MIN_VALUE)
+        if (title.isNullOrBlank() || startEpochMs == Long.MIN_VALUE || endEpochMs < startEpochMs) {
+            finish()
+            return
+        }
+        page = TaskDetailView(this, title, startEpochMs, endEpochMs)
+        setContentView(page)
+    }
+
+    companion object {
+        private const val EXTRA_TITLE = "task_title"
+        private const val EXTRA_START = "task_start"
+        private const val EXTRA_END = "task_end"
+
+        fun createIntent(context: Context, task: WatchEventMarks.NextTask): Intent =
+            Intent(context, TaskDetailActivity::class.java)
+                .putExtra(EXTRA_TITLE, task.title)
+                .putExtra(EXTRA_START, task.startEpochMs)
+                .putExtra(EXTRA_END, task.endEpochMs)
     }
 }
 
@@ -93,8 +114,6 @@ private class ListSelectionView(
     selected: WatchListFilter,
     onSelected: (WatchListFilter) -> Unit,
 ) : FrameLayout(context) {
-    private val clock = FloatingClockView(context)
-
     init {
         setBackgroundColor(Color.BLACK)
         val scroll = ScrollView(context).apply {
@@ -155,17 +174,7 @@ private class ListSelectionView(
         }
 
         addView(scroll, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        addView(
-            clock,
-            LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END).apply {
-                topMargin = dp(14)
-                marginEnd = dp(54)
-            },
-        )
     }
-
-    fun start() = clock.start()
-    fun stop() = clock.stop()
 
     private fun rounded(color: Int, radius: Float) = GradientDrawable().apply {
         shape = GradientDrawable.RECTANGLE
@@ -179,45 +188,119 @@ private class ListSelectionView(
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
 }
 
-private class FloatingClockView(context: Context) : TextView(context) {
-    private val formatter = DateTimeFormatter.ofPattern("HH:mm", Locale.CHINA)
-    private var running = false
-    private val ticker = object : Runnable {
-        override fun run() {
-            if (!running) return
-            updateClock()
-            val now = System.currentTimeMillis()
-            postDelayed(this, MINUTE_MS - now % MINUTE_MS + CLOCK_SLOP_MS)
-        }
-    }
+private class TaskDetailView(
+    context: Context,
+    title: String,
+    startEpochMs: Long,
+    endEpochMs: Long,
+) : FrameLayout(context) {
+    private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.CHINA)
+    private val dateFormatter = DateTimeFormatter.ofPattern("M月d日 EEEE", Locale.CHINA)
 
     init {
-        setTextColor(PRIMARY)
-        textSize = 14f
-        typeface = MEDIUM
-        includeFontPadding = false
-        gravity = Gravity.END
-        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
-        updateClock()
+        setBackgroundColor(Color.BLACK)
+        val scroll = ScrollView(context).apply {
+            isFillViewport = true
+            isVerticalScrollBarEnabled = false
+            clipToPadding = false
+            setPadding(dp(18), 0, dp(18), dp(28))
+        }
+        val content = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+        }
+        scroll.addView(
+            content,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+
+        content.addView(
+            textView(22f, ACCENT, MEDIUM).apply {
+                text = context.getString(R.string.task_list_detail_title)
+                gravity = Gravity.START or Gravity.CENTER_VERTICAL
+                setPadding(dp(13), 0, 0, 0)
+            },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(38)).apply {
+                topMargin = dp(35)
+                bottomMargin = dp(7)
+            },
+        )
+
+        val start = ZonedDateTime.ofInstant(Instant.ofEpochMilli(startEpochMs), APP_ZONE)
+        val end = ZonedDateTime.ofInstant(Instant.ofEpochMilli(endEpochMs), APP_ZONE)
+        val date = if (start.toLocalDate() == end.toLocalDate()) {
+            dateFormatter.format(start)
+        } else {
+            "${dateFormatter.format(start)} – ${dateFormatter.format(end)}"
+        }
+        val time = "${timeFormatter.format(start)}–${timeFormatter.format(end)}"
+        val panel = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            minimumHeight = dp(118)
+            setPadding(dp(14), dp(13), dp(14), dp(14))
+            background = rounded(CARD, dp(13).toFloat())
+            contentDescription = context.getString(
+                R.string.task_list_detail_accessibility,
+                title,
+                date,
+                time,
+            )
+        }
+        panel.addView(textView(20f, PRIMARY, MEDIUM).apply {
+            text = title
+            maxLines = 3
+            ellipsize = TextUtils.TruncateAt.END
+        })
+        panel.addView(detailLabel(context.getString(R.string.task_list_date_label)), detailLabelParams())
+        panel.addView(detailValue(date))
+        panel.addView(detailLabel(context.getString(R.string.task_list_time_label)), detailLabelParams())
+        panel.addView(detailValue(time))
+        content.addView(
+            panel,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+
+        addView(scroll, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
     }
 
-    fun start() {
-        if (running) return
-        running = true
-        removeCallbacks(ticker)
-        post(ticker)
-    }
-
-    fun stop() {
-        running = false
-        removeCallbacks(ticker)
-    }
-
-    private fun updateClock() {
-        val value = formatter.format(ZonedDateTime.now(APP_ZONE))
+    private fun detailLabel(value: String): TextView = textView(12f, ACCENT, MEDIUM).apply {
         text = value
-        contentDescription = context.getString(R.string.task_list_current_time, value)
     }
+
+    private fun detailValue(value: String): TextView = textView(15f, PRIMARY, REGULAR).apply {
+        text = value
+        maxLines = 2
+        ellipsize = TextUtils.TruncateAt.END
+    }
+
+    private fun detailLabelParams() = LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+    ).apply {
+        topMargin = dp(13)
+        bottomMargin = dp(2)
+    }
+
+    private fun textView(sizeSp: Float, color: Int, font: Typeface): TextView = TextView(context).apply {
+        setTextColor(color)
+        textSize = sizeSp
+        typeface = font
+        includeFontPadding = false
+    }
+
+    private fun rounded(color: Int, radius: Float) = GradientDrawable().apply {
+        shape = GradientDrawable.RECTANGLE
+        cornerRadius = radius
+        setColor(color)
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
 }
 
 private val REGULAR: Typeface = Typeface.create("sans-serif", Typeface.NORMAL)
@@ -226,5 +309,3 @@ private const val PRIMARY = 0xFFF5F5F7.toInt()
 private const val ACCENT = 0xFFFFD60A.toInt()
 private const val CARD = 0xFF202022.toInt()
 private const val CARD_PRESSED = 0x33FFFFFF
-private const val MINUTE_MS = 60_000L
-private const val CLOCK_SLOP_MS = 40L

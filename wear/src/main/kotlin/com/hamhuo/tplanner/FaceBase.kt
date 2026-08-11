@@ -14,9 +14,8 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.min
-import kotlin.math.sqrt
 
-// tPlanner 表盘 Renderer 基类：统一管理动画状态、事件刻度、唤醒按钮和 Paint。
+// tPlanner 表盘 Renderer 基类：统一管理动画状态、事件刻度、应用入口和 Paint。
 abstract class FaceBase(
     private val context: Context,
     surfaceHolder: SurfaceHolder,
@@ -33,12 +32,10 @@ abstract class FaceBase(
 
     // ── 动画时钟 ────────────────────────────────────────────────────────────
     @Volatile protected var bootStart = 0L
-    @Volatile protected var tapStart  = 0L
 
     // render() 每次调用前更新，供子类 draw*() 直接读取
     @Volatile protected var now        = 0L
     @Volatile protected var bootAlpha  = 0f
-    @Volatile protected var tapElapsed = 0L
 
     // ── 事件刻度 ────────────────────────────────────────────────────────────
     protected var marks = WatchEventMarks.EMPTY
@@ -51,20 +48,8 @@ abstract class FaceBase(
 
     // ── 公共接口 ────────────────────────────────────────────────────────────
 
-    fun handleWakeTap() {
-        tapStart = System.currentTimeMillis()
-        postInvalidate()
-    }
-
-    /** 默认中心区域——避免与系统媒体控件重叠。潮汐覆写为浪尖金球。 */
-    open fun isOnWakeButton(x: Int, y: Int): Boolean {
-        if (faceW == 0) return false
-        val s  = min(faceW, faceH).toFloat()
-        val cx = faceW / 2f
-        val cy = faceH / 2f
-        val dx = x - cx; val dy = y - cy
-        return sqrt((dx * dx + dy * dy).toDouble()) <= s * 0.15f
-    }
+    /** Only faces with an explicit app-entry region opt into tap-to-open behavior. */
+    open fun isOnAppLaunchRegion(x: Int, y: Int): Boolean = false
 
     // ── 主渲染入口 ──────────────────────────────────────────────────────────
 
@@ -76,7 +61,6 @@ abstract class FaceBase(
 
         if (!ambient && bootStart == 0L) bootStart = now
         bootAlpha  = easeOutCubic(((now - bootStart).coerceIn(0, BOOT_MS) / BOOT_MS.toFloat()))
-        tapElapsed = now - tapStart
 
         // 定期重读同步快照：新备忘会在数秒内出现，时间越过当前事项时也会自动前进。
         if (marksLoadedAt == 0L || now < marksLoadedAt || now - marksLoadedAt >= MARKS_REFRESH_MS) {
@@ -93,8 +77,8 @@ abstract class FaceBase(
         if (ambient) drawAmbient(canvas, appDateTime, s, cx, cy)
         else         drawInteractive(canvas, appDateTime, s, cx, cy)
 
-        // 入场/点按动画期间请求连续帧；结束后回落低频重绘
-        if (!ambient && (now - bootStart < BOOT_MS || now - tapStart < TAP_MS)) invalidate()
+        // 入场动画期间请求连续帧；结束后回落低频重绘
+        if (!ambient && now - bootStart < BOOT_MS) invalidate()
     }
 
     override fun renderHighlightLayer(

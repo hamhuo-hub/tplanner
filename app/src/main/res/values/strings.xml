@@ -74,6 +74,8 @@
     <string name="schedule_created_toast">已创建日程：%1$s</string>
     <string name="schedule_create_failed_toast">日程创建失败，请重试</string>
     <string name="ai_service_unavailable">AI 服务未配置或连接失败，请检查 API Key 或网络后重试</string>
+    <string name="location_locating">正在定位…</string>
+    <string name="location_unavailable">未获取位置</string>
     <string name="ai_schedule_extraction">AI 日程提取</string>
     <string name="schedule_created_with_alarm_toast">已创建日程并设置系统闹铃：%1$s</string>
     <string name="schedule_created_with_fallback_alarm_toast">已创建日程：%1$s；精确闹铃权限未开启，提醒可能延迟</string>
@@ -86,7 +88,6 @@
         <item quantity="other">%1$d 天前</item>
     </plurals>
     <string name="alarm_exact_permission_hint">开启"闹钟和提醒"权限可准时触发；点击前往系统设置</string>
-    <string name="bg_location_guide">请在此页面选择"权限"→"位置"→"始终允许"，以便手表唤醒时能在后台获取定位</string>
     <string name="alarm_channel_name">任务闹铃</string>
     <string name="alarm_channel_description">在日程开始前发出闹铃提醒</string>
     <string name="alarm_notification_starts_at">%1$s 开始</string>

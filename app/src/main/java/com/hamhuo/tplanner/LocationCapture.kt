@@ -19,8 +19,9 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * Process-scoped one-shot location coordinator.
  *
- * It deliberately outlives a Service callback and a Compose effect. Only one capture generation
- * may own platform listeners at a time; a newer wake invalidates and removes every older listener.
+ * It deliberately outlives an Activity callback and a Compose effect. Only one foreground
+ * capture generation may own platform listeners at a time; a newer capture invalidates and
+ * removes every older listener.
  */
 object LocationCapture {
     private const val TAG = "TplannerLocation"
@@ -63,33 +64,12 @@ object LocationCapture {
         var timeoutRunnable: Runnable? = null
     }
 
-    /** Starts a fresh foreground capture and supersedes any prior generation. */
+    /** Starts a fresh app-foreground capture and supersedes any prior generation. */
     fun start(context: Context): Handle {
         val handle = newHandle()
         val appContext = context.applicationContext
         runOnMain { beginCapture(appContext, handle) }
         return handle
-    }
-
-    /**
-     * Background-safe, sensor-free warm-up used by WakeDataLayerService. It only evaluates
-     * last-known fixes and writes one when its real fix age and accuracy pass strict limits.
-     */
-    fun primeFreshCache(context: Context) {
-        val handle = newHandle()
-        val appContext = context.applicationContext
-        runOnMain {
-            if (!isLatest(handle)) return@runOnMain
-            cancelActiveInternal("new wake cache prime")
-            val locationManager = appContext.getSystemService(LocationManager::class.java)
-                ?: return@runOnMain
-            val permission = permissionState(appContext)
-            val cached = bestFreshLastKnown(locationManager, permission)
-            if (cached != null && isLatest(handle)) {
-                WatchLocationStore.save(appContext, cached, handle.requestId, fromCache = true)
-                logAccepted(handle, cached, fromCache = true)
-            }
-        }
     }
 
     fun isActive(handle: Handle): Boolean =
@@ -133,7 +113,7 @@ object LocationCapture {
         activeGeneration = handle.generation
 
         if (cached != null) {
-            WatchLocationStore.save(context, cached, handle.requestId, fromCache = true)
+            AppLocationStore.save(cached, handle.requestId, fromCache = true)
             logAccepted(handle, cached, fromCache = true)
         }
 
@@ -165,18 +145,14 @@ object LocationCapture {
             return
         }
 
-        // If only GPS is available (no network / fused), a cold start takes most of the budget;
-        // a network provider delivers within a few seconds — cut the wait short once it's clear
-        // the network path has nothing new to offer.
-        val hasNetworkProvider = state.listeners.keys.any {
-            it == LocationManager.FUSED_PROVIDER || it == LocationManager.NETWORK_PROVIDER
-        }
+        // Keep the full cold-start budget whenever GPS participates. Pure network/fused captures
+        // should resolve quickly and can stop early when neither provider produces a fix.
         state.timeoutRunnable = Runnable {
             if (isCurrent(state)) finishCapture(state, "deadline")
         }.also {
             mainHandler.postDelayed(
                 it,
-                if (hasNetworkProvider) NETWORK_ONLY_DEADLINE_MS else CAPTURE_TIMEOUT_MS,
+                if (gpsAvailable) CAPTURE_TIMEOUT_MS else NETWORK_ONLY_DEADLINE_MS,
             )
         }
     }
@@ -220,12 +196,7 @@ object LocationCapture {
 
         state.best = candidate
         val fromCache = locationAgeMs(candidate) > 5_000L
-        WatchLocationStore.save(
-            state.context,
-            candidate,
-            state.handle.requestId,
-            fromCache = fromCache,
-        )
+        AppLocationStore.save(candidate, state.handle.requestId, fromCache = fromCache)
         logAccepted(state.handle, candidate, fromCache = fromCache)
 
         if (locationAgeMs(candidate) <= COMPLETE_MAX_AGE_MS &&

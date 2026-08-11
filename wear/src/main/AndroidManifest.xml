@@ -14,7 +14,9 @@
 
     <application
         android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.DeviceDefault">
 
@@ -37,6 +39,12 @@
 
         <activity
             android:name=".ListSelectionActivity"
+            android:exported="false"
+            android:taskAffinity="com.hamhuo.tplanner.watch"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+
+        <activity
+            android:name=".TaskDetailActivity"
             android:exported="false"
             android:taskAffinity="com.hamhuo.tplanner.watch"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
@@ -98,19 +106,6 @@
                 <data android:scheme="wear" android:host="*" android:pathPrefix="/tplanner/schedule" />
             </intent-filter>
         </service>
-
-        <!-- 手机确认收到持久唤醒请求后，清理手表端 outbox。 -->
-        <service android:name=".WakeAckReceiverService" android:exported="true">
-            <intent-filter>
-                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
-                <data android:scheme="wear" android:host="*" android:pathPrefix="/tplanner/wake/ack" />
-            </intent-filter>
-        </service>
-
-        <service
-            android:name=".WakeOutboxJobService"
-            android:exported="false"
-            android:permission="android.permission.BIND_JOB_SERVICE" />
 
         <service android:name=".WatchTaskAckReceiverService" android:exported="true">
             <intent-filter>

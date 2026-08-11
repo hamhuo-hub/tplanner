@@ -1,7 +1,12 @@
 package com.hamhuo.tplanner
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -40,6 +45,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -58,6 +64,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.hamhuo.tplanner.timeline.TimelineScreen
 import com.hamhuo.tplanner.persistence.DraftCommitResult
 import com.hamhuo.tplanner.persistence.DraftConflict
@@ -74,6 +84,24 @@ import java.util.UUID
 
 private const val LLM_LOG_TAG = "TplannerLLM"
 private const val PRIMARY_NAVIGATION_VISIBLE_MILLIS = 2_500L
+private const val LOCATION_CAPTURE_WAIT_MILLIS = 12_000L
+
+private enum class PhoneLocationState {
+    IDLE,
+    LOCATING,
+    READY,
+    UNAVAILABLE,
+}
+
+private fun hasPhoneLocationPermission(context: Context): Boolean =
+    ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_COARSE_LOCATION,
+    ) == PackageManager.PERMISSION_GRANTED ||
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+        ) == PackageManager.PERMISSION_GRANTED
 
 private enum class ChromeMode {
     Minimal,
@@ -101,7 +129,6 @@ fun MainScreen(
     manager: LanSyncManager,
     deepseekService: DeepSeekAnalysisService?,
     amapApiKey: String,
-    scheduleTriggerCount: Int,
     initialContent: String,
     initialEvents: List<TaskEvent>,
     initialJournalDate: String,
@@ -110,7 +137,6 @@ fun MainScreen(
     initialEventRecovery: EventDraftRecovery?,
     untangleStore: UntangleStateStore,
     initialUntangleState: UntangleRecoveryState?,
-    onScheduleSheetReady: () -> Unit,
 ) {
     val scope  = rememberCoroutineScope()
     val context = LocalContext.current
@@ -284,6 +310,7 @@ fun MainScreen(
 
     // ── Schedule extraction sheet ───────────────────────────────────────
     var showScheduleSheet by remember { mutableStateOf(initialUntangleState != null) }
+    var openingScheduleSheet by remember { mutableStateOf(false) }
     var thinking by remember { mutableStateOf(false) }
     var sheetAction by remember {
         mutableStateOf(initialUntangleState?.proposal)
@@ -312,6 +339,70 @@ fun MainScreen(
         mutableStateOf(initialUntangleState?.requiresFreshSubmission == true)
     }
     val untangleWriteMutex = remember { Mutex() }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var pendingLocationRequestId by remember { mutableStateOf<String?>(null) }
+    var locationPermissionGeneration by remember { mutableIntStateOf(0) }
+    var locationPermissionInFlight by remember { mutableStateOf(false) }
+    var phoneLocationForeground by remember(lifecycleOwner) {
+        mutableStateOf(
+            lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED),
+        )
+    }
+    var phoneLocationState by remember {
+        mutableStateOf(
+            if (initialUntangleState?.location.isNullOrBlank()) {
+                PhoneLocationState.IDLE
+            } else {
+                PhoneLocationState.READY
+            },
+        )
+    }
+    var activeLocationHandle by remember { mutableStateOf<LocationCapture.Handle?>(null) }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { result ->
+        locationPermissionInFlight = false
+        val granted = hasPhoneLocationPermission(context)
+        Log.i(
+            LLM_LOG_TAG,
+            "phase=location_permission granted=$granted coarse=${result[Manifest.permission.ACCESS_COARSE_LOCATION] == true} " +
+                "fine=${result[Manifest.permission.ACCESS_FINE_LOCATION] == true}",
+        )
+        if (granted && pendingLocationRequestId != null) {
+            locationPermissionGeneration++
+        } else {
+            pendingLocationRequestId = null
+            if (phoneLocationState == PhoneLocationState.LOCATING) {
+                phoneLocationState = PhoneLocationState.UNAVAILABLE
+            }
+        }
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> phoneLocationForeground = true
+                Lifecycle.Event.ON_STOP -> {
+                    phoneLocationForeground = false
+                    activeLocationHandle?.let(LocationCapture::cancel)
+                    activeLocationHandle = null
+                    if (!locationPermissionInFlight &&
+                        phoneLocationState == PhoneLocationState.LOCATING
+                    ) {
+                        phoneLocationState = PhoneLocationState.UNAVAILABLE
+                    }
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            activeLocationHandle?.let(LocationCapture::cancel)
+            activeLocationHandle = null
+        }
+    }
 
     fun untangleSnapshot(
         phase: UntanglePhase,
@@ -351,140 +442,168 @@ fun MainScreen(
         }
     }
 
-    /** Open the AI schedule-extraction sheet directly (no watch wake required). */
+    LaunchedEffect(
+        showScheduleSheet,
+        sheetRequestId,
+        pendingLocationRequestId,
+        locationPermissionGeneration,
+        phoneLocationForeground,
+        thinking,
+        sheetAction,
+        untangleJournalLine,
+    ) {
+        val targetRequestId = pendingLocationRequestId ?: return@LaunchedEffect
+        if (!phoneLocationForeground) return@LaunchedEffect
+        if (!showScheduleSheet ||
+            sheetRequestId != targetRequestId ||
+            thinking ||
+            sheetAction != null ||
+            untangleJournalLine.isNotBlank()
+        ) {
+            pendingLocationRequestId = null
+            if (!showScheduleSheet) phoneLocationState = PhoneLocationState.IDLE
+            return@LaunchedEffect
+        }
+        if (!hasPhoneLocationPermission(context)) return@LaunchedEffect
+
+        val handle = LocationCapture.start(context)
+        activeLocationHandle = handle
+        Log.d(
+            LLM_LOG_TAG,
+            "request=$targetRequestId phase=location_capture result=started generation=${handle.generation}",
+        )
+        try {
+            val deadline = System.currentTimeMillis() + LOCATION_CAPTURE_WAIT_MILLIS
+            var fix: AppLocationStore.Fix? = null
+            while (System.currentTimeMillis() < deadline && fix == null) {
+                delay(250L)
+                fix = AppLocationStore.get(handle.requestId)
+                if (fix == null && !LocationCapture.isActive(handle)) break
+            }
+
+            fun isCurrentEditingRequest(): Boolean =
+                showScheduleSheet &&
+                    sheetRequestId == targetRequestId &&
+                    !thinking &&
+                    sheetAction == null &&
+                    untangleJournalLine.isBlank()
+
+            if (!isCurrentEditingRequest()) return@LaunchedEffect
+
+            val resolvedLocation = fix?.let {
+                AmapGeocoder.reverseGeocode(it.lat, it.lng, amapApiKey)
+            }.orEmpty()
+            Log.i(
+                LLM_LOG_TAG,
+                "request=$targetRequestId phase=location_capture " +
+                    "result=${if (fix == null) "unavailable" else "fix"} " +
+                    "reverseGeocoded=${resolvedLocation.isNotBlank()}",
+            )
+            if (!isCurrentEditingRequest()) return@LaunchedEffect
+
+            if (fix == null) {
+                phoneLocationState = PhoneLocationState.UNAVAILABLE
+                return@LaunchedEffect
+            }
+
+            gpsLat = fix.lat
+            gpsLng = fix.lng
+            prefillLocation = resolvedLocation
+            phoneLocationState = if (resolvedLocation.isBlank()) {
+                PhoneLocationState.UNAVAILABLE
+            } else {
+                PhoneLocationState.READY
+            }
+
+            // Location is persisted with the phone-created request before submission. A delayed
+            // geocoder response can never overwrite a closed, submitted, or replacement sheet.
+            untangleWriteMutex.withLock {
+                if (isCurrentEditingRequest()) {
+                    untangleStore.save(untangleSnapshot(UntanglePhase.EDITING, proposal = null))
+                }
+            }
+        } finally {
+            LocationCapture.cancel(handle)
+            AppLocationStore.clear(handle.requestId)
+            if (activeLocationHandle == handle) activeLocationHandle = null
+            if (pendingLocationRequestId == targetRequestId) pendingLocationRequestId = null
+        }
+    }
+
+    /** Open the AI schedule-extraction sheet directly from the phone UI. */
     fun startDirectAiExtraction() {
         if (deepseekService == null) {
             Toast.makeText(context, R.string.ai_service_unavailable, Toast.LENGTH_SHORT).show()
             return
         }
+        if (showScheduleSheet || openingScheduleSheet) return
+        openingScheduleSheet = true
         scope.launch {
-            showScheduleSheet = true
-            thinking = false
-            sheetAction = null
-            val previousRequestId = sheetRequestId
-            val openedRequestId = "direct-${UUID.randomUUID()}"
-            sheetRequestId = openedRequestId
-            untangleInput = ""
-            prefillLocation = ""
-            gpsLat = 0.0; gpsLng = 0.0
-            untangleJournalDate = ""
-            untangleJournalLine = ""
-            untangleSubmissionInput = ""
-            untangleSubmissionStamp = ""
-            untangleSubmissionLocation = ""
-            untangleRequiresFreshSubmission = false
-            untangleWriteMutex.withLock {
-                untangleStore.replace(
-                    previousRequestId,
-                    UntangleRecoveryState(
-                        requestId = openedRequestId,
-                        inputText = "",
-                        location = "",
-                        lat = 0.0,
-                        lng = 0.0,
-                        phase = UntanglePhase.EDITING,
-                    ),
-                )
-            }
-            Log.i(
-                LLM_LOG_TAG,
-                "phase=sheet_open source=direct requestId=$openedRequestId " +
-                    "serviceConfigured=${deepseekService != null}",
-            )
-        }
-    }
-
-    LaunchedEffect(scheduleTriggerCount) {
-        if (scheduleTriggerCount > 0) {
-            Log.i(
-                LLM_LOG_TAG,
-                "phase=sheet_open triggerCount=$scheduleTriggerCount " +
-                    "serviceConfigured=${deepseekService != null} locationApiConfigured=${amapApiKey.isNotBlank()}",
-            )
-            showScheduleSheet = true
-            thinking = false
-            sheetAction = null
-            val previousRequestId = sheetRequestId
-            val openedRequestId = "watch-${UUID.randomUUID()}"
-            sheetRequestId = openedRequestId
-            untangleInput = ""
-            prefillLocation = ""
-            gpsLat = 0.0; gpsLng = 0.0
-            untangleJournalDate = ""
-            untangleJournalLine = ""
-            untangleSubmissionInput = ""
-            untangleSubmissionStamp = ""
-            untangleSubmissionLocation = ""
-            untangleRequiresFreshSubmission = false
-            untangleWriteMutex.withLock {
-                untangleStore.replace(
-                    previousRequestId,
-                    UntangleRecoveryState(
-                        requestId = openedRequestId,
-                        inputText = "",
-                        location = "",
-                        lat = 0.0,
-                        lng = 0.0,
-                        phase = UntanglePhase.EDITING,
-                    ),
-                )
-            }
-            // This is the durable-consumption boundary for watch wake requests. Activity launch or
-            // setContent alone is insufficient: only now may the phone ACK and let the watch drop it.
-            onScheduleSheetReady()
-
-            // Start foreground location capture. primeFreshCache was already
-            // called by WakeDataLayerService before the Activity was visible.
-            val handle = LocationCapture.start(context)
-            Log.d(
-                LLM_LOG_TAG,
-                "phase=location_capture result=started requestId=${handle.requestId}",
-            )
-
-            // Poll WatchLocationStore for a fix matching this capture generation.
-            val deadline = System.currentTimeMillis() + 12_000
-            var fix: WatchLocationStore.Fix? = null
-            while (System.currentTimeMillis() < deadline && fix == null) {
-                delay(500)
-                val cur = WatchLocationStore.get(context)
-                if (cur != null && cur.requestId == handle.requestId) fix = cur
-            }
-            if (!showScheduleSheet || sheetRequestId != openedRequestId || thinking ||
-                sheetAction != null || untangleJournalLine.isNotBlank()
-            ) {
-                return@LaunchedEffect
-            }
-            // Resolve into locals first. A submission may finish while geocoding is suspended; in
-            // that case its frozen timestamp/location must not be mutated by this late result.
-            val resolvedLocation = if (fix != null && amapApiKey.isNotBlank()) {
-                AmapGeocoder.reverseGeocode(fix.lat, fix.lng, amapApiKey)
-            } else {
-                ""
-            }
-            Log.i(
-                LLM_LOG_TAG,
-                "phase=location_capture result=${if (fix == null) "timeout" else "fix"} " +
-                "reverseGeocoded=${resolvedLocation.isNotBlank()}",
-            )
-            if (!showScheduleSheet || sheetRequestId != openedRequestId || thinking ||
-                sheetAction != null || untangleJournalLine.isNotBlank()
-            ) {
-                return@LaunchedEffect
-            }
-            if (fix != null) {
-                gpsLat = fix.lat
-                gpsLng = fix.lng
-                prefillLocation = resolvedLocation
-            }
-            // Location belongs to the same durable request. Persist it before the user can submit
-            // so a process restart does not silently drop a fix that was already displayed.
-            untangleWriteMutex.withLock {
-                if (thinking || sheetAction != null || sheetRequestId != openedRequestId ||
-                    untangleJournalLine.isNotBlank()
-                ) {
-                    return@withLock
+            try {
+                showScheduleSheet = true
+                thinking = false
+                sheetAction = null
+                val previousRequestId = sheetRequestId
+                val openedRequestId = "direct-${UUID.randomUUID()}"
+                sheetRequestId = openedRequestId
+                untangleInput = ""
+                prefillLocation = ""
+                gpsLat = 0.0; gpsLng = 0.0
+                untangleJournalDate = ""
+                untangleJournalLine = ""
+                untangleSubmissionInput = ""
+                untangleSubmissionStamp = ""
+                untangleSubmissionLocation = ""
+                untangleRequiresFreshSubmission = false
+                phoneLocationState = PhoneLocationState.LOCATING
+                untangleWriteMutex.withLock {
+                    untangleStore.replace(
+                        previousRequestId,
+                        UntangleRecoveryState(
+                            requestId = openedRequestId,
+                            inputText = "",
+                            location = "",
+                            lat = 0.0,
+                            lng = 0.0,
+                            phase = UntanglePhase.EDITING,
+                        ),
+                    )
                 }
-                untangleStore.save(untangleSnapshot(UntanglePhase.EDITING, proposal = null))
+
+                // The durable write may suspend while the user closes the sheet or the Activity
+                // leaves the foreground. Never launch a late permission dialog in either case.
+                if (!showScheduleSheet ||
+                    sheetRequestId != openedRequestId ||
+                    !phoneLocationForeground
+                ) {
+                    return@launch
+                }
+
+                Log.i(
+                    LLM_LOG_TAG,
+                    "phase=sheet_open source=direct requestId=$openedRequestId " +
+                        "serviceConfigured=true " +
+                        "locationApiConfigured=${amapApiKey.isNotBlank()}",
+                )
+                pendingLocationRequestId = openedRequestId
+                if (!hasPhoneLocationPermission(context)) {
+                    locationPermissionInFlight = true
+                    runCatching {
+                        locationPermissionLauncher.launch(
+                            arrayOf(
+                                Manifest.permission.ACCESS_COARSE_LOCATION,
+                                Manifest.permission.ACCESS_FINE_LOCATION,
+                            ),
+                        )
+                    }.onFailure { error ->
+                        locationPermissionInFlight = false
+                        pendingLocationRequestId = null
+                        phoneLocationState = PhoneLocationState.UNAVAILABLE
+                        Log.w(LLM_LOG_TAG, "Unable to request phone location permission", error)
+                    }
+                }
+            } finally {
+                openingScheduleSheet = false
             }
         }
     }
@@ -1081,6 +1200,7 @@ fun MainScreen(
             UntangleSheet(
                 requestId = sheetRequestId,
                 prefillLocation = prefillLocation,
+                locationLoading = phoneLocationState == PhoneLocationState.LOCATING,
                 initialText = untangleInput,
                 thinking = thinking,
                 action = sheetAction,

@@ -79,7 +79,7 @@ dependencies {
     // 现代表盘 API：Wear OS 3+/三星 Galaxy Watch 仅识别这一套（及 WFF），
     // 旧的 WallpaperService 表盘不会出现在表盘选择器里。
     implementation(libs.androidx.wear.watchface)
-    // Wearable Data Layer — 手表端通过 GMS 唤醒手机（国际版 Wear OS）。
-    // 无 GMS 的 RFCOMM 降级当前只覆盖手机 → 手表日程同步。
+    // Wearable Data Layer — 手机日程下发、手表新建事项与业务 ACK。
+    // 无 GMS 时由两端 RFCOMM 服务承担相同的同步方向。
     implementation(libs.play.services.wearable)
 }

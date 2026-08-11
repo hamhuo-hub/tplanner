@@ -2,10 +2,7 @@
 <resources>
     <string name="app_name">TPlanner</string>
     <string name="wf_tide">tPlanner 潮汐</string>
-    <string name="wf_next">tPlanner 下一项</string>
-    <string name="wake_phone_no_node">未找到已配对的手机</string>
-    <string name="wake_phone_failed">唤起手机失败</string>
-    <string name="wake_phone_no_permission">缺少蓝牙权限，请打开 TPlanner 应用授权</string>
+    <string name="wf_next">Saisis le jour 把握现在</string>
     <string name="bt_permission_ok">蓝牙权限已就绪，手表可以接收手机日程</string>
     <string name="bt_permission_denied">未授予蓝牙权限，手表无法接收手机日程</string>
     <string name="bt_bridge_channel_name">Schedule sync</string>
@@ -14,8 +11,7 @@
     <string name="bt_bridge_notification_text">Waiting for updates from your phone</string>
 
     <string name="task_list_choose_action">%1$s，轻触选择清单</string>
-    <string name="task_list_current_time">当前时间 %1$s</string>
-    <string name="task_list_new">新建事项</string>
+    <string name="task_list_new">新建</string>
     <string name="task_list_updated">清单已更新</string>
     <string name="task_list_permission_title">需要蓝牙权限</string>
     <string name="task_list_permission_hint">轻触授权，继续接收手机清单</string>
@@ -29,4 +25,8 @@
     <string name="task_list_current">当前</string>
     <string name="task_list_filter_current_accessibility">%1$s，当前清单</string>
     <string name="task_list_item_accessibility">%1$s，%2$s</string>
+    <string name="task_list_detail_title">详情</string>
+    <string name="task_list_date_label">日期</string>
+    <string name="task_list_time_label">时间</string>
+    <string name="task_list_detail_accessibility">%1$s。日期 %2$s。时间 %3$s</string>
 </resources>

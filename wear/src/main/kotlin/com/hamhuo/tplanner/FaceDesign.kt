@@ -14,7 +14,6 @@ enum class FaceDesign(val interactiveDelayMs: Long) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const val BOOT_MS = 800L
-const val TAP_MS  = 600L
 
 const val BG        = 0xFF0D0D0D.toInt()
 const val GOLD      = 0xFFC9A84C.toInt()

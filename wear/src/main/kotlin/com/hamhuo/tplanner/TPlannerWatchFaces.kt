@@ -1,7 +1,10 @@
 package com.hamhuo.tplanner
 
+import android.app.PendingIntent
+import android.content.Intent
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.util.Log
 import android.view.SurfaceHolder
 import androidx.wear.watchface.ComplicationSlot
 import androidx.wear.watchface.ComplicationSlotsManager
@@ -15,10 +18,10 @@ import androidx.wear.watchface.style.CurrentUserStyleRepository
 
 // ═══════════════════════════════════════════════════════════════════════════
 // tPlanner 潮汐（Tide）与下一项（Next）表盘。
-// 两款表盘共享同步、点击震动和唤醒手机逻辑，仅 Renderer 负责各自的视觉表达。
+// 两款表盘共享同步和点击震动逻辑，仅 Renderer 负责各自的视觉表达。
 //
-// 动画为事件驱动：入场 800ms、点按涟漪/光晕 600-800ms，动画期间通过
-// invalidate() 请求连续帧；平时每 100ms 低频重绘。息屏（ambient）下只画
+// 动画为事件驱动：入场 800ms 期间通过 invalidate() 请求连续帧；平时按各表盘的
+// interactiveDelayMs 低频重绘。息屏（ambient）下只画
 // 暗化的极简内容，无动画、无大面积亮色（防烧屏 + 省电）。
 //
 // 绘制逻辑分别位于 FaceTide 与 FaceNext。
@@ -26,6 +29,20 @@ import androidx.wear.watchface.style.CurrentUserStyleRepository
 
 abstract class TPlannerFaceService : WatchFaceService() {
     private val vibrator: Vibrator by lazy { getSystemService(Vibrator::class.java) }
+    private val openDashboardIntent: PendingIntent by lazy {
+        PendingIntent.getActivity(
+            this,
+            OPEN_DASHBOARD_REQUEST_CODE,
+            Intent(this, MainActivity::class.java).apply {
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP,
+                )
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
 
     protected abstract fun createRenderer(
         surfaceHolder: SurfaceHolder,
@@ -40,20 +57,27 @@ abstract class TPlannerFaceService : WatchFaceService() {
         currentUserStyleRepository: CurrentUserStyleRepository,
     ): WatchFace {
         BluetoothScheduleBridgeService.startIfAllowed(applicationContext)
-        PhoneWaker.resumePending(applicationContext)
         val renderer = createRenderer(surfaceHolder, watchState, currentUserStyleRepository)
         return WatchFace(WatchFaceType.DIGITAL, renderer)
             .setTapListener(object : WatchFace.TapListener {
                 override fun onTapEvent(tapType: Int, tapEvent: TapEvent, complicationSlot: ComplicationSlot?) {
-                    if (tapType != TapType.UP) return
-                    if (renderer.isOnWakeButton(tapEvent.xPos, tapEvent.yPos)) {
+                    if (tapType != TapType.UP || complicationSlot != null) return
+                    if (renderer.isOnAppLaunchRegion(tapEvent.xPos, tapEvent.yPos)) {
                         vibrator.cancel()
                         vibrator.vibrate(VibrationEffect.createOneShot(100, VibrationEffect.DEFAULT_AMPLITUDE))
-                        renderer.handleWakeTap()
-                        PhoneWaker.wakeUpPhone(applicationContext)
+                        try {
+                            openDashboardIntent.send()
+                        } catch (error: PendingIntent.CanceledException) {
+                            Log.e(TAG, "Unable to open the Wear dashboard", error)
+                        }
                     }
                 }
             })
+    }
+
+    private companion object {
+        const val TAG = "TplannerWatchFace"
+        const val OPEN_DASHBOARD_REQUEST_CODE = 0x54504C
     }
 }
 

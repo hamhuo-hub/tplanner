@@ -43,6 +43,9 @@ class MainActivity : ComponentActivity() {
             setNewTaskAction {
                 openTaskCreation()
             }
+            setTaskOpenAction { task ->
+                startActivity(TaskDetailActivity.createIntent(this@MainActivity, task))
+            }
             setPermissionAction {
                 if (needsBluetoothPermission()) {
                     showPermissionRequired()
@@ -72,7 +75,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         hideSystemUi()
-        dashboard.start()
+        dashboard.refreshContent(showFeedback = false)
         if (!needsBluetoothPermission()) {
             dashboard.clearPermissionRequired()
             BluetoothScheduleBridgeService.startIfAllowed(this)
@@ -80,11 +83,6 @@ class MainActivity : ComponentActivity() {
             dashboard.showPermissionRequired()
         }
         WatchTaskOutbox.resumePending(this)
-    }
-
-    override fun onPause() {
-        dashboard.stop()
-        super.onPause()
     }
 
     override fun onStop() {

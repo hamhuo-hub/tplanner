@@ -21,10 +21,8 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.compose.setContent
@@ -71,8 +69,6 @@ class CreateTitleActivity : WearPageActivity() {
 
         titleInput = EditText(this).apply {
             setText(savedInstanceState?.getString(STATE_TITLE).orEmpty())
-            hint = getString(R.string.task_create_title_hint)
-            setHintTextColor(CREATION_DIM)
             setTextColor(CREATION_PRIMARY)
             textSize = 19f
             typeface = CREATION_MEDIUM
@@ -83,9 +79,6 @@ class CreateTitleActivity : WearPageActivity() {
             imeOptions = EditorInfo.IME_ACTION_NEXT
             setPadding(dp(16), dp(10), dp(16), dp(10))
             background = creationRounded(CREATION_CARD, dp(14).toFloat())
-            setCompoundDrawablesWithIntrinsicBounds(android.R.drawable.ic_menu_edit, 0, 0, 0)
-            compoundDrawableTintList = ColorStateList.valueOf(CREATION_ACCENT)
-            compoundDrawablePadding = dp(10)
             setOnEditorActionListener { _, actionId, _ ->
                 if (actionId == EditorInfo.IME_ACTION_NEXT) {
                     continueToType()
@@ -98,17 +91,13 @@ class CreateTitleActivity : WearPageActivity() {
 
         val content = creationContent().apply {
             addView(creationTopSpacer())
-            addView(creationHeading(getString(R.string.task_create_title_prompt)))
+            addView(creationHeading(getString(R.string.task_create_title_required)))
             addView(
                 titleInput,
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(60)).apply {
                     topMargin = dp(10)
-                    bottomMargin = dp(13)
                 },
             )
-            addView(creationActionButton(R.string.task_create_next, android.R.drawable.ic_media_next) {
-                continueToType()
-            })
             addView(creationBottomSpacer())
         }
         setContentView(creationScrollPage(content))
@@ -180,17 +169,14 @@ class CreateTypeActivity : WearPageActivity() {
             addView(creationTypeButton(
                 R.string.task_create_type_event,
                 R.string.task_create_type_event_description,
-                android.R.drawable.ic_lock_idle_alarm,
             ) { openTime(route, TYPE_EVENT) })
             addView(creationTypeButton(
                 R.string.task_create_type_status,
                 R.string.task_create_type_status_description,
-                android.R.drawable.btn_star_big_on,
             ) { openTime(route, TYPE_STATUS) })
             addView(creationTypeButton(
                 R.string.task_create_type_task,
                 R.string.task_create_type_task_description,
-                android.R.drawable.checkbox_off_background,
             ) { openTime(route, TYPE_TASK) })
             addView(creationBottomSpacer())
         }
@@ -281,13 +267,11 @@ class CreateTimeActivity : WearPageActivity() {
 /** Fourth destination: alarm, date, color, and the final save action. */
 class CreateSettingsActivity : WearPageActivity() {
     private lateinit var alarmRow: LinearLayout
-    private lateinit var alarmSwitch: Switch
     private lateinit var alarmValue: TextView
     private lateinit var dateRow: LinearLayout
     private lateinit var dateValue: TextView
     private lateinit var colorRow: LinearLayout
     private lateinit var colorValue: TextView
-    private lateinit var colorIcon: ImageView
     private lateinit var saveButton: TextView
     private lateinit var route: CreationRoute
     private var dayOffset: Int = 0
@@ -316,7 +300,7 @@ class CreateSettingsActivity : WearPageActivity() {
             addView(createDateRow())
             addView(createColorRow())
             addView(
-                creationActionButton(R.string.task_create_save, android.R.drawable.ic_menu_save) {
+                creationActionRow(R.string.task_create_save) {
                     saveTask()
                 }.also { saveButton = it },
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)).apply {
@@ -338,35 +322,20 @@ class CreateSettingsActivity : WearPageActivity() {
 
     private fun createAlarmRow(): LinearLayout {
         alarmRow = creationSettingRow(
-            iconRes = android.R.drawable.ic_lock_idle_alarm,
             titleRes = R.string.task_create_alarm,
             descriptionRes = R.string.task_create_alarm_description,
         )
         alarmValue = alarmRow.findViewWithTag(TAG_VALUE)
-        alarmSwitch = Switch(this).apply {
-            showText = false
-            buttonTintList = ColorStateList.valueOf(CREATION_ACCENT)
-            thumbTintList = creationSwitchThumbColors()
-            trackTintList = creationSwitchTrackColors()
-            setOnCheckedChangeListener { _, checked ->
-                if (alarmEnabled != checked) {
-                    alarmEnabled = checked
-                    renderAlarm()
-                    performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                }
-            }
+        alarmRow.setOnClickListener {
+            alarmEnabled = !alarmEnabled
+            renderAlarm()
+            it.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
         }
-        alarmRow.addView(
-            alarmSwitch,
-            LinearLayout.LayoutParams(dp(48), dp(48)).apply { marginStart = dp(4) },
-        )
-        alarmRow.setOnClickListener { alarmSwitch.isChecked = !alarmSwitch.isChecked }
         return alarmRow
     }
 
     private fun createDateRow(): LinearLayout {
         dateRow = creationSettingRow(
-            iconRes = android.R.drawable.ic_menu_today,
             titleRes = R.string.task_create_date,
             descriptionRes = R.string.task_create_date_today,
         )
@@ -381,11 +350,9 @@ class CreateSettingsActivity : WearPageActivity() {
 
     private fun createColorRow(): LinearLayout {
         colorRow = creationSettingRow(
-            iconRes = android.R.drawable.ic_menu_manage,
             titleRes = R.string.task_create_color,
             descriptionRes = R.string.task_create_color_description,
         )
-        colorIcon = colorRow.findViewWithTag(TAG_ICON)
         colorValue = colorRow.findViewWithTag(TAG_VALUE)
         colorRow.setOnClickListener {
             colorId = (colorId + 1) % TASK_COLORS.size
@@ -396,7 +363,6 @@ class CreateSettingsActivity : WearPageActivity() {
     }
 
     private fun renderSettings() {
-        alarmSwitch.isChecked = alarmEnabled
         renderAlarm()
         renderDate()
         renderColor()
@@ -431,7 +397,7 @@ class CreateSettingsActivity : WearPageActivity() {
         val safeColorId = colorId.coerceIn(TASK_COLORS.indices)
         val value = names[safeColorId]
         colorValue.text = value
-        colorIcon.imageTintList = ColorStateList.valueOf(TASK_COLORS[safeColorId])
+        colorValue.setTextColor(TASK_COLORS[safeColorId])
         colorRow.contentDescription = getString(
             R.string.task_create_setting_accessibility,
             getString(R.string.task_create_color),
@@ -544,39 +510,28 @@ private fun Context.creationHeading(value: String): TextView = TextView(this).ap
     setPadding(dp(10), dp(3), dp(10), dp(8))
 }
 
-private fun Context.creationActionButton(
+private fun Context.creationActionRow(
     textRes: Int,
-    iconRes: Int,
     action: () -> Unit,
 ): TextView = TextView(this).apply {
     setText(textRes)
-    setTextColor(Color.BLACK)
+    setTextColor(CREATION_ACCENT)
     textSize = 17f
     typeface = CREATION_BOLD
     includeFontPadding = false
     gravity = Gravity.CENTER
     minimumHeight = dp(54)
     setPadding(dp(18), dp(8), dp(18), dp(8))
-    setCompoundDrawablesWithIntrinsicBounds(iconRes, 0, 0, 0)
-    compoundDrawableTintList = ColorStateList.valueOf(Color.BLACK)
-    compoundDrawablePadding = dp(8)
-    background = creationRippleRounded(CREATION_ACCENT, CREATION_ACCENT_PRESSED, dp(27).toFloat())
+    background = creationRippleRounded(Color.TRANSPARENT, CREATION_CARD_PRESSED, dp(14).toFloat())
     isClickable = true
     isFocusable = true
-    contentDescription = getString(
-        if (textRes == R.string.task_create_save) {
-            R.string.task_create_save_icon_description
-        } else {
-            R.string.task_create_next_icon_description
-        },
-    )
+    contentDescription = getString(textRes)
     setOnClickListener { action() }
 }
 
 private fun Context.creationTypeButton(
     titleRes: Int,
     descriptionRes: Int,
-    iconRes: Int,
     action: () -> Unit,
 ): LinearLayout {
     val title = getString(titleRes)
@@ -595,12 +550,6 @@ private fun Context.creationTypeButton(
             action()
         }
 
-        addView(ImageView(context).apply {
-            setImageResource(iconRes)
-            imageTintList = ColorStateList.valueOf(CREATION_ACCENT)
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        }, LinearLayout.LayoutParams(dp(27), dp(27)).apply { marginEnd = dp(11) })
-
         addView(LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
@@ -618,7 +567,6 @@ private fun Context.creationTypeButton(
 }
 
 private fun Context.creationSettingRow(
-    iconRes: Int,
     titleRes: Int,
     descriptionRes: Int,
 ): LinearLayout = LinearLayout(this).apply {
@@ -633,13 +581,6 @@ private fun Context.creationSettingRow(
         ViewGroup.LayoutParams.MATCH_PARENT,
         ViewGroup.LayoutParams.WRAP_CONTENT,
     ).apply { topMargin = dp(5) }
-
-    addView(ImageView(context).apply {
-        tag = TAG_ICON
-        setImageResource(iconRes)
-        imageTintList = ColorStateList.valueOf(CREATION_ACCENT)
-        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-    }, LinearLayout.LayoutParams(dp(25), dp(25)).apply { marginEnd = dp(11) })
 
     addView(LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
@@ -665,22 +606,6 @@ private fun Context.creationRowText(
     maxLines = 1
     ellipsize = TextUtils.TruncateAt.END
 }
-
-private fun Context.creationSwitchThumbColors(): ColorStateList = ColorStateList(
-    arrayOf(
-        intArrayOf(android.R.attr.state_checked),
-        intArrayOf(),
-    ),
-    intArrayOf(CREATION_ACCENT, CREATION_DIM),
-)
-
-private fun Context.creationSwitchTrackColors(): ColorStateList = ColorStateList(
-    arrayOf(
-        intArrayOf(android.R.attr.state_checked),
-        intArrayOf(),
-    ),
-    intArrayOf(CREATION_ACCENT_TRACK, CREATION_CARD_PRESSED),
-)
 
 private fun Intent.putCreationRoute(route: CreationRoute): Intent = apply {
     putExtra(EXTRA_DRAFT_ID, route.id)
@@ -731,7 +656,6 @@ private const val TYPE_EVENT = "event"
 private const val TYPE_STATUS = "status"
 private const val TYPE_TASK = "task"
 private const val TAG_VALUE = "task_creation_value"
-private const val TAG_ICON = "task_creation_icon"
 private const val EXTRA_DRAFT_ID = "task_creation_id"
 private const val EXTRA_DRAFT_UPDATED_AT = "task_creation_updated_at"
 private const val EXTRA_DRAFT_TITLE = "task_creation_title"
@@ -744,8 +668,6 @@ private const val CREATION_ACCENT = 0xFFFFD60A.toInt()
 private const val CREATION_DIM = 0xFF8E8E93.toInt()
 private const val CREATION_CARD = 0xFF202022.toInt()
 private const val CREATION_CARD_PRESSED = 0x33FFFFFF
-private const val CREATION_ACCENT_PRESSED = 0x66FFD60A
-private const val CREATION_ACCENT_TRACK = 0x80FFD60A.toInt()
 private val CREATION_REGULAR = Typeface.create("sans-serif", Typeface.NORMAL)
 private val CREATION_MEDIUM = Typeface.create("sans-serif-medium", Typeface.NORMAL)
 private val CREATION_BOLD = Typeface.create("sans-serif", Typeface.BOLD)

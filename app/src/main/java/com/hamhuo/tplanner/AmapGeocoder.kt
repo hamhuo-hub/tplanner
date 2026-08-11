@@ -7,15 +7,14 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
-import java.net.URLEncoder
 import android.util.Log
 
 // 高德 Web API 逆地理编码：GPS (WGS-84) → 人类可读位置名。
 // 三级回落：建筑名 → 兴趣点名 → 街道门牌 → 区县
 // Web API 每日免费 5000 次（个人开发者），无需 Android SDK 依赖。
 //
-// 注意：高德 API 需要 GCJ-02 坐标。WakeDataLayerService
-// 从 LocationManager 拿到的 GPS 定位可能是 WGS-84 也可能是 GCJ-02
+// 注意：高德 API 需要 GCJ-02 坐标。手机 LocationManager
+// 拿到的 GPS 定位可能是 WGS-84 也可能是 GCJ-02
 // （取决于 ROM），本类不做转换——高德逆地理编码对坐标偏移有容忍度，
 // 100-300 米的偏移一般不影响建筑物级别的位置识别。
 object AmapGeocoder {
@@ -33,7 +32,7 @@ object AmapGeocoder {
     ): String = withContext(Dispatchers.IO) {
         if (apiKey.isBlank()) {
             Log.w(TAG, "reverseGeocode: API key is blank, returning fallback")
-            return@withContext fallback(lat, lng)
+            return@withContext noReadableLocation()
         }
         try {
             val params = buildString {
@@ -51,14 +50,14 @@ object AmapGeocoder {
             try {
                 if (conn.responseCode != 200) {
                     Log.w(TAG, "reverseGeocode: HTTP ${conn.responseCode}, falling back")
-                    return@withContext fallback(lat, lng)
+                    return@withContext noReadableLocation()
                 }
                 val resp = BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8))
                     .readText()
                 val json = JSONObject(resp)
                 if (json.optInt("status") != 1) {
                     Log.w(TAG, "reverseGeocode: API status=${json.optInt("status")} info=${json.optString("info")}")
-                    return@withContext fallback(lat, lng)
+                    return@withContext noReadableLocation()
                 }
                 Log.d(TAG, "reverseGeocode: API success")
 
@@ -107,21 +106,20 @@ object AmapGeocoder {
                 when {
                     township.isNotBlank() -> township
                     district.isNotBlank() -> district
-                    else -> fallback(lat, lng)
+                    else -> noReadableLocation()
                 }
             } finally {
                 conn.disconnect()
             }
         } catch (e: Exception) {
             Log.e(TAG, "reverseGeocode failed: ${e.message}")
-            fallback(lat, lng)
+            noReadableLocation()
         }
     }
 
     private const val TAG = "TplannerAmap"
 
-    private fun fallback(lat: Double, lng: Double): String {
-        // 最后的兜底：显示坐标本身
-        return String.format("%.4f,%.4f", lat, lng)
-    }
+    // Raw coordinates are retained only in the active business draft. They are never presented
+    // as an approximately 11-metre-precise place name when geocoding is unavailable.
+    private fun noReadableLocation(): String = ""
 }

@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -79,6 +80,7 @@ private fun prettyAlarm(enabled: Boolean, offsetMinutes: Int): String = when {
 fun UntangleSheet(
     requestId: String,
     prefillLocation: String,
+    locationLoading: Boolean,
     initialText: String,
     thinking: Boolean,
     action: DeepSeekAnalysisService.ProposedAction?,
@@ -123,7 +125,11 @@ fun UntangleSheet(
         // ── Location ─────────────────────────────────────────────────
         if (showEditor) {
             Text(
-                prefillLocation.ifBlank { "Locating..." },
+                when {
+                    prefillLocation.isNotBlank() -> prefillLocation
+                    locationLoading -> stringResource(R.string.location_locating)
+                    else -> stringResource(R.string.location_unavailable)
+                },
                 color = if (prefillLocation.isNotBlank()) GOLD else DIM,
                 fontSize = 13.sp,
                 modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),

@@ -506,7 +506,7 @@ fun EventDetailScreen(
                 .background(BG)
                 .windowInsetsPadding(WindowInsets.systemBars)
         ) {
-            Column(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().imePadding()) {
                 // 顶部栏：返回 + 完成
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),

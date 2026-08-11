@@ -46,7 +46,11 @@ android {
         versionName = "mobile_2.0.0"
 
         buildConfigField("String", "DEEPSEEK_API_KEY", "\"$deepseekApiKey\"")
-        buildConfigField("String", "AMAP_API_KEY", "\"${localProperties.getProperty("amap.api.key", "")}\"")
+        buildConfigField(
+            "String",
+            "AMAP_API_KEY",
+            "\"${localProperties.getProperty("amap.api.key", "")}\"",
+        )
     }
 
     buildTypes {
@@ -82,10 +86,8 @@ android {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
-    // PackageManagerCompat.getUnusedAppRestrictionsStatus 返回 ListenableFuture，
-    // 需要 guava 的 listenablefuture 存根在编译期可见
-    implementation("androidx.concurrent:concurrent-futures:1.2.0")
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.appcompat)
     implementation(platform(libs.androidx.compose.bom))

@@ -2,11 +2,23 @@ package com.hamhuo.tplanner
 
 import android.content.Context
 import android.content.res.ColorStateList
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
+import android.graphics.RenderEffect
+import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.RippleDrawable
+import android.os.Build
+import android.renderscript.Allocation
+import android.renderscript.Element
+import android.renderscript.RenderScript
+import android.renderscript.ScriptIntrinsicBlur
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
@@ -41,16 +53,232 @@ internal fun Context.watchListName(filter: WatchListFilter): String = getString(
     },
 )
 
+/**
+ * A non-interactive copy of the scrolling dashboard content, clipped to the compact header.
+ * The collapsed title is a separate sibling drawn above this view, so it stays sharp.
+ */
+@Suppress("DEPRECATION")
+private class FrostedHeaderView(
+    context: Context,
+    private val source: View,
+) : View(context) {
+    private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val tintPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val fallbackScale = 0.25f
+    private var sourceBitmap: Bitmap? = null
+    private var blurredBitmap: Bitmap? = null
+    private var renderScript: RenderScript? = null
+    private var blurScript: ScriptIntrinsicBlur? = null
+    private var inputAllocation: Allocation? = null
+    private var outputAllocation: Allocation? = null
+    private var fallbackBlurUnavailable = false
+
+    init {
+        isClickable = false
+        isFocusable = false
+        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            setRenderEffect(
+                RenderEffect.createBlurEffect(
+                    dp(BLUR_RADIUS_DP).toFloat(),
+                    dp(BLUR_RADIUS_DP).toFloat(),
+                    Shader.TileMode.CLAMP,
+                ),
+            )
+        }
+    }
+
+    fun refresh() {
+        postInvalidateOnAnimation()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        if (width == 0 || height == 0) return
+
+        val checkpoint = canvas.save()
+        canvas.clipRect(0, 0, width, height)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            source.draw(canvas)
+        } else {
+            if (!drawFallbackBlur(canvas)) {
+                source.draw(canvas)
+            }
+        }
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), tintPaint)
+        canvas.restoreToCount(checkpoint)
+    }
+
+    override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
+        super.onSizeChanged(width, height, oldWidth, oldHeight)
+        tintPaint.shader = LinearGradient(
+            0f,
+            0f,
+            0f,
+            dp(TINT_FADE_HEIGHT_DP).coerceAtMost(height).toFloat(),
+            intArrayOf(TINT_TOP, TINT_MIDDLE, Color.TRANSPARENT),
+            floatArrayOf(0f, 0.45f, 1f),
+            Shader.TileMode.CLAMP,
+        )
+        releaseFallbackBuffers()
+    }
+
+    override fun onDetachedFromWindow() {
+        releaseFallbackBuffers()
+        blurScript?.destroy()
+        blurScript = null
+        renderScript?.destroy()
+        renderScript = null
+        super.onDetachedFromWindow()
+    }
+
+    private fun drawFallbackBlur(canvas: Canvas): Boolean {
+        if (fallbackBlurUnavailable) return false
+        return try {
+            ensureFallbackBuffers()
+            val input = sourceBitmap ?: return false
+            val output = blurredBitmap ?: return false
+            val inputAllocation = inputAllocation ?: return false
+            val outputAllocation = outputAllocation ?: return false
+            val blurScript = blurScript ?: return false
+            val inputCanvas = Canvas(input)
+            inputCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+            inputCanvas.scale(fallbackScale, fallbackScale)
+            source.draw(inputCanvas)
+
+            inputAllocation.copyFrom(input)
+            blurScript.setInput(inputAllocation)
+            blurScript.forEach(outputAllocation)
+            outputAllocation.copyTo(output)
+
+            val checkpoint = canvas.save()
+            canvas.scale(width / output.width.toFloat(), height / output.height.toFloat())
+            canvas.drawBitmap(output, 0f, 0f, bitmapPaint)
+            canvas.restoreToCount(checkpoint)
+            true
+        } catch (_: RuntimeException) {
+            disableFallbackBlur()
+            false
+        } catch (_: LinkageError) {
+            disableFallbackBlur()
+            false
+        }
+    }
+
+    private fun ensureFallbackBuffers() {
+        val bitmapWidth = (width * fallbackScale).toInt().coerceAtLeast(1)
+        val bitmapHeight = (height * fallbackScale).toInt().coerceAtLeast(1)
+        if (sourceBitmap?.width == bitmapWidth && sourceBitmap?.height == bitmapHeight) return
+
+        releaseFallbackBuffers()
+        sourceBitmap = Bitmap.createBitmap(bitmapWidth, bitmapHeight, Bitmap.Config.ARGB_8888)
+        blurredBitmap = Bitmap.createBitmap(bitmapWidth, bitmapHeight, Bitmap.Config.ARGB_8888)
+
+        val rs = renderScript ?: RenderScript.create(context.applicationContext).also {
+            renderScript = it
+        }
+        blurScript = blurScript ?: ScriptIntrinsicBlur.create(rs, Element.U8_4(rs)).apply {
+            setRadius((dp(BLUR_RADIUS_DP) * fallbackScale).coerceIn(0.1f, 25f))
+        }
+        val input = Allocation.createFromBitmap(
+            rs,
+            sourceBitmap,
+            Allocation.MipmapControl.MIPMAP_NONE,
+            Allocation.USAGE_SCRIPT,
+        )
+        inputAllocation = input
+        outputAllocation = Allocation.createTyped(rs, input.type)
+    }
+
+    private fun releaseFallbackBuffers() {
+        inputAllocation?.destroy()
+        inputAllocation = null
+        outputAllocation?.destroy()
+        outputAllocation = null
+        sourceBitmap?.recycle()
+        sourceBitmap = null
+        blurredBitmap?.recycle()
+        blurredBitmap = null
+    }
+
+    private fun disableFallbackBlur() {
+        fallbackBlurUnavailable = true
+        releaseFallbackBuffers()
+        blurScript?.destroy()
+        blurScript = null
+        renderScript?.destroy()
+        renderScript = null
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
+
+    private companion object {
+        const val BLUR_RADIUS_DP = 7
+        const val TINT_FADE_HEIGHT_DP = 54
+        const val TINT_TOP = 0x24000000
+        const val TINT_MIDDLE = 0x16000000
+    }
+}
+
+/** Masks the fixed blur into the scrolling content instead of ending on a hard edge. */
+private class FrostedHeaderClipView(context: Context) : FrameLayout(context) {
+    private val fadePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+    }
+
+    init {
+        clipChildren = true
+        clipToPadding = true
+    }
+
+    override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
+        super.onSizeChanged(width, height, oldWidth, oldHeight)
+        fadePaint.shader = LinearGradient(
+            0f,
+            0f,
+            0f,
+            height.toFloat(),
+            intArrayOf(
+                Color.WHITE,
+                0xE6FFFFFF.toInt(),
+                0x66FFFFFF,
+                Color.TRANSPARENT,
+            ),
+            floatArrayOf(0f, 0.35f, 0.72f, 1f),
+            Shader.TileMode.CLAMP,
+        )
+    }
+
+    override fun dispatchDraw(canvas: Canvas) {
+        if (width == 0 || height == 0) {
+            super.dispatchDraw(canvas)
+            return
+        }
+        val layer = canvas.saveLayer(0f, 0f, width.toFloat(), height.toFloat(), null)
+        super.dispatchDraw(canvas)
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), fadePaint)
+        canvas.restoreToCount(layer)
+    }
+}
+
 /** The launcher screen only. Secondary destinations are independent Wear OS activities. */
 class NextDashboardView(context: Context) : FrameLayout(context) {
-    private val contentHost = FrameLayout(context)
-    private val timeView = textView(14f, PRIMARY, MEDIUM)
+    private val contentHost = FrameLayout(context).apply {
+        setBackgroundColor(Color.BLACK)
+    }
+    private val frostedHeader = FrostedHeaderView(context, contentHost)
+    private val frostedHeaderClip = FrostedHeaderClipView(context)
     private val collapsedTitle = textView(15f, ACCENT, MEDIUM)
-    private val newButton = iconButton(
-        iconRes = android.R.drawable.ic_input_add,
-        contentDescription = context.getString(R.string.task_list_new),
-        sizeDp = 48,
-    )
+    private val newButton = ImageButton(context).apply {
+        setImageResource(R.drawable.ic_add_rounded_24)
+        imageTintList = ColorStateList.valueOf(Color.BLACK)
+        scaleType = ImageView.ScaleType.CENTER_INSIDE
+        setPadding(dp(12), dp(12), dp(12), dp(12))
+        background = rippleRounded(ACCENT, NEW_BUTTON_RIPPLE, dp(NEW_BUTTON_SIZE_DP / 2).toFloat())
+        contentDescription = context.getString(R.string.task_list_new)
+        isClickable = true
+        isFocusable = true
+    }
 
     private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.CHINA)
     private val shortDateFormatter = DateTimeFormatter.ofPattern("M月d日", Locale.CHINA)
@@ -58,19 +286,10 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
     private var selectedFilter = WatchListFilter.INBOX
     private var mainScrollY = 0
     private var permissionRequired = false
-    private var running = false
     private var permissionAction: (() -> Unit)? = null
     private var listSelectionAction: (() -> Unit)? = null
     private var newTaskAction: (() -> Unit)? = null
-
-    private val clockTicker = object : Runnable {
-        override fun run() {
-            if (!running) return
-            updateClock()
-            val now = System.currentTimeMillis()
-            postDelayed(this, MINUTE_MS - now % MINUTE_MS + CLOCK_SLOP_MS)
-        }
-    }
+    private var taskOpenAction: ((WatchEventMarks.NextTask) -> Unit)? = null
 
     init {
         setBackgroundColor(Color.BLACK)
@@ -80,6 +299,19 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         addView(
             contentHost,
             LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
+        )
+        frostedHeader.alpha = 0f
+        frostedHeaderClip.addView(
+            frostedHeader,
+            LayoutParams(
+                LayoutParams.MATCH_PARENT,
+                dp(FROSTED_HEADER_SOURCE_HEIGHT_DP),
+                Gravity.TOP,
+            ),
+        )
+        addView(
+            frostedHeaderClip,
+            LayoutParams(LayoutParams.MATCH_PARENT, dp(COMPACT_HEADER_HEIGHT_DP), Gravity.TOP),
         )
 
         collapsedTitle.apply {
@@ -101,19 +333,6 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
             },
         )
 
-        timeView.apply {
-            gravity = Gravity.END
-            isFocusable = false
-            importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
-        }
-        addView(
-            timeView,
-            LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END).apply {
-                topMargin = dp(14)
-                marginEnd = dp(54)
-            },
-        )
-
         newButton.apply {
             elevation = dp(7).toFloat()
             setOnClickListener {
@@ -126,7 +345,7 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         }
         addView(
             newButton,
-            LayoutParams(dp(48), dp(48), Gravity.END or Gravity.BOTTOM).apply {
+            LayoutParams(dp(NEW_BUTTON_SIZE_DP), dp(NEW_BUTTON_SIZE_DP), Gravity.END or Gravity.BOTTOM).apply {
                 marginEnd = dp(28)
                 bottomMargin = dp(28)
             },
@@ -134,7 +353,6 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
 
         marks = WatchEventMarks.load(context)
         rebuildMainPage()
-        updateClock()
     }
 
     fun setPermissionAction(listener: (() -> Unit)?) {
@@ -149,6 +367,10 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         newTaskAction = listener
     }
 
+    fun setTaskOpenAction(listener: ((WatchEventMarks.NextTask) -> Unit)?) {
+        taskOpenAction = listener
+    }
+
     fun announceTaskQueued() {
         announceForAccessibility(context.getString(R.string.task_create_queued))
     }
@@ -160,19 +382,6 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         selectedFilter = filter
         mainScrollY = 0
         rebuildMainPage()
-    }
-
-    fun start() {
-        if (running) return
-        running = true
-        refreshContent(showFeedback = false)
-        removeCallbacks(clockTicker)
-        post(clockTicker)
-    }
-
-    fun stop() {
-        running = false
-        removeCallbacks(clockTicker)
     }
 
     fun refreshContent(showFeedback: Boolean) {
@@ -201,6 +410,7 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
             createMainPage(),
             LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
         )
+        frostedHeader.refresh()
     }
 
     private fun createMainPage(): View {
@@ -247,8 +457,8 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         content.addView(
             largeTitle,
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(39)).apply {
-                topMargin = dp(23)
-                bottomMargin = dp(6)
+                topMargin = dp(LARGE_TITLE_TOP_MARGIN_DP)
+                bottomMargin = dp(LARGE_TITLE_BOTTOM_MARGIN_DP)
             },
         )
 
@@ -292,41 +502,30 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         scroll.setOnScrollChangeListener { _, _, scrollY, _, _ ->
             mainScrollY = scrollY
             updateCollapsedHeader(scrollY)
+            frostedHeader.refresh()
         }
         scroll.post {
             scroll.scrollTo(0, mainScrollY)
             updateCollapsedHeader(mainScrollY)
+            frostedHeader.refresh()
         }
         return scroll
     }
 
     private fun taskCard(task: WatchEventMarks.NextTask): View = LinearLayout(context).apply {
-        orientation = LinearLayout.HORIZONTAL
+        orientation = LinearLayout.VERTICAL
         gravity = Gravity.CENTER_VERTICAL
         minimumHeight = dp(58)
         setPadding(dp(13), dp(9), dp(13), dp(9))
-        background = rounded(CARD, dp(13).toFloat())
+        background = rippleRounded(CARD, CARD_PRESSED, dp(13).toFloat())
+        isClickable = true
+        isFocusable = true
         contentDescription = context.getString(
             R.string.task_list_item_accessibility,
             task.title,
             taskSubtitle(task),
         )
         addView(
-            ImageView(context).apply {
-                setImageResource(taskIcon(task.type))
-                imageTintList = ColorStateList.valueOf(ACCENT)
-                scaleType = ImageView.ScaleType.CENTER_INSIDE
-                importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
-            },
-            LinearLayout.LayoutParams(dp(24), dp(24)).apply {
-                marginEnd = dp(9)
-            },
-        )
-        val labels = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        labels.addView(
             textView(17f, PRIMARY, MEDIUM).apply {
                 text = task.title
                 maxLines = 2
@@ -334,7 +533,7 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
             },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
         )
-        labels.addView(
+        addView(
             textView(13f, SECONDARY, REGULAR).apply {
                 text = taskSubtitle(task)
                 maxLines = 1
@@ -344,16 +543,10 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
                 topMargin = dp(2)
             },
         )
-        addView(
-            labels,
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
-        )
-    }
-
-    private fun taskIcon(type: String): Int = when (type) {
-        "event" -> android.R.drawable.ic_lock_idle_alarm
-        "status" -> android.R.drawable.btn_star_big_on
-        else -> android.R.drawable.checkbox_off_background
+        setOnClickListener {
+            performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            taskOpenAction?.invoke(task)
+        }
     }
 
     private fun stateCard(
@@ -386,6 +579,8 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
 
     private fun updateCollapsedHeader(scrollY: Int) {
         val progress = ((scrollY - dp(62)).toFloat() / dp(12)).coerceIn(0f, 1f)
+        frostedHeader.alpha = progress
+        frostedHeader.isClickable = progress > 0f
         collapsedTitle.alpha = progress
         collapsedTitle.translationY = dp(4) * (1f - progress)
         collapsedTitle.isClickable = progress >= 0.55f
@@ -394,12 +589,6 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         } else {
             IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
         }
-    }
-
-    private fun updateClock() {
-        val value = timeFormatter.format(ZonedDateTime.now(APP_ZONE))
-        timeView.text = value
-        timeView.contentDescription = context.getString(R.string.task_list_current_time, value)
     }
 
     private fun filteredTasks(filter: WatchListFilter): List<WatchEventMarks.NextTask> {
@@ -442,20 +631,6 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         includeFontPadding = false
     }
 
-    private fun iconButton(iconRes: Int, contentDescription: String, sizeDp: Int): ImageButton =
-        ImageButton(context).apply {
-            setImageResource(iconRes)
-            imageTintList = ColorStateList.valueOf(PRIMARY)
-            background = InsetDrawable(
-                rippleRounded(BUTTON, BUTTON_PRESSED, dp((sizeDp - 8) / 2).toFloat()),
-                dp(4),
-            )
-            scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
-            setPadding(dp(10), dp(10), dp(10), dp(10))
-            this.contentDescription = contentDescription
-            isFocusable = true
-        }
-
     private fun rounded(color: Int, radius: Float) = GradientDrawable().apply {
         shape = GradientDrawable.RECTANGLE
         cornerRadius = radius
@@ -472,8 +647,12 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
 
     private companion object {
-        const val MINUTE_MS = 60_000L
-        const val CLOCK_SLOP_MS = 40L
+        const val LARGE_TITLE_TOP_MARGIN_DP = 23
+        const val LARGE_TITLE_HEIGHT_DP = 39
+        const val LARGE_TITLE_BOTTOM_MARGIN_DP = 6
+        const val COMPACT_HEADER_HEIGHT_DP = 54
+        const val FROSTED_HEADER_SOURCE_HEIGHT_DP = COMPACT_HEADER_HEIGHT_DP + 16
+        const val NEW_BUTTON_SIZE_DP = 48
 
         val REGULAR: Typeface = Typeface.create("sans-serif", Typeface.NORMAL)
         val MEDIUM: Typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
@@ -484,7 +663,6 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         const val ACCENT = 0xFFFFD60A.toInt()
         const val CARD = 0xFF202022.toInt()
         const val CARD_PRESSED = 0x33FFFFFF
-        const val BUTTON = 0xFF303034.toInt()
-        const val BUTTON_PRESSED = 0x55FFFFFF
+        const val NEW_BUTTON_RIPPLE = 0x33000000
     }
 }

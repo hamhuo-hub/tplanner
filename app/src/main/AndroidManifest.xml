@@ -2,17 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- 三星 BAL 绕过：WakeDataLayerService 收到手表信号后，
-         在 startActivity 前先挂一个 1×1 不可见 overlay，
-         让进程进入"有可见窗口"状态，BAL checker 放行。 -->
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <!-- 电池优化豁免：防止三星/国产 ROM 杀掉进程导致 GMS 无法投递 Data Layer 消息 -->
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
-    <!-- 手表唤醒打点时记录手机当前位置；需要"始终允许"（背景定位）
-         才能在息屏/后台状态下拿到坐标 -->
+    <!-- 手机整理面板打开时按需获取位置；不允许后台定位。 -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <!-- Android 13+ 通知权限：前台服务 / 数据同步通知需要用户显式授权 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 用户主动设置的任务闹铃；Android 12+ 无授权时会降级为非精确提醒。 -->
@@ -47,36 +39,8 @@
             </intent-filter>
         </activity>
 
-        <!-- 透明代理 Activity：手表唤醒信号的中转站。
-             Theme.Translucent 无 UI、excludeFromRecents 不留痕迹、
-             独立 taskAffinity 不污染主任务栈。
-             在 onCreate 中用 REORDER_TO_FRONT 把 MainActivity 拉回前台
-             （保留用户正在编辑的内容），然后立即 finish。 -->
-        <activity
-            android:name=".WakeProxyActivity"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar"
-            android:excludeFromRecents="true"
-            android:taskAffinity=":proxy"
-            android:launchMode="singleInstance"
-            android:exported="false" />
-
-        <!-- Wearable Data Layer 监听：GMS 系统进程转发的 watch→phone 唤醒信号。
-             GMS（系统进程）→ 此 Service → WakeProxyActivity → MainActivity，
-             走 Google Play Services 的信道，无需自己维持前台服务。
-             exported=true + intent-filter 是 GMS 发现并唤醒此服务的必要条件。 -->
-        <service
-            android:name=".WakeDataLayerService"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
-                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
-                <data android:scheme="wear" android:host="*" android:path="/tplanner/wake" />
-                <data android:scheme="wear" android:host="*" android:path="/tplanner/wake/request" />
-            </intent-filter>
-        </service>
-
-        <!-- One durable DataItem per watch-created task. The broad wake listener above ignores
-             this path; this receiver owns persistence and publishes a business-level ACK. -->
+        <!-- One durable DataItem per watch-created task. This receiver owns persistence and
+             publishes a business-level ACK without bringing the phone UI to the foreground. -->
         <service
             android:name=".WatchTaskDataLayerService"
             android:exported="true">

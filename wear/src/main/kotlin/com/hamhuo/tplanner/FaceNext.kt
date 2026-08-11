@@ -28,6 +28,21 @@ class FaceNext(
     private val taskTypeface = Typeface.create("sans-serif", Typeface.NORMAL)
     private val taskStrongTypeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
 
+    /** The task arcs occupy the half above/right of the diagonal divider. */
+    override fun isOnAppLaunchRegion(x: Int, y: Int): Boolean {
+        if (faceW <= 0 || faceH <= 0) return false
+        val s = minOf(faceW, faceH).toFloat()
+        val cx = faceW / 2f
+        val cy = faceH / 2f
+        val dx = x - cx
+        val dy = y - cy
+        val contentRadius = s * 0.438f
+        val insideContent = dx * dx + dy * dy <= contentRadius * contentRadius
+        val onTaskSide = dy < dx
+        val onMinuteBadge = minuteBounds(s, cx, cy).contains(x.toFloat(), y.toFloat())
+        return insideContent && onTaskSide && !onMinuteBadge
+    }
+
     override fun drawInteractive(
         canvas: Canvas,
         t: ZonedDateTime,
@@ -42,7 +57,6 @@ class FaceNext(
         drawTaskArcs(canvas, t, s, cx, cy, alpha, ambient = false)
         drawDiagonalCut(canvas, s, cx, cy, alpha, ambient = false)
         drawTimeReadout(canvas, t, s, cx, cy, alpha, ambient = false)
-        drawTapFeedback(canvas, s, cx, cy, alpha)
     }
 
     override fun drawAmbient(
@@ -174,7 +188,7 @@ class FaceNext(
         )
     }
 
-    /** 最近三项沿右上半面三条同心弧排布，路径端点正好落在斜切线上。 */
+    /** 当天最多三项沿右上半面三条同心弧排布，路径端点正好落在斜切线上。 */
     private fun drawTaskArcs(
         canvas: Canvas,
         nowTime: ZonedDateTime,
@@ -184,7 +198,13 @@ class FaceNext(
         alpha: Float,
         ambient: Boolean,
     ) {
-        val visibleTasks = if (ambient) marks.items.take(1) else marks.items.take(MAX_VISIBLE_TASKS)
+        val today = nowTime.toLocalDate()
+        val dayStartMs = today.atStartOfDay(APP_ZONE).toInstant().toEpochMilli()
+        val dayEndMs = today.plusDays(1).atStartOfDay(APP_ZONE).toInstant().toEpochMilli()
+        val todayTasks = marks.items.filter { task ->
+            task.endEpochMs > dayStartMs && task.startEpochMs < dayEndMs
+        }
+        val visibleTasks = if (ambient) todayTasks.take(1) else todayTasks.take(MAX_VISIBLE_TASKS)
         if (visibleTasks.isEmpty()) {
             drawEmptyTaskArc(canvas, s, cx, cy, alpha, ambient)
             return
@@ -237,7 +257,7 @@ class FaceNext(
         p.setText(if (ambient) AMBIENT_TEXT else SECONDARY, s * 0.038f, taskTypeface)
         p.textAlign = Paint.Align.LEFT
         p.alpha = ((if (ambient) 105f else 180f) * alpha).toInt()
-        val label = "同步后显示事项"
+        val label = "今天暂无事项"
         val length = PathMeasure(arc, false).length
         canvas.drawTextOnPath(label, arc, (length - p.measureText(label)) / 2f, -s * 0.010f, p)
         p.textAlign = Paint.Align.CENTER
@@ -317,22 +337,6 @@ class FaceNext(
         val baseline = y - (p.ascent() + p.descent()) / 2f
         canvas.drawText(label, x, baseline, p)
         canvas.restore()
-    }
-
-    private fun drawTapFeedback(canvas: Canvas, s: Float, cx: Float, cy: Float, alpha: Float) {
-        if (tapElapsed !in 0L until TAP_MS) return
-        val progress = tapElapsed / TAP_MS.toFloat()
-        val halfLength = s * (0.05f + progress * 0.34f)
-        val unit = 1f / kotlin.math.sqrt(2f)
-        p.setStroke(ACCENT_LIGHT, s * 0.004f, Paint.Cap.ROUND)
-        p.alpha = (170f * (1f - progress) * alpha).toInt().coerceIn(0, 255)
-        canvas.drawLine(
-            cx - halfLength * unit,
-            cy - halfLength * unit,
-            cx + halfLength * unit,
-            cy + halfLength * unit,
-            p,
-        )
     }
 
     private fun taskLabel(nowTime: ZonedDateTime, task: WatchEventMarks.NextTask): String {

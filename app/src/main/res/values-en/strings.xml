@@ -73,6 +73,8 @@
     <string name="schedule_created_toast">Schedule created: %1$s</string>
     <string name="schedule_create_failed_toast">Could not create schedule. Please try again.</string>
     <string name="ai_service_unavailable">AI service is not configured or could not connect. Check the API key or network and try again.</string>
+    <string name="location_locating">Locating…</string>
+    <string name="location_unavailable">Location unavailable</string>
     <string name="ai_schedule_extraction">AI schedule extraction</string>
     <string name="schedule_created_with_alarm_toast">Schedule and system alarm created: %1$s</string>
     <string name="schedule_created_with_fallback_alarm_toast">Schedule created: %1$s. Exact alarm access is off, so the reminder may be delayed.</string>
@@ -94,5 +96,4 @@
     <string name="date_pattern_month_day_weekday">MMM d · E</string>
     <string name="date_pattern_month_day_time">MMM d, HH:mm</string>
     <string name="journal_edit_hint">Capture today’s thoughts and ideas…</string>
-    <string name="bg_location_guide">On this page, choose Permissions → Location → Allow all the time so a watch wake-up can get location in the background.</string>
 </resources>

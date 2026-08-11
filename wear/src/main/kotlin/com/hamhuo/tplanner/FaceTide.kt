@@ -8,9 +8,7 @@ import android.graphics.Shader
 import java.time.ZonedDateTime
 import kotlin.math.PI
 import kotlin.math.cos
-import kotlin.math.min
 import kotlin.math.sin
-import kotlin.math.sqrt
 
 // 潮汐：24h 波浪进度——曲线从午夜开始随当前时刻向上涨，金球在浪尖。
 // 今日已过的时间 = 金色波段 + 填充；未到的 = 暗轨。
@@ -20,23 +18,6 @@ class FaceTide(
     currentUserStyleRepository: androidx.wear.watchface.style.CurrentUserStyleRepository,
     watchState: androidx.wear.watchface.WatchState,
 ) : FaceBase(context, surfaceHolder, currentUserStyleRepository, watchState, FaceDesign.TIDE) {
-
-    // 浪尖金球命中检测——替代底部珍珠锚点
-    override fun isOnWakeButton(x: Int, y: Int): Boolean {
-        if (faceW == 0) return false
-        val s  = min(faceW, faceH).toFloat()
-        val cx = faceW / 2f
-        val cy = faceH / 2f
-        val g  = geo(s, cx, cy)
-        val now = ZonedDateTime.now(APP_ZONE)
-        val dayFrac = (now.hour * 3600f + now.minute * 60f + now.second) / 86400f
-        val frac = dayFrac.coerceIn(0f, 1f)
-        val tx = g.startX + frac * g.width
-        val ty = g.baseY - g.amp * cos(frac * 2.0 * PI).toFloat()
-        val dx = x - tx; val dy = y - ty
-        val hitR = s * 0.08f  // 金球半径 0.035f 的三倍宽容区
-        return sqrt((dx * dx + dy * dy).toDouble()) <= hitR
-    }
 
     // 提前算好共享几何，避免在 drawInteractive / drawAmbient 里重复
     private data class WaveGeo(
@@ -125,8 +106,7 @@ class FaceTide(
         // ── 浪尖金球 ──────────────────────────────────────────────────────
         val orbR = s * 0.035f
         val breath = 0.55f + 0.9f * (0.5f + 0.5f * sin(2.0 * PI * (now % 4000L) / 4000.0).toFloat())
-        val flare  = 1f + 2.5f * (1f - (tapElapsed.coerceIn(0, TAP_MS) / TAP_MS.toFloat()))
-        val glow   = breath * (if (tapElapsed < TAP_MS) flare else 1f)
+        val glow = breath
 
         p.setStroke(GOLD, s * 0.0042f)
         p.alpha = (255 * 0.28f * glow * boot).toInt().coerceAtMost(255)
