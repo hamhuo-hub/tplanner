@@ -154,14 +154,7 @@ class FaceNext(
         canvas.drawText(t.hour.toString().padStart(2, '0'), hourX, hourBaseline, p)
 
         val minuteCenterX = cx - s * 0.055f
-        val minuteHalfW = s * 0.072f
-        val minuteHalfH = s * 0.050f
-        val minuteRect = RectF(
-            minuteCenterX - minuteHalfW,
-            centerY - minuteHalfH,
-            minuteCenterX + minuteHalfW,
-            centerY + minuteHalfH,
-        )
+        val minuteRect = minuteBounds(s, cx, cy)
         p.setStroke(if (ambient) AMBIENT_STROKE else SECONDARY, s * 0.003f, Paint.Cap.ROUND)
         p.alpha = ((if (ambient) 115f else 210f) * alpha).toInt()
         canvas.drawRoundRect(minuteRect, s * 0.019f, s * 0.019f, p)
@@ -260,14 +253,47 @@ class FaceNext(
     ) {
         val start = pointOnCircle(cx, cy, s * 0.438f, TASK_START_ANGLE)
         val end = pointOnCircle(cx, cy, s * 0.438f, TIME_START_ANGLE)
+        val gapBounds = minuteBounds(s, cx, cy).apply {
+            val padding = s * DIAGONAL_MINUTE_GAP
+            inset(-padding, -padding)
+        }
+
+        // The divider is fixed at 45 degrees through (cx, cy), so points on it
+        // share the same x/y delta. Stop before the expanded minute bounds and
+        // resume after them, leaving the minute badge in a real geometric gap.
+        val gapStartDelta = maxOf(gapBounds.left - cx, gapBounds.top - cy)
+        val gapEndDelta = minOf(gapBounds.right - cx, gapBounds.bottom - cy)
+        val gapStartX = cx + gapStartDelta
+        val gapStartY = cy + gapStartDelta
+        val gapEndX = cx + gapEndDelta
+        val gapEndY = cy + gapEndDelta
+
+        fun drawSegments() {
+            canvas.drawLine(start.first, start.second, gapStartX, gapStartY, p)
+            canvas.drawLine(gapEndX, gapEndY, end.first, end.second, p)
+        }
+
         if (!ambient) {
             p.setStroke(BLACK, s * 0.022f, Paint.Cap.ROUND)
-            canvas.drawLine(start.first, start.second, end.first, end.second, p)
+            drawSegments()
         }
         p.setStroke(if (ambient) AMBIENT_STROKE else DIVIDER, s * 0.0025f, Paint.Cap.ROUND)
         p.alpha = ((if (ambient) 85f else 190f) * alpha).toInt()
-        canvas.drawLine(start.first, start.second, end.first, end.second, p)
+        drawSegments()
 
+    }
+
+    private fun minuteBounds(s: Float, cx: Float, cy: Float): RectF {
+        val centerX = cx - s * 0.055f
+        val centerY = cy + s * 0.018f
+        val halfWidth = s * 0.072f
+        val halfHeight = s * 0.050f
+        return RectF(
+            centerX - halfWidth,
+            centerY - halfHeight,
+            centerX + halfWidth,
+            centerY + halfHeight,
+        )
     }
 
     private fun drawTangentLabel(
@@ -382,6 +408,7 @@ class FaceNext(
         const val TASK_START_ANGLE = 225f
         const val HALF_SWEEP = 180f
         const val MAX_VISIBLE_TASKS = 3
+        const val DIAGONAL_MINUTE_GAP = 0.018f
 
         const val BLACK = 0xFF000000.toInt()
         const val PRIMARY = 0xFFF4F1EB.toInt()
