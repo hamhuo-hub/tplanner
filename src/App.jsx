@@ -22,6 +22,19 @@ import { BUILTIN_ADAPTERS } from './utils/syncLogic'
 import * as webApi from './utils/webDataAdapter'
 import LoginScreen from './components/LoginScreen'
 
+function createViewRange(anchorDate = new Date()) {
+    const anchor = new Date(anchorDate);
+    anchor.setHours(0, 0, 0, 0);
+
+    const start = new Date(anchor);
+    start.setDate(anchor.getDate() - 7);
+
+    const end = new Date(anchor);
+    end.setDate(anchor.getDate() + 30);
+
+    return { start, end };
+}
+
 function PlannerApp() {
     const { t, i18n } = useTranslation();
     const [events, setEvents] = useState([]);
@@ -249,7 +262,7 @@ function PlannerApp() {
         }, 500);
     }, [journals, isElectron]);
 
-    const [viewRange, setViewRange] = useState({ start: null, end: null });
+    const [viewRange, setViewRange] = useState(createViewRange);
 
     const handleTimezoneChange = (e) => {
         const value = e.target.value;
@@ -260,18 +273,6 @@ function PlannerApp() {
             localStorage.removeItem('tplanner_travel_timezone');
         }
     };
-
-    useEffect(() => {
-        if (!viewRange.start) {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const start = new Date(today);
-            start.setDate(today.getDate() - 7);
-            const end = new Date(today);
-            end.setDate(today.getDate() + 30);
-            setViewRange({ start, end });
-        }
-    }, [viewRange.start]);
 
     // Strip tombstones for display; sync payload keeps them to propagate deletions
     const visibleEvents = useMemo(() => events.filter(e => !e.deletedAt), [events]);
@@ -316,11 +317,7 @@ function PlannerApp() {
     const handleToday = () => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        const start = new Date(today);
-        start.setDate(today.getDate() - 7);
-        const end = new Date(today);
-        end.setDate(today.getDate() + 30);
-        setViewRange({ start, end });
+        setViewRange(createViewRange(today));
         setTimeout(() => {
             if (scrollTimelineToDate(today)) {
                 const startOfDay = new Date(today);
@@ -334,11 +331,7 @@ function PlannerApp() {
     const handleJumpToDate = (date) => {
         const target = new Date(date);
         target.setHours(0, 0, 0, 0);
-        const start = new Date(target);
-        start.setDate(target.getDate() - 7);
-        const end = new Date(target);
-        end.setDate(target.getDate() + 30);
-        setViewRange({ start, end });
+        setViewRange(createViewRange(target));
         setTimeout(() => {
             scrollTimelineToDate(target);
         }, 100);
@@ -614,11 +607,7 @@ function PlannerApp() {
                     });
                     await db.events.bulkUpsert(upserts);
                     const today = new Date();
-                    today.setHours(0, 0, 0, 0);
-                    setViewRange({
-                        start: new Date(today.setDate(today.getDate() - 7)),
-                        end: new Date(today.setDate(today.getDate() + 30))
-                    });
+                    setViewRange(createViewRange(today));
                     alert(t('messages.importSuccess'));
                 } else {
                     alert(t('messages.importError'));
@@ -797,8 +786,8 @@ function PlannerApp() {
                     />
                 </div>
                 <Timeline
-                        startDate={viewRange.start || new Date()}
-                        endDate={viewRange.end || new Date()}
+                        startDate={viewRange.start}
+                        endDate={viewRange.end}
                         events={visibleEvents}
                         clashes={clashes}
                         onEventClick={(ev) => { setSelectedEvent(ev); setSelectedIds(new Set()); }}

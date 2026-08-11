@@ -1,20 +1,18 @@
 import { eachDayOfInterval, format } from 'date-fns';
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
 import EventRow from './EventRow';
-import { useRef, useEffect, useLayoutEffect, useState } from 'react';
+import { useRef, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 export default function Timeline({ startDate, endDate, events, onEventClick, onAddEvent, highlight, onLoadPrev, onLoadNext, onUpdateEvent, clashes, travelTimezone, onToggleTaskComplete, journals, onSaveJournal, onContextMenu, selectedIds, onSelectionChange }) {
     const { t } = useTranslation();
     const scrollContainerRef = useRef(null);
     const previousScrollTopRef = useRef(0);
-    const [days, setDays] = useState([]);
-    const prevStartDateRef = useRef(startDate);
-
-    useEffect(() => {
-        if (!startDate || !endDate) return;
-        setDays(eachDayOfInterval({ start: startDate, end: endDate }));
+    const days = useMemo(() => {
+        if (!startDate || !endDate) return [];
+        return eachDayOfInterval({ start: startDate, end: endDate });
     }, [startDate, endDate]);
+    const prevStartDateRef = useRef(startDate);
 
     const [previousScrollHeight, setPreviousScrollHeight] = useState(0);
 
