@@ -328,7 +328,7 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         addView(
             collapsedTitle,
             LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END).apply {
-                topMargin = dp(34)
+                topMargin = dp(20)
                 marginEnd = dp(54)
             },
         )
