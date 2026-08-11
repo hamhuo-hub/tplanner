@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TPlanner</string>
+    <string name="wf_tide">tPlanner 潮汐</string>
+    <string name="wf_next">Saisis le jour 把握現在</string>
+    <string name="bt_permission_ok">藍牙權限已就緒，手錶可以接收手機日程</string>
+    <string name="bt_permission_denied">未授予藍牙權限，手錶無法接收手機日程</string>
+    <string name="bt_bridge_channel_name">日程同步</string>
+    <string name="bt_bridge_channel_description">接收已配對手機傳送的日程更新</string>
+    <string name="bt_bridge_notification_title">TPlanner 日程同步</string>
+    <string name="bt_bridge_notification_text">正在等待手機更新</string>
+
+    <string name="watchface_date_pattern">M月d日 · EEE</string>
+    <string name="watchface_empty_today">今天暫無事項</string>
+    <string name="watchface_task_now">現在</string>
+    <string name="watchface_task_tomorrow_time">明天 %1$s</string>
+    <string name="watchface_task_date_time">%1$s %2$s</string>
+    <string name="watchface_task_label">%1$s · %2$s</string>
+
+    <string name="task_list_choose_action">%1$s，輕觸選擇清單</string>
+    <string name="task_list_new">新增</string>
+    <string name="task_list_updated">清單已更新</string>
+    <string name="task_list_permission_title">需要藍牙權限</string>
+    <string name="task_list_permission_hint">輕觸授權，繼續接收手機清單</string>
+    <string name="task_list_waiting_title">等待手機清單</string>
+    <string name="task_list_waiting_hint">手機同步後，事項會顯示在這裡</string>
+    <string name="task_list_empty_title">這個清單是空的</string>
+    <string name="task_list_empty_hint">輕觸上方名稱切換其他範圍</string>
+    <string name="task_list_filter_inbox">收件匣</string>
+    <string name="task_list_filter_today">今天</string>
+    <string name="task_list_tomorrow">明天</string>
+    <string name="task_list_current">目前</string>
+    <string name="task_list_filter_current_accessibility">%1$s，目前的清單</string>
+    <string name="task_list_item_accessibility">%1$s，%2$s</string>
+    <string name="task_list_state_accessibility">%1$s。%2$s</string>
+    <string name="task_list_detail_title">詳細資料</string>
+    <string name="task_list_date_label">日期</string>
+    <string name="task_list_time_label">時間</string>
+    <string name="task_list_detail_accessibility">%1$s。日期 %2$s。時間 %3$s</string>
+    <string name="task_time_pattern">HH:mm</string>
+    <string name="task_list_short_date_pattern">M月d日</string>
+    <string name="task_list_long_date_pattern">M月d日 EEEE</string>
+    <string name="task_list_same_day_subtitle">%1$s %2$s–%3$s</string>
+    <string name="task_list_cross_day_subtitle">%1$s %2$s–%3$s %4$s</string>
+    <string name="task_list_date_range">%1$s – %2$s</string>
+    <string name="task_list_time_range">%1$s–%2$s</string>
+</resources>

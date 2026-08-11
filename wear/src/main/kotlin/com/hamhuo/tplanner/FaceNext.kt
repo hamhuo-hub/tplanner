@@ -133,7 +133,7 @@ class FaceNext(
             canvas.drawLine(inner.first, inner.second, outer.first, outer.second, p)
 
             if (major) {
-                val label = if (minute == 60) "00" else minute.toString().padStart(2, '0')
+                val label = twoDigitNumber(if (minute == 60) 0 else minute)
                 val labelPoint = pointOnCircle(cx, cy, outerRadius - s * 0.070f, angle)
                 drawTangentLabel(
                     canvas = canvas,
@@ -165,7 +165,7 @@ class FaceNext(
         p.alpha = ((if (ambient) 175f else 255f) * alpha).toInt()
         p.textAlign = Paint.Align.CENTER
         val hourBaseline = centerY - (p.ascent() + p.descent()) / 2f
-        canvas.drawText(t.hour.toString().padStart(2, '0'), hourX, hourBaseline, p)
+        canvas.drawText(twoDigitNumber(t.hour), hourX, hourBaseline, p)
 
         val minuteCenterX = cx - s * 0.055f
         val minuteRect = minuteBounds(s, cx, cy)
@@ -176,12 +176,12 @@ class FaceNext(
         p.setText(if (ambient) AMBIENT_PRIMARY else PRIMARY, s * 0.068f, minuteTypeface)
         p.alpha = ((if (ambient) 175f else 245f) * alpha).toInt()
         val minuteBaseline = centerY - (p.ascent() + p.descent()) / 2f
-        canvas.drawText(t.minute.toString().padStart(2, '0'), minuteCenterX, minuteBaseline, p)
+        canvas.drawText(twoDigitNumber(t.minute), minuteCenterX, minuteBaseline, p)
 
         p.setText(if (ambient) AMBIENT_TEXT else SECONDARY, s * 0.026f, taskTypeface)
         p.alpha = ((if (ambient) 105f else 175f) * alpha).toInt()
         canvas.drawText(
-            dateFmt.format(t),
+            dateStr(t),
             cx - s * 0.132f,
             cy + s * 0.119f,
             p,
@@ -257,7 +257,7 @@ class FaceNext(
         p.setText(if (ambient) AMBIENT_TEXT else SECONDARY, s * 0.038f, taskTypeface)
         p.textAlign = Paint.Align.LEFT
         p.alpha = ((if (ambient) 105f else 180f) * alpha).toInt()
-        val label = "今天暂无事项"
+        val label = localizedText(R.string.watchface_empty_today)
         val length = PathMeasure(arc, false).length
         canvas.drawTextOnPath(label, arc, (length - p.measureText(label)) / 2f, -s * 0.010f, p)
         p.textAlign = Paint.Align.CENTER
@@ -343,12 +343,18 @@ class FaceNext(
         val start = Instant.ofEpochMilli(task.startEpochMs).atZone(APP_ZONE)
         val end = Instant.ofEpochMilli(task.endEpochMs).atZone(APP_ZONE)
         val prefix = when {
-            !nowTime.isBefore(start) && nowTime.isBefore(end) -> "现在"
-            start.toLocalDate() == nowTime.toLocalDate() -> "%02d:%02d".format(start.hour, start.minute)
-            start.toLocalDate() == nowTime.toLocalDate().plusDays(1) -> "明天 %02d:%02d".format(start.hour, start.minute)
-            else -> "%d/%d %02d:%02d".format(start.monthValue, start.dayOfMonth, start.hour, start.minute)
+            !nowTime.isBefore(start) && nowTime.isBefore(end) ->
+                localizedText(R.string.watchface_task_now)
+            start.toLocalDate() == nowTime.toLocalDate() -> timeStr(start)
+            start.toLocalDate() == nowTime.toLocalDate().plusDays(1) ->
+                localizedText(R.string.watchface_task_tomorrow_time, timeStr(start))
+            else -> localizedText(
+                R.string.watchface_task_date_time,
+                shortDateStr(start),
+                timeStr(start),
+            )
         }
-        return "$prefix · ${task.title}"
+        return localizedText(R.string.watchface_task_label, prefix, task.title)
     }
 
     /** Paint.breakText 返回 UTF-16 单元，截断时避免切在代理对中间。 */

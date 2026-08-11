@@ -2,6 +2,7 @@ package com.hamhuo.tplanner
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.util.Log
@@ -28,6 +29,7 @@ import androidx.wear.watchface.style.CurrentUserStyleRepository
 // ═══════════════════════════════════════════════════════════════════════════
 
 abstract class TPlannerFaceService : WatchFaceService() {
+    @Volatile private var activeRenderer: FaceBase? = null
     private val vibrator: Vibrator by lazy { getSystemService(Vibrator::class.java) }
     private val openDashboardIntent: PendingIntent by lazy {
         PendingIntent.getActivity(
@@ -58,6 +60,7 @@ abstract class TPlannerFaceService : WatchFaceService() {
     ): WatchFace {
         BluetoothScheduleBridgeService.startIfAllowed(applicationContext)
         val renderer = createRenderer(surfaceHolder, watchState, currentUserStyleRepository)
+        activeRenderer = renderer
         return WatchFace(WatchFaceType.DIGITAL, renderer)
             .setTapListener(object : WatchFace.TapListener {
                 override fun onTapEvent(tapType: Int, tapEvent: TapEvent, complicationSlot: ComplicationSlot?) {
@@ -73,6 +76,16 @@ abstract class TPlannerFaceService : WatchFaceService() {
                     }
                 }
             })
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        activeRenderer?.invalidate()
+    }
+
+    override fun onDestroy() {
+        activeRenderer = null
+        super.onDestroy()
     }
 
     private companion object {

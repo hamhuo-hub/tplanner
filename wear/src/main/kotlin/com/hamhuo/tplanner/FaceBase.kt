@@ -11,8 +11,6 @@ import androidx.wear.watchface.DrawMode
 import androidx.wear.watchface.WatchState
 import androidx.wear.watchface.style.CurrentUserStyleRepository
 import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 import kotlin.math.min
 
 // tPlanner 表盘 Renderer 基类：统一管理动画状态、事件刻度、应用入口和 Paint。
@@ -44,7 +42,9 @@ abstract class FaceBase(
     // ── 绘图资源 ────────────────────────────────────────────────────────────
     protected val p     = Paint().apply { isAntiAlias = true }
     protected val serif = Typeface.create(Typeface.SERIF, Typeface.NORMAL)
-    protected val dateFmt = DateTimeFormatter.ofPattern("M月d日 · EEE", Locale.CHINA)
+    private val dateFormatter = LocalizedDateTimeFormatter(context, R.string.watchface_date_pattern)
+    private val shortDateFormatter =
+        LocalizedDateTimeFormatter(context, R.string.task_list_short_date_pattern)
 
     // ── 公共接口 ────────────────────────────────────────────────────────────
 
@@ -92,7 +92,18 @@ abstract class FaceBase(
     protected abstract fun drawInteractive(canvas: Canvas, t: ZonedDateTime, s: Float, cx: Float, cy: Float)
     protected abstract fun drawAmbient(canvas: Canvas, t: ZonedDateTime, s: Float, cx: Float, cy: Float)
 
-    protected fun timeStr(t: ZonedDateTime) = "%02d:%02d".format(t.hour, t.minute)
+    protected fun timeStr(t: ZonedDateTime): String =
+        "${twoDigitNumber(t.hour)}:${twoDigitNumber(t.minute)}"
+
+    protected fun twoDigitNumber(value: Int): String =
+        String.format(context.currentWatchLocale(), "%02d", value)
+
+    protected fun dateStr(t: ZonedDateTime): String = dateFormatter.format(t)
+
+    protected fun shortDateStr(t: ZonedDateTime): String = shortDateFormatter.format(t)
+
+    protected fun localizedText(resource: Int, vararg arguments: Any): String =
+        context.getString(resource, *arguments)
 
     class Assets : androidx.wear.watchface.Renderer.SharedAssets {
         override fun onDestroy() {}

@@ -15,6 +15,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.res.Configuration
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
@@ -98,6 +99,11 @@ class BluetoothScheduleBridgeService : Service() {
         }
         startServer()
         return START_STICKY
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (foregroundStarted) enterForeground()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Language-neutral overlay for the static FaceNext picker preview. It preserves the original
+  time wheel while replacing baked-in Simplified Chinese task/date samples with abstract arcs.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="466px"
+    android:height="466px"
+    android:viewportWidth="466"
+    android:viewportHeight="466">
+
+    <!-- Clear the task half and the baked-in date sample. -->
+    <path
+        android:fillColor="#FF000000"
+        android:fillType="evenOdd"
+        android:pathData="M0,0 L466,0 L466,466 Z M154,198 H247 V263 H154 Z" />
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M112,263 H286 V296 H112 Z" />
+
+    <!-- Restore the upper-right frame and the three task tracks. -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M79,79 A218,218 0,0 1,387 387"
+        android:strokeColor="#FF292826"
+        android:strokeLineCap="round"
+        android:strokeWidth="1.2" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M107,107 A178,178 0,0 1,359 359"
+        android:strokeColor="#FF34312D"
+        android:strokeLineCap="round"
+        android:strokeWidth="1.2" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M131,131 A144,144 0,0 1,335 335"
+        android:strokeColor="#FF34312D"
+        android:strokeLineCap="round"
+        android:strokeWidth="1.2" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M155,155 A110,110 0,0 1,311 311"
+        android:strokeColor="#FF34312D"
+        android:strokeLineCap="round"
+        android:strokeWidth="1.2" />
+
+    <!-- Abstract task/date marks keep the preview representative without embedding a language. -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M294,62 C340,77 382,106 411,145"
+        android:strokeColor="#FFF0C96C"
+        android:strokeLineCap="round"
+        android:strokeWidth="4" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M279,103 C321,118 357,143 383,177"
+        android:strokeColor="#FFD8D5CE"
+        android:strokeLineCap="round"
+        android:strokeWidth="3.2" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M265,139 C301,154 332,176 354,205"
+        android:strokeColor="#FF9C9992"
+        android:strokeLineCap="round"
+        android:strokeWidth="3.2" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M153,274 H236"
+        android:strokeColor="#FF77746E"
+        android:strokeLineCap="round"
+        android:strokeWidth="4" />
+
+    <!-- Repaint the split above the neutralized task area. -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M85,85 L188,188 M250,250 L381,381"
+        android:strokeColor="#FF6F665B"
+        android:strokeLineCap="round"
+        android:strokeWidth="1.2" />
+</vector>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="task_create_title_page">新增事項</string>
+    <string name="task_create_title_required">請先輸入標題</string>
+    <string name="task_create_type_page">選擇類型</string>
+    <string name="task_create_type_event">提醒</string>
+    <string name="task_create_type_event_description">在指定時間提醒</string>
+    <string name="task_create_type_status">狀態</string>
+    <string name="task_create_type_status_description">記錄目前狀態</string>
+    <string name="task_create_type_task">任務</string>
+    <string name="task_create_type_task_description">建立可完成的任務</string>
+    <string name="task_create_time_page">設定時間</string>
+    <string name="task_create_settings_page">事項設定</string>
+    <string name="task_create_alarm">系統鬧鐘</string>
+    <string name="task_create_alarm_description">到點時透過系統通知提醒</string>
+    <string name="task_create_date">日期</string>
+    <string name="task_create_date_today">今天</string>
+    <string name="task_create_date_tomorrow">明天</string>
+    <string name="task_create_color">顏色</string>
+    <string name="task_create_color_description">輕觸切換顏色</string>
+    <string name="task_create_on">開啟</string>
+    <string name="task_create_off">關閉</string>
+    <string name="task_create_save">儲存</string>
+    <string name="task_create_saving">正在儲存</string>
+    <string name="task_create_queued">已儲存，將同步至手機</string>
+    <string name="task_create_failed">儲存失敗，請再試一次</string>
+    <string name="task_create_type_accessibility">%1$s，%2$s</string>
+    <string name="task_create_setting_accessibility">%1$s，目前為%2$s</string>
+    <string-array name="task_create_color_names">
+        <item>海藍</item>
+        <item>金黃</item>
+        <item>玫瑰</item>
+        <item>森綠</item>
+        <item>紫羅蘭</item>
+        <item>暖橙</item>
+        <item>青藍</item>
+        <item>石墨</item>
+    </string-array>
+</resources>

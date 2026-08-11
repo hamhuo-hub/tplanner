@@ -33,8 +33,6 @@ import android.widget.TextView
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 enum class WatchListFilter(val key: String) {
     INBOX("inbox"),
@@ -268,20 +266,21 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
     }
     private val frostedHeader = FrostedHeaderView(context, contentHost)
     private val frostedHeaderClip = FrostedHeaderClipView(context)
-    private val collapsedTitle = textView(15f, ACCENT, MEDIUM)
+    private val collapsedTitle = textView(12f, ACCENT, MEDIUM)
     private val newButton = ImageButton(context).apply {
         setImageResource(R.drawable.ic_add_rounded_24)
         imageTintList = ColorStateList.valueOf(Color.BLACK)
         scaleType = ImageView.ScaleType.CENTER_INSIDE
-        setPadding(dp(12), dp(12), dp(12), dp(12))
+        setPadding(dp(13), dp(12), dp(12), dp(12))
         background = rippleRounded(ACCENT, NEW_BUTTON_RIPPLE, dp(NEW_BUTTON_SIZE_DP / 2).toFloat())
         contentDescription = context.getString(R.string.task_list_new)
         isClickable = true
         isFocusable = true
     }
 
-    private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.CHINA)
-    private val shortDateFormatter = DateTimeFormatter.ofPattern("M月d日", Locale.CHINA)
+    private val timeFormatter = LocalizedDateTimeFormatter(context, R.string.task_time_pattern)
+    private val shortDateFormatter =
+        LocalizedDateTimeFormatter(context, R.string.task_list_short_date_pattern)
     private var marks = WatchEventMarks.EMPTY
     private var selectedFilter = WatchListFilter.INBOX
     private var mainScrollY = 0
@@ -328,7 +327,7 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         addView(
             collapsedTitle,
             LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END).apply {
-                topMargin = dp(20)
+                topMargin = dp(10)
                 marginEnd = dp(54)
             },
         )
@@ -569,7 +568,11 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
             maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
         })
-        contentDescription = "$title。$subtitle"
+        contentDescription = context.getString(
+            R.string.task_list_state_accessibility,
+            title,
+            subtitle,
+        )
         if (onClick != null) {
             isClickable = true
             isFocusable = true
@@ -611,9 +614,20 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
             else -> shortDateFormatter.format(start)
         }
         return if (start.toLocalDate() == end.toLocalDate()) {
-            "$day ${timeFormatter.format(start)}–${timeFormatter.format(end)}"
+            context.getString(
+                R.string.task_list_same_day_subtitle,
+                day,
+                timeFormatter.format(start),
+                timeFormatter.format(end),
+            )
         } else {
-            "$day ${timeFormatter.format(start)}–${shortDateFormatter.format(end)} ${timeFormatter.format(end)}"
+            context.getString(
+                R.string.task_list_cross_day_subtitle,
+                day,
+                timeFormatter.format(start),
+                shortDateFormatter.format(end),
+                timeFormatter.format(end),
+            )
         }
     }
 

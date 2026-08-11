@@ -23,8 +23,6 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import java.time.Instant
 import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 /** A standalone Wear OS destination; the platform activity stack owns swipe-to-dismiss. */
 class ListSelectionActivity : WearPageActivity() {
@@ -194,8 +192,9 @@ private class TaskDetailView(
     startEpochMs: Long,
     endEpochMs: Long,
 ) : FrameLayout(context) {
-    private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.CHINA)
-    private val dateFormatter = DateTimeFormatter.ofPattern("M月d日 EEEE", Locale.CHINA)
+    private val timeFormatter = LocalizedDateTimeFormatter(context, R.string.task_time_pattern)
+    private val dateFormatter =
+        LocalizedDateTimeFormatter(context, R.string.task_list_long_date_pattern)
 
     init {
         setBackgroundColor(Color.BLACK)
@@ -234,9 +233,17 @@ private class TaskDetailView(
         val date = if (start.toLocalDate() == end.toLocalDate()) {
             dateFormatter.format(start)
         } else {
-            "${dateFormatter.format(start)} – ${dateFormatter.format(end)}"
+            context.getString(
+                R.string.task_list_date_range,
+                dateFormatter.format(start),
+                dateFormatter.format(end),
+            )
         }
-        val time = "${timeFormatter.format(start)}–${timeFormatter.format(end)}"
+        val time = context.getString(
+            R.string.task_list_time_range,
+            timeFormatter.format(start),
+            timeFormatter.format(end),
+        )
         val panel = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             minimumHeight = dp(118)

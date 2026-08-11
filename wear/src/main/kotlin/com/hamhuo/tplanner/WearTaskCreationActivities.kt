@@ -68,6 +68,7 @@ class CreateTitleActivity : WearPageActivity() {
             ?: System.currentTimeMillis()
 
         titleInput = EditText(this).apply {
+            id = View.generateViewId()
             setText(savedInstanceState?.getString(STATE_TITLE).orEmpty())
             setTextColor(CREATION_PRIMARY)
             textSize = 19f
@@ -91,7 +92,11 @@ class CreateTitleActivity : WearPageActivity() {
 
         val content = creationContent().apply {
             addView(creationTopSpacer())
-            addView(creationHeading(getString(R.string.task_create_title_required)))
+            addView(
+                creationHeading(getString(R.string.task_create_title_required)).apply {
+                    labelFor = titleInput.id
+                },
+            )
             addView(
                 titleInput,
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(60)).apply {

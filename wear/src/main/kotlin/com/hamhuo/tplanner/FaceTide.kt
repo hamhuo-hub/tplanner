@@ -123,7 +123,7 @@ class FaceTide(
         p.setText(CREAM, s * 0.14f, serif)
         canvas.drawText(timeStr(t), cx, cy - s * 0.14f, p)
         p.setText(DIM, s * 0.046f)
-        canvas.drawText(t.format(dateFmt), cx, cy - s * 0.06f, p)
+        canvas.drawText(dateStr(t), cx, cy - s * 0.06f, p)
 
     }
 
