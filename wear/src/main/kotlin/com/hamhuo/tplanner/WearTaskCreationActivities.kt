@@ -676,7 +676,7 @@ private const val CREATION_CARD_PRESSED = 0x33FFFFFF
 private val CREATION_REGULAR = Typeface.create("sans-serif", Typeface.NORMAL)
 private val CREATION_MEDIUM = Typeface.create("sans-serif-medium", Typeface.NORMAL)
 private val CREATION_BOLD = Typeface.create("sans-serif", Typeface.BOLD)
-private val CREATION_ZONE = ZoneId.of(WatchTaskCreateProtocol.DEFAULT_TIME_ZONE_ID)
+private val CREATION_ZONE = ZoneId.of(WatchTaskProtocol.DEFAULT_TIME_ZONE_ID)
 private val TASK_COLORS = intArrayOf(
     0xFF5B8FCC.toInt(),
     0xFFC9A84C.toInt(),

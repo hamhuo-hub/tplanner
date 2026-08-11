@@ -36,7 +36,15 @@ class RoomEventRepository(private val db: TPlannerDatabase) {
         val target = DraftTarget.event(requested.id)
         val current = db.eventDao().get(requested.id)?.let(PersistenceMapper::eventToDomain)
         val initial = current ?: requested
-        if (db.draftDao().get(target.storageKey) == null) {
+        val existingDraft = db.draftDao().get(target.storageKey)
+            ?.let(PersistenceMapper::draftToDomain)
+        val needsRebase = existingDraft != null &&
+            !existingDraft.baseEntityExists &&
+            current != null
+        if (existingDraft == null || needsRebase) {
+            if (needsRebase) {
+                db.draftDao().delete(target.storageKey)
+            }
             val base = current?.let { event ->
                 DraftRevision(
                     content = EventEditDraftCodec.encode(event),

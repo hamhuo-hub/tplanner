@@ -6,6 +6,7 @@ import android.graphics.Path
 import android.graphics.PathMeasure
 import android.graphics.RectF
 import android.graphics.Typeface
+import androidx.core.content.res.ResourcesCompat
 import java.time.Instant
 import java.time.ZonedDateTime
 import kotlin.math.PI
@@ -23,8 +24,12 @@ class FaceNext(
     watchState: androidx.wear.watchface.WatchState,
 ) : FaceBase(context, surfaceHolder, currentUserStyleRepository, watchState, FaceDesign.NEXT) {
     private val hasBurnInProtection = watchState.hasBurnInProtection
-    private val timeTypeface = Typeface.create("sans-serif-condensed", Typeface.NORMAL)
-    private val minuteTypeface = Typeface.create("sans-serif-condensed", Typeface.BOLD)
+    private val timeTypeface: Typeface = runCatching {
+        ResourcesCompat.getFont(context, R.font.dune_rise)!!
+    }.getOrDefault(Typeface.create("sans-serif-condensed", Typeface.NORMAL))
+    private val minuteTypeface: Typeface = runCatching {
+        ResourcesCompat.getFont(context, R.font.dune_rise)!!
+    }.getOrDefault(Typeface.create("sans-serif-condensed", Typeface.BOLD))
     private val taskTypeface = Typeface.create("sans-serif", Typeface.NORMAL)
     private val taskStrongTypeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
 

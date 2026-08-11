@@ -78,6 +78,7 @@ object WatchScheduleSync {
         val type: String,
         val startEpochMs: Long,
         val endEpochMs: Long,
+        val checklistJson: String,
     )
 
     private val taskOrder = compareBy<TaskSnapshot>(
@@ -515,6 +516,7 @@ object WatchScheduleSync {
                 type = event.type,
                 startEpochMs = event.start.toEpochMilli(),
                 endEpochMs = event.end.toEpochMilli(),
+                checklistJson = encodeChecklist(event.checklist),
             )
         }.sortedWith(taskOrder)
         for (task in candidates) {
@@ -558,6 +560,9 @@ object WatchScheduleSync {
                 put("type", task.type)
                 put("startEpochMs", task.startEpochMs)
                 put("endEpochMs", task.endEpochMs)
+                if (task.checklistJson.isNotEmpty()) {
+                    put("checklist", org.json.JSONArray(task.checklistJson))
+                }
             })
         }
     }
@@ -570,6 +575,7 @@ object WatchScheduleSync {
                 appendHashField(task.id)
                 appendHashField(task.title)
                 append(task.startEpochMs).append(':').append(task.endEpochMs)
+                appendHashField(task.checklistJson)
             }
         }.toByteArray(Charsets.UTF_8)
         return MessageDigest.getInstance("SHA-256")
@@ -582,4 +588,17 @@ object WatchScheduleSync {
     }
 
     private val WATCH_TASK_TYPES = setOf("event", "status", "task")
+
+    private fun encodeChecklist(items: List<com.hamhuo.tplanner.CheckItem>): String {
+        if (items.isEmpty()) return ""
+        return JSONArray().apply {
+            items.forEach { item ->
+                put(JSONObject().apply {
+                    put("id", item.id)
+                    put("text", item.text)
+                    put("completed", item.completed)
+                })
+            }
+        }.toString()
+    }
 }

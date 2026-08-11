@@ -171,7 +171,7 @@ class WatchTaskImportService : Service() {
             isDaemon = true
             start()
         }
-        Log.i(TAG, "Listening on ${WatchTaskCreateProtocol.RFCOMM_UUID}")
+        Log.i(TAG, "Listening on ${WatchTaskProtocol.RFCOMM_UUID}")
     }
 
     @Synchronized
@@ -192,7 +192,7 @@ class WatchTaskImportService : Service() {
             val listeningSocket = try {
                 adapter.listenUsingRfcommWithServiceRecord(
                     SERVICE_NAME,
-                    WatchTaskCreateProtocol.RFCOMM_UUID,
+                    WatchTaskProtocol.RFCOMM_UUID,
                 )
             } catch (error: Exception) {
                 if (isGenerationActive(generation)) {
@@ -251,16 +251,16 @@ class WatchTaskImportService : Service() {
             CONNECTION_TIMEOUT_MS,
             TimeUnit.MILLISECONDS,
         )
-        var response = WatchTaskCreateProtocol.Response(
-            requestId = WatchTaskCreateProtocol.UNKNOWN_REQUEST_ID,
-            status = WatchTaskCreateProtocol.Status.RETRY,
+        var response = WatchTaskProtocol.Response(
+            requestId = WatchTaskProtocol.UNKNOWN_REQUEST_ID,
+            status = WatchTaskProtocol.Status.RETRY,
             errorCode = "INCOMPLETE_FRAME",
         )
         try {
             val remote = socket.remoteDevice
             if (remote.bondState != BluetoothDevice.BOND_BONDED) {
                 response = response.copy(
-                    status = WatchTaskCreateProtocol.Status.REJECTED,
+                    status = WatchTaskProtocol.Status.REJECTED,
                     errorCode = "UNBONDED_DEVICE",
                 )
             } else {
@@ -282,7 +282,7 @@ class WatchTaskImportService : Service() {
             timeout.cancel(false)
             runCatching {
                 val payload = ScheduleRfcommProtocol.encodePayload(
-                    WatchTaskCreateProtocol.encodeResponse(response),
+                    WatchTaskProtocol.encodeResponse(response),
                 )
                 ScheduleRfcommProtocol.writeFrame(socket.outputStream, payload)
             }.onFailure { error ->
@@ -342,32 +342,32 @@ internal object WatchTaskImporter {
         context: Context,
         raw: String,
         fallbackRequestId: String?,
-    ): WatchTaskCreateProtocol.Response {
+    ): WatchTaskProtocol.Response {
         val request = try {
-            WatchTaskCreateProtocol.decodeRequest(raw)
-        } catch (error: WatchTaskCreateProtocol.ProtocolException) {
+            WatchTaskProtocol.decodeRequest(raw)
+        } catch (error: WatchTaskProtocol.ProtocolException) {
             val requestId = fallbackRequestId
-                ?: WatchTaskCreateProtocol.bestEffortRequestId(raw)
-                ?: WatchTaskCreateProtocol.UNKNOWN_REQUEST_ID
+                ?: WatchTaskProtocol.bestEffortRequestId(raw)
+                ?: WatchTaskProtocol.UNKNOWN_REQUEST_ID
             Log.w(TAG, "Invalid watch task request code=${error.errorCode}", error)
-            return WatchTaskCreateProtocol.Response(
+            return WatchTaskProtocol.Response(
                 requestId = requestId,
-                status = WatchTaskCreateProtocol.Status.REJECTED,
+                status = WatchTaskProtocol.Status.REJECTED,
                 errorCode = error.errorCode,
             )
         } catch (error: Exception) {
             Log.e(TAG, "Unexpected request parsing failure", error)
-            return WatchTaskCreateProtocol.Response(
-                requestId = fallbackRequestId ?: WatchTaskCreateProtocol.UNKNOWN_REQUEST_ID,
-                status = WatchTaskCreateProtocol.Status.REJECTED,
+            return WatchTaskProtocol.Response(
+                requestId = fallbackRequestId ?: WatchTaskProtocol.UNKNOWN_REQUEST_ID,
+                status = WatchTaskProtocol.Status.REJECTED,
                 errorCode = "MALFORMED_REQUEST",
             )
         }
 
         if (fallbackRequestId != null && fallbackRequestId != request.requestId) {
-            return WatchTaskCreateProtocol.Response(
+            return WatchTaskProtocol.Response(
                 requestId = fallbackRequestId,
-                status = WatchTaskCreateProtocol.Status.REJECTED,
+                status = WatchTaskProtocol.Status.REJECTED,
                 errorCode = "PATH_ID_MISMATCH",
             )
         }
@@ -376,9 +376,9 @@ internal object WatchTaskImporter {
             runBlocking(Dispatchers.IO) { importRequest(context.applicationContext, request) }
         } catch (error: Exception) {
             Log.e(TAG, "Task import failed request=${request.requestId}", error)
-            WatchTaskCreateProtocol.Response(
+            WatchTaskProtocol.Response(
                 requestId = request.requestId,
-                status = WatchTaskCreateProtocol.Status.RETRY,
+                status = WatchTaskProtocol.Status.RETRY,
                 errorCode = "PERSISTENCE_FAILED",
             )
         }
@@ -386,8 +386,8 @@ internal object WatchTaskImporter {
 
     private suspend fun importRequest(
         context: Context,
-        request: WatchTaskCreateProtocol.Request,
-    ): WatchTaskCreateProtocol.Response {
+        request: WatchTaskProtocol.Request,
+    ): WatchTaskProtocol.Response {
         val database = TPlannerDatabase.get(context)
         val migration = LegacyPreferencesImporter(context, database).importIfNeeded()
         if (migration is LegacyImportResult.Blocked) {
@@ -396,15 +396,28 @@ internal object WatchTaskImporter {
                 "Legacy migration blocked request=${request.requestId}: " +
                     migration.issues.joinToString { it.message },
             )
-            return WatchTaskCreateProtocol.Response(
+            return WatchTaskProtocol.Response(
                 requestId = request.requestId,
-                status = WatchTaskCreateProtocol.Status.RETRY,
+                status = WatchTaskProtocol.Status.RETRY,
                 errorCode = "MIGRATION_BLOCKED",
             )
         }
 
+        val store = EventStore(context, database)
+        return if (request.task != null) {
+            importCreate(context, store, request)
+        } else {
+            importDelete(context, store, request)
+        }
+    }
+
+    private suspend fun importCreate(
+        context: Context,
+        store: EventStore,
+        request: WatchTaskProtocol.Request,
+    ): WatchTaskProtocol.Response {
         val receivedAt = System.currentTimeMillis()
-        val task = request.task
+        val task = request.task!!
         val event = TaskEvent(
             id = task.id,
             title = task.title,
@@ -426,25 +439,37 @@ internal object WatchTaskImporter {
                 "watchCreatedAtEpochMs" to request.createdAtEpochMs,
             ),
         )
-        val store = EventStore(context, database)
         val result = store.saveWatchCreated(event, request.requestId)
         val responseStatus = when (result) {
-            WatchTaskCommitResult.STORED -> WatchTaskCreateProtocol.Status.STORED
+            WatchTaskCommitResult.STORED -> WatchTaskProtocol.Status.STORED
             WatchTaskCommitResult.ALREADY_STORED ->
-                WatchTaskCreateProtocol.Status.ALREADY_STORED
-            WatchTaskCommitResult.ID_CONFLICT -> WatchTaskCreateProtocol.Status.REJECTED
+                WatchTaskProtocol.Status.ALREADY_STORED
+            WatchTaskCommitResult.ID_CONFLICT -> WatchTaskProtocol.Status.REJECTED
         }
         val errorCode = if (result == WatchTaskCommitResult.ID_CONFLICT) "ID_CONFLICT" else null
 
         if (result != WatchTaskCommitResult.ID_CONFLICT) {
-            // MainScreen's Room collector may not exist in a headless service process. Explicitly
-            // queue the latest phone -> watch snapshot after the authoritative commit.
             WatchScheduleSync.push(context, store.getAll())
         }
-        return WatchTaskCreateProtocol.Response(
+        return WatchTaskProtocol.Response(
             requestId = request.requestId,
             status = responseStatus,
             errorCode = errorCode,
+        )
+    }
+
+    private suspend fun importDelete(
+        context: Context,
+        store: EventStore,
+        request: WatchTaskProtocol.Request,
+    ): WatchTaskProtocol.Response {
+        val changed = store.softDeleteWatchEvent(request.taskId!!)
+        if (changed) {
+            WatchScheduleSync.push(context, store.getAll())
+        }
+        return WatchTaskProtocol.Response(
+            requestId = request.requestId,
+            status = WatchTaskProtocol.Status.DELETED,
         )
     }
 }

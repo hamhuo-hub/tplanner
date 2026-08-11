@@ -54,10 +54,10 @@ object WatchTaskOutbox {
 
     fun enqueue(context: Context, draft: WatchTaskDraft): Boolean {
         val now = System.currentTimeMillis()
-        val request = WatchTaskCreateProtocol.Request(
+        val request = WatchTaskProtocol.Request(
             requestId = UUID.randomUUID().toString(),
             createdAtEpochMs = draft.updatedAtEpochMs.takeIf { it > 0L } ?: now,
-            task = WatchTaskCreateProtocol.Task(
+            task = WatchTaskProtocol.Task(
                 id = draft.id,
                 title = draft.title,
                 type = draft.type,
@@ -69,10 +69,27 @@ object WatchTaskOutbox {
             ),
             publishedAtEpochMs = now,
         )
+        return enqueueRequest(context, request)
+    }
+
+    /** Enqueues a durable delete request. Cancels any still-pending create for the same task. */
+    fun enqueueDelete(context: Context, taskId: String): Boolean {
+        removePendingCreates(context, taskId)
+        val request = WatchTaskProtocol.Request(
+            requestId = UUID.randomUUID().toString(),
+            createdAtEpochMs = System.currentTimeMillis(),
+            task = null,
+            taskId = taskId,
+            publishedAtEpochMs = System.currentTimeMillis(),
+        )
+        return enqueueRequest(context, request)
+    }
+
+    private fun enqueueRequest(context: Context, request: WatchTaskProtocol.Request): Boolean {
         val encoded = try {
-            WatchTaskCreateProtocol.encodeRequest(request)
+            WatchTaskProtocol.encodeRequest(request)
         } catch (error: Exception) {
-            Log.e(TAG, "enqueue: invalid draft", error)
+            Log.e(TAG, "enqueueRequest: invalid request", error)
             return false
         }
         val appContext = context.applicationContext
@@ -86,6 +103,31 @@ object WatchTaskOutbox {
         schedulePersistentJob(appContext)
         flushAsync(appContext)
         return true
+    }
+
+    /** Drops still-pending create entries for [taskId] so they don't race with the delete. */
+    private fun removePendingCreates(context: Context, taskId: String) {
+        synchronized(stateLock) {
+            listOf(KEY_PENDING, KEY_FAILED).forEach { key ->
+                val arr = readArray(context, key)
+                val retained = JSONArray()
+                for (i in 0 until arr.length()) {
+                    val raw = arr.optString(i)
+                    val isMatchingCreate = runCatching {
+                        val r = WatchTaskProtocol.decodeRequest(raw)
+                        r.task?.id == taskId
+                    }.getOrDefault(false)
+                    if (isMatchingCreate) {
+                        runCatching {
+                            WatchTaskProtocol.decodeRequest(raw).requestId
+                        }.getOrNull()?.let { cleanupDataItems(context, it) }
+                    } else if (raw.isNotBlank()) {
+                        retained.put(raw)
+                    }
+                }
+                if (retained.length() != arr.length()) writeArray(context, key, retained)
+            }
+        }
     }
 
     fun resumePending(context: Context) {
@@ -104,23 +146,24 @@ object WatchTaskOutbox {
         }
         queued.mapNotNull { raw ->
             val value = raw.takeIf(String::isNotBlank) ?: return@mapNotNull null
-            runCatching { WatchTaskCreateProtocol.decodeRequest(value) }.getOrNull()?.let { request ->
-                WatchTaskDraft(
-                    id = request.task.id,
-                    title = request.task.title,
-                    type = request.task.type,
-                    startEpochMs = request.task.startEpochMs,
-                    endEpochMs = request.task.endEpochMs,
-                    alarmEnabled = request.task.alarmEnabled,
-                    alarmOffsetMinutes = request.task.alarmOffsetMinutes,
-                    colorId = request.task.colorId,
-                    updatedAtEpochMs = request.createdAtEpochMs,
-                )
-            }
+            val request = runCatching { WatchTaskProtocol.decodeRequest(value) }.getOrNull()
+                ?: return@mapNotNull null
+            val task = request.task ?: return@mapNotNull null // skip deletes
+            WatchTaskDraft(
+                id = task.id,
+                title = task.title,
+                type = task.type,
+                startEpochMs = task.startEpochMs,
+                endEpochMs = task.endEpochMs,
+                alarmEnabled = task.alarmEnabled,
+                alarmOffsetMinutes = task.alarmOffsetMinutes,
+                colorId = task.colorId,
+                updatedAtEpochMs = request.createdAtEpochMs,
+            )
         }
     }
 
-    internal fun handleResponse(context: Context, response: WatchTaskCreateProtocol.Response) {
+    internal fun handleResponse(context: Context, response: WatchTaskProtocol.Response) {
         if (!response.status.terminal) return
         val appContext = context.applicationContext
         var removed = false
@@ -131,11 +174,11 @@ object WatchTaskOutbox {
             for (index in 0 until pending.length()) {
                 val raw = pending.optString(index)
                 val requestId = runCatching {
-                    WatchTaskCreateProtocol.decodeRequest(raw).requestId
+                    WatchTaskProtocol.decodeRequest(raw).requestId
                 }.getOrNull()
                 if (requestId == response.requestId) {
                     removed = true
-                    if (response.status == WatchTaskCreateProtocol.Status.REJECTED) {
+                    if (response.status == WatchTaskProtocol.Status.REJECTED) {
                         rejectedRaw = raw
                     }
                 } else if (raw.isNotBlank()) {
@@ -184,14 +227,14 @@ object WatchTaskOutbox {
         }
     }
 
-    private fun prepareHead(context: Context): WatchTaskCreateProtocol.Request? {
+    private fun prepareHead(context: Context): WatchTaskProtocol.Request? {
         return synchronized(stateLock) {
-            var prepared: WatchTaskCreateProtocol.Request? = null
+            var prepared: WatchTaskProtocol.Request? = null
             while (prepared == null) {
                 val pending = readArray(context, KEY_PENDING)
                 val raw = pending.optString(0).takeIf(String::isNotBlank)
                     ?: return@synchronized null
-                val decoded = runCatching { WatchTaskCreateProtocol.decodeRequest(raw) }
+                val decoded = runCatching { WatchTaskProtocol.decodeRequest(raw) }
                     .onFailure { Log.e(TAG, "flushHead: corrupt request", it) }
                     .getOrNull()
                 if (decoded == null) {
@@ -208,7 +251,7 @@ object WatchTaskOutbox {
                     attempt = decoded.attempt + 1,
                     publishedAtEpochMs = System.currentTimeMillis(),
                 )
-                pending.put(0, WatchTaskCreateProtocol.encodeRequest(updated))
+                pending.put(0, WatchTaskProtocol.encodeRequest(updated))
                 if (!writeArray(context, KEY_PENDING, pending)) return@synchronized null
                 prepared = updated
             }
@@ -216,11 +259,11 @@ object WatchTaskOutbox {
         }
     }
 
-    private fun publishDataItem(context: Context, request: WatchTaskCreateProtocol.Request) {
+    private fun publishDataItem(context: Context, request: WatchTaskProtocol.Request) {
         runCatching {
-            val bytes = WatchTaskCreateProtocol.encodeRequest(request).toByteArray(Charsets.UTF_8)
+            val bytes = WatchTaskProtocol.encodeRequest(request).toByteArray(Charsets.UTF_8)
             val put = PutDataRequest.create(
-                WatchTaskCreateProtocol.requestPath(request.requestId),
+                WatchTaskProtocol.requestPath(request),
             ).setUrgent().apply { data = bytes }
             Tasks.await(Wearable.getDataClient(context).putDataItem(put), 10, TimeUnit.SECONDS)
             Log.d(TAG, "DataItem stored request=${request.requestId}")
@@ -231,26 +274,26 @@ object WatchTaskOutbox {
     }
 
     @SuppressLint("MissingPermission")
-    private fun sendViaBluetooth(context: Context, request: WatchTaskCreateProtocol.Request) {
+    private fun sendViaBluetooth(context: Context, request: WatchTaskProtocol.Request) {
         if (!hasBluetoothConnectPermission(context)) return
         val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter ?: return
         if (!runCatching { adapter.isEnabled }.getOrDefault(false)) return
         val phone = findPairedPhone(adapter) ?: return
         var socket: BluetoothSocket? = null
         try {
-            val connected = phone.createRfcommSocketToServiceRecord(WatchTaskCreateProtocol.RFCOMM_UUID)
+            val connected = phone.createRfcommSocketToServiceRecord(WatchTaskProtocol.RFCOMM_UUID)
             socket = connected
             registerActiveSocket(connected)
             if (Thread.currentThread().isInterrupted) return
             withSocketWatchdog(connected, CONNECT_TIMEOUT_MS, "connect") { connected.connect() }
             ScheduleRfcommProtocol.writeFrame(
                 connected.outputStream,
-                WatchTaskCreateProtocol.encodeRequest(request).toByteArray(Charsets.UTF_8),
+                WatchTaskProtocol.encodeRequest(request).toByteArray(Charsets.UTF_8),
             )
             val rawResponse = withSocketWatchdog(connected, RESPONSE_TIMEOUT_MS, "response") {
                 ScheduleRfcommProtocol.readFrame(connected.inputStream)
             }
-            val response = WatchTaskCreateProtocol.decodeResponse(rawResponse)
+            val response = WatchTaskProtocol.decodeResponse(rawResponse)
             if (response.requestId == request.requestId) {
                 handleResponse(context, response)
             }
@@ -301,8 +344,9 @@ object WatchTaskOutbox {
     private fun cleanupDataItems(context: Context, requestId: String) {
         worker.execute {
             listOf(
-                WatchTaskCreateProtocol.requestPath(requestId),
-                WatchTaskCreateProtocol.ackPath(requestId),
+                WatchTaskProtocol.requestPath(requestId),
+                WatchTaskProtocol.deleteRequestPath(requestId),
+                WatchTaskProtocol.ackPath(requestId),
             ).forEach { path ->
                 runCatching {
                     Tasks.await(
@@ -319,7 +363,7 @@ object WatchTaskOutbox {
         val pending = readArray(context, KEY_PENDING)
         (0 until pending.length()).any { index ->
             runCatching {
-                WatchTaskCreateProtocol.decodeRequest(pending.optString(index)).requestId == requestId
+                WatchTaskProtocol.decodeRequest(pending.optString(index)).requestId == requestId
             }.getOrDefault(false)
         }
     }

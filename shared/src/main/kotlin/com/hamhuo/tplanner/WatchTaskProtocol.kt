@@ -4,17 +4,19 @@ import org.json.JSONObject
 import java.util.UUID
 
 /**
- * Transport-neutral contract for a task created on the watch and committed by the phone.
+ * Transport-neutral contract for watch -> phone task operations (create & delete).
  *
  * The same request/response JSON is used by Wearable Data Layer and classic Bluetooth RFCOMM.
  * Transport delivery is never an acknowledgement: the watch may remove its durable outbox entry
  * only after receiving a terminal [Response].
  */
-object WatchTaskCreateProtocol {
+object WatchTaskProtocol {
     const val SCHEMA_VERSION = 1
     const val OPERATION_CREATE_TASK = "createTask"
+    const val OPERATION_DELETE_TASK = "deleteTask"
     const val REQUEST_PATH_PREFIX = "/tplanner/task/create/"
     const val ACK_PATH_PREFIX = "/tplanner/task/ack/"
+    const val DELETE_REQUEST_PATH_PREFIX = "/tplanner/task/delete/"
     const val MAX_JSON_BYTES = 8 * 1024
     const val MAX_TITLE_CODE_POINTS = 80
     const val MAX_TITLE_UTF8_BYTES = 256
@@ -29,6 +31,7 @@ object WatchTaskCreateProtocol {
     enum class Status(val wireValue: String, val terminal: Boolean) {
         STORED("stored", true),
         ALREADY_STORED("already_stored", true),
+        DELETED("deleted", true),
         REJECTED("rejected", true),
         RETRY("retry", false),
         ;
@@ -55,11 +58,15 @@ object WatchTaskCreateProtocol {
     data class Request(
         val requestId: String,
         val createdAtEpochMs: Long,
-        val task: Task,
+        val task: Task? = null,
+        val taskId: String? = null,
         /** Changes on each DataItem retry so Google Play services emits TYPE_CHANGED again. */
         val attempt: Int = 0,
         val publishedAtEpochMs: Long = createdAtEpochMs,
-    )
+    ) {
+        val operation: String get() = if (task != null) OPERATION_CREATE_TASK else OPERATION_DELETE_TASK
+        val isDelete: Boolean get() = task == null
+    }
 
     data class Response(
         val requestId: String,
@@ -77,6 +84,13 @@ object WatchTaskCreateProtocol {
 
     fun requestPath(requestId: String): String = REQUEST_PATH_PREFIX + validatedRequestId(requestId)
 
+    fun requestPath(request: Request): String =
+        if (request.isDelete) deleteRequestPath(request.requestId)
+        else requestPath(request.requestId)
+
+    fun deleteRequestPath(requestId: String): String =
+        DELETE_REQUEST_PATH_PREFIX + validatedRequestId(requestId)
+
     fun ackPath(requestId: String): String = ACK_PATH_PREFIX + validatedRequestId(requestId)
 
     fun requestIdFromPath(path: String?, prefix: String): String? {
@@ -91,22 +105,27 @@ object WatchTaskCreateProtocol {
         val normalized = validateRequest(request)
         return JSONObject().apply {
             put("schemaVersion", SCHEMA_VERSION)
-            put("operation", OPERATION_CREATE_TASK)
+            put("operation", normalized.operation)
             put("requestId", normalized.requestId)
             put("createdAtEpochMs", normalized.createdAtEpochMs)
             put("attempt", normalized.attempt)
             put("publishedAtEpochMs", normalized.publishedAtEpochMs)
-            put("task", JSONObject().apply {
-                put("id", normalized.task.id)
-                put("title", normalized.task.title)
-                put("type", normalized.task.type)
-                put("startEpochMs", normalized.task.startEpochMs)
-                put("endEpochMs", normalized.task.endEpochMs)
-                put("colorId", normalized.task.colorId)
-                put("alarmEnabled", normalized.task.alarmEnabled)
-                put("alarmOffsetMinutes", normalized.task.alarmOffsetMinutes)
-                put("timeZoneId", normalized.task.timeZoneId)
-            })
+            if (normalized.task != null) {
+                put("task", JSONObject().apply {
+                    put("id", normalized.task.id)
+                    put("title", normalized.task.title)
+                    put("type", normalized.task.type)
+                    put("startEpochMs", normalized.task.startEpochMs)
+                    put("endEpochMs", normalized.task.endEpochMs)
+                    put("colorId", normalized.task.colorId)
+                    put("alarmEnabled", normalized.task.alarmEnabled)
+                    put("alarmOffsetMinutes", normalized.task.alarmOffsetMinutes)
+                    put("timeZoneId", normalized.task.timeZoneId)
+                })
+            }
+            if (normalized.taskId != null) {
+                put("taskId", normalized.taskId)
+            }
         }.toString().also(::requireBoundedJson)
     }
 
@@ -118,9 +137,14 @@ object WatchTaskCreateProtocol {
             throw ProtocolException("UNSUPPORTED_SCHEMA", "Unsupported schema $schema")
         }
         val operation = root.strictString("operation")
-        if (operation != OPERATION_CREATE_TASK) {
-            throw ProtocolException("UNSUPPORTED_OPERATION", "Unsupported operation '$operation'")
+        return when (operation) {
+            OPERATION_CREATE_TASK -> decodeCreateRequest(root)
+            OPERATION_DELETE_TASK -> decodeDeleteRequest(root)
+            else -> throw ProtocolException("UNSUPPORTED_OPERATION", "Unsupported operation '$operation'")
         }
+    }
+
+    private fun decodeCreateRequest(root: JSONObject): Request {
         val task = root.optJSONObject("task")
             ?: throw ProtocolException("INVALID_TASK", "task must be an object")
         return validateRequest(
@@ -146,6 +170,23 @@ object WatchTaskCreateProtocol {
                         DEFAULT_TIME_ZONE_ID,
                     ),
                 ),
+            ),
+        )
+    }
+
+    private fun decodeDeleteRequest(root: JSONObject): Request {
+        val taskId = root.strictString("taskId")
+        return validateRequest(
+            Request(
+                requestId = root.strictString("requestId"),
+                createdAtEpochMs = root.strictLong("createdAtEpochMs"),
+                attempt = root.optionalStrictInt("attempt", 0),
+                publishedAtEpochMs = root.optionalStrictLong(
+                    "publishedAtEpochMs",
+                    root.strictLong("createdAtEpochMs"),
+                ),
+                task = null,
+                taskId = taskId,
             ),
         )
     }
@@ -196,44 +237,62 @@ object WatchTaskCreateProtocol {
         if (request.publishedAtEpochMs <= 0L) {
             throw ProtocolException("INVALID_PUBLISHED_AT", "publishedAtEpochMs must be positive")
         }
+        return if (request.task != null) {
+            validateCreateRequest(requestId, request)
+        } else if (request.taskId != null) {
+            validateDeleteRequest(requestId, request)
+        } else {
+            throw ProtocolException("INVALID_REQUEST", "request must carry either task or taskId")
+        }
+    }
 
-        val id = request.task.id.trim()
+    private fun validateCreateRequest(requestId: String, request: Request): Request {
+        val task = request.task!!
+        val id = task.id.trim()
         if (id.isEmpty() || id.toByteArray(Charsets.UTF_8).size > MAX_ID_UTF8_BYTES) {
             throw ProtocolException("INVALID_TASK_ID", "task.id is empty or too large")
         }
-        val title = request.task.title.trim().replace(WHITESPACE, " ")
+        val title = task.title.trim().replace(WHITESPACE, " ")
         if (title.isEmpty() ||
             title.codePointCount(0, title.length) > MAX_TITLE_CODE_POINTS ||
             title.toByteArray(Charsets.UTF_8).size > MAX_TITLE_UTF8_BYTES
         ) {
             throw ProtocolException("INVALID_TITLE", "task.title is empty or too large")
         }
-        val type = request.task.type.trim()
+        val type = task.type.trim()
         if (type !in TASK_TYPES) {
             throw ProtocolException("INVALID_TYPE", "Unsupported task.type '$type'")
         }
-        if (request.task.startEpochMs <= 0L || request.task.endEpochMs < request.task.startEpochMs) {
+        if (task.startEpochMs <= 0L || task.endEpochMs < task.startEpochMs) {
             throw ProtocolException("INVALID_TIME", "Task time range is invalid")
         }
-        if (request.task.colorId !in 0..7) {
+        if (task.colorId !in 0..7) {
             throw ProtocolException("INVALID_COLOR", "colorId must be in 0..7")
         }
-        if (request.task.alarmOffsetMinutes !in 0..MAX_ALARM_OFFSET_MINUTES) {
+        if (task.alarmOffsetMinutes !in 0..MAX_ALARM_OFFSET_MINUTES) {
             throw ProtocolException("INVALID_ALARM_OFFSET", "alarmOffsetMinutes is invalid")
         }
-        val timeZoneId = request.task.timeZoneId.trim()
+        val timeZoneId = task.timeZoneId.trim()
         if (timeZoneId != DEFAULT_TIME_ZONE_ID) {
             throw ProtocolException("INVALID_TIME_ZONE", "Unsupported timeZoneId '$timeZoneId'")
         }
         return request.copy(
             requestId = requestId,
-            task = request.task.copy(
+            task = task.copy(
                 id = id,
                 title = title,
                 type = type,
                 timeZoneId = timeZoneId,
             ),
         )
+    }
+
+    private fun validateDeleteRequest(requestId: String, request: Request): Request {
+        val taskId = request.taskId!!.trim()
+        if (taskId.isEmpty() || taskId.toByteArray(Charsets.UTF_8).size > MAX_ID_UTF8_BYTES) {
+            throw ProtocolException("INVALID_TASK_ID", "taskId is empty or too large")
+        }
+        return request.copy(requestId = requestId, taskId = taskId, task = null)
     }
 
     private fun validatedRequestId(raw: String): String {

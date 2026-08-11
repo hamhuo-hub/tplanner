@@ -1454,8 +1454,6 @@ fun MainScreen(
             },
             onSave = { updated, onFinished ->
                 val nextEvents = upsertEventPreservingOrder(events, updated)
-                // Queue the exact final snapshot before starting the Activity-scoped commit.
-                eventStore.enqueueEventDraft(updated, EventEditStage.DETAIL)
                 scope.launch {
                     try {
                         when (val result = eventWriteMutex.withLock {
@@ -1491,7 +1489,6 @@ fun MainScreen(
             },
             onNoteSave = { updated, onFinished ->
                 val nextEvents = upsertEventPreservingOrder(events, updated)
-                eventStore.enqueueEventDraft(updated, EventEditStage.DETAIL)
                 scope.launch {
                     try {
                         when (val result = eventWriteMutex.withLock {

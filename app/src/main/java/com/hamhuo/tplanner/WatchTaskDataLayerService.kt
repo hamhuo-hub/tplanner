@@ -15,10 +15,14 @@ class WatchTaskDataLayerService : WearableListenerService() {
         for (event in dataEvents) {
             if (event.type != DataEvent.TYPE_CHANGED) continue
             val path = event.dataItem.uri.path
-            val pathRequestId = WatchTaskCreateProtocol.requestIdFromPath(
-                path,
-                WatchTaskCreateProtocol.REQUEST_PATH_PREFIX,
-            ) ?: continue
+            val pathRequestId =
+                WatchTaskProtocol.requestIdFromPath(
+                    path,
+                    WatchTaskProtocol.REQUEST_PATH_PREFIX,
+                ) ?: WatchTaskProtocol.requestIdFromPath(
+                    path,
+                    WatchTaskProtocol.DELETE_REQUEST_PATH_PREFIX,
+                ) ?: continue
             val raw = event.dataItem.data?.let { String(it, Charsets.UTF_8) } ?: continue
             val response = WatchTaskImporter.importBlocking(
                 applicationContext,
@@ -29,13 +33,13 @@ class WatchTaskDataLayerService : WearableListenerService() {
         }
     }
 
-    private fun publishAck(response: WatchTaskCreateProtocol.Response) {
+    private fun publishAck(response: WatchTaskProtocol.Response) {
         try {
-            val payload = WatchTaskCreateProtocol.encodeResponse(
+            val payload = WatchTaskProtocol.encodeResponse(
                 response.copy(acknowledgedAtEpochMs = System.currentTimeMillis()),
             ).toByteArray(Charsets.UTF_8)
             val request = PutDataRequest.create(
-                WatchTaskCreateProtocol.ackPath(response.requestId),
+                WatchTaskProtocol.ackPath(response.requestId),
             ).setUrgent().apply {
                 data = payload
             }

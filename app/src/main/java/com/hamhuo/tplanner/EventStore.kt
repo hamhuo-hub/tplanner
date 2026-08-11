@@ -86,6 +86,25 @@ class EventStore(
         }
     }
 
+    /** Soft-deletes an event by id. Returns true if the event was found and newly deleted. */
+    suspend fun softDeleteWatchEvent(id: String): Boolean =
+        DurableWriteQueue.submitAndAwait(EVENT_FACT_QUEUE_KEY) {
+            val existing = repository.get(id)
+            if (existing != null && existing.deletedAt == 0L) {
+                repository.saveOneLocal(
+                    existing.copy(
+                        deletedAt = System.currentTimeMillis(),
+                        updatedAt = System.currentTimeMillis(),
+                    ),
+                )
+                reconcileAlarms(repository.getAll())
+                scheduleSync()
+                true
+            } else {
+                false
+            }
+        }
+
     /** Captures the authoritative base before the editor can diverge from it. */
     suspend fun beginEventEdit(event: TaskEvent): TaskEvent =
         DurableWriteQueue.readAfterPending(draftQueueKey(event.id)) {

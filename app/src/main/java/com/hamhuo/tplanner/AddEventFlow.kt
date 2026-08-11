@@ -60,6 +60,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -558,35 +559,36 @@ fun EventDetailScreen(
                                 tint = Color(0xFF0E0E0E), modifier = Modifier.size(26.dp)
                             )
                         }
-                        Box(Modifier.weight(1f)) {
-                            if (renaming) {
-                                val titleFocusRequester = remember { FocusRequester() }
-                                BasicTextField(
-                                    value = title,
-                                    onValueChange = {
-                                        title = it
-                                        persistDraft()
-                                    },
-                                    textStyle = TextStyle(
-                                        color = Color(0xFFE0D8C8), fontSize = 22.sp, fontWeight = FontWeight.Bold
-                                    ),
-                                    cursorBrush = SolidColor(GOLD),
-                                    singleLine  = true,
-                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                                    keyboardActions = KeyboardActions(onDone = { saveAndClose() }),
-                                    modifier    = Modifier
-                                        .fillMaxWidth()
-                                        .focusRequester(titleFocusRequester)
-                                )
-                                LaunchedEffect(Unit) { titleFocusRequester.requestFocus() }
-                            } else {
-                                Text(
-                                    title.ifBlank { stringResource(R.string.untitled_placeholder) },
-                                    color = Color(0xFFE0D8C8), fontSize = 22.sp,
-                                    fontWeight = FontWeight.Bold, maxLines = 1,
-                                    modifier = Modifier.clickable { renaming = true }
-                                )
-                            }
+                        if (renaming) {
+                            val titleFocusRequester = remember { FocusRequester() }
+                            BasicTextField(
+                                value = title,
+                                onValueChange = {
+                                    title = it
+                                    persistDraft()
+                                },
+                                textStyle = TextStyle(
+                                    color = Color(0xFFE0D8C8), fontSize = 22.sp, fontWeight = FontWeight.Bold
+                                ),
+                                cursorBrush = SolidColor(GOLD),
+                                singleLine  = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = { saveAndClose() }),
+                                modifier    = Modifier
+                                    .weight(1f)
+                                    .clipToBounds()
+                                    .focusRequester(titleFocusRequester)
+                            )
+                            LaunchedEffect(Unit) { titleFocusRequester.requestFocus() }
+                        } else {
+                            Text(
+                                title.ifBlank { stringResource(R.string.untitled_placeholder) },
+                                color = Color(0xFFE0D8C8), fontSize = 22.sp,
+                                fontWeight = FontWeight.Bold, maxLines = 1,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { renaming = true }
+                            )
                         }
                         if (type == "task") {
                             IconButton(onClick = {

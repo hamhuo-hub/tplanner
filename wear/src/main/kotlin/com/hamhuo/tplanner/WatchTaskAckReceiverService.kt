@@ -10,13 +10,13 @@ class WatchTaskAckReceiverService : WearableListenerService() {
     override fun onDataChanged(dataEvents: DataEventBuffer) {
         for (event in dataEvents) {
             if (event.type != DataEvent.TYPE_CHANGED) continue
-            val pathRequestId = WatchTaskCreateProtocol.requestIdFromPath(
+            val pathRequestId = WatchTaskProtocol.requestIdFromPath(
                 event.dataItem.uri.path,
-                WatchTaskCreateProtocol.ACK_PATH_PREFIX,
+                WatchTaskProtocol.ACK_PATH_PREFIX,
             ) ?: continue
             val bytes = event.dataItem.data ?: continue
             try {
-                val response = WatchTaskCreateProtocol.decodeResponse(
+                val response = WatchTaskProtocol.decodeResponse(
                     String(bytes, Charsets.UTF_8),
                 )
                 if (response.requestId == pathRequestId) {

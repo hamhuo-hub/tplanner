@@ -46,6 +46,12 @@ class MainActivity : ComponentActivity() {
             setTaskOpenAction { task ->
                 startActivity(TaskDetailActivity.createIntent(this@MainActivity, task))
             }
+            setTaskDeleteAction { task ->
+                WatchLocalDeletes.markDeleted(this@MainActivity, task.id)
+                dashboard.post {
+                    WatchTaskOutbox.enqueueDelete(this@MainActivity, task.id)
+                }
+            }
             setPermissionAction {
                 if (needsBluetoothPermission()) {
                     showPermissionRequired()
@@ -75,7 +81,6 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         hideSystemUi()
-        dashboard.refreshContent(showFeedback = false)
         if (!needsBluetoothPermission()) {
             dashboard.clearPermissionRequired()
             BluetoothScheduleBridgeService.startIfAllowed(this)

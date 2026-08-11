@@ -1,5 +1,7 @@
 package com.hamhuo.tplanner
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Bitmap
@@ -22,7 +24,9 @@ import android.renderscript.ScriptIntrinsicBlur
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageButton
@@ -284,11 +288,14 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
     private var marks = WatchEventMarks.EMPTY
     private var selectedFilter = WatchListFilter.INBOX
     private var mainScrollY = 0
+    private var mainScroll: ScrollView? = null
+    private var mainContent: LinearLayout? = null
     private var permissionRequired = false
     private var permissionAction: (() -> Unit)? = null
     private var listSelectionAction: (() -> Unit)? = null
     private var newTaskAction: (() -> Unit)? = null
     private var taskOpenAction: ((WatchEventMarks.NextTask) -> Unit)? = null
+    private var taskDeleteAction: ((WatchEventMarks.NextTask) -> Unit)? = null
 
     init {
         setBackgroundColor(Color.BLACK)
@@ -370,6 +377,10 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         taskOpenAction = listener
     }
 
+    fun setTaskDeleteAction(listener: ((WatchEventMarks.NextTask) -> Unit)?) {
+        taskDeleteAction = listener
+    }
+
     fun announceTaskQueued() {
         announceForAccessibility(context.getString(R.string.task_create_queued))
     }
@@ -380,6 +391,7 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         if (selectedFilter == filter) return
         selectedFilter = filter
         mainScrollY = 0
+        mainScroll?.scrollTo(0, 0)
         rebuildMainPage()
     }
 
@@ -404,22 +416,41 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
     }
 
     private fun rebuildMainPage() {
-        contentHost.removeAllViews()
-        contentHost.addView(
-            createMainPage(),
-            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
-        )
-        frostedHeader.refresh()
+        val existingScroll = mainScroll
+        val existingContent = mainContent
+
+        if (existingScroll == null || existingContent == null) {
+            val page = createMainPage()
+            contentHost.removeAllViews()
+            contentHost.addView(
+                page,
+                LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
+            )
+        } else {
+            // Preserve the current viewport while replacing only the list contents.
+            val restoreScrollY = existingScroll.scrollY
+            populateMainContent(existingContent)
+
+            existingScroll.post {
+                val child = existingScroll.getChildAt(0)
+                val viewportHeight =
+                    existingScroll.height - existingScroll.paddingTop - existingScroll.paddingBottom
+                val maxScrollY =
+                    ((child?.height ?: 0) - viewportHeight).coerceAtLeast(0)
+                val targetScrollY = restoreScrollY.coerceIn(0, maxScrollY)
+
+                if (existingScroll.scrollY != targetScrollY) {
+                    existingScroll.scrollTo(0, targetScrollY)
+                }
+
+                mainScrollY = existingScroll.scrollY
+                updateCollapsedHeader(mainScrollY)
+                frostedHeader.refresh()
+            }
+        }
     }
 
     private fun createMainPage(): View {
-        val currentListName = context.watchListName(selectedFilter)
-        collapsedTitle.text = currentListName
-        collapsedTitle.contentDescription = context.getString(
-            R.string.task_list_choose_action,
-            currentListName,
-        )
-
         val scroll = ScrollView(context).apply {
             isFillViewport = true
             isVerticalScrollBarEnabled = false
@@ -430,6 +461,7 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
         }
+
         scroll.addView(
             content,
             FrameLayout.LayoutParams(
@@ -437,6 +469,31 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ),
         )
+
+        mainScroll = scroll
+        mainContent = content
+
+        populateMainContent(content)
+
+        scroll.setOnScrollChangeListener { _, _, scrollY, _, _ ->
+            mainScrollY = scrollY
+            updateCollapsedHeader(scrollY)
+            frostedHeader.refresh()
+        }
+
+        updateCollapsedHeader(mainScrollY)
+        return scroll
+    }
+
+    private fun populateMainContent(content: LinearLayout) {
+        val currentListName = context.watchListName(selectedFilter)
+        collapsedTitle.text = currentListName
+        collapsedTitle.contentDescription = context.getString(
+            R.string.task_list_choose_action,
+            currentListName,
+        )
+
+        content.removeAllViews()
 
         val largeTitle = textView(28f, ACCENT, BOLD).apply {
             text = currentListName
@@ -494,21 +551,9 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
             )
         } else {
             visibleTasks.forEach { task ->
-                content.addView(taskCard(task), cardLayoutParams())
+                content.addView(SwipeTaskCardView(task), cardLayoutParams())
             }
         }
-
-        scroll.setOnScrollChangeListener { _, _, scrollY, _, _ ->
-            mainScrollY = scrollY
-            updateCollapsedHeader(scrollY)
-            frostedHeader.refresh()
-        }
-        scroll.post {
-            scroll.scrollTo(0, mainScrollY)
-            updateCollapsedHeader(mainScrollY)
-            frostedHeader.refresh()
-        }
-        return scroll
     }
 
     private fun taskCard(task: WatchEventMarks.NextTask): View = LinearLayout(context).apply {
@@ -659,6 +704,145 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         )
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
+
+    /** Wraps a task card with a swipe-to-reveal delete button. Vertical scroll passes through. */
+    private inner class SwipeTaskCardView(
+        task: WatchEventMarks.NextTask,
+    ) : FrameLayout(context) {
+        private val slop = ViewConfiguration.get(context).scaledTouchSlop
+        private val revealWidth = dp(60)
+        private var tracking = false
+        private var isOpen = false
+        private var downX = 0f
+        private var downY = 0f
+        private var isDeleting = false
+        private val cardContent: View
+
+        init {
+            clipChildren = false
+            clipToPadding = false
+
+            // bottom layer: delete button
+            val deleteButton = textView(14f, PRIMARY, MEDIUM).apply {
+                text = context.getString(R.string.task_list_delete)
+                gravity = Gravity.CENTER
+                background = rounded(0xFFD32F2F.toInt(), dp(13).toFloat())
+                minimumWidth = revealWidth
+                setOnClickListener {
+                    if (isDeleting) return@setOnClickListener
+                    isDeleting = true
+
+                    performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                    isClickable = false
+
+                    val wrapper = this@SwipeTaskCardView
+                    val startHeight = wrapper.height.coerceAtLeast(1)
+
+                    android.animation.ValueAnimator.ofInt(startHeight, 0).apply {
+                        duration = 200L
+
+                        addUpdateListener { animator ->
+                            val lp = wrapper.layoutParams
+                            lp.height = (animator.animatedValue as Int).coerceAtLeast(0)
+                            wrapper.layoutParams = lp
+                            wrapper.alpha = 1f - animator.animatedFraction
+                        }
+
+                        addListener(
+                            object : AnimatorListenerAdapter() {
+                                private var finished = false
+
+                                private fun finishDelete() {
+                                    if (finished) return
+                                    finished = true
+
+                                    (wrapper.parent as? ViewGroup)?.removeView(wrapper)
+                                    taskDeleteAction?.invoke(task)
+                                }
+
+                                override fun onAnimationEnd(animation: Animator) {
+                                    finishDelete()
+                                }
+
+                                override fun onAnimationCancel(animation: Animator) {
+                                    finishDelete()
+                                }
+                            },
+                        )
+                        start()
+                    }
+                }
+            }
+            addView(
+                deleteButton,
+                LayoutParams(revealWidth, LayoutParams.MATCH_PARENT, Gravity.END or Gravity.CENTER_VERTICAL),
+            )
+
+            // top layer: existing card
+            cardContent = taskCard(task)
+            addView(
+                cardContent,
+                LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT),
+            )
+        }
+
+        override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = ev.x; downY = ev.y; tracking = false
+                    return false
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = ev.x - downX; val dy = ev.y - downY
+                    if (!tracking && Math.abs(dx) > slop && Math.abs(dx) > Math.abs(dy)) {
+                        tracking = true
+                        parent.requestDisallowInterceptTouchEvent(true)
+                    }
+                    return tracking
+                }
+                else -> return tracking
+            }
+        }
+
+        override fun onTouchEvent(ev: MotionEvent): Boolean {
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_MOVE -> {
+                    if (tracking) {
+                        cardContent.translationX = (ev.x - downX).coerceIn(-revealWidth.toFloat(), 0f)
+                        return true
+                    }
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (tracking) {
+                        settle(cardContent.translationX < -revealWidth * 0.35f)
+                        performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                    } else if (isOpen) {
+                        settle(false)
+                    } else {
+                        cardContent.callOnClick()
+                    }
+                    parent.requestDisallowInterceptTouchEvent(false)
+                    return true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    if (tracking) settle(isOpen)
+                    parent.requestDisallowInterceptTouchEvent(false)
+                    return true
+                }
+            }
+            return super.onTouchEvent(ev)
+        }
+
+        fun close() { if (isOpen) settle(false) }
+
+        private fun settle(open: Boolean) {
+            isOpen = open
+            cardContent.animate()
+                .translationX(if (open) -revealWidth.toFloat() else 0f)
+                .setDuration(150L)
+                .start()
+        }
+    }
 
     private companion object {
         const val LARGE_TITLE_TOP_MARGIN_DP = 23

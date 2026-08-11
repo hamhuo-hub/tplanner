@@ -60,11 +60,12 @@ class TaskDetailActivity : WearPageActivity() {
         val title = intent.getStringExtra(EXTRA_TITLE)
         val startEpochMs = intent.getLongExtra(EXTRA_START, Long.MIN_VALUE)
         val endEpochMs = intent.getLongExtra(EXTRA_END, Long.MIN_VALUE)
+        val checklistJson = intent.getStringExtra(EXTRA_CHECKLIST).orEmpty()
         if (title.isNullOrBlank() || startEpochMs == Long.MIN_VALUE || endEpochMs < startEpochMs) {
             finish()
             return
         }
-        page = TaskDetailView(this, title, startEpochMs, endEpochMs)
+        page = TaskDetailView(this, title, startEpochMs, endEpochMs, checklistJson)
         setContentView(page)
     }
 
@@ -72,12 +73,14 @@ class TaskDetailActivity : WearPageActivity() {
         private const val EXTRA_TITLE = "task_title"
         private const val EXTRA_START = "task_start"
         private const val EXTRA_END = "task_end"
+        private const val EXTRA_CHECKLIST = "task_checklist"
 
         fun createIntent(context: Context, task: WatchEventMarks.NextTask): Intent =
             Intent(context, TaskDetailActivity::class.java)
                 .putExtra(EXTRA_TITLE, task.title)
                 .putExtra(EXTRA_START, task.startEpochMs)
                 .putExtra(EXTRA_END, task.endEpochMs)
+                .putExtra(EXTRA_CHECKLIST, task.checklistJson)
     }
 }
 
@@ -191,6 +194,7 @@ private class TaskDetailView(
     title: String,
     startEpochMs: Long,
     endEpochMs: Long,
+    checklistJson: String,
 ) : FrameLayout(context) {
     private val timeFormatter = LocalizedDateTimeFormatter(context, R.string.task_time_pattern)
     private val dateFormatter =
