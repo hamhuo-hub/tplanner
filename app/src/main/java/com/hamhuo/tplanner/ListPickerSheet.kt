@@ -1,0 +1,192 @@
+package com.hamhuo.tplanner
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.Today
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ListPickerSheet(
+    selectedList: EventList,
+    userLists: List<UserList>,
+    listSheetState: androidx.compose.material3.SheetState,
+    onSelectList: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onNewListRequest: () -> Unit,
+    onDeleteList: (String) -> Unit,
+    scope: CoroutineScope = rememberCoroutineScope(),
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = listSheetState,
+        containerColor = Color(0xFF1A1A1A),
+        dragHandle = null,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 32.dp),
+        ) {
+            // 拖拽把手
+            Box(
+                modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 18.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    Modifier.width(36.dp).height(4.dp)
+                        .background(Color(0xFF444444), RoundedCornerShape(2.dp))
+                )
+            }
+            // 标题行
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("清单", color = Color(0xFFE0D8C8), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Icon(
+                    Icons.Default.Close, contentDescription = "Close", tint = DIM,
+                    modifier = Modifier.size(18.dp).clickable { onDismiss() },
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            // 清单项：内置 + 自定义
+            val current = selectedList
+            val allItems = EventList.BUILT_IN + userLists.map {
+                EventList.Custom(it.id, it.name)
+            }
+            allItems.forEach { item ->
+                val isSelected = current.key == item.key
+                val isCustom = item is EventList.Custom
+                val row = @Composable {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            onSelectList(item.key)
+                        }.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier.size(52.dp)
+                                .background(if (isSelected) GOLD else Color(0xFF2E2E2E), CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = when (item) {
+                                    is EventList.Today -> Icons.Filled.Today
+                                    is EventList.Inbox -> Icons.Filled.Inbox
+                                    is EventList.Custom -> Icons.Filled.Inbox
+                                },
+                                contentDescription = null,
+                                tint = if (isSelected) Color(0xFF0E0E0E) else Color(0xFFE0D8C8),
+                                modifier = Modifier.size(26.dp),
+                            )
+                        }
+                        Spacer(Modifier.width(16.dp))
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(
+                                when (item) {
+                                    is EventList.Today -> stringResource(R.string.list_today)
+                                    is EventList.Inbox -> stringResource(R.string.list_inbox)
+                                    is EventList.Custom -> item.label
+                                },
+                                color = if (isSelected) GOLD else Color(0xFFE0D8C8),
+                                fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                when (item) {
+                                    is EventList.Today -> "仅显示今天的事项"
+                                    is EventList.Inbox -> "所有未删除的事项"
+                                    is EventList.Custom -> "自定义清单"
+                                },
+                                color = DIM, fontSize = 13.sp,
+                            )
+                        }
+                    }
+                }
+                if (isCustom) {
+                    val dismissState = rememberSwipeToDismissBoxState(
+                        confirmValueChange = { value ->
+                            if (value == SwipeToDismissBoxValue.EndToStart) {
+                                scope.launch { onDeleteList(item.key) }
+                            }
+                            true
+                        }
+                    )
+                    SwipeToDismissBox(
+                        state = dismissState,
+                        enableDismissFromStartToEnd = false,
+                        enableDismissFromEndToStart = true,
+                        modifier = Modifier.padding(horizontal = 20.dp),
+                        backgroundContent = {
+                            Box(
+                                modifier = Modifier.fillMaxSize()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color(0xFFC0697A)),
+                            )
+                        }
+                    ) { row() }
+                } else {
+                    row()
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            // 新建清单
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable {
+                    onDismiss()
+                    onNewListRequest()
+                }.padding(horizontal = 20.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Box(
+                    modifier = Modifier.size(52.dp)
+                        .background(Color(0xFF2E2E2E), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = null,
+                        tint = DIM, modifier = Modifier.size(26.dp))
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(stringResource(R.string.list_new), color = DIM,
+                        fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    Text("创建自定义清单", color = DIM, fontSize = 13.sp)
+                }
+            }
+        }
+    }
+}

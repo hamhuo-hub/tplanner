@@ -20,6 +20,7 @@
     <string name="task_create_color_description">輕觸切換顏色</string>
     <string name="task_create_on">開啟</string>
     <string name="task_create_off">關閉</string>
+    <string name="task_create_next">繼續</string>
     <string name="task_create_save">儲存</string>
     <string name="task_create_saving">正在儲存</string>
     <string name="task_create_queued">已儲存，將同步至手機</string>

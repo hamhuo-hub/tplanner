@@ -315,7 +315,13 @@ fun MarkdownEditor(
                 Box(
                     modifier = Modifier
                         .background(GOLD, RoundedCornerShape(50.dp))
-                        .clickable(onClick = ::finishEditing)
+                        .clickable(onClick = {
+                            if (imeVisible) {
+                                keyboardController?.hide()
+                            } else {
+                                finishEditing()
+                            }
+                        })
                         .padding(horizontal = 18.dp, vertical = 8.dp),
                 ) {
                     Text(

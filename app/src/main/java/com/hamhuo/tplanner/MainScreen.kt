@@ -25,8 +25,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -257,6 +257,9 @@ fun MainScreen(
     var serverUrl  by remember { mutableStateOf(initialServerUrl) }
     var syncStatus by remember { mutableStateOf("idle") }
     var syncMsg    by remember { mutableStateOf("") }
+    val eventActions = remember(serverUrl) {
+        EventActions(scope, context, eventStore, eventWriteMutex, { url -> manager.fetchEvents(url) }, { serverUrl })
+    }
 
     val syncedTemplate  = stringResource(R.string.sync_success_with_name)
 
@@ -301,8 +304,13 @@ fun MainScreen(
     var chromeMode by remember { mutableStateOf(ChromeMode.PrimaryNavigation) }
     var primaryNavigationGeneration by remember { mutableIntStateOf(0) }
     var selectedListKey by rememberSaveable { mutableStateOf(EventList.Inbox.key) }
-    val selectedList = EventList.fromKey(selectedListKey)
+    var userLists by remember { mutableStateOf(emptyList<UserList>()) }
+    LaunchedEffect(eventStore) {
+        eventStore.observeUserLists().collect { userLists = it }
+    }
+    val selectedList = EventList.fromKey(selectedListKey, userLists)
     var showListSheet by remember { mutableStateOf(false) }
+    var showNewListSheet by remember { mutableStateOf(false) }
     var taskWidgetModalVisible by remember { mutableStateOf(false) }
     var timelineModalVisible by remember { mutableStateOf(false) }
     val listSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -694,64 +702,16 @@ fun MainScreen(
     }
 
     fun beginNewEvent(type: String) {
-        val now = Instant.now()
-        val draft = TaskEvent(
-            id = UUID.randomUUID().toString(),
-            title = "",
-            type = type,
-            start = now,
-            end = now.plusSeconds(3_600),
-            completed = false,
-            checklist = emptyList(),
-            colorId = 0,
-            note = "",
-            deletedAt = 0L,
-            updatedAt = now.toEpochMilli(),
-            alarmEnabled = type == "event",
-            alarmOffsetMinutes = 0,
-        )
-        scope.launch {
-            try {
-                eventWriteMutex.withLock {
-                    eventStore.saveEventDraft(draft, EventEditStage.NAMING)
-                }
-                pendingNewEvent = draft
-            } catch (_: Exception) {
-                Toast.makeText(context, "无法保存新事项草稿，请重试", Toast.LENGTH_LONG).show()
-            }
-        }
+        eventActions.beginNewEvent(type) { pendingNewEvent = it }
     }
 
     fun openEvent(event: TaskEvent) {
-        scope.launch {
-            try {
-                when (val recovery = eventStore.recoverEventDraft(event.id)) {
-                    is EventDraftRecovery.Recovered -> {
-                        if (recovery.stage == EventEditStage.NAMING) {
-                            pendingNewEvent = recovery.event
-                        } else {
-                            editingEvent = recovery.event
-                        }
-                    }
-                    is EventDraftRecovery.Conflict -> {
-                        eventConflict = recovery
-                        Toast.makeText(
-                            context,
-                            "该事项已在其他设备修改，请选择如何处理已保留的草稿",
-                            Toast.LENGTH_LONG,
-                        ).show()
-                    }
-                    EventDraftRecovery.None -> {
-                        val current = eventWriteMutex.withLock {
-                            eventStore.beginEventEdit(event)
-                        }
-                        editingEvent = current
-                    }
-                }
-            } catch (_: Exception) {
-                Toast.makeText(context, "无法打开事项草稿，请重试", Toast.LENGTH_LONG).show()
-            }
-        }
+        eventActions.openEvent(
+            event = event,
+            onPending = { pendingNewEvent = it },
+            onEdit = { editingEvent = it },
+            onConflict = { eventConflict = it },
+        )
     }
     val chromeHidden = showScheduleSheet ||
         showListSheet ||
@@ -781,51 +741,16 @@ fun MainScreen(
             events   = events,
             list     = selectedList,
             onToggle = { eventId, completed ->
-                val nextEvents = events.map {
-                    if (it.id == eventId) it.copy(completed = completed, updatedAt = System.currentTimeMillis()) else it
-                }
-                events = nextEvents
-                nextEvents.firstOrNull { it.id == eventId }?.let { updated ->
-                    scope.launch {
-                        eventWriteMutex.withLock { eventStore.save(updated) }
-                        events = manager.fetchEvents(serverUrl)
-                    }
-                }
+                eventActions.toggleCompleted(events, eventId, completed) { events = it }
             },
             onAddEvent = ::beginNewEvent,
             onDelete = { eventId ->
-                val now = System.currentTimeMillis()
-                val nextEvents = events.map {
-                    if (it.id == eventId) it.copy(deletedAt = now, updatedAt = now) else it
-                }
-                events = nextEvents
-                nextEvents.firstOrNull { it.id == eventId }?.let { updated ->
-                    scope.launch {
-                        eventWriteMutex.withLock { eventStore.save(updated) }
-                        events = manager.fetchEvents(serverUrl)
-                    }
-                }
+                eventActions.softDelete(events, eventId) { events = it }
             },
             onItemClick = ::openEvent,
             onListFilterClick = { showListSheet = true },
             onTypeChange = { eventId, newType ->
-                val nextEvents = events.map {
-                    if (it.id == eventId) {
-                        it.copy(
-                            type = newType,
-                            completed = if (newType == "task") it.completed else false,
-                            checklist = if (newType == "task") it.checklist else emptyList(),
-                            updatedAt = System.currentTimeMillis()
-                        )
-                    } else it
-                }
-                events = nextEvents
-                nextEvents.firstOrNull { it.id == eventId }?.let { updated ->
-                    scope.launch {
-                        eventWriteMutex.withLock { eventStore.save(updated) }
-                        events = manager.fetchEvents(serverUrl)
-                    }
-                }
+                eventActions.changeType(events, eventId, newType) { events = it }
             },
             onModalVisibilityChange = { taskWidgetModalVisible = it },
         )
@@ -1292,105 +1217,22 @@ fun MainScreen(
         }
     }
 
-    // ── List picker (same style as AddEventTypeSheet) ──────────────────
+    // ── List picker ────────────────────────────────────────────────────
     if (showListSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showListSheet = false },
-            sheetState       = listSheetState,
-            containerColor   = Color(0xFF1A1A1A),
-            dragHandle       = null,
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 32.dp),
-            ) {
-                // 拖拽把手
-                Box(
-                    modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 18.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Box(
-                        Modifier.width(36.dp).height(4.dp)
-                            .background(Color(0xFF444444), RoundedCornerShape(2.dp))
-                    )
+        ListPickerSheet(
+            selectedList = selectedList,
+            userLists = userLists,
+            listSheetState = listSheetState,
+            onSelectList = { key -> selectedListKey = key; showListSheet = false },
+            onDismiss = { showListSheet = false },
+            onNewListRequest = { showNewListSheet = true },
+            onDeleteList = { id ->
+                scope.launch {
+                    eventStore.deleteUserList(id)
+                    if (selectedListKey == id) selectedListKey = EventList.Inbox.key
                 }
-                // 标题行
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("清单", color = Color(0xFFE0D8C8), fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    Icon(
-                        Icons.Default.Close, contentDescription = "Close", tint = DIM,
-                        modifier = Modifier.size(18.dp).clickable { showListSheet = false },
-                    )
-                }
-                Spacer(Modifier.height(12.dp))
-                // 清单项
-                val current = selectedList
-                EventList.ALL.forEach { item ->
-                    val icon = when (item) {
-                        is EventList.Today -> Icons.Filled.Today
-                        is EventList.Inbox -> Icons.Filled.Inbox
-                    }
-                    val itemLabel = when (item) {
-                        is EventList.Today -> stringResource(R.string.list_today)
-                        is EventList.Inbox -> stringResource(R.string.list_inbox)
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth().clickable {
-                            selectedListKey = item.key; showListSheet = false
-                        }.padding(horizontal = 20.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    ) {
-                        Box(
-                            modifier = Modifier.size(52.dp)
-                                .background(Color(0xFF2E2E2E), CircleShape),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(icon, contentDescription = null,
-                                tint = if (current.key == item.key) GOLD else Color(0xFFE0D8C8),
-                                modifier = Modifier.size(26.dp))
-                        }
-                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text(itemLabel, color = if (current.key == item.key) GOLD else Color(0xFFE0D8C8),
-                                fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                            Text(
-                                when (item) {
-                                    is EventList.Today -> "仅显示今天的事项"
-                                    is EventList.Inbox -> "所有未删除的事项"
-                                },
-                                color = DIM, fontSize = 13.sp,
-                            )
-                        }
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                // 预留：新建清单（同样式）
-                Row(
-                    modifier = Modifier.fillMaxWidth().clickable {
-                        showListSheet = false
-                    }.padding(horizontal = 20.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    Box(
-                        modifier = Modifier.size(52.dp)
-                            .background(Color(0xFF2E2E2E), CircleShape),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.Filled.Add, contentDescription = null,
-                            tint = DIM, modifier = Modifier.size(26.dp))
-                    }
-                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text(stringResource(R.string.list_new), color = DIM,
-                            fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                        Text("创建自定义清单", color = DIM, fontSize = 13.sp)
-                    }
-                }
-            }
-        }
+            },
+        )
     }
 
     // ── Overlay panels ───────────────────────────────────────────────────
@@ -1429,6 +1271,22 @@ fun MainScreen(
                         pendingNewEvent = updated
                         Toast.makeText(context, "无法保存事项名称，请重试", Toast.LENGTH_LONG).show()
                     }
+                }
+            },
+        )
+    }
+
+    if (showNewListSheet) {
+        NameInputSheet(
+            type = "task",
+            initialText = "",
+            onDraftChange = {},
+            onCancel = { showNewListSheet = false },
+            onConfirm = { name ->
+                showNewListSheet = false
+                scope.launch {
+                    val list = eventStore.createUserList(name.trim())
+                    selectedListKey = list.id
                 }
             },
         )

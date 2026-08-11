@@ -102,8 +102,13 @@ fun TaskWidget(
     }
 
     val isToday = list is EventList.Today
-    val source  = remember(events, isToday) {
-        if (isToday) events.forToday() else events.filter { it.deletedAt == 0L }
+    val isCustom = list is EventList.Custom
+    val source  = remember(events, isToday, isCustom, list.key) {
+        when {
+            isToday -> events.forToday()
+            isCustom -> events.filter { it.deletedAt == 0L && it.listId == list.key }
+            else -> events.filter { it.deletedAt == 0L }
+        }
     }
 
     val groupNowLabel   = stringResource(R.string.group_now)
@@ -151,6 +156,7 @@ fun TaskWidget(
     val listLabel = when (list) {
         is EventList.Today -> stringResource(R.string.list_today)
         is EventList.Inbox -> stringResource(R.string.list_inbox)
+        is EventList.Custom -> list.label
     }
 
     val taskTotal = events.count { it.deletedAt == 0L && it.type == "task" }

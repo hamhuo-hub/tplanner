@@ -29,8 +29,20 @@ data class EventEntity(
     @ColumnInfo(name = "alarm_offset_minutes") val alarmOffsetMinutes: Int,
     val lat: Double,
     val lng: Double,
+    @ColumnInfo(name = "list_id") val listId: String,
     @ColumnInfo(name = "extras_json") val extrasJson: String,
     @ColumnInfo(name = "sort_index") val sortIndex: Long,
+)
+
+@Entity(
+    tableName = "user_lists",
+    primaryKeys = ["id"],
+    indices = [Index(value = ["sort_order"])],
+)
+data class UserListEntity(
+    val id: String,
+    val name: String,
+    @ColumnInfo(name = "sort_order") val sortOrder: Int,
 )
 
 @Entity(

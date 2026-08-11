@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 @Dao
 interface EventDao {
@@ -180,4 +181,25 @@ interface MigrationDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertMarker(row: MigrationMarkerEntity)
+}
+
+@Dao
+interface UserListDao {
+    @Query("SELECT * FROM user_lists ORDER BY sort_order")
+    fun observeAll(): Flow<List<UserListEntity>>
+
+    @Query("SELECT * FROM user_lists ORDER BY sort_order")
+    suspend fun getAll(): List<UserListEntity>
+
+    @Query("SELECT * FROM user_lists WHERE id = :id")
+    suspend fun get(id: String): UserListEntity?
+
+    @Query("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM user_lists")
+    suspend fun nextSortOrder(): Int
+
+    @Upsert
+    suspend fun upsert(row: UserListEntity)
+
+    @Query("DELETE FROM user_lists WHERE id = :id")
+    suspend fun delete(id: String): Int
 }

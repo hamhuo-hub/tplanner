@@ -14,8 +14,9 @@ import androidx.room.RoomDatabase
         SyncOutboxEntity::class,
         PendingActionEntity::class,
         MigrationMarkerEntity::class,
+        UserListEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class TPlannerDatabase : RoomDatabase() {
@@ -25,6 +26,7 @@ abstract class TPlannerDatabase : RoomDatabase() {
     abstract fun syncDao(): SyncDao
     abstract fun pendingActionDao(): PendingActionDao
     abstract fun migrationDao(): MigrationDao
+    abstract fun userListDao(): UserListDao
 
     companion object {
         @Volatile
@@ -35,10 +37,25 @@ abstract class TPlannerDatabase : RoomDatabase() {
                 context.applicationContext,
                 TPlannerDatabase::class.java,
                 DATABASE_NAME,
-            ).build().also { instance = it }
+            )
+                .addMigrations(MIGRATION_1_2)
+                .build().also { instance = it }
         }
 
         internal const val DATABASE_NAME = "tplanner.db"
+
+        private val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS user_lists (" +
+                        "id TEXT NOT NULL PRIMARY KEY, " +
+                        "name TEXT NOT NULL, " +
+                        "sort_order INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_user_lists_sort_order ON user_lists(sort_order)")
+                db.execSQL("ALTER TABLE events ADD COLUMN list_id TEXT NOT NULL DEFAULT ''")
+            }
+        }
     }
 }
 

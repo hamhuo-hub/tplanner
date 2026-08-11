@@ -68,6 +68,12 @@
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
 
         <activity
+            android:name=".CreateDateActivity"
+            android:exported="false"
+            android:taskAffinity="com.hamhuo.tplanner.watch"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+
+        <activity
             android:name=".CreateSettingsActivity"
             android:exported="false"
             android:taskAffinity="com.hamhuo.tplanner.watch"

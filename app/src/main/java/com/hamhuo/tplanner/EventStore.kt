@@ -19,6 +19,7 @@ import com.hamhuo.tplanner.persistence.VersionedDraft
 import com.hamhuo.tplanner.persistence.WatchTaskCommitResult
 import com.hamhuo.tplanner.persistence.decideDraftRecovery
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import org.json.JSONObject
 import java.time.Instant
 import java.time.LocalDate
@@ -26,6 +27,11 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
 data class CheckItem(val id: String, val text: String, val completed: Boolean)
+
+data class UserList(
+    val id: String,
+    val name: String,
+)
 
 data class TaskEvent(
     val id: String,
@@ -43,6 +49,7 @@ data class TaskEvent(
     val alarmOffsetMinutes: Int = 0,
     val lat: Double = 0.0,
     val lng: Double = 0.0,
+    val listId: String = "",
     /** Unknown desktop/server fields must round-trip unchanged. */
     val extras: Map<String, Any?> = mapOf("timezone" to APP_TIME_ZONE_ID),
 )
@@ -340,6 +347,29 @@ class EventStore(
     /** The Room outbox is authoritative; WorkManager can be started again on the next launch. */
     private fun scheduleSync() {
         runCatching { SyncOutboxScheduler.enqueue(appContext) }
+    }
+
+    // ── UserList CRUD ──────────────────────────────────────────────────────
+
+    private val userLists = database.userListDao()
+
+    fun observeUserLists(): Flow<List<UserList>> = userLists.observeAll().map { rows ->
+        rows.map { UserList(id = it.id, name = it.name) }
+    }
+
+    suspend fun createUserList(name: String): UserList {
+        val id = java.util.UUID.randomUUID().toString()
+        val sortOrder = userLists.nextSortOrder()
+        userLists.upsert(
+            com.hamhuo.tplanner.persistence.UserListEntity(
+                id = id, name = name.trim(), sortOrder = sortOrder,
+            )
+        )
+        return UserList(id = id, name = name.trim())
+    }
+
+    suspend fun deleteUserList(id: String) {
+        userLists.delete(id)
     }
 
     private companion object {

@@ -29,6 +29,7 @@ object EventWireMapper {
         "alarmOffsetMinutes",
         "lat",
         "lng",
+        "listId",
     )
 
     fun decodeArrayStrict(json: String): List<TaskEvent> {
@@ -87,6 +88,7 @@ object EventWireMapper {
                 .coerceIn(0, MAX_ALARM_OFFSET_MINUTES),
             lat = obj.optDouble("lat", 0.0),
             lng = obj.optDouble("lng", 0.0),
+            listId = obj.optString("listId", ""),
             extras = extras,
         )
     }
@@ -116,6 +118,7 @@ object EventWireMapper {
         )
         if (event.lat != 0.0) put("lat", event.lat)
         if (event.lng != 0.0) put("lng", event.lng)
+        if (event.listId.isNotEmpty()) put("listId", event.listId)
         put("checklist", JSONArray().apply {
             event.checklist.forEach { item ->
                 put(JSONObject().apply {
@@ -244,6 +247,7 @@ object PersistenceMapper {
             alarmOffsetMinutes = event.alarmOffsetMinutes.coerceIn(0, MAX_ALARM_OFFSET_MINUTES),
             lat = event.lat,
             lng = event.lng,
+            listId = event.listId,
             extrasJson = extrasJson,
             sortIndex = sortIndex,
         )
@@ -279,6 +283,7 @@ object PersistenceMapper {
             alarmOffsetMinutes = row.alarmOffsetMinutes,
             lat = row.lat,
             lng = row.lng,
+            listId = row.listId,
             extras = extras,
         )
     }
