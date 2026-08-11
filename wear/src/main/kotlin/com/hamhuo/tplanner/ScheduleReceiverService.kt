@@ -85,6 +85,7 @@ internal object ScheduleStore {
         val type: String,
         val startEpochMs: Long,
         val endEpochMs: Long,
+        val checklistJson: String,
     )
 
     private data class TaskBundle(
@@ -340,7 +341,8 @@ internal object ScheduleStore {
             require(endEpochMs >= startEpochMs) {
                 "tasks[$index] ends before it starts"
             }
-            TaskSnapshot(id, title, type, startEpochMs, endEpochMs)
+            val checklistJson = item.optJSONArray("checklist")?.toString().orEmpty()
+            TaskSnapshot(id, title, type, startEpochMs, endEpochMs, checklistJson)
         }.sortedWith(taskOrder)
 
         require(taskArray(tasks).toString().toByteArray(Charsets.UTF_8).size <= MAX_TASKS_UTF8_BYTES) {
@@ -369,6 +371,9 @@ internal object ScheduleStore {
                 put("type", task.type)
                 put("startEpochMs", task.startEpochMs)
                 put("endEpochMs", task.endEpochMs)
+                if (task.checklistJson.isNotEmpty()) {
+                    put("checklist", JSONArray(task.checklistJson))
+                }
             })
         }
     }
@@ -381,6 +386,7 @@ internal object ScheduleStore {
                 appendHashField(task.id)
                 appendHashField(task.title)
                 append(task.startEpochMs).append(':').append(task.endEpochMs)
+                appendHashField(task.checklistJson)
             }
         }.toByteArray(Charsets.UTF_8)
         return MessageDigest.getInstance("SHA-256")

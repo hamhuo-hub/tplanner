@@ -466,67 +466,55 @@ fun MainScreen(
         }
         if (!hasPhoneLocationPermission(context)) return@LaunchedEffect
 
-        val handle = LocationCapture.start(context)
-        activeLocationHandle = handle
         Log.d(
             LLM_LOG_TAG,
-            "request=$targetRequestId phase=location_capture result=started generation=${handle.generation}",
+            "request=$targetRequestId phase=location_capture result=started",
         )
-        try {
-            val deadline = System.currentTimeMillis() + LOCATION_CAPTURE_WAIT_MILLIS
-            var fix: AppLocationStore.Fix? = null
-            while (System.currentTimeMillis() < deadline && fix == null) {
-                delay(250L)
-                fix = AppLocationStore.get(handle.requestId)
-                if (fix == null && !LocationCapture.isActive(handle)) break
+        val fix = LocationCapture.capture(context)
+
+        fun isCurrentEditingRequest(): Boolean =
+            showScheduleSheet &&
+                sheetRequestId == targetRequestId &&
+                !thinking &&
+                sheetAction == null &&
+                untangleJournalLine.isBlank()
+
+        if (!isCurrentEditingRequest()) return@LaunchedEffect
+
+        val resolvedLocation = fix?.let {
+            Log.w(LLM_LOG_TAG, "request=$targetRequestId calling Amap")
+            AmapGeocoder.reverseGeocode(it.lat, it.lng, amapApiKey)
+        }.orEmpty()
+        Log.i(
+            LLM_LOG_TAG,
+            "request=$targetRequestId phase=location_capture " +
+                "result=${if (fix == null) "unavailable" else "fix"} " +
+                "reverseGeocoded=${resolvedLocation.isNotBlank()}",
+        )
+        if (!isCurrentEditingRequest()) return@LaunchedEffect
+
+        if (fix == null) {
+            phoneLocationState = PhoneLocationState.UNAVAILABLE
+            pendingLocationRequestId = null
+            return@LaunchedEffect
+        }
+
+        gpsLat = fix.lat
+        gpsLng = fix.lng
+        prefillLocation = resolvedLocation
+        phoneLocationState = if (resolvedLocation.isBlank()) {
+            PhoneLocationState.UNAVAILABLE
+        } else {
+            PhoneLocationState.READY
+        }
+        pendingLocationRequestId = null
+
+        // Location is persisted with the phone-created request before submission. A delayed
+        // geocoder response can never overwrite a closed, submitted, or replacement sheet.
+        untangleWriteMutex.withLock {
+            if (isCurrentEditingRequest()) {
+                untangleStore.save(untangleSnapshot(UntanglePhase.EDITING, proposal = null))
             }
-
-            fun isCurrentEditingRequest(): Boolean =
-                showScheduleSheet &&
-                    sheetRequestId == targetRequestId &&
-                    !thinking &&
-                    sheetAction == null &&
-                    untangleJournalLine.isBlank()
-
-            if (!isCurrentEditingRequest()) return@LaunchedEffect
-
-            val resolvedLocation = fix?.let {
-                AmapGeocoder.reverseGeocode(it.lat, it.lng, amapApiKey)
-            }.orEmpty()
-            Log.i(
-                LLM_LOG_TAG,
-                "request=$targetRequestId phase=location_capture " +
-                    "result=${if (fix == null) "unavailable" else "fix"} " +
-                    "reverseGeocoded=${resolvedLocation.isNotBlank()}",
-            )
-            if (!isCurrentEditingRequest()) return@LaunchedEffect
-
-            if (fix == null) {
-                phoneLocationState = PhoneLocationState.UNAVAILABLE
-                return@LaunchedEffect
-            }
-
-            gpsLat = fix.lat
-            gpsLng = fix.lng
-            prefillLocation = resolvedLocation
-            phoneLocationState = if (resolvedLocation.isBlank()) {
-                PhoneLocationState.UNAVAILABLE
-            } else {
-                PhoneLocationState.READY
-            }
-
-            // Location is persisted with the phone-created request before submission. A delayed
-            // geocoder response can never overwrite a closed, submitted, or replacement sheet.
-            untangleWriteMutex.withLock {
-                if (isCurrentEditingRequest()) {
-                    untangleStore.save(untangleSnapshot(UntanglePhase.EDITING, proposal = null))
-                }
-            }
-        } finally {
-            LocationCapture.cancel(handle)
-            AppLocationStore.clear(handle.requestId)
-            if (activeLocationHandle == handle) activeLocationHandle = null
-            if (pendingLocationRequestId == targetRequestId) pendingLocationRequestId = null
         }
     }
 

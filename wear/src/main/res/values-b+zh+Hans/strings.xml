@@ -36,6 +36,7 @@
     <string name="task_list_detail_title">详情</string>
     <string name="task_list_date_label">日期</string>
     <string name="task_list_time_label">时间</string>
+    <string name="task_list_checklist_label">清单</string>
     <string name="task_list_detail_accessibility">%1$s。日期 %2$s。时间 %3$s</string>
     <string name="task_time_pattern">HH:mm</string>
     <string name="task_list_short_date_pattern">M月d日</string>

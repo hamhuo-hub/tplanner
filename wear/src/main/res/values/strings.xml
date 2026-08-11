@@ -37,6 +37,7 @@
     <string name="task_list_detail_title">Details</string>
     <string name="task_list_date_label">Date</string>
     <string name="task_list_time_label">Time</string>
+    <string name="task_list_checklist_label">Checklist</string>
     <string name="task_list_detail_accessibility">%1$s. Date %2$s. Time %3$s</string>
     <string name="task_time_pattern">HH:mm</string>
     <string name="task_list_short_date_pattern">MMM d</string>

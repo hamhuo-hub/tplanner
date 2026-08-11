@@ -164,31 +164,31 @@ class FaceNext(
         alpha: Float,
         ambient: Boolean,
     ) {
-        val hourX = cx - s * 0.205f
+        val hourX = cx - s * 0.225f
         val centerY = cy + s * 0.018f
-        p.setText(if (ambient) AMBIENT_PRIMARY else PRIMARY, s * 0.142f, timeTypeface)
+        p.setText(if (ambient) AMBIENT_PRIMARY else PRIMARY, s * 0.132f, timeTypeface)
         p.alpha = ((if (ambient) 175f else 255f) * alpha).toInt()
         p.textAlign = Paint.Align.CENTER
         val hourBaseline = centerY - (p.ascent() + p.descent()) / 2f
         canvas.drawText(twoDigitNumber(t.hour), hourX, hourBaseline, p)
 
-        val minuteCenterX = cx - s * 0.055f
+        val minuteCenterX = cx - s * 0.035f
         val minuteRect = minuteBounds(s, cx, cy)
         p.setStroke(if (ambient) AMBIENT_STROKE else SECONDARY, s * 0.003f, Paint.Cap.ROUND)
         p.alpha = ((if (ambient) 115f else 210f) * alpha).toInt()
         canvas.drawRoundRect(minuteRect, s * 0.019f, s * 0.019f, p)
 
-        p.setText(if (ambient) AMBIENT_PRIMARY else PRIMARY, s * 0.068f, minuteTypeface)
+        p.setText(if (ambient) AMBIENT_PRIMARY else PRIMARY, s * 0.062f, minuteTypeface)
         p.alpha = ((if (ambient) 175f else 245f) * alpha).toInt()
         val minuteBaseline = centerY - (p.ascent() + p.descent()) / 2f
         canvas.drawText(twoDigitNumber(t.minute), minuteCenterX, minuteBaseline, p)
 
-        p.setText(if (ambient) AMBIENT_TEXT else SECONDARY, s * 0.026f, taskTypeface)
-        p.alpha = ((if (ambient) 105f else 175f) * alpha).toInt()
+        p.setText(if (ambient) AMBIENT_TEXT else SECONDARY, s * 0.040f, taskTypeface)
+        p.alpha = ((if (ambient) 125f else 205f) * alpha).toInt()
         canvas.drawText(
             dateStr(t),
             cx - s * 0.132f,
-            cy + s * 0.119f,
+            cy + s * 0.126f,
             p,
         )
     }
@@ -309,9 +309,9 @@ class FaceNext(
     }
 
     private fun minuteBounds(s: Float, cx: Float, cy: Float): RectF {
-        val centerX = cx - s * 0.055f
+        val centerX = cx - s * 0.035f
         val centerY = cy + s * 0.018f
-        val halfWidth = s * 0.072f
+        val halfWidth = s * 0.064f
         val halfHeight = s * 0.050f
         return RectF(
             centerX - halfWidth,

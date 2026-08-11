@@ -13,8 +13,10 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.coroutines.resume
 
 /**
  * Process-scoped one-shot location coordinator.
@@ -62,6 +64,7 @@ object LocationCapture {
     ) {
         val listeners = linkedMapOf<String, LocationListener>()
         var timeoutRunnable: Runnable? = null
+        var completeWith: kotlinx.coroutines.CancellableContinuation<AppLocationStore.Fix?>? = null
     }
 
     /** Starts a fresh app-foreground capture and supersedes any prior generation. */
@@ -78,12 +81,115 @@ object LocationCapture {
     fun isLatest(handle: Handle): Boolean = latestGeneration == handle.generation
 
     fun cancel(handle: Handle) {
+        Log.w(
+            TAG,
+            "cancel() called generation=${handle.generation} requestId=${handle.requestId}",
+            Throwable("LocationCapture.cancel caller"),
+        )
         runOnMain {
             if (activeGeneration == handle.generation) {
                 cancelActiveInternal("caller cancelled")
             }
         }
     }
+
+    /**
+     * Self-contained one-shot capture that survives Compose lifecycle churn.
+     * Returns the best fix within [CAPTURE_TIMEOUT_MS], or null.
+     */
+    suspend fun capture(context: Context): AppLocationStore.Fix? =
+        suspendCancellableCoroutine { cont ->
+            val handle = newHandle()
+            val appContext = context.applicationContext
+
+            runOnMain {
+                if (!isLatest(handle)) {
+                    cont.resume(null)
+                    return@runOnMain
+                }
+                cancelActiveInternal("superseded")
+
+                val locationManager =
+                    appContext.getSystemService(LocationManager::class.java)
+                if (locationManager == null) {
+                    cont.resume(null)
+                    return@runOnMain
+                }
+
+                val permission = permissionState(appContext)
+                val cached = bestFreshLastKnown(locationManager, permission)
+                val state = ActiveCapture(
+                    handle = handle,
+                    context = appContext,
+                    locationManager = locationManager,
+                    finePermission = permission.fine,
+                    best = cached?.let(::Location),
+                )
+                active = state
+                activeGeneration = handle.generation
+
+                if (cached != null) {
+                    AppLocationStore.save(cached, handle.requestId, fromCache = true)
+                    logAccepted(handle, cached, fromCache = true)
+                }
+
+                if (!permission.coarse && !permission.fine) {
+                    cancelActiveInternal("no permission")
+                    cont.resume(null)
+                    return@runOnMain
+                }
+                if (!isLocationEnabled(locationManager)) {
+                    cancelActiveInternal("location disabled")
+                    cont.resume(null)
+                    return@runOnMain
+                }
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    isProviderUsable(locationManager, LocationManager.FUSED_PROVIDER)
+                ) {
+                    registerProvider(state, LocationManager.FUSED_PROVIDER)
+                }
+                if (isProviderUsable(locationManager, LocationManager.NETWORK_PROVIDER)) {
+                    registerProvider(state, LocationManager.NETWORK_PROVIDER)
+                }
+                val gpsAvailable = permission.fine &&
+                    isProviderUsable(locationManager, LocationManager.GPS_PROVIDER)
+                if (gpsAvailable) {
+                    registerProvider(state, LocationManager.GPS_PROVIDER)
+                }
+
+                if (state.listeners.isEmpty()) {
+                    cancelActiveInternal("no enabled provider")
+                    cont.resume(null)
+                    return@runOnMain
+                }
+
+                // wire completion into the existing considerLocation path
+                state.completeWith = cont
+
+                state.timeoutRunnable = Runnable {
+                    if (isCurrent(state)) {
+                        cancelActiveInternal("deadline")
+                        cont.resume(AppLocationStore.get(handle.requestId))
+                    }
+                }.also {
+                    mainHandler.postDelayed(
+                        it,
+                        if (gpsAvailable) CAPTURE_TIMEOUT_MS else NETWORK_ONLY_DEADLINE_MS,
+                    )
+                }
+            }
+
+            cont.invokeOnCancellation {
+                runOnMain {
+                    if (activeGeneration == handle.generation) {
+                        cancelActiveInternal("coroutine cancelled")
+                    }
+                }
+            }
+        }
+
+    // ── private helpers shared by start() and capture() ──────────────────
 
     private fun newHandle(): Handle = synchronized(generationLock) {
         val generation = generationCounter.incrementAndGet()
@@ -201,6 +307,9 @@ object LocationCapture {
 
         if (locationAgeMs(candidate) <= COMPLETE_MAX_AGE_MS &&
             candidate.accuracy <= COMPLETE_MAX_ACCURACY_METERS) {
+            val fix = AppLocationStore.get(state.handle.requestId)
+            state.completeWith?.resume(fix)
+            state.completeWith = null
             finishCapture(state, "good fix")
         }
     }

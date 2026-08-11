@@ -277,8 +277,65 @@ private class TaskDetailView(
             ),
         )
 
+        val checklist = parseChecklist(checklistJson)
+        android.util.Log.d("TaskDetail", "checklist json length=${checklistJson.length}, items=${checklist.size}")
+        if (checklist.isNotEmpty()) {
+            val checklistPanel = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                minimumHeight = dp(60)
+                setPadding(dp(14), dp(13), dp(14), dp(14))
+                background = rounded(CARD, dp(13).toFloat())
+            }
+            checklistPanel.addView(
+                detailLabel(context.getString(R.string.task_list_checklist_label)),
+                detailLabelParams().apply { topMargin = 0 },
+            )
+            checklist.forEach { item ->
+                checklistPanel.addView(
+                    checklistItemView(item.text, item.completed),
+                    LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ).apply { topMargin = dp(5) },
+                )
+            }
+            content.addView(
+                checklistPanel,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(14) },
+            )
+        }
+
         addView(scroll, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
     }
+
+    private data class ChecklistItemData(val text: String, val completed: Boolean)
+
+    private fun parseChecklist(json: String): List<ChecklistItemData> {
+        if (json.isBlank()) return emptyList()
+        return try {
+            val arr = org.json.JSONArray(json)
+            (0 until arr.length()).mapNotNull { i ->
+                val obj = arr.optJSONObject(i) ?: return@mapNotNull null
+                ChecklistItemData(
+                    text = obj.optString("text", ""),
+                    completed = obj.optBoolean("completed", false),
+                )
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun checklistItemView(text: String, completed: Boolean): TextView =
+        textView(14f, if (completed) DIM else PRIMARY, REGULAR).apply {
+            setText(text)
+            maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
+            setPadding(dp(4), 0, 0, 0)
+        }
 
     private fun detailLabel(value: String): TextView = textView(12f, ACCENT, MEDIUM).apply {
         text = value
