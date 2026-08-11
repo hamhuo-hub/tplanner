@@ -27,6 +27,7 @@
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
+            android:taskAffinity="com.hamhuo.tplanner.watch"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -37,11 +38,31 @@
         <activity
             android:name=".ListSelectionActivity"
             android:exported="false"
+            android:taskAffinity="com.hamhuo.tplanner.watch"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
 
         <activity
-            android:name=".TaskDetailActivity"
+            android:name=".CreateTitleActivity"
             android:exported="false"
+            android:taskAffinity="com.hamhuo.tplanner.watch"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+
+        <activity
+            android:name=".CreateTypeActivity"
+            android:exported="false"
+            android:taskAffinity="com.hamhuo.tplanner.watch"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+
+        <activity
+            android:name=".CreateTimeActivity"
+            android:exported="false"
+            android:taskAffinity="com.hamhuo.tplanner.watch"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+
+        <activity
+            android:name=".CreateSettingsActivity"
+            android:exported="false"
+            android:taskAffinity="com.hamhuo.tplanner.watch"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
 
         <!-- ── tPlanner 表盘 ── -->
@@ -88,6 +109,18 @@
 
         <service
             android:name=".WakeOutboxJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <service android:name=".WatchTaskAckReceiverService" android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/tplanner/task/ack/" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".WatchTaskOutboxJobService"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 

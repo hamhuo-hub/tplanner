@@ -13,11 +13,9 @@
     <string name="bt_bridge_notification_title">TPlanner schedule sync</string>
     <string name="bt_bridge_notification_text">Waiting for updates from your phone</string>
 
-    <string name="task_list_detail_title">详情</string>
     <string name="task_list_choose_action">%1$s，轻触选择清单</string>
     <string name="task_list_current_time">当前时间 %1$s</string>
-    <string name="task_list_new_unavailable">新建事项，功能暂未开放</string>
-    <string name="task_list_new_unavailable_feedback">新建功能暂未开放</string>
+    <string name="task_list_new">新建事项</string>
     <string name="task_list_updated">清单已更新</string>
     <string name="task_list_permission_title">需要蓝牙权限</string>
     <string name="task_list_permission_hint">轻触授权，继续接收手机清单</string>
@@ -30,8 +28,5 @@
     <string name="task_list_tomorrow">明天</string>
     <string name="task_list_current">当前</string>
     <string name="task_list_filter_current_accessibility">%1$s，当前清单</string>
-    <string name="task_list_item_accessibility">%1$s，%2$s。轻触查看详情</string>
-    <string name="task_list_date_label">日期</string>
-    <string name="task_list_time_label">时间</string>
-    <string name="task_list_detail_accessibility">%1$s。日期 %2$s。时间 %3$s</string>
+    <string name="task_list_item_accessibility">%1$s，%2$s</string>
 </resources>

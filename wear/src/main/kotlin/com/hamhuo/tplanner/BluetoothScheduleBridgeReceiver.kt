@@ -12,7 +12,10 @@ class BluetoothScheduleBridgeReceiver : BroadcastReceiver() {
         when (intent.action) {
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_MY_PACKAGE_REPLACED,
-            -> BluetoothScheduleBridgeService.startIfAllowed(context)
+            -> {
+                BluetoothScheduleBridgeService.startIfAllowed(context)
+                WatchTaskOutbox.resumePending(context)
+            }
 
             BluetoothAdapter.ACTION_STATE_CHANGED -> {
                 when (
@@ -21,8 +24,10 @@ class BluetoothScheduleBridgeReceiver : BroadcastReceiver() {
                         BluetoothAdapter.ERROR,
                     )
                 ) {
-                    BluetoothAdapter.STATE_ON ->
+                    BluetoothAdapter.STATE_ON -> {
                         BluetoothScheduleBridgeService.startIfAllowed(context)
+                        WatchTaskOutbox.resumePending(context)
+                    }
 
                     // A running service owns a dynamically registered receiver that closes its
                     // socket while remaining alive for the next STATE_ON transition. Do not stop

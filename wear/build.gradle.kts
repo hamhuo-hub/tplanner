@@ -2,6 +2,7 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
 }
 
 // 项目专用签名：手机和手表用同一把 keystore，Wearable Data Layer 才认
@@ -54,6 +55,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    buildFeatures {
+        compose = true
+    }
+
     sourceSets {
         getByName("main").kotlin.directories.add(
             rootProject.file("shared/src/main/kotlin").absolutePath,
@@ -63,7 +68,14 @@ android {
 
 dependencies {
     implementation(libs.androidx.activity)
+    implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.ktx)
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.ui)
+    implementation(libs.androidx.ui.graphics)
+    implementation(libs.androidx.material.icons.extended)
+    implementation(libs.androidx.wear.compose.foundation)
+    implementation(libs.androidx.wear.compose.material3)
     // 现代表盘 API：Wear OS 3+/三星 Galaxy Watch 仅识别这一套（及 WFF），
     // 旧的 WallpaperService 表盘不会出现在表盘选择器里。
     implementation(libs.androidx.wear.watchface)

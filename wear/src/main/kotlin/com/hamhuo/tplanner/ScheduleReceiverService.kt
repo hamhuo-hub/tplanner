@@ -82,6 +82,7 @@ internal object ScheduleStore {
     private data class TaskSnapshot(
         val id: String,
         val title: String,
+        val type: String,
         val startEpochMs: Long,
         val endEpochMs: Long,
     )
@@ -329,12 +330,17 @@ internal object ScheduleStore {
                 "tasks[$index].title is too large"
             }
 
+            val type = item.optString("type", "task")
+            require(type in SUPPORTED_TASK_TYPES) {
+                "tasks[$index].type is unsupported"
+            }
+
             val startEpochMs = item.strictLong("startEpochMs", "tasks[$index].startEpochMs")
             val endEpochMs = item.strictLong("endEpochMs", "tasks[$index].endEpochMs")
             require(endEpochMs >= startEpochMs) {
                 "tasks[$index] ends before it starts"
             }
-            TaskSnapshot(id, title, startEpochMs, endEpochMs)
+            TaskSnapshot(id, title, type, startEpochMs, endEpochMs)
         }.sortedWith(taskOrder)
 
         require(taskArray(tasks).toString().toByteArray(Charsets.UTF_8).size <= MAX_TASKS_UTF8_BYTES) {
@@ -360,6 +366,7 @@ internal object ScheduleStore {
             put(JSONObject().apply {
                 put("id", task.id)
                 put("title", task.title)
+                put("type", task.type)
                 put("startEpochMs", task.startEpochMs)
                 put("endEpochMs", task.endEpochMs)
             })
@@ -398,4 +405,6 @@ internal object ScheduleStore {
             .digest(canonical)
             .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
     }
+
+    private val SUPPORTED_TASK_TYPES = setOf("event", "status", "task")
 }

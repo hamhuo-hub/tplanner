@@ -408,7 +408,7 @@ class FaceNext(
         const val TASK_START_ANGLE = 225f
         const val HALF_SWEEP = 180f
         const val MAX_VISIBLE_TASKS = 3
-        const val DIAGONAL_MINUTE_GAP = 0.018f
+        const val DIAGONAL_MINUTE_GAP = 0.030f
 
         const val BLACK = 0xFF000000.toInt()
         const val PRIMARY = 0xFFF4F1EB.toInt()

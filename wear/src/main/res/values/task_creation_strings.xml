@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="task_create_title_page">新建事项</string>
+    <string name="task_create_title_prompt">输入标题</string>
+    <string name="task_create_title_hint">事项标题</string>
+    <string name="task_create_title_required">请先输入标题</string>
+    <string name="task_create_next">下一步</string>
+    <string name="task_create_type_page">选择类型</string>
+    <string name="task_create_type_event">提醒</string>
+    <string name="task_create_type_event_description">在指定时间提醒</string>
+    <string name="task_create_type_status">状态</string>
+    <string name="task_create_type_status_description">记录当前状态</string>
+    <string name="task_create_type_task">任务</string>
+    <string name="task_create_type_task_description">创建可完成的任务</string>
+    <string name="task_create_time_page">设置时间</string>
+    <string name="task_create_settings_page">事项设置</string>
+    <string name="task_create_alarm">系统闹铃</string>
+    <string name="task_create_alarm_description">到点通过系统通知提醒</string>
+    <string name="task_create_date">日期</string>
+    <string name="task_create_date_today">今天</string>
+    <string name="task_create_date_tomorrow">明天</string>
+    <string name="task_create_color">颜色</string>
+    <string name="task_create_color_description">轻触切换颜色</string>
+    <string name="task_create_on">开</string>
+    <string name="task_create_off">关</string>
+    <string name="task_create_save">保存</string>
+    <string name="task_create_saving">正在保存</string>
+    <string name="task_create_queued">已保存，将同步到手机</string>
+    <string name="task_create_failed">保存失败，请重试</string>
+    <string name="task_create_type_accessibility">%1$s，%2$s</string>
+    <string name="task_create_setting_accessibility">%1$s，当前为%2$s</string>
+    <string name="task_create_next_icon_description">进入下一步</string>
+    <string name="task_create_save_icon_description">保存事项</string>
+
+    <string-array name="task_create_color_names">
+        <item>海蓝</item>
+        <item>金黄</item>
+        <item>玫瑰</item>
+        <item>森绿</item>
+        <item>紫罗兰</item>
+        <item>暖橙</item>
+        <item>青蓝</item>
+        <item>石墨</item>
+    </string-array>
+</resources>

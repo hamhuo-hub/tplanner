@@ -5,6 +5,7 @@ import com.hamhuo.tplanner.JournalEntry
 import com.hamhuo.tplanner.TaskEvent
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import org.json.JSONObject
 import java.util.UUID
 
 sealed interface DraftCommitResult {
@@ -14,6 +15,9 @@ sealed interface DraftCommitResult {
 }
 
 enum class PendingActionCommitResult { SAVED, ALREADY_HANDLED, INVALID_STATE }
+
+/** Result of the idempotent watch-create transaction. */
+enum class WatchTaskCommitResult { STORED, ALREADY_STORED, ID_CONFLICT }
 
 class RoomEventRepository(private val db: TPlannerDatabase) {
     fun observeAll(): Flow<List<TaskEvent>> = db.eventDao().observeAll().map { rows ->
@@ -87,6 +91,72 @@ class RoomEventRepository(private val db: TPlannerDatabase) {
             clearPendingActionId?.let { db.pendingActionDao().delete(it) }
             PendingActionCommitResult.SAVED
     }
+
+    /**
+     * Inserts a watch-created event exactly once.
+     *
+     * The request id is stored in the event's lossless extras map. A retry after a lost ACK can
+     * therefore recognize the original insert without overwriting edits made later on the phone.
+     * A different request attempting to reuse the same event id is rejected.
+     */
+    suspend fun saveWatchCreated(
+        event: TaskEvent,
+        requestId: String,
+        now: Long = System.currentTimeMillis(),
+    ): WatchTaskCommitResult = db.withTransaction {
+        val existingReceipt = db.pendingActionDao().get(requestId)
+        if (existingReceipt != null) {
+            val receiptEventId = if (
+                existingReceipt.kind == WATCH_CREATE_RECEIPT_KIND &&
+                existingReceipt.state == WATCH_CREATE_RECEIPT_STATE
+            ) {
+                runCatching {
+                    JSONObject(existingReceipt.payloadJson).optString("eventId")
+                }.getOrNull()
+            } else {
+                null
+            }
+            return@withTransaction if (receiptEventId == event.id) {
+                WatchTaskCommitResult.ALREADY_STORED
+            } else {
+                WatchTaskCommitResult.ID_CONFLICT
+            }
+        }
+
+        val existingRow = db.eventDao().get(event.id)
+        if (existingRow != null) {
+            val existing = PersistenceMapper.eventToDomain(existingRow)
+            val sameRequest =
+                existing.extras[WATCH_CREATE_REQUEST_ID]?.toString() == requestId
+            if (sameRequest) {
+                db.pendingActionDao().upsert(watchCreateReceipt(requestId, event.id, now))
+                return@withTransaction WatchTaskCommitResult.ALREADY_STORED
+            }
+            return@withTransaction WatchTaskCommitResult.ID_CONFLICT
+        }
+
+        val stored = event.copy(
+            extras = event.extras + (WATCH_CREATE_REQUEST_ID to requestId),
+        )
+        val sortIndex = db.eventDao().maxSortIndex() + 1L
+        db.eventDao().upsert(PersistenceMapper.eventToEntity(stored, sortIndex))
+        enqueue(stored, now)
+        db.pendingActionDao().upsert(watchCreateReceipt(requestId, stored.id, now))
+        WatchTaskCommitResult.STORED
+    }
+
+    private fun watchCreateReceipt(
+        requestId: String,
+        eventId: String,
+        now: Long,
+    ): PendingActionEntity = PendingActionEntity(
+        requestId = requestId,
+        kind = WATCH_CREATE_RECEIPT_KIND,
+        state = WATCH_CREATE_RECEIPT_STATE,
+        payloadJson = JSONObject().put("eventId", eventId).toString(),
+        createdAt = now,
+        updatedAt = now,
+    )
 
     /** Saves a recovered conflict exactly once, provided the dialog still names the current draft. */
     suspend fun saveConflictAsCopy(
@@ -229,6 +299,9 @@ class RoomEventRepository(private val db: TPlannerDatabase) {
     private companion object {
         const val CONFIRMABLE_PENDING_KIND = "UNTANGLE"
         const val CONFIRMABLE_PENDING_STATE = "PROPOSAL"
+        const val WATCH_CREATE_REQUEST_ID = "watchCreateRequestId"
+        const val WATCH_CREATE_RECEIPT_KIND = "WATCH_TASK_CREATE"
+        const val WATCH_CREATE_RECEIPT_STATE = "COMPLETED"
     }
 }
 

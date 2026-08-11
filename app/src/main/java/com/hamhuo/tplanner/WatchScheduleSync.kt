@@ -75,6 +75,7 @@ object WatchScheduleSync {
     private data class TaskSnapshot(
         val id: String,
         val title: String,
+        val type: String,
         val startEpochMs: Long,
         val endEpochMs: Long,
     )
@@ -104,7 +105,7 @@ object WatchScheduleSync {
                     .atZone(APP_ZONE)
                     .toLocalDate()
                 val activeTasks = events.filter { event ->
-                    event.deletedAt == 0L && event.type == "task" && !event.completed
+                    event.deletedAt == 0L && event.type in WATCH_TASK_TYPES && !event.completed
                 }
                 val windowStart = today.atStartOfDay(APP_ZONE).toInstant()
                 val windowEnd = today.plusDays(SNAPSHOT_DAY_COUNT.toLong())
@@ -511,6 +512,7 @@ object WatchScheduleSync {
             TaskSnapshot(
                 id = id,
                 title = title,
+                type = event.type,
                 startEpochMs = event.start.toEpochMilli(),
                 endEpochMs = event.end.toEpochMilli(),
             )
@@ -551,6 +553,9 @@ object WatchScheduleSync {
             put(JSONObject().apply {
                 put("id", task.id)
                 put("title", task.title)
+                // Optional in schema 3 so an older watch can ignore it while retaining the
+                // established tasksHash contract. New watch builds use it for the real icon.
+                put("type", task.type)
                 put("startEpochMs", task.startEpochMs)
                 put("endEpochMs", task.endEpochMs)
             })
@@ -575,4 +580,6 @@ object WatchScheduleSync {
     private fun StringBuilder.appendHashField(value: String) {
         append(value.toByteArray(Charsets.UTF_8).size).append(':').append(value).append(':')
     }
+
+    private val WATCH_TASK_TYPES = setOf("event", "status", "task")
 }

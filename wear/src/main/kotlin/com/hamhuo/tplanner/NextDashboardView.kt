@@ -14,6 +14,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -47,7 +48,7 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
     private val collapsedTitle = textView(15f, ACCENT, MEDIUM)
     private val newButton = iconButton(
         iconRes = android.R.drawable.ic_input_add,
-        contentDescription = context.getString(R.string.task_list_new_unavailable),
+        contentDescription = context.getString(R.string.task_list_new),
         sizeDp = 48,
     )
 
@@ -60,7 +61,7 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
     private var running = false
     private var permissionAction: (() -> Unit)? = null
     private var listSelectionAction: (() -> Unit)? = null
-    private var taskOpenAction: ((WatchEventMarks.NextTask) -> Unit)? = null
+    private var newTaskAction: (() -> Unit)? = null
 
     private val clockTicker = object : Runnable {
         override fun run() {
@@ -117,10 +118,10 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
             elevation = dp(7).toFloat()
             setOnClickListener {
                 performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                announceForAccessibility(context.getString(R.string.task_list_new_unavailable_feedback))
                 animate().scaleX(0.88f).scaleY(0.88f).setDuration(80L).withEndAction {
                     animate().scaleX(1f).scaleY(1f).setDuration(120L).start()
                 }.start()
+                newTaskAction?.invoke()
             }
         }
         addView(
@@ -144,8 +145,12 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         listSelectionAction = listener
     }
 
-    fun setTaskOpenAction(listener: ((WatchEventMarks.NextTask) -> Unit)?) {
-        taskOpenAction = listener
+    fun setNewTaskAction(listener: (() -> Unit)?) {
+        newTaskAction = listener
+    }
+
+    fun announceTaskQueued() {
+        announceForAccessibility(context.getString(R.string.task_create_queued))
     }
 
     fun selectedFilter(): WatchListFilter = selectedFilter
@@ -296,19 +301,32 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
     }
 
     private fun taskCard(task: WatchEventMarks.NextTask): View = LinearLayout(context).apply {
-        orientation = LinearLayout.VERTICAL
+        orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         minimumHeight = dp(58)
         setPadding(dp(13), dp(9), dp(13), dp(9))
-        background = rippleRounded(CARD, CARD_PRESSED, dp(13).toFloat())
-        isClickable = true
-        isFocusable = true
+        background = rounded(CARD, dp(13).toFloat())
         contentDescription = context.getString(
             R.string.task_list_item_accessibility,
             task.title,
             taskSubtitle(task),
         )
         addView(
+            ImageView(context).apply {
+                setImageResource(taskIcon(task.type))
+                imageTintList = ColorStateList.valueOf(ACCENT)
+                scaleType = ImageView.ScaleType.CENTER_INSIDE
+                importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
+            },
+            LinearLayout.LayoutParams(dp(24), dp(24)).apply {
+                marginEnd = dp(9)
+            },
+        )
+        val labels = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        labels.addView(
             textView(17f, PRIMARY, MEDIUM).apply {
                 text = task.title
                 maxLines = 2
@@ -316,7 +334,7 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
             },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
         )
-        addView(
+        labels.addView(
             textView(13f, SECONDARY, REGULAR).apply {
                 text = taskSubtitle(task)
                 maxLines = 1
@@ -326,10 +344,16 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
                 topMargin = dp(2)
             },
         )
-        setOnClickListener {
-            performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-            taskOpenAction?.invoke(task)
-        }
+        addView(
+            labels,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
+        )
+    }
+
+    private fun taskIcon(type: String): Int = when (type) {
+        "event" -> android.R.drawable.ic_lock_idle_alarm
+        "status" -> android.R.drawable.btn_star_big_on
+        else -> android.R.drawable.checkbox_off_background
     }
 
     private fun stateCard(

@@ -16,6 +16,7 @@ import com.hamhuo.tplanner.persistence.RoomDraftRepository
 import com.hamhuo.tplanner.persistence.RoomEventRepository
 import com.hamhuo.tplanner.persistence.TPlannerDatabase
 import com.hamhuo.tplanner.persistence.VersionedDraft
+import com.hamhuo.tplanner.persistence.WatchTaskCommitResult
 import com.hamhuo.tplanner.persistence.decideDraftRecovery
 import kotlinx.coroutines.flow.Flow
 import org.json.JSONObject
@@ -67,6 +68,21 @@ class EventStore(
             repository.saveOneLocal(event)
             reconcileAlarms(repository.getAll())
             scheduleSync()
+        }
+    }
+
+    /** Commits a watch-created event without allowing retries to overwrite later phone edits. */
+    suspend fun saveWatchCreated(
+        event: TaskEvent,
+        requestId: String,
+    ): WatchTaskCommitResult = DurableWriteQueue.submitAndAwait(EVENT_FACT_QUEUE_KEY) {
+        repository.saveWatchCreated(event, requestId).also { result ->
+            if (result != WatchTaskCommitResult.ID_CONFLICT) {
+                // A retry also restores side effects if the process died after Room committed
+                // but before alarm reconciliation or the sync worker was scheduled.
+                reconcileAlarms(repository.getAll())
+                scheduleSync()
+            }
         }
     }
 

@@ -12,7 +12,9 @@ internal const val WATCH_MARKS_KEY = "marks_json"
 // 手表侧暂无同步通道时为空——表盘退化为纯时间显示，不画假数据。
 object WatchEventMarks {
     data class NextTask(
+        val id: String,
         val title: String,
+        val type: String,
         val startEpochMs: Long,
         val endEpochMs: Long,
     )
@@ -27,7 +29,18 @@ object WatchEventMarks {
     fun load(context: Context): Marks = try {
         val raw = context.getSharedPreferences(WATCH_MARKS_PREFS, Context.MODE_PRIVATE)
             .getString(WATCH_MARKS_KEY, null)
-        if (raw == null) EMPTY else {
+        val pending = WatchTaskOutbox.pendingTasks(context).map { task ->
+            StoredTask(
+                id = task.id,
+                title = task.title,
+                type = task.type,
+                startEpochMs = task.startEpochMs,
+                endEpochMs = task.endEpochMs,
+            )
+        }
+        if (raw == null) {
+            Marks(emptyList(), selectVisible(pending, Instant.now().toEpochMilli()))
+        } else {
             val obj = JSONObject(raw)
             val today = ZonedDateTime.now(APP_ZONE).toLocalDate().toString()
             val days = obj.optJSONArray("days")
@@ -65,16 +78,23 @@ object WatchEventMarks {
                     if (startEpochMs == Long.MIN_VALUE || endEpochMs < startEpochMs) {
                         return@mapNotNull null
                     }
-                    StoredTask(id, title, startEpochMs, endEpochMs)
+                    val type = item.optString("type", "task")
+                        .takeIf { it in SUPPORTED_TASK_TYPES }
+                        ?: "task"
+                    StoredTask(id, title, type, startEpochMs, endEpochMs)
                 }.sortedWith(taskOrder)
             }.orEmpty()
-            Marks(minutes, selectVisible(tasks, Instant.now().toEpochMilli()))
+            val merged = (tasks + pending)
+                .distinctBy(StoredTask::id)
+                .sortedWith(taskOrder)
+            Marks(minutes, selectVisible(merged, Instant.now().toEpochMilli()))
         }
     } catch (_: Exception) { EMPTY }
 
     private data class StoredTask(
         val id: String,
         val title: String,
+        val type: String,
         val startEpochMs: Long,
         val endEpochMs: Long,
     )
@@ -103,10 +123,11 @@ object WatchEventMarks {
 
         return (current + future + recentPast)
             .distinctBy { it.id }
-            .take(MAX_VISIBLE_TASKS)
             .map { task ->
                 NextTask(
+                    id = task.id,
                     title = task.title,
+                    type = task.type,
                     startEpochMs = task.startEpochMs,
                     endEpochMs = task.endEpochMs,
                 )
@@ -114,5 +135,5 @@ object WatchEventMarks {
             .toList()
     }
 
-    private const val MAX_VISIBLE_TASKS = 3
+    private val SUPPORTED_TASK_TYPES = setOf("event", "status", "task")
 }

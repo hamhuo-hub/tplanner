@@ -40,8 +40,8 @@ class MainActivity : ComponentActivity() {
             setListSelectionAction {
                 openListSelection()
             }
-            setTaskOpenAction { task ->
-                startActivity(TaskDetailActivity.createIntent(this@MainActivity, task))
+            setNewTaskAction {
+                openTaskCreation()
             }
             setPermissionAction {
                 if (needsBluetoothPermission()) {
@@ -61,6 +61,7 @@ class MainActivity : ComponentActivity() {
         } else {
             BluetoothScheduleBridgeService.startIfAllowed(this)
         }
+        WatchTaskOutbox.resumePending(this)
     }
 
     override fun onStart() {
@@ -78,6 +79,7 @@ class MainActivity : ComponentActivity() {
         } else {
             dashboard.showPermissionRequired()
         }
+        WatchTaskOutbox.resumePending(this)
     }
 
     override fun onPause() {
@@ -103,11 +105,20 @@ class MainActivity : ComponentActivity() {
     @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != REQUEST_LIST_SELECTION || resultCode != RESULT_OK) return
-        selectedFilter = WatchListFilter.fromKey(
-            data?.getStringExtra(ListSelectionActivity.EXTRA_SELECTED_FILTER),
-        )
-        dashboard.setSelectedFilter(selectedFilter)
+        if (resultCode != RESULT_OK) return
+        when (requestCode) {
+            REQUEST_LIST_SELECTION -> {
+                selectedFilter = WatchListFilter.fromKey(
+                    data?.getStringExtra(ListSelectionActivity.EXTRA_SELECTED_FILTER),
+                )
+                dashboard.setSelectedFilter(selectedFilter)
+            }
+
+            REQUEST_TASK_CREATION -> {
+                dashboard.refreshContent(showFeedback = false)
+                dashboard.announceTaskQueued()
+            }
+        }
     }
 
     @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
@@ -138,6 +149,14 @@ class MainActivity : ComponentActivity() {
         startActivityForResult(
             ListSelectionActivity.createIntent(this, selectedFilter),
             REQUEST_LIST_SELECTION,
+        )
+    }
+
+    @Suppress("DEPRECATION")
+    private fun openTaskCreation() {
+        startActivityForResult(
+            CreateTitleActivity.createIntent(this),
+            REQUEST_TASK_CREATION,
         )
     }
 
@@ -183,6 +202,7 @@ class MainActivity : ComponentActivity() {
     private companion object {
         const val REQUEST_BLUETOOTH_CONNECT = 1001
         const val REQUEST_LIST_SELECTION = 1002
+        const val REQUEST_TASK_CREATION = 1003
         const val KEY_PERMISSION_REQUESTED = "bluetooth_permission_requested"
         const val KEY_SELECTED_FILTER = "selected_filter"
     }

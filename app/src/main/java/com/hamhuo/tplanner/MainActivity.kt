@@ -59,6 +59,7 @@ class MainActivity : ComponentActivity() {
     ) { results ->
         Log.d(TAG, "permissions result: $results")
         permissionLauncherInFlight = false
+        WatchTaskImportService.startIfAllowed(this)
         advancePermissionSetup()
     }
 
@@ -87,6 +88,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         handleWakeIntent(intent)
         advancePermissionSetup()
+        WatchTaskImportService.startIfAllowed(this)
         lifecycleScope.launch { initializeStorageAndContent() }
     }
 
@@ -95,6 +97,7 @@ class MainActivity : ComponentActivity() {
         // Permissions may have been granted via system settings while the app was paused
         // (e.g. background location "Allow all the time", overlay toggle, battery exemption).
         advancePermissionSetup()
+        WatchTaskImportService.startIfAllowed(this)
         if (::eventStore.isInitialized) {
             lifecycleScope.launch {
                 TaskAlarmScheduler.reconcile(this@MainActivity, eventStore.getAll())
