@@ -12,7 +12,7 @@ import android.os.Build
 import android.provider.Settings
 
 /**
- * Keeps app-owned system alarms aligned with the persisted TaskEvent list.
+ * Keeps app-owned system alarms aligned with the persisted ScheduleItem list.
  * PendingIntent identity is based on the event UUID, so edits replace the old
  * alarm and completion/deletion can cancel it without depending on clock time.
  */
@@ -25,7 +25,7 @@ internal object TaskAlarmScheduler {
     const val EXTRA_SIGNATURE = "alarm_signature"
 
     @Synchronized
-    fun reconcile(context: Context, events: List<TaskEvent>) {
+    fun reconcile(context: Context, events: List<ScheduleItem>) {
         val appContext = context.applicationContext
         val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val alarmManager = appContext.getSystemService(AlarmManager::class.java) ?: return
@@ -129,7 +129,7 @@ internal object TaskAlarmScheduler {
     private fun schedule(
         context: Context,
         manager: AlarmManager,
-        event: TaskEvent,
+        event: ScheduleItem,
         signature: String,
         now: Long,
     ): Boolean {
@@ -192,11 +192,11 @@ internal object TaskAlarmScheduler {
     private const val ACTION_SHOW_EVENT = "com.hamhuo.tplanner.action.SHOW_EVENT"
 }
 
-internal fun TaskEvent.isAlarmActive(): Boolean =
+internal fun ScheduleItem.isAlarmActive(): Boolean =
     alarmEnabled &&
         deletedAt == 0L &&
         !(type == "task" && completed) &&
         alarmOffsetMinutes in 0..MAX_ALARM_OFFSET_MINUTES
 
-internal fun TaskEvent.alarmSignature(): String =
+internal fun ScheduleItem.alarmSignature(): String =
     "${start.toEpochMilli()}:$alarmOffsetMinutes"

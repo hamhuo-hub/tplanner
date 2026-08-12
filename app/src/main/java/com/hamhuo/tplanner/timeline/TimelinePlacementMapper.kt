@@ -2,14 +2,14 @@ package com.hamhuo.tplanner.timeline
 
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.hamhuo.tplanner.TaskEvent
+import com.hamhuo.tplanner.ScheduleItem
 import java.time.LocalDate
 import java.time.ZoneId
 
 internal object TimelinePlacementMapper {
 
     internal fun createDayPlacements(
-        events: List<TaskEvent>,
+        events: List<ScheduleItem>,
         days: List<LocalDate>,
         zone: ZoneId,
     ): List<DayPlacement> {

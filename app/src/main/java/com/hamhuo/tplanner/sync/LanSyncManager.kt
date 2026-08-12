@@ -33,13 +33,13 @@ class LanSyncManager(
         settings.setServerUrl(normalized)
     }
 
-    suspend fun fetchEvents(serverUrl: String): List<TaskEvent> = try {
+    suspend fun fetchEvents(serverUrl: String): List<ScheduleItem> = try {
         syncEventsOrThrow(serverUrl)
     } catch (_: Exception) {
         eventStore?.getAll() ?: emptyList()
     }
 
-    suspend fun syncEventsOrThrow(serverUrl: String): List<TaskEvent> = syncMutex.withLock {
+    suspend fun syncEventsOrThrow(serverUrl: String): List<ScheduleItem> = syncMutex.withLock {
         withContext(Dispatchers.IO) {
             val store = eventStore ?: return@withContext emptyList()
             val base = normalizeServerUrl(serverUrl)
@@ -79,10 +79,10 @@ class LanSyncManager(
     }
 
     private fun mergeEventsWithBase(
-        local: List<TaskEvent>,
-        remote: List<TaskEvent>,
+        local: List<ScheduleItem>,
+        remote: List<ScheduleItem>,
         baseKeys: Map<String, String>?,
-    ): List<TaskEvent> {
+    ): List<ScheduleItem> {
         val localMap = local.associateBy { it.id }
         val remoteMap = remote.associateBy { it.id }
         val allIds = LinkedHashSet(localMap.keys).apply { addAll(remoteMap.keys) }
@@ -98,10 +98,10 @@ class LanSyncManager(
     }
 
     private fun pickEventWithBase(
-        local: TaskEvent,
-        remote: TaskEvent,
+        local: ScheduleItem,
+        remote: ScheduleItem,
         baseKey: String?,
-    ): TaskEvent {
+    ): ScheduleItem {
         val localKey = EventWireMapper.contentKey(local)
         val remoteKey = EventWireMapper.contentKey(remote)
         if (localKey == remoteKey) return local

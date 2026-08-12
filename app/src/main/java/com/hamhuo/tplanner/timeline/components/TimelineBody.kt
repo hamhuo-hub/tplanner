@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.hamhuo.tplanner.BG
 import com.hamhuo.tplanner.RED
-import com.hamhuo.tplanner.TaskEvent
+import com.hamhuo.tplanner.ScheduleItem
 import com.hamhuo.tplanner.timeline.ConflictHighlight
 import com.hamhuo.tplanner.timeline.DayPlacement
 import com.hamhuo.tplanner.timeline.TimelineGeometry
@@ -37,13 +37,13 @@ internal fun TimelineBody(
     days: List<LocalDate>,
     today: LocalDate,
     now: ZonedDateTime,
-    events: List<TaskEvent>,
+    events: List<ScheduleItem>,
     placements: List<DayPlacement>,
     zone: ZoneId,
     state: TimelineState,
     hourHeightPx: Float,
-    onEventClick: (TaskEvent) -> Unit,
-    onEventMove: (TaskEvent, Instant, Instant) -> Unit,
+    onEventClick: (ScheduleItem) -> Unit,
+    onEventMove: (ScheduleItem, Instant, Instant) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current

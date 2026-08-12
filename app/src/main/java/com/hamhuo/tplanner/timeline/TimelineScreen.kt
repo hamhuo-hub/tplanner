@@ -15,7 +15,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.hamhuo.tplanner.APP_ZONE
 import com.hamhuo.tplanner.BG
-import com.hamhuo.tplanner.TaskEvent
+import com.hamhuo.tplanner.ScheduleItem
 import com.hamhuo.tplanner.timeline.components.TimelineAddButton
 import com.hamhuo.tplanner.timeline.components.TimelineBody
 import com.hamhuo.tplanner.timeline.components.TimelineDayHeader
@@ -28,10 +28,10 @@ import java.time.LocalDate
  */
 @Composable
 fun TimelineScreen(
-    events: List<TaskEvent>,
-    onEventClick: (TaskEvent) -> Unit,
+    events: List<ScheduleItem>,
+    onEventClick: (ScheduleItem) -> Unit,
     onAddEvent: (String) -> Unit,
-    onEventMove: (TaskEvent, Instant, Instant) -> Unit,
+    onEventMove: (ScheduleItem, Instant, Instant) -> Unit,
     modifier: Modifier = Modifier,
     allowExpandedNavigation: Boolean = true,
     onNavigationExpandedChange: (Boolean) -> Unit = {},

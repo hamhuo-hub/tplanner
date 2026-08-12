@@ -17,15 +17,15 @@ class EventActions(
     private val context: Context,
     private val eventStore: EventStore,
     private val eventWriteMutex: Mutex,
-    private val fetchEvents: suspend (String) -> List<TaskEvent>,
+    private val fetchEvents: suspend (String) -> List<ScheduleItem>,
     private val serverUrl: () -> String,
 ) {
     fun beginNewEvent(
         type: String,
-        onPending: (TaskEvent) -> Unit,
+        onPending: (ScheduleItem) -> Unit,
     ) {
         val now = Instant.now()
-        val draft = TaskEvent(
+        val draft = ScheduleItem(
             id = UUID.randomUUID().toString(),
             title = "",
             type = type,
@@ -53,9 +53,9 @@ class EventActions(
     }
 
     fun openEvent(
-        event: TaskEvent,
-        onPending: (TaskEvent) -> Unit,
-        onEdit: (TaskEvent) -> Unit,
+        event: ScheduleItem,
+        onPending: (ScheduleItem) -> Unit,
+        onEdit: (ScheduleItem) -> Unit,
         onConflict: (EventDraftRecovery.Conflict) -> Unit,
     ) {
         scope.launch {
@@ -90,10 +90,10 @@ class EventActions(
     }
 
     fun toggleCompleted(
-        events: List<TaskEvent>,
+        events: List<ScheduleItem>,
         eventId: String,
         completed: Boolean,
-        onEventsChanged: (List<TaskEvent>) -> Unit,
+        onEventsChanged: (List<ScheduleItem>) -> Unit,
     ) {
         val nextEvents = events.map {
             if (it.id == eventId) it.copy(completed = completed, updatedAt = System.currentTimeMillis()) else it
@@ -108,9 +108,9 @@ class EventActions(
     }
 
     fun softDelete(
-        events: List<TaskEvent>,
+        events: List<ScheduleItem>,
         eventId: String,
-        onEventsChanged: (List<TaskEvent>) -> Unit,
+        onEventsChanged: (List<ScheduleItem>) -> Unit,
     ) {
         val now = System.currentTimeMillis()
         val nextEvents = events.map {
@@ -126,10 +126,10 @@ class EventActions(
     }
 
     fun changeType(
-        events: List<TaskEvent>,
+        events: List<ScheduleItem>,
         eventId: String,
         newType: String,
-        onEventsChanged: (List<TaskEvent>) -> Unit,
+        onEventsChanged: (List<ScheduleItem>) -> Unit,
     ) {
         val nextEvents = events.map {
             if (it.id == eventId) {
@@ -190,8 +190,8 @@ class EventActions(
     }
 
     fun revealNextDraft(
-        onPending: (TaskEvent) -> Unit,
-        onEdit: (TaskEvent) -> Unit,
+        onPending: (ScheduleItem) -> Unit,
+        onEdit: (ScheduleItem) -> Unit,
         onConflict: (EventDraftRecovery.Conflict) -> Unit,
     ) {
         scope.launch {

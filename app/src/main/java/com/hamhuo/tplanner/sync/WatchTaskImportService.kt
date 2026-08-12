@@ -418,7 +418,7 @@ internal object WatchTaskImporter {
     ): WatchTaskProtocol.Response {
         val receivedAt = System.currentTimeMillis()
         val task = request.task!!
-        val event = TaskEvent(
+        val event = ScheduleItem(
             id = task.id,
             title = task.title,
             type = task.type,

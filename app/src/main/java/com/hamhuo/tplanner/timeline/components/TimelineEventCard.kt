@@ -50,7 +50,7 @@ import com.hamhuo.tplanner.EVENT_COLORS
 import com.hamhuo.tplanner.GOLD
 import com.hamhuo.tplanner.R
 import com.hamhuo.tplanner.RED
-import com.hamhuo.tplanner.TaskEvent
+import com.hamhuo.tplanner.ScheduleItem
 import com.hamhuo.tplanner.timeline.calculateTimelineSnappedMove
 import com.hamhuo.tplanner.timeline.hasTimelineRecurrenceMarker
 import kotlinx.coroutines.delay
@@ -64,7 +64,7 @@ private const val TimelineEventFillAlpha = 0.50f
 
 @Composable
 internal fun TimelineEventCard(
-    event: TaskEvent,
+    event: ScheduleItem,
     conflictCount: Int,
     isHighlighted: Boolean,
     isShadow: Boolean,
@@ -129,7 +129,7 @@ internal fun TimelineEventCard(
 
 @Composable
 private fun DraggableTimelineEvent(
-    event: TaskEvent,
+    event: ScheduleItem,
     isHighlighted: Boolean,
     isShadow: Boolean,
     isCompact: Boolean,
@@ -325,7 +325,7 @@ private fun DraggableTimelineEvent(
 
 @Composable
 private fun TimelineEventCardContent(
-    event: TaskEvent,
+    event: ScheduleItem,
     conflictCount: Int,
     conflictDescription: String,
     isCompact: Boolean,

@@ -4,7 +4,7 @@ import com.hamhuo.tplanner.CheckItem
 import com.hamhuo.tplanner.ISO_MS
 import com.hamhuo.tplanner.JournalEntry
 import com.hamhuo.tplanner.MAX_ALARM_OFFSET_MINUTES
-import com.hamhuo.tplanner.TaskEvent
+import com.hamhuo.tplanner.ScheduleItem
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
@@ -32,7 +32,7 @@ object EventWireMapper {
         "listId",
     )
 
-    fun decodeArrayStrict(json: String): List<TaskEvent> {
+    fun decodeArrayStrict(json: String): List<ScheduleItem> {
         val array = try {
             JSONArray(json)
         } catch (error: Exception) {
@@ -57,7 +57,7 @@ object EventWireMapper {
         }
     }
 
-    fun decodeObject(obj: JSONObject): TaskEvent {
+    fun decodeObject(obj: JSONObject): ScheduleItem {
         val checklistArray = obj.optJSONArray("checklist") ?: JSONArray()
         val checklist = (0 until checklistArray.length()).map { index ->
             val item = checklistArray.getJSONObject(index)
@@ -71,7 +71,7 @@ object EventWireMapper {
         obj.keys().forEach { key ->
             if (key !in knownKeys) extras[key] = obj.get(key)
         }
-        return TaskEvent(
+        return ScheduleItem(
             id = obj.getString("id"),
             title = obj.optString("title", ""),
             type = obj.optString("type", "event"),
@@ -93,11 +93,11 @@ object EventWireMapper {
         )
     }
 
-    fun encodeArray(events: List<TaskEvent>): String = JSONArray().apply {
+    fun encodeArray(events: List<ScheduleItem>): String = JSONArray().apply {
         events.forEach { put(encodeObject(it)) }
     }.toString()
 
-    fun encodeObject(event: TaskEvent): JSONObject = JSONObject().apply {
+    fun encodeObject(event: ScheduleItem): JSONObject = JSONObject().apply {
         event.extras.forEach { (key, value) ->
             if (key !in knownKeys) put(key, value)
         }
@@ -130,7 +130,7 @@ object EventWireMapper {
         })
     }
 
-    fun contentKey(event: TaskEvent): String = encodeObject(event).toString()
+    fun contentKey(event: ScheduleItem): String = encodeObject(event).toString()
 }
 
 /** Journal codec preserving the existing JavaScript stable-stringify tie-break contract. */
@@ -216,7 +216,7 @@ object JournalWireMapper {
 }
 
 object PersistenceMapper {
-    fun eventToEntity(event: TaskEvent, sortIndex: Long): EventEntity {
+    fun eventToEntity(event: ScheduleItem, sortIndex: Long): EventEntity {
         val checklistJson = JSONArray().apply {
             event.checklist.forEach { item ->
                 put(JSONObject().apply {
@@ -253,7 +253,7 @@ object PersistenceMapper {
         )
     }
 
-    fun eventToDomain(row: EventEntity): TaskEvent {
+    fun eventToDomain(row: EventEntity): ScheduleItem {
         val checklistArray = JSONArray(row.checklistJson)
         val checklist = (0 until checklistArray.length()).map { index ->
             val item = checklistArray.getJSONObject(index)
@@ -267,7 +267,7 @@ object PersistenceMapper {
         val extras = linkedMapOf<String, Any?>().apply {
             extrasObject.keys().forEach { key -> put(key, extrasObject.get(key)) }
         }
-        return TaskEvent(
+        return ScheduleItem(
             id = row.id,
             title = row.title,
             type = row.type,

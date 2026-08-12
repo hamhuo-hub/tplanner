@@ -32,7 +32,7 @@ data class UserList(
     val name: String,
 )
 
-data class TaskEvent(
+data class ScheduleItem(
     val id: String,
     val title: String,
     val type: String,
@@ -62,12 +62,12 @@ class EventStore(
     private val repository = RoomEventRepository(database)
     private val drafts = RoomDraftRepository(database)
 
-    fun observeAll(): Flow<List<TaskEvent>> = repository.observeAll()
+    fun observeAll(): Flow<List<ScheduleItem>> = repository.observeAll()
 
-    suspend fun getAll(): List<TaskEvent> =
+    suspend fun getAll(): List<ScheduleItem> =
         DurableWriteQueue.readAfterPending(EVENT_FACT_QUEUE_KEY) { repository.getAll() }
 
-    suspend fun save(event: TaskEvent) {
+    suspend fun save(event: ScheduleItem) {
         // The writer belongs to the application process, not the Activity coroutine awaiting it.
         // Rotation/onStop may cancel the waiter but cannot cancel an accepted fact mutation.
         DurableWriteQueue.submitAndAwait(EVENT_FACT_QUEUE_KEY) {
@@ -79,7 +79,7 @@ class EventStore(
 
     /** Commits a watch-created event without allowing retries to overwrite later phone edits. */
     suspend fun saveWatchCreated(
-        event: TaskEvent,
+        event: ScheduleItem,
         requestId: String,
     ): WatchTaskCommitResult = DurableWriteQueue.submitAndAwait(EVENT_FACT_QUEUE_KEY) {
         repository.saveWatchCreated(event, requestId).also { result ->
@@ -112,13 +112,13 @@ class EventStore(
         }
 
     /** Captures the authoritative base before the editor can diverge from it. */
-    suspend fun beginEventEdit(event: TaskEvent): TaskEvent =
+    suspend fun beginEventEdit(event: ScheduleItem): ScheduleItem =
         DurableWriteQueue.readAfterPending(draftQueueKey(event.id)) {
             repository.beginEdit(event)
         }
 
     suspend fun saveEventDraft(
-        event: TaskEvent,
+        event: ScheduleItem,
         stage: EventEditStage = EventEditStage.DETAIL,
     ) {
         DurableWriteQueue.submitAndAwait(draftQueueKey(event.id)) {
@@ -127,7 +127,7 @@ class EventStore(
     }
 
     fun enqueueEventDraft(
-        event: TaskEvent,
+        event: ScheduleItem,
         stage: EventEditStage = EventEditStage.DETAIL,
     ) {
         DurableWriteQueue.submit(draftQueueKey(event.id)) {
@@ -135,7 +135,7 @@ class EventStore(
         }
     }
 
-    private suspend fun saveEventDraftNow(event: TaskEvent, stage: EventEditStage) {
+    private suspend fun saveEventDraftNow(event: ScheduleItem, stage: EventEditStage) {
         val target = DraftTarget.event(event.id)
         val changedAt = System.currentTimeMillis()
         val payload = EventEditDraftCodec.encode(
@@ -251,7 +251,7 @@ class EventStore(
         }
     }
 
-    suspend fun saveAndClearEventDraft(event: TaskEvent): DraftCommitResult {
+    suspend fun saveAndClearEventDraft(event: ScheduleItem): DraftCommitResult {
         val result = DurableWriteQueue.submitAndAwait(draftQueueKey(event.id)) {
             DurableWriteQueue.submitAndAwait(EVENT_FACT_QUEUE_KEY) {
                 repository.commitDraft(event).also { committed ->
@@ -266,7 +266,7 @@ class EventStore(
     }
 
     /** Explicit conflict resolution that preserves both the current fact and the recovered edit. */
-    suspend fun saveConflictAsCopy(event: TaskEvent, conflict: DraftConflict): TaskEvent? {
+    suspend fun saveConflictAsCopy(event: ScheduleItem, conflict: DraftConflict): ScheduleItem? {
         val copy = DurableWriteQueue.submitAndAwait(
             key = draftQueueKey(event.id),
             clearsPreviousFailure = { it != null },
@@ -286,7 +286,7 @@ class EventStore(
         return copy
     }
 
-    suspend fun applySync(events: List<TaskEvent>, captured: Map<String, String>) {
+    suspend fun applySync(events: List<ScheduleItem>, captured: Map<String, String>) {
         DurableWriteQueue.submitAndAwait(EVENT_FACT_QUEUE_KEY) {
             repository.applySync(events, captured)
             reconcileAlarms(repository.getAll())
@@ -301,11 +301,11 @@ class EventStore(
             repository.capturedMutations()
         }
 
-    fun fromJson(json: String): List<TaskEvent> = EventWireMapper.decodeArrayStrict(json)
+    fun fromJson(json: String): List<ScheduleItem> = EventWireMapper.decodeArrayStrict(json)
 
-    fun toJson(events: List<TaskEvent>): String = EventWireMapper.encodeArray(events)
+    fun toJson(events: List<ScheduleItem>): String = EventWireMapper.encodeArray(events)
 
-    private fun TaskEvent?.toNoteRevision(): DraftRevision = this?.let { event ->
+    private fun ScheduleItem?.toNoteRevision(): DraftRevision = this?.let { event ->
         DraftRevision(
             content = event.note,
             updatedAt = event.updatedAt,
@@ -314,7 +314,7 @@ class EventStore(
         )
     } ?: DraftRevision.missing()
 
-    private fun reconcileAlarms(events: List<TaskEvent>) {
+    private fun reconcileAlarms(events: List<ScheduleItem>) {
         runCatching { TaskAlarmScheduler.reconcile(appContext, events) }
     }
 
@@ -358,13 +358,13 @@ internal val ISO_MS: DateTimeFormatter =
     DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC)
 
 /** Matches desktop `Date.toISOString()` including a fixed millisecond component. */
-internal fun TaskEvent.toJson(): JSONObject = EventWireMapper.encodeObject(this)
+internal fun ScheduleItem.toJson(): JSONObject = EventWireMapper.encodeObject(this)
 
 internal const val MAX_ALARM_OFFSET_MINUTES = 7 * 24 * 60
 
-fun List<TaskEvent>.forToday(): List<TaskEvent> = forDate(appToday())
+fun List<ScheduleItem>.forToday(): List<ScheduleItem> = forDate(appToday())
 
-fun List<TaskEvent>.forDate(date: LocalDate): List<TaskEvent> = filter { event ->
+fun List<ScheduleItem>.forDate(date: LocalDate): List<ScheduleItem> = filter { event ->
     if (event.deletedAt != 0L) return@filter false
     val startDate = event.start.atZone(APP_ZONE).toLocalDate()
     val endDate = event.end.atZone(APP_ZONE).toLocalDate()

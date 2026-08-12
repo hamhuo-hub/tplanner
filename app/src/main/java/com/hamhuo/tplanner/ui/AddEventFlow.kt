@@ -385,10 +385,10 @@ private fun PillButton(label: String, filled: Boolean, onClick: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EventDetailScreen(
-    event: TaskEvent,
-    onDraftChange: (TaskEvent) -> Unit,
-    onSave: (TaskEvent, (Boolean) -> Unit) -> Unit,
-    onNoteSave: (TaskEvent, (Boolean) -> Unit) -> Unit,
+    event: ScheduleItem,
+    onDraftChange: (ScheduleItem) -> Unit,
+    onSave: (ScheduleItem, (Boolean) -> Unit) -> Unit,
+    onNoteSave: (ScheduleItem, (Boolean) -> Unit) -> Unit,
 ) {
     val initialNote = event.note
     var title     by remember { mutableStateOf(event.title) }

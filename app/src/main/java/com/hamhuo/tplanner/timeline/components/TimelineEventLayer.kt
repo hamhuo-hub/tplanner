@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.zIndex
-import com.hamhuo.tplanner.TaskEvent
+import com.hamhuo.tplanner.ScheduleItem
 import com.hamhuo.tplanner.timeline.DayPlacement
 import com.hamhuo.tplanner.timeline.TimelineEventRenderSpec
 import com.hamhuo.tplanner.timeline.TimelineGeometry
@@ -28,10 +28,10 @@ internal fun TimelineEventLayer(
     scrollState: ScrollState,
     viewportTopPx: Float,
     viewportHeightPx: Float,
-    onEventClick: (TaskEvent) -> Unit,
+    onEventClick: (ScheduleItem) -> Unit,
     onConflictClick: (DayPlacement) -> Unit,
     onDraggingEventChange: (String?) -> Unit,
-    onEventMove: (TaskEvent, Instant, Instant) -> Unit,
+    onEventMove: (ScheduleItem, Instant, Instant) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize()) {

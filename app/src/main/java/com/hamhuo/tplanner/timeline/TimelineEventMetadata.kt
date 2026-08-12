@@ -1,9 +1,9 @@
 package com.hamhuo.tplanner.timeline
 
-import com.hamhuo.tplanner.TaskEvent
+import com.hamhuo.tplanner.ScheduleItem
 import java.util.Locale
 
-internal fun TaskEvent.hasTimelineRecurrenceMarker(): Boolean {
+internal fun ScheduleItem.hasTimelineRecurrenceMarker(): Boolean {
     if (type != "task") return false
     val recurrenceType = extras["recurrenceType"]
         ?.toString()

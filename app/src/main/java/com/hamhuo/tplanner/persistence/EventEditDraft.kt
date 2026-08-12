@@ -1,12 +1,12 @@
 package com.hamhuo.tplanner.persistence
 
-import com.hamhuo.tplanner.TaskEvent
+import com.hamhuo.tplanner.ScheduleItem
 import org.json.JSONObject
 
 enum class EventEditStage { NAMING, DETAIL }
 
 data class EventEditDraftSnapshot(
-    val event: TaskEvent,
+    val event: ScheduleItem,
     val stage: EventEditStage,
 )
 
@@ -19,7 +19,7 @@ object EventEditDraftCodec {
      * existing base hashes. NAMING is the only additional persisted state.
      */
     fun encode(
-        event: TaskEvent,
+        event: ScheduleItem,
         stage: EventEditStage = EventEditStage.DETAIL,
     ): String = JSONObject().apply {
         put("format", FORMAT)
@@ -40,20 +40,20 @@ object EventEditDraftCodec {
         )
     }.getOrNull()
 
-    fun decodeOrNull(payload: String): TaskEvent? = decodeSnapshotOrNull(payload)?.event
+    fun decodeOrNull(payload: String): ScheduleItem? = decodeSnapshotOrNull(payload)?.event
 }
 
 sealed interface EventDraftRecovery {
     data object None : EventDraftRecovery
     data class Recovered(
-        val event: TaskEvent,
+        val event: ScheduleItem,
         val isNew: Boolean,
         val stage: EventEditStage = EventEditStage.DETAIL,
     ) : EventDraftRecovery
 
     data class Conflict(
         val details: DraftConflict,
-        val event: TaskEvent? = null,
+        val event: ScheduleItem? = null,
         val stage: EventEditStage = EventEditStage.DETAIL,
     ) : EventDraftRecovery
 }

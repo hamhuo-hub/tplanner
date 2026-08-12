@@ -11,7 +11,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import com.hamhuo.tplanner.TaskEvent
+import com.hamhuo.tplanner.ScheduleItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -89,7 +89,7 @@ internal class TimelineState(
 
     fun showConflict(
         source: DayPlacement,
-        visibleEvents: List<TaskEvent>,
+        visibleEvents: List<ScheduleItem>,
         hourHeightPx: Float,
     ) {
         val sourceEvent = source.placement.event

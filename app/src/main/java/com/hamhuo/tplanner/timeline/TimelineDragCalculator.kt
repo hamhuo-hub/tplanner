@@ -1,14 +1,14 @@
 package com.hamhuo.tplanner.timeline
 
 import androidx.compose.ui.geometry.Offset
-import com.hamhuo.tplanner.TaskEvent
+import com.hamhuo.tplanner.ScheduleItem
 import java.time.Duration
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.math.roundToInt
 
 internal fun calculateTimelineSnappedMove(
-    event: TaskEvent,
+    event: ScheduleItem,
     segmentDay: LocalDate,
     segmentDayIndex: Int,
     visibleDays: List<LocalDate>,

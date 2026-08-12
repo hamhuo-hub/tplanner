@@ -59,7 +59,7 @@ import java.time.format.DateTimeFormatter
 
 // ── Task Widget ───────────────────────────────────────────────────────────────
 
-private fun taskStatus(e: TaskEvent, now: Instant): String {
+private fun taskStatus(e: ScheduleItem, now: Instant): String {
     return when {
         e.end.isBefore(now)                                -> "past"
         !e.start.isAfter(now) && !e.end.isBefore(now)     -> "now"
@@ -71,12 +71,12 @@ private fun taskStatus(e: TaskEvent, now: Instant): String {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TaskWidget(
-    events: List<TaskEvent>,
+    events: List<ScheduleItem>,
     list: EventList,
     onToggle: (String, Boolean) -> Unit,
     onAddEvent: (String) -> Unit,
     onDelete: (String) -> Unit,
-    onItemClick: (TaskEvent) -> Unit,
+    onItemClick: (ScheduleItem) -> Unit,
     onTypeChange: (String, String) -> Unit = { _, _ -> },
     onListFilterClick: () -> Unit = {},
     onModalVisibilityChange: (Boolean) -> Unit = {},
@@ -89,7 +89,7 @@ fun TaskWidget(
     var showTypeSheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    var typeChangeTarget by remember { mutableStateOf<TaskEvent?>(null) }
+    var typeChangeTarget by remember { mutableStateOf<ScheduleItem?>(null) }
     val typeChangeSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val currentOnModalVisibilityChange by rememberUpdatedState(onModalVisibilityChange)
     val hasVisibleModal = showTypeSheet || typeChangeTarget != null
@@ -117,10 +117,10 @@ fun TaskWidget(
     val groupDoneLabel  = stringResource(R.string.group_done)
 
     val groups = remember(source, events, isToday, groupNowLabel, groupLaterLabel, groupPastLabel, groupDoneLabel) {
-        val current  = mutableListOf<TaskEvent>()
-        val upcoming = mutableListOf<TaskEvent>()
-        val past     = mutableListOf<TaskEvent>()
-        val done     = mutableListOf<TaskEvent>()
+        val current  = mutableListOf<ScheduleItem>()
+        val upcoming = mutableListOf<ScheduleItem>()
+        val past     = mutableListOf<ScheduleItem>()
+        val done     = mutableListOf<ScheduleItem>()
         // Now / Later / Done: 按 source（Today=当天, Inbox=全部）过滤
         // Past 只展示任务类型——提醒和状态过了就过了，不需要追踪。
         source.forEach { e ->
@@ -340,13 +340,13 @@ private fun GroupHeader(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SwipeableTaskRow(
-    event: TaskEvent,
+    event: ScheduleItem,
     fmt: DateTimeFormatter,
     zone: ZoneId,
     now: Instant,
     onToggle: (String, Boolean) -> Unit,
     onDelete: (String) -> Unit,
-    onItemClick: (TaskEvent) -> Unit,
+    onItemClick: (ScheduleItem) -> Unit,
     onTypeChangeRequest: () -> Unit = {},
 ) {
     val dismissState = rememberSwipeToDismissBoxState(
@@ -397,7 +397,7 @@ private fun SwipeableTaskRow(
 
 @Composable
 fun TaskItem(
-    event: TaskEvent,
+    event: ScheduleItem,
     fmt: DateTimeFormatter,
     zone: ZoneId,
     now: Instant,

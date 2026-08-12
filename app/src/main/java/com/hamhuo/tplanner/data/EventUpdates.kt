@@ -1,9 +1,9 @@
 package com.hamhuo.tplanner
 
 internal fun upsertEventPreservingOrder(
-    events: List<TaskEvent>,
-    updated: TaskEvent,
-): List<TaskEvent> {
+    events: List<ScheduleItem>,
+    updated: ScheduleItem,
+): List<ScheduleItem> {
     var replaced = false
     val nextEvents = events.map { event ->
         if (event.id == updated.id) {

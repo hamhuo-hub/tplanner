@@ -41,7 +41,7 @@ import com.hamhuo.tplanner.EVENT_COLORS
 import com.hamhuo.tplanner.GOLD
 import com.hamhuo.tplanner.R
 import com.hamhuo.tplanner.SURFACE2
-import com.hamhuo.tplanner.TaskEvent
+import com.hamhuo.tplanner.ScheduleItem
 import com.hamhuo.tplanner.timeline.TIMELINE_DATE_WINDOW_CENTER
 import com.hamhuo.tplanner.timeline.TIMELINE_DATE_WINDOW_COUNT
 import com.hamhuo.tplanner.timeline.TimelineGeometry
@@ -65,7 +65,7 @@ private val DateCellWidth = 46.dp
 internal fun TimelineDayHeader(
     selectedDay: LocalDate,
     today: LocalDate,
-    events: List<TaskEvent>,
+    events: List<ScheduleItem>,
     zone: ZoneId,
     onDaySelected: (LocalDate) -> Unit,
     onCalendarClick: () -> Unit,
@@ -258,7 +258,7 @@ private fun TimelineDateCell(
 
 private fun statusColorForDay(
     day: LocalDate,
-    events: List<TaskEvent>,
+    events: List<ScheduleItem>,
     zone: ZoneId,
 ): Color? {
     val dayStart = day.atStartOfDay(zone).toInstant()

@@ -1,6 +1,6 @@
 package com.hamhuo.tplanner.timeline
 
-import com.hamhuo.tplanner.TaskEvent
+import com.hamhuo.tplanner.ScheduleItem
 import java.time.Instant
 
 /**
@@ -8,7 +8,7 @@ import java.time.Instant
  * boundary, while [event] always remains the original, unsplit entity.
  */
 internal data class TimelinePlacement(
-    val event: TaskEvent,
+    val event: ScheduleItem,
     val visibleStart: Instant,
     val visibleEnd: Instant,
     val laneIndex: Int,
@@ -24,7 +24,7 @@ internal object TimelineLayoutEngine {
      * `[dayStart, dayEnd)`. No event is mutated or split in storage.
      */
     internal fun layoutDay(
-        events: List<TaskEvent>,
+        events: List<ScheduleItem>,
         dayStart: Instant,
         dayEnd: Instant,
     ): List<TimelinePlacement> {
@@ -36,7 +36,7 @@ internal object TimelineLayoutEngine {
             .filter { it.type != "status" }
             .filter { it.end.isAfter(it.start) }
             .filter { overlaps(it.start, it.end, dayStart, dayEnd) }
-            .sortedWith(compareBy<TaskEvent>({ it.start }, { it.end }, { it.id }))
+            .sortedWith(compareBy<ScheduleItem>({ it.start }, { it.end }, { it.id }))
             .toList()
 
         val conflictIdsByEvent = timedEvents.associate { it.id to linkedSetOf<String>() }
@@ -53,7 +53,7 @@ internal object TimelineLayoutEngine {
 
         val placements = mutableListOf<TimelinePlacement>()
         splitIntoOverlapClusters(timedEvents).forEach { cluster ->
-            val lanes = mutableListOf<MutableList<TaskEvent>>()
+            val lanes = mutableListOf<MutableList<ScheduleItem>>()
             val assigned = cluster.map { event ->
                 val laneIndex = lanes.indexOfFirst { lane ->
                     lane.none { existing ->
@@ -88,10 +88,10 @@ internal object TimelineLayoutEngine {
         )
     }
 
-    private fun splitIntoOverlapClusters(events: List<TaskEvent>): List<List<TaskEvent>> {
+    private fun splitIntoOverlapClusters(events: List<ScheduleItem>): List<List<ScheduleItem>> {
         if (events.isEmpty()) return emptyList()
-        val clusters = mutableListOf<MutableList<TaskEvent>>()
-        var current = mutableListOf<TaskEvent>()
+        val clusters = mutableListOf<MutableList<ScheduleItem>>()
+        var current = mutableListOf<ScheduleItem>()
         var clusterEnd = Instant.MIN
 
         events.forEach { event ->
@@ -107,7 +107,7 @@ internal object TimelineLayoutEngine {
         return clusters
     }
 
-    private fun isConflictPair(left: TaskEvent, right: TaskEvent): Boolean {
+    private fun isConflictPair(left: ScheduleItem, right: ScheduleItem): Boolean {
         if (left.type == "task" && left.completed) return false
         if (right.type == "task" && right.completed) return false
         if (left.type !in CONFLICT_TYPES || right.type !in CONFLICT_TYPES) return false

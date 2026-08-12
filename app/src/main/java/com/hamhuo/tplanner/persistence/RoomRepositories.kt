@@ -2,7 +2,7 @@ package com.hamhuo.tplanner.persistence
 
 import androidx.room.withTransaction
 import com.hamhuo.tplanner.JournalEntry
-import com.hamhuo.tplanner.TaskEvent
+import com.hamhuo.tplanner.ScheduleItem
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import org.json.JSONObject
@@ -20,19 +20,19 @@ enum class PendingActionCommitResult { SAVED, ALREADY_HANDLED, INVALID_STATE }
 enum class WatchTaskCommitResult { STORED, ALREADY_STORED, ID_CONFLICT }
 
 class RoomEventRepository(private val db: TPlannerDatabase) {
-    fun observeAll(): Flow<List<TaskEvent>> = db.eventDao().observeAll().map { rows ->
+    fun observeAll(): Flow<List<ScheduleItem>> = db.eventDao().observeAll().map { rows ->
         rows.map(PersistenceMapper::eventToDomain)
     }
 
-    suspend fun getAll(): List<TaskEvent> = db.eventDao().getAll().map(
+    suspend fun getAll(): List<ScheduleItem> = db.eventDao().getAll().map(
         PersistenceMapper::eventToDomain,
     )
 
-    suspend fun get(id: String): TaskEvent? = db.eventDao().get(id)?.let(
+    suspend fun get(id: String): ScheduleItem? = db.eventDao().get(id)?.let(
         PersistenceMapper::eventToDomain,
     )
 
-    suspend fun beginEdit(requested: TaskEvent): TaskEvent = db.withTransaction {
+    suspend fun beginEdit(requested: ScheduleItem): ScheduleItem = db.withTransaction {
         val target = DraftTarget.event(requested.id)
         val current = db.eventDao().get(requested.id)?.let(PersistenceMapper::eventToDomain)
         val initial = current ?: requested
@@ -68,7 +68,7 @@ class RoomEventRepository(private val db: TPlannerDatabase) {
     }
 
     suspend fun saveOneLocal(
-        event: TaskEvent,
+        event: ScheduleItem,
         clearDraftKey: String? = null,
         clearPendingActionId: String? = null,
         now: Long = System.currentTimeMillis(),
@@ -108,7 +108,7 @@ class RoomEventRepository(private val db: TPlannerDatabase) {
      * A different request attempting to reuse the same event id is rejected.
      */
     suspend fun saveWatchCreated(
-        event: TaskEvent,
+        event: ScheduleItem,
         requestId: String,
         now: Long = System.currentTimeMillis(),
     ): WatchTaskCommitResult = db.withTransaction {
@@ -168,10 +168,10 @@ class RoomEventRepository(private val db: TPlannerDatabase) {
 
     /** Saves a recovered conflict exactly once, provided the dialog still names the current draft. */
     suspend fun saveConflictAsCopy(
-        source: TaskEvent,
+        source: ScheduleItem,
         expected: DraftConflict,
         now: Long = System.currentTimeMillis(),
-    ): TaskEvent? = db.withTransaction {
+    ): ScheduleItem? = db.withTransaction {
         val sourceTarget = DraftTarget.event(source.id)
         if (expected.target != sourceTarget) return@withTransaction null
         val stored = db.draftDao().get(sourceTarget.storageKey)
@@ -195,7 +195,7 @@ class RoomEventRepository(private val db: TPlannerDatabase) {
     }
 
     suspend fun commitDraft(
-        event: TaskEvent,
+        event: ScheduleItem,
         now: Long = System.currentTimeMillis(),
     ): DraftCommitResult = db.withTransaction {
         val target = DraftTarget.event(event.id)
@@ -250,7 +250,7 @@ class RoomEventRepository(private val db: TPlannerDatabase) {
      * only mutations captured before the request.
      */
     suspend fun applySync(
-        merged: List<TaskEvent>,
+        merged: List<ScheduleItem>,
         captured: Map<String, String>,
         syncedAt: Long = System.currentTimeMillis(),
     ) {
@@ -287,7 +287,7 @@ class RoomEventRepository(private val db: TPlannerDatabase) {
     suspend fun capturedMutations(): Map<String, String> =
         db.syncDao().outbox(SyncDatasets.EVENTS).associate { it.entityId to it.mutationToken }
 
-    private suspend fun enqueue(event: TaskEvent, now: Long) {
+    private suspend fun enqueue(event: ScheduleItem, now: Long) {
         val existing = db.syncDao().outboxEntry(SyncDatasets.EVENTS, event.id)
         val payload = EventWireMapper.encodeObject(event).toString()
         db.syncDao().enqueue(

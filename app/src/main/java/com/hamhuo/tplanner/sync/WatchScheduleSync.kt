@@ -95,7 +95,7 @@ object WatchScheduleSync {
         val taskCount: Int,
     )
 
-    fun push(context: Context, events: List<TaskEvent>) {
+    fun push(context: Context, events: List<ScheduleItem>) {
         val appContext = context.applicationContext
         try {
             // Build, version, and persist under the same lock. Otherwise an older concurrent
@@ -502,7 +502,7 @@ object WatchScheduleSync {
             .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
     }
 
-    private fun buildTaskSnapshots(events: List<TaskEvent>): List<TaskSnapshot> {
+    private fun buildTaskSnapshots(events: List<ScheduleItem>): List<TaskSnapshot> {
         val result = ArrayList<TaskSnapshot>(minOf(events.size, MAX_TASK_COUNT))
         val candidates = events.mapNotNull { event ->
             val id = event.id.trim().takeIf { id ->
