@@ -216,7 +216,7 @@ object JournalWireMapper {
 }
 
 object PersistenceMapper {
-    fun eventToEntity(event: ScheduleItem, sortIndex: Long): EventEntity {
+    fun eventToEntity(event: ScheduleItem, sortIndex: Long): ScheduleItemEntity {
         val checklistJson = JSONArray().apply {
             event.checklist.forEach { item ->
                 put(JSONObject().apply {
@@ -231,7 +231,7 @@ object PersistenceMapper {
                 if (key !in EventWireMapper.knownKeys) put(key, value)
             }
         }.toString()
-        return EventEntity(
+        return ScheduleItemEntity(
             id = event.id,
             title = event.title,
             type = event.type,
@@ -253,7 +253,7 @@ object PersistenceMapper {
         )
     }
 
-    fun eventToDomain(row: EventEntity): ScheduleItem {
+    fun eventToDomain(row: ScheduleItemEntity): ScheduleItem {
         val checklistArray = JSONArray(row.checklistJson)
         val checklist = (0 until checklistArray.length()).map { index ->
             val item = checklistArray.getJSONObject(index)

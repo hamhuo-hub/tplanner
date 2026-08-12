@@ -9,15 +9,15 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 @Dao
-interface EventDao {
+interface ScheduleItemDao {
     @Query("SELECT * FROM events ORDER BY sort_index")
-    fun observeAll(): Flow<List<EventEntity>>
+    fun observeAll(): Flow<List<ScheduleItemEntity>>
 
     @Query("SELECT * FROM events ORDER BY sort_index")
-    suspend fun getAll(): List<EventEntity>
+    suspend fun getAll(): List<ScheduleItemEntity>
 
     @Query("SELECT * FROM events WHERE id = :id")
-    suspend fun get(id: String): EventEntity?
+    suspend fun get(id: String): ScheduleItemEntity?
 
     @Query("SELECT COUNT(*) FROM events")
     suspend fun count(): Int
@@ -26,10 +26,10 @@ interface EventDao {
     suspend fun maxSortIndex(): Long
 
     @Upsert
-    suspend fun upsert(row: EventEntity)
+    suspend fun upsert(row: ScheduleItemEntity)
 
     @Upsert
-    suspend fun upsertAll(rows: List<EventEntity>)
+    suspend fun upsertAll(rows: List<ScheduleItemEntity>)
 
     @Query("DELETE FROM events WHERE id = :id AND deleted_at = :expectedDeletedAt")
     suspend fun purgeTombstone(id: String, expectedDeletedAt: Long): Int

@@ -13,7 +13,7 @@ import androidx.room.Index
         Index(value = ["deleted_at"]),
     ],
 )
-data class EventEntity(
+data class ScheduleItemEntity(
     val id: String,
     val title: String,
     val type: String,

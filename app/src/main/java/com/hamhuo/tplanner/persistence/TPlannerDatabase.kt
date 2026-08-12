@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 
 @Database(
     entities = [
-        EventEntity::class,
+        ScheduleItemEntity::class,
         JournalEntity::class,
         EditDraftEntity::class,
         SyncShadowEntity::class,
@@ -20,7 +20,7 @@ import androidx.room.RoomDatabase
     exportSchema = true,
 )
 abstract class TPlannerDatabase : RoomDatabase() {
-    abstract fun eventDao(): EventDao
+    abstract fun eventDao(): ScheduleItemDao
     abstract fun journalDao(): JournalDao
     abstract fun draftDao(): DraftDao
     abstract fun syncDao(): SyncDao

@@ -35,7 +35,7 @@ data class LegacySnapshot(
 )
 
 data class DecodedLegacy(
-    val events: List<EventEntity>,
+    val events: List<ScheduleItemEntity>,
     val journals: List<JournalEntity>,
     val drafts: List<EditDraftEntity>,
     val shadows: List<SyncShadowEntity>,
