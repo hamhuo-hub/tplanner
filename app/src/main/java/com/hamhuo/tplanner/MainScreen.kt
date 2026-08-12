@@ -275,184 +275,11 @@ fun MainScreen(
     var taskWidgetModalVisible by remember { mutableStateOf(false) }
     var timelineModalVisible by remember { mutableStateOf(false) }
     val listSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    // ── Schedule extraction sheet ───────────────────────────────────────
-    var showScheduleSheet by remember { mutableStateOf(false) }
-    var openingScheduleSheet by remember { mutableStateOf(false) }
-    var thinking by remember { mutableStateOf(false) }
-    var sheetAction by remember { mutableStateOf<DeepSeekAnalysisService.ProposedAction?>(null) }
-    var sheetRequestId by remember { mutableStateOf("") }
-    var untangleInput by remember { mutableStateOf("") }
-    var prefillLocation by remember { mutableStateOf("") }
-    var gpsLat by remember { mutableStateOf(0.0) }
-    var gpsLng by remember { mutableStateOf(0.0) }
-    val lifecycleOwner = LocalLifecycleOwner.current
-    var pendingLocationRequestId by remember { mutableStateOf<String?>(null) }
-    var locationPermissionGeneration by remember { mutableIntStateOf(0) }
-    var locationPermissionInFlight by remember { mutableStateOf(false) }
-    var phoneLocationForeground by remember(lifecycleOwner) {
-        mutableStateOf(
-            lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED),
-        )
-    }
-    var phoneLocationState by remember { mutableStateOf(PhoneLocationState.IDLE) }
-    var activeLocationHandle by remember { mutableStateOf<LocationCapture.Handle?>(null) }
-
-    val locationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions(),
-    ) { result ->
-        locationPermissionInFlight = false
-        val granted = hasPhoneLocationPermission(context)
-        Log.i(
-            LLM_LOG_TAG,
-            "phase=location_permission granted=$granted coarse=${result[Manifest.permission.ACCESS_COARSE_LOCATION] == true} " +
-                "fine=${result[Manifest.permission.ACCESS_FINE_LOCATION] == true}",
-        )
-        if (granted && pendingLocationRequestId != null) {
-            locationPermissionGeneration++
-        } else {
-            pendingLocationRequestId = null
-            if (phoneLocationState == PhoneLocationState.LOCATING) {
-                phoneLocationState = PhoneLocationState.UNAVAILABLE
-            }
-        }
-    }
-
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_START -> phoneLocationForeground = true
-                Lifecycle.Event.ON_STOP -> {
-                    phoneLocationForeground = false
-                    activeLocationHandle?.let(LocationCapture::cancel)
-                    activeLocationHandle = null
-                    if (!locationPermissionInFlight &&
-                        phoneLocationState == PhoneLocationState.LOCATING
-                    ) {
-                        phoneLocationState = PhoneLocationState.UNAVAILABLE
-                    }
-                }
-                else -> Unit
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-            activeLocationHandle?.let(LocationCapture::cancel)
-            activeLocationHandle = null
-        }
-    }
-
-    LaunchedEffect(
-        showScheduleSheet,
-        pendingLocationRequestId,
-        locationPermissionGeneration,
-        phoneLocationForeground,
-        thinking,
-        sheetAction,
-    ) {
-        val targetRequestId = pendingLocationRequestId ?: return@LaunchedEffect
-        if (!phoneLocationForeground) return@LaunchedEffect
-        if (!showScheduleSheet || thinking || sheetAction != null) {
-            pendingLocationRequestId = null
-            if (!showScheduleSheet) phoneLocationState = PhoneLocationState.IDLE
-            return@LaunchedEffect
-        }
-        if (!hasPhoneLocationPermission(context)) return@LaunchedEffect
-
-        Log.d(
-            LLM_LOG_TAG,
-            "request=$targetRequestId phase=location_capture result=started",
-        )
-        val fix = LocationCapture.capture(context)
-
-        if (!showScheduleSheet || thinking || sheetAction != null) return@LaunchedEffect
-
-        val resolvedLocation = fix?.let {
-            Log.w(LLM_LOG_TAG, "request=$targetRequestId calling Amap")
-            AmapGeocoder.reverseGeocode(it.lat, it.lng, amapApiKey)
-        }.orEmpty()
-        Log.i(
-            LLM_LOG_TAG,
-            "request=$targetRequestId phase=location_capture " +
-                "result=${if (fix == null) "unavailable" else "fix"} " +
-                "reverseGeocoded=${resolvedLocation.isNotBlank()}",
-        )
-        if (!showScheduleSheet || thinking || sheetAction != null) return@LaunchedEffect
-
-        if (fix == null) {
-            phoneLocationState = PhoneLocationState.UNAVAILABLE
-            pendingLocationRequestId = null
-            return@LaunchedEffect
-        }
-
-        gpsLat = fix.lat
-        gpsLng = fix.lng
-        prefillLocation = resolvedLocation
-        phoneLocationState = if (resolvedLocation.isBlank()) {
-            PhoneLocationState.UNAVAILABLE
-        } else {
-            PhoneLocationState.READY
-        }
-        pendingLocationRequestId = null
-
-        // Location prefill is transient — closing the sheet discards it.
-    }
-
-    /** Open the AI schedule-extraction sheet directly from the phone UI. */
-    fun startDirectAiExtraction() {
-        if (deepseekService == null) {
-            Toast.makeText(context, R.string.ai_service_unavailable, Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (showScheduleSheet || openingScheduleSheet) return
-        openingScheduleSheet = true
-        scope.launch {
-            try {
-                showScheduleSheet = true
-                thinking = false
-                sheetAction = null
-                val openedRequestId = "direct-${UUID.randomUUID()}"
-                sheetRequestId = openedRequestId
-                untangleInput = ""
-                prefillLocation = ""
-                gpsLat = 0.0; gpsLng = 0.0
-                phoneLocationState = PhoneLocationState.LOCATING
-
-                if (!showScheduleSheet ||
-                    sheetRequestId != openedRequestId ||
-                    !phoneLocationForeground
-                ) {
-                    return@launch
-                }
-
-                Log.i(
-                    LLM_LOG_TAG,
-                    "phase=sheet_open source=direct requestId=$openedRequestId " +
-                        "serviceConfigured=true " +
-                        "locationApiConfigured=${amapApiKey.isNotBlank()}",
-                )
-                pendingLocationRequestId = openedRequestId
-                if (!hasPhoneLocationPermission(context)) {
-                    locationPermissionInFlight = true
-                    runCatching {
-                        locationPermissionLauncher.launch(
-                            arrayOf(
-                                Manifest.permission.ACCESS_COARSE_LOCATION,
-                                Manifest.permission.ACCESS_FINE_LOCATION,
-                            ),
-                        )
-                    }.onFailure { error ->
-                        locationPermissionInFlight = false
-                        pendingLocationRequestId = null
-                        phoneLocationState = PhoneLocationState.UNAVAILABLE
-                        Log.w(LLM_LOG_TAG, "Unable to request phone location permission", error)
-                    }
-                }
-            } finally {
-                openingScheduleSheet = false
-            }
-        }
-    }
+    val aiFlow = rememberAiScheduleFlow(
+        scope, context, eventStore, eventWriteMutex,
+        deepseekService, amapApiKey,
+        { url -> manager.fetchEvents(url) }, { serverUrl },
+    )
 
     // ── Panel building blocks ────────────────────────────────────────────
     val notesCardContent: @Composable () -> Unit = {
@@ -558,7 +385,7 @@ fun MainScreen(
             onConflict = { eventConflict = it },
         )
     }
-    val chromeHidden = showScheduleSheet ||
+    val chromeHidden = aiFlow.state.showScheduleSheet ||
         showListSheet ||
         taskWidgetModalVisible ||
         timelineModalVisible ||
@@ -654,7 +481,7 @@ fun MainScreen(
         scope.launch {
             try {
                 val action = deepseekService?.extractSchedule(text, stamp, loc, requestId)
-                if (sheetRequestId != requestId || !showScheduleSheet) return@launch
+                if (sheetRequestId != requestId || !aiFlow.state.showScheduleSheet) return@launch
 
                 if (action != null) {
                     Log.i(LLM_LOG_TAG, "request=$requestId phase=route result=proposal type=${action.type}")
@@ -662,14 +489,14 @@ fun MainScreen(
                     thinking = false
                 } else {
                     Log.w(LLM_LOG_TAG, "request=$requestId phase=route result=unavailable")
-                    if (sheetRequestId == requestId && showScheduleSheet) {
+                    if (sheetRequestId == requestId && aiFlow.state.showScheduleSheet) {
                         thinking = false
                         Toast.makeText(context, R.string.ai_service_unavailable, Toast.LENGTH_LONG).show()
                     }
                 }
             } catch (error: Exception) {
                 Log.e(LLM_LOG_TAG, "request=$requestId phase=submit result=failed errorType=${error.javaClass.simpleName}", error)
-                if (showScheduleSheet && sheetRequestId == requestId) {
+                if (aiFlow.state.showScheduleSheet && sheetRequestId == requestId) {
                     thinking = false
                     Toast.makeText(context, R.string.schedule_create_failed_toast, Toast.LENGTH_SHORT).show()
                 }
@@ -710,8 +537,8 @@ fun MainScreen(
         scope.launch {
             try {
                 eventWriteMutex.withLock { eventStore.save(ev) }
-                if (showScheduleSheet && sheetRequestId == requestId) {
-                    showScheduleSheet = false
+                if (aiFlow.state.showScheduleSheet && sheetRequestId == requestId) {
+                    aiFlow.state.showScheduleSheet = false
                     thinking = false
                     sheetAction = null
                     sheetRequestId = ""
@@ -730,7 +557,7 @@ fun MainScreen(
                     .onSuccess { refreshed -> events = refreshed }
             } catch (e: Exception) {
                 Log.e(LLM_LOG_TAG, "request=$requestId phase=confirm result=failed", e)
-                if (showScheduleSheet && sheetRequestId == requestId) {
+                if (aiFlow.state.showScheduleSheet && sheetRequestId == requestId) {
                     thinking = false
                     Toast.makeText(context, R.string.schedule_create_failed_toast, Toast.LENGTH_SHORT).show()
                 }
@@ -740,7 +567,7 @@ fun MainScreen(
 
     // ── Main layout ──────────────────────────────────────────────────────
     Box(Modifier.fillMaxSize().background(BG).windowInsetsPadding(WindowInsets.systemBars)) {
-        if (showScheduleSheet) {
+        if (aiFlow.state.showScheduleSheet) {
             UntangleSheet(
                 requestId = sheetRequestId,
                 prefillLocation = prefillLocation,
@@ -753,7 +580,7 @@ fun MainScreen(
                 },
                 onDismiss = {
                     Log.d(LLM_LOG_TAG, "phase=sheet_close reason=dismissed")
-                    showScheduleSheet = false
+                    aiFlow.state.showScheduleSheet = false
                     thinking = false
                     sheetAction = null
                     sheetRequestId = ""
@@ -763,7 +590,7 @@ fun MainScreen(
                 onConfirmAction = ::confirmAction,
                 onDeclineAction = {
                     Log.d(LLM_LOG_TAG, "phase=sheet_close reason=proposal_declined")
-                    showScheduleSheet = false
+                    aiFlow.state.showScheduleSheet = false
                     thinking = false
                     sheetAction = null
                     sheetRequestId = ""
