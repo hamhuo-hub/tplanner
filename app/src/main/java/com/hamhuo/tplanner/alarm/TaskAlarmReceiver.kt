@@ -43,7 +43,7 @@ class TaskAlarmReceiver : BroadcastReceiver() {
         if (LegacyPreferencesImporter(context, database).importIfNeeded() is LegacyImportResult.Blocked) {
             return
         }
-        val event = EventStore(context, database).getAll().firstOrNull { it.id == eventId } ?: return
+        val event = ScheduleItemStore(context, database).getAll().firstOrNull { it.id == eventId } ?: return
 
         // A stale PendingIntent must never ring after an edit, completion or deletion.
         if (!event.isAlarmActive() || event.alarmSignature() != expectedSignature) return

@@ -47,7 +47,7 @@ class RoomEventRepository(private val db: TPlannerDatabase) {
             }
             val base = current?.let { event ->
                 DraftRevision(
-                    content = EventEditDraftCodec.encode(event),
+                    content = ScheduleItemEditDraftCodec.encode(event),
                     updatedAt = event.updatedAt,
                     entityExists = true,
                     deletedAt = event.deletedAt,
@@ -58,7 +58,7 @@ class RoomEventRepository(private val db: TPlannerDatabase) {
                     VersionedDraft.start(
                         target = target,
                         base = base,
-                        initialContent = EventEditDraftCodec.encode(initial),
+                        initialContent = ScheduleItemEditDraftCodec.encode(initial),
                         changedAt = System.currentTimeMillis(),
                     )
                 )
@@ -204,14 +204,14 @@ class RoomEventRepository(private val db: TPlannerDatabase) {
         val current = currentRow?.let(PersistenceMapper::eventToDomain)
         val currentRevision = current?.let { value ->
             DraftRevision(
-                content = EventEditDraftCodec.encode(value),
+                content = ScheduleItemEditDraftCodec.encode(value),
                 updatedAt = value.updatedAt,
                 entityExists = true,
                 deletedAt = value.deletedAt,
             )
         } ?: DraftRevision.missing()
-        val storedSnapshot = stored?.content?.let(EventEditDraftCodec::decodeOrNull)
-        val comparisonPayload = EventEditDraftCodec.encode(
+        val storedSnapshot = stored?.content?.let(ScheduleItemEditDraftCodec::decodeOrNull)
+        val comparisonPayload = ScheduleItemEditDraftCodec.encode(
             event.copy(updatedAt = storedSnapshot?.updatedAt ?: current?.updatedAt ?: event.updatedAt)
         )
         val candidate = if (stored != null && storedSnapshot != null) {

@@ -18,7 +18,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 @Composable
-internal fun TimelineEventLayer(
+internal fun TimelineItemLayer(
     renderSpecs: List<TimelineEventRenderSpec>,
     highlightedEventIds: Set<String>,
     visibleDays: List<LocalDate>,
@@ -38,7 +38,7 @@ internal fun TimelineEventLayer(
         renderSpecs.forEach { spec ->
             val placement = spec.placement
             val event = placement.placement.event
-            TimelineEventCard(
+            TimelineItemCard(
                 event = event,
                 conflictCount = placement.placement.conflictIds.size,
                 isHighlighted = event.id in highlightedEventIds,

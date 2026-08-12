@@ -403,7 +403,7 @@ internal object WatchTaskImporter {
             )
         }
 
-        val store = EventStore(context, database)
+        val store = ScheduleItemStore(context, database)
         return if (request.task != null) {
             importCreate(context, store, request)
         } else {
@@ -413,7 +413,7 @@ internal object WatchTaskImporter {
 
     private suspend fun importCreate(
         context: Context,
-        store: EventStore,
+        store: ScheduleItemStore,
         request: WatchTaskProtocol.Request,
     ): WatchTaskProtocol.Response {
         val receivedAt = System.currentTimeMillis()
@@ -460,7 +460,7 @@ internal object WatchTaskImporter {
 
     private suspend fun importDelete(
         context: Context,
-        store: EventStore,
+        store: ScheduleItemStore,
         request: WatchTaskProtocol.Request,
     ): WatchTaskProtocol.Response {
         val changed = store.softDeleteWatchEvent(request.taskId!!)

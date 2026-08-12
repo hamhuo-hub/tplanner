@@ -12,15 +12,15 @@ import kotlinx.coroutines.sync.withLock
 import java.time.Instant
 import java.util.UUID
 
-class EventActions(
+class ScheduleItemActions(
     private val scope: CoroutineScope,
     private val context: Context,
-    private val eventStore: EventStore,
+    private val eventStore: ScheduleItemStore,
     private val eventWriteMutex: Mutex,
     private val fetchEvents: suspend (String) -> List<ScheduleItem>,
     private val serverUrl: () -> String,
 ) {
-    fun beginNewEvent(
+    fun beginNewItem(
         type: String,
         onPending: (ScheduleItem) -> Unit,
     ) {
@@ -52,7 +52,7 @@ class EventActions(
         }
     }
 
-    fun openEvent(
+    fun openItem(
         event: ScheduleItem,
         onPending: (ScheduleItem) -> Unit,
         onEdit: (ScheduleItem) -> Unit,

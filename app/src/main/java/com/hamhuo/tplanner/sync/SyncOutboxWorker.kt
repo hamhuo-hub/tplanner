@@ -46,7 +46,7 @@ class SyncOutboxWorker(
         if (syncDao.pendingCountNow() == 0) return Result.success()
 
         val journalStore = JournalStore(applicationContext, database)
-        val eventStore = EventStore(applicationContext, database)
+        val eventStore = ScheduleItemStore(applicationContext, database)
         val manager = LanSyncManager(applicationContext, journalStore, eventStore)
         val failures = mutableListOf<Pair<List<SyncOutboxEntity>, Throwable>>()
 

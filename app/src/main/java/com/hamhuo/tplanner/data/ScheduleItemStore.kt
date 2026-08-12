@@ -9,7 +9,7 @@ import com.hamhuo.tplanner.persistence.DraftRevision
 import com.hamhuo.tplanner.persistence.DraftTarget
 import com.hamhuo.tplanner.persistence.EventWireMapper
 import com.hamhuo.tplanner.persistence.EventDraftRecovery
-import com.hamhuo.tplanner.persistence.EventEditDraftCodec
+import com.hamhuo.tplanner.persistence.ScheduleItemEditDraftCodec
 import com.hamhuo.tplanner.persistence.EventEditStage
 import com.hamhuo.tplanner.persistence.RoomDraftRepository
 import com.hamhuo.tplanner.persistence.RoomEventRepository
@@ -54,7 +54,7 @@ data class ScheduleItem(
 )
 
 /** Room-backed façade used by UI, alarms, Wear, and synchronization. */
-class EventStore(
+class ScheduleItemStore(
     context: Context,
     database: TPlannerDatabase = TPlannerDatabase.get(context),
 ) {
@@ -138,7 +138,7 @@ class EventStore(
     private suspend fun saveEventDraftNow(event: ScheduleItem, stage: EventEditStage) {
         val target = DraftTarget.event(event.id)
         val changedAt = System.currentTimeMillis()
-        val payload = EventEditDraftCodec.encode(
+        val payload = ScheduleItemEditDraftCodec.encode(
             event.copy(updatedAt = event.updatedAt),
             stage,
         )
@@ -146,7 +146,7 @@ class EventStore(
         val current = repository.get(event.id)
         val draft = if (
             existing != null &&
-            EventEditDraftCodec.decodeSnapshotOrNull(existing.content) != null
+            ScheduleItemEditDraftCodec.decodeSnapshotOrNull(existing.content) != null
         ) {
             existing.withContent(payload, changedAt)
         } else {
@@ -154,7 +154,7 @@ class EventStore(
                 target = target,
                 base = current?.let { stored ->
                     DraftRevision(
-                        content = EventEditDraftCodec.encode(stored),
+                        content = ScheduleItemEditDraftCodec.encode(stored),
                         updatedAt = stored.updatedAt,
                         entityExists = true,
                         deletedAt = stored.deletedAt,
@@ -176,11 +176,11 @@ class EventStore(
         val target = DraftTarget.event(eventId)
         val draft = drafts.get(target) ?: return EventDraftRecovery.None
         val current = repository.get(eventId)
-        val fullDraft = EventEditDraftCodec.decodeSnapshotOrNull(draft.content)
+        val fullDraft = ScheduleItemEditDraftCodec.decodeSnapshotOrNull(draft.content)
         if (fullDraft != null) {
             val revision = current?.let { stored ->
                 DraftRevision(
-                    content = EventEditDraftCodec.encode(stored),
+                    content = ScheduleItemEditDraftCodec.encode(stored),
                     updatedAt = stored.updatedAt,
                     entityExists = true,
                     deletedAt = stored.deletedAt,

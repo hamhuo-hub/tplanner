@@ -88,7 +88,7 @@ internal fun TimelineBody(
                     zone = zone,
                 )
             }
-            TimelineEventLayer(
+            TimelineItemLayer(
                 renderSpecs = renderSpecs,
                 highlightedEventIds = state.highlight?.eventIds.orEmpty(),
                 visibleDays = days,

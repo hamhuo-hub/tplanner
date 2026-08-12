@@ -274,7 +274,7 @@ fun TaskWidget(
             containerColor   = Color(0xFF1A1A1A),
             dragHandle       = null,
         ) {
-            AddEventTypeSheet(
+            CreateItemTypeSheet(
                 onSelect = { type ->
                     showTypeSheet = false
                     onAddEvent(type)
@@ -292,7 +292,7 @@ fun TaskWidget(
             containerColor   = Color(0xFF1A1A1A),
             dragHandle       = null,
         ) {
-            TypeChangeSheet(
+            ItemTypeChangeSheet(
                 currentType = typeChangeTarget!!.type,
                 onSelect = { newType ->
                     val ev = typeChangeTarget!!

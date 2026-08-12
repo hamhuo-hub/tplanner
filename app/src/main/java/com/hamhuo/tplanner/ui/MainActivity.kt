@@ -25,7 +25,7 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
 
-    private lateinit var eventStore: EventStore
+    private lateinit var eventStore: ScheduleItemStore
 
     private enum class PermissionStep {
         RUNTIME,
@@ -97,7 +97,7 @@ class MainActivity : ComponentActivity() {
         }
 
         val store = JournalStore(this, database)
-        eventStore = EventStore(this, database)
+        eventStore = ScheduleItemStore(this, database)
         val manager = LanSyncManager(this, store, eventStore)
         val deepseekKey = BuildConfig.DEEPSEEK_API_KEY
         val amapKey = BuildConfig.AMAP_API_KEY

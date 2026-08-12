@@ -63,7 +63,7 @@ import java.time.format.DateTimeFormatter
 private const val TimelineEventFillAlpha = 0.50f
 
 @Composable
-internal fun TimelineEventCard(
+internal fun TimelineItemCard(
     event: ScheduleItem,
     conflictCount: Int,
     isHighlighted: Boolean,
@@ -114,7 +114,7 @@ internal fun TimelineEventCard(
         onDraggingChange = onDraggingChange,
         onDrop = onDrop,
     ) {
-        TimelineEventCardContent(
+        TimelineItemCardContent(
             event = event,
             conflictCount = conflictCount,
             conflictDescription = conflictDescription,
@@ -324,7 +324,7 @@ private fun DraggableTimelineEvent(
 }
 
 @Composable
-private fun TimelineEventCardContent(
+private fun TimelineItemCardContent(
     event: ScheduleItem,
     conflictCount: Int,
     conflictDescription: String,

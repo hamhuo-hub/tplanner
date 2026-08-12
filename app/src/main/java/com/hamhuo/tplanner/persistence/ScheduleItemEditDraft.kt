@@ -5,13 +5,13 @@ import org.json.JSONObject
 
 enum class EventEditStage { NAMING, DETAIL }
 
-data class EventEditDraftSnapshot(
+data class ScheduleItemEditDraftSnapshot(
     val event: ScheduleItem,
     val stage: EventEditStage,
 )
 
 /** Versioned envelope so a raw legacy note draft can never be mistaken for a full event snapshot. */
-object EventEditDraftCodec {
+object ScheduleItemEditDraftCodec {
     private const val FORMAT = "tplanner-event-edit-v1"
 
     /**
@@ -27,10 +27,10 @@ object EventEditDraftCodec {
         put("event", EventWireMapper.encodeObject(event))
     }.toString()
 
-    fun decodeSnapshotOrNull(payload: String): EventEditDraftSnapshot? = runCatching {
+    fun decodeSnapshotOrNull(payload: String): ScheduleItemEditDraftSnapshot? = runCatching {
         val envelope = JSONObject(payload)
         if (envelope.optString("format") != FORMAT) return null
-        EventEditDraftSnapshot(
+        ScheduleItemEditDraftSnapshot(
             event = EventWireMapper.decodeObject(envelope.getJSONObject("event")),
             stage = runCatching {
                 EventEditStage.valueOf(

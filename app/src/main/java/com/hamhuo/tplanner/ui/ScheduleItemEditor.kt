@@ -107,7 +107,7 @@ internal fun typeIcon(type: String): ImageVector = when (type) {
 
 // ── 新建类型选择面板（点击任务面板 + 号后弹出） ──────────────────────────────────
 @Composable
-fun AddEventTypeSheet(onSelect: (String) -> Unit, onDismiss: () -> Unit) {
+fun CreateItemTypeSheet(onSelect: (String) -> Unit, onDismiss: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -186,7 +186,7 @@ private fun AddTypeItem(icon: ImageVector, title: String, desc: String, onClick:
 
 // ── 修改类型选择面板（点击已有事件的类型指示器后弹出） ──────────────────────────
 @Composable
-fun TypeChangeSheet(currentType: String, onSelect: (String) -> Unit, onDismiss: () -> Unit) {
+fun ItemTypeChangeSheet(currentType: String, onSelect: (String) -> Unit, onDismiss: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -384,7 +384,7 @@ private fun PillButton(label: String, filled: Boolean, onClick: () -> Unit) {
 // ── 任务详情页：时间 / 清单 / 备注 / 颜色 ──────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EventDetailScreen(
+fun ScheduleItemDetailScreen(
     event: ScheduleItem,
     onDraftChange: (ScheduleItem) -> Unit,
     onSave: (ScheduleItem, (Boolean) -> Unit) -> Unit,
@@ -857,7 +857,7 @@ fun EventDetailScreen(
                     containerColor   = Color(0xFF1A1A1A),
                     dragHandle       = null,
                 ) {
-                    TypeChangeSheet(
+                    ItemTypeChangeSheet(
                         currentType = type,
                         onSelect = { newType ->
                             if (newType != type) {

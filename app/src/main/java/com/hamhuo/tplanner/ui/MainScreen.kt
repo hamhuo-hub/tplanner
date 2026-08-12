@@ -111,7 +111,7 @@ private fun Throwable.locationForLog(): String {
 @Composable
 fun MainScreen(
     store: JournalStore,
-    eventStore: EventStore,
+    eventStore: ScheduleItemStore,
     manager: LanSyncManager,
     deepseekService: DeepSeekAnalysisService?,
     amapApiKey: String,
@@ -219,7 +219,7 @@ fun MainScreen(
     var syncStatus by remember { mutableStateOf("idle") }
     var syncMsg    by remember { mutableStateOf("") }
     val eventActions = remember(serverUrl) {
-        EventActions(scope, context, eventStore, eventWriteMutex, { url -> manager.fetchEvents(url) }, { serverUrl })
+        ScheduleItemActions(scope, context, eventStore, eventWriteMutex, { url -> manager.fetchEvents(url) }, { serverUrl })
     }
 
     val syncedTemplate  = stringResource(R.string.sync_success_with_name)
@@ -436,47 +436,47 @@ fun MainScreen(
 
     val initiallyRecoveredEvent = initialEventRecovery as? EventDraftRecovery.Recovered
     val initialEventStage = initiallyRecoveredEvent?.stage ?: EventEditStage.DETAIL
-    var pendingNewEvent by remember {
+    var pendingNewItem by remember {
         mutableStateOf(
             initiallyRecoveredEvent?.event?.takeIf { initialEventStage == EventEditStage.NAMING }
         )
     }
-    var editingEvent by remember {
+    var editingItem by remember {
         mutableStateOf(
             initiallyRecoveredEvent?.event?.takeUnless { initialEventStage == EventEditStage.NAMING }
         )
     }
-    var eventConflict by remember {
+    var itemConflict by remember {
         mutableStateOf(initialEventRecovery as? EventDraftRecovery.Conflict)
     }
 
     fun revealNextEventDraft() {
         eventActions.revealNextDraft(
-            onPending = { pendingNewEvent = it },
-            onEdit = { editingEvent = it },
-            onConflict = { eventConflict = it },
+            onPending = { pendingNewItem = it },
+            onEdit = { editingItem = it },
+            onConflict = { itemConflict = it },
         )
     }
 
-    fun beginNewEvent(type: String) {
-        eventActions.beginNewEvent(type) { pendingNewEvent = it }
+    fun beginNewItem(type: String) {
+        eventActions.beginNewItem(type) { pendingNewItem = it }
     }
 
-    fun openEvent(event: ScheduleItem) {
-        eventActions.openEvent(
+    fun openItem(event: ScheduleItem) {
+        eventActions.openItem(
             event = event,
-            onPending = { pendingNewEvent = it },
-            onEdit = { editingEvent = it },
-            onConflict = { eventConflict = it },
+            onPending = { pendingNewItem = it },
+            onEdit = { editingItem = it },
+            onConflict = { itemConflict = it },
         )
     }
     val chromeHidden = showScheduleSheet ||
         showListSheet ||
         taskWidgetModalVisible ||
         timelineModalVisible ||
-        pendingNewEvent != null ||
-        editingEvent != null ||
-        eventConflict != null
+        pendingNewItem != null ||
+        editingItem != null ||
+        itemConflict != null
 
     LaunchedEffect(chromeHidden) {
         if (chromeHidden) chromeMode = ChromeMode.Minimal
@@ -500,11 +500,11 @@ fun MainScreen(
             onToggle = { eventId, completed ->
                 eventActions.toggleCompleted(events, eventId, completed) { events = it }
             },
-            onAddEvent = ::beginNewEvent,
+            onAddEvent = ::beginNewItem,
             onDelete = { eventId ->
                 eventActions.softDelete(events, eventId) { events = it }
             },
-            onItemClick = ::openEvent,
+            onItemClick = ::openItem,
             onListFilterClick = { showListSheet = true },
             onTypeChange = { eventId, newType ->
                 eventActions.changeType(events, eventId, newType) { events = it }
@@ -516,8 +516,8 @@ fun MainScreen(
     val timelineCardContent: @Composable () -> Unit = {
         TimelineScreen(
             events = events,
-            onEventClick = ::openEvent,
-            onAddEvent = ::beginNewEvent,
+            onEventClick = ::openItem,
+            onAddEvent = ::beginNewItem,
             onEventMove = { event, newStart, newEnd ->
                 val updated = event.copy(
                     start = newStart,
@@ -726,23 +726,23 @@ fun MainScreen(
     }
 
     // ── Overlay panels ───────────────────────────────────────────────────
-    pendingNewEvent?.let { draftEvent ->
+    pendingNewItem?.let { draftEvent ->
         NameInputSheet(
             type = draftEvent.type,
             initialText = draftEvent.title,
             onDraftChange = { name ->
                 val updated = draftEvent.copy(title = name)
-                pendingNewEvent = updated
+                pendingNewItem = updated
                 eventStore.enqueueEventDraft(updated, EventEditStage.NAMING)
             },
             onCancel = {
                 // Unmount first so no later naming callback can enqueue after the ordered delete.
-                pendingNewEvent = null
+                pendingNewItem = null
                 scope.launch {
                     try {
                         eventWriteMutex.withLock { eventStore.discardEventDraft(draftEvent.id) }
                     } catch (_: Exception) {
-                        pendingNewEvent = draftEvent
+                        pendingNewItem = draftEvent
                         Toast.makeText(context, "无法丢弃草稿，请重试", Toast.LENGTH_LONG).show()
                     }
                 }
@@ -750,15 +750,15 @@ fun MainScreen(
             onConfirm = { name ->
                 val updated = draftEvent.copy(title = name)
                 // Latch the naming UI before its DETAIL transition enters the same draft queue.
-                pendingNewEvent = null
+                pendingNewItem = null
                 scope.launch {
                     try {
                         eventWriteMutex.withLock {
                             eventStore.saveEventDraft(updated, EventEditStage.DETAIL)
                         }
-                        editingEvent = updated
+                        editingItem = updated
                     } catch (_: Exception) {
-                        pendingNewEvent = updated
+                        pendingNewItem = updated
                         Toast.makeText(context, "无法保存事项名称，请重试", Toast.LENGTH_LONG).show()
                     }
                 }
@@ -782,8 +782,8 @@ fun MainScreen(
         )
     }
 
-    editingEvent?.let { ev ->
-        EventDetailScreen(
+    editingItem?.let { ev ->
+        ScheduleItemDetailScreen(
             event = ev,
             onDraftChange = { snapshot ->
                 eventStore.enqueueEventDraft(snapshot, EventEditStage.DETAIL)
@@ -799,16 +799,16 @@ fun MainScreen(
                             DraftCommitResult.AlreadySaved,
                             -> {
                                 events = nextEvents
-                                editingEvent = null
+                                editingItem = null
                                 onFinished(true)
                             }
                             is DraftCommitResult.Conflict -> {
-                                eventConflict = EventDraftRecovery.Conflict(
+                                itemConflict = EventDraftRecovery.Conflict(
                                     details = result.details,
                                     event = updated,
                                     stage = EventEditStage.DETAIL,
                                 )
-                                editingEvent = null
+                                editingItem = null
                                 Toast.makeText(
                                     context,
                                     "事项已在其他设备修改；草稿已保留，请选择处理方式",
@@ -834,16 +834,16 @@ fun MainScreen(
                             DraftCommitResult.AlreadySaved,
                             -> {
                                 events = nextEvents
-                                editingEvent = updated
+                                editingItem = updated
                                 onFinished(true)
                             }
                             is DraftCommitResult.Conflict -> {
-                                eventConflict = EventDraftRecovery.Conflict(
+                                itemConflict = EventDraftRecovery.Conflict(
                                     details = result.details,
                                     event = updated,
                                     stage = EventEditStage.DETAIL,
                                 )
-                                editingEvent = null
+                                editingItem = null
                                 Toast.makeText(
                                     context,
                                     "事项已在其他设备修改；备注草稿已保留，请选择处理方式",
@@ -887,10 +887,10 @@ fun MainScreen(
         )
     }
 
-    eventConflict?.let { conflict ->
+    itemConflict?.let { conflict ->
         val conflictDraft = conflict.event
         AlertDialog(
-            onDismissRequest = { eventConflict = null },
+            onDismissRequest = { itemConflict = null },
             title = { Text("事项草稿冲突") },
             text = {
                 Text(
@@ -906,23 +906,23 @@ fun MainScreen(
                     TextButton(onClick = {
                         eventActions.resolveConflictSaveAsCopy(
                             conflict,
-                            { eventConflict = null; revealNextEventDraft() },
+                            { itemConflict = null; revealNextEventDraft() },
                             { msg -> Toast.makeText(context, msg, Toast.LENGTH_LONG).show() },
                         )
                     }) { Text("另存副本") }
                 } else {
-                    TextButton(onClick = { eventConflict = null }) { Text("保留草稿") }
+                    TextButton(onClick = { itemConflict = null }) { Text("保留草稿") }
                 }
             },
             dismissButton = {
                 Row {
                     if (conflictDraft != null) {
-                        TextButton(onClick = { eventConflict = null }) { Text("保留草稿") }
+                        TextButton(onClick = { itemConflict = null }) { Text("保留草稿") }
                     }
                     TextButton(onClick = {
                         eventActions.resolveConflictDiscard(
                             conflict,
-                            { eventConflict = null; revealNextEventDraft() },
+                            { itemConflict = null; revealNextEventDraft() },
                             { msg -> Toast.makeText(context, msg, Toast.LENGTH_LONG).show() },
                         )
                     }) { Text("使用当前版本") }

@@ -16,7 +16,7 @@ import java.net.URL
 class LanSyncManager(
     context: Context,
     private val store: JournalStore,
-    private val eventStore: EventStore? = null,
+    private val eventStore: ScheduleItemStore? = null,
 ) {
     private val appContext = context.applicationContext
     private val settings = SettingsRepository(appContext)

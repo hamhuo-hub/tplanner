@@ -22,7 +22,7 @@ class AlarmRestoreReceiver : BroadcastReceiver() {
                 val database = TPlannerDatabase.get(context)
                 val migration = LegacyPreferencesImporter(context, database).importIfNeeded()
                 if (migration !is LegacyImportResult.Blocked) {
-                    TaskAlarmScheduler.reconcile(context, EventStore(context, database).getAll())
+                    TaskAlarmScheduler.reconcile(context, ScheduleItemStore(context, database).getAll())
                 }
             } finally {
                 pendingResult.finish()
