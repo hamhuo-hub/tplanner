@@ -9,17 +9,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
@@ -34,8 +31,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -53,7 +48,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,8 +66,6 @@ import com.hamhuo.tplanner.timeline.TimelineScreen
 import com.hamhuo.tplanner.persistence.DraftCommitResult
 import com.hamhuo.tplanner.persistence.EventDraftRecovery
 import com.hamhuo.tplanner.persistence.EventEditStage
-import com.hamhuo.tplanner.persistence.journalOnceMarker
-import com.hamhuo.tplanner.persistence.PendingActionCommitResult
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -102,7 +94,7 @@ private fun hasPhoneLocationPermission(context: Context): Boolean =
             Manifest.permission.ACCESS_FINE_LOCATION,
         ) == PackageManager.PERMISSION_GRANTED
 
-private enum class ChromeMode {
+internal enum class ChromeMode {
     Minimal,
     PrimaryNavigation,
     TimelineNavigation,
@@ -129,8 +121,6 @@ fun MainScreen(
     initialJournalRecovery: JournalDraftRecovery,
     initialServerUrl: String,
     initialEventRecovery: EventDraftRecovery?,
-    untangleStore: UntangleStateStore,
-    initialUntangleState: UntangleRecoveryState?,
 ) {
     val scope  = rememberCoroutineScope()
     val context = LocalContext.current
@@ -285,39 +275,16 @@ fun MainScreen(
     var taskWidgetModalVisible by remember { mutableStateOf(false) }
     var timelineModalVisible by remember { mutableStateOf(false) }
     val listSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val phoneTabStateHolder = rememberSaveableStateHolder()
-
     // ── Schedule extraction sheet ───────────────────────────────────────
-    var showScheduleSheet by remember { mutableStateOf(initialUntangleState != null) }
+    var showScheduleSheet by remember { mutableStateOf(false) }
     var openingScheduleSheet by remember { mutableStateOf(false) }
     var thinking by remember { mutableStateOf(false) }
-    var sheetAction by remember {
-        mutableStateOf(initialUntangleState?.proposal)
-    }
-    var sheetRequestId by remember { mutableStateOf(initialUntangleState?.requestId.orEmpty()) }
-    var untangleInput by remember { mutableStateOf(initialUntangleState?.inputText.orEmpty()) }
-    var prefillLocation by remember { mutableStateOf(initialUntangleState?.location.orEmpty()) }
-    var gpsLat by remember { mutableStateOf(initialUntangleState?.lat ?: 0.0) }
-    var gpsLng by remember { mutableStateOf(initialUntangleState?.lng ?: 0.0) }
-    var untangleJournalDate by remember {
-        mutableStateOf(initialUntangleState?.journalDate.orEmpty())
-    }
-    var untangleJournalLine by remember {
-        mutableStateOf(initialUntangleState?.journalLine.orEmpty())
-    }
-    var untangleSubmissionInput by remember {
-        mutableStateOf(initialUntangleState?.submissionInput.orEmpty())
-    }
-    var untangleSubmissionStamp by remember {
-        mutableStateOf(initialUntangleState?.submissionStamp.orEmpty())
-    }
-    var untangleSubmissionLocation by remember {
-        mutableStateOf(initialUntangleState?.submissionLocation.orEmpty())
-    }
-    var untangleRequiresFreshSubmission by remember {
-        mutableStateOf(initialUntangleState?.requiresFreshSubmission == true)
-    }
-    val untangleWriteMutex = remember { Mutex() }
+    var sheetAction by remember { mutableStateOf<DeepSeekAnalysisService.ProposedAction?>(null) }
+    var sheetRequestId by remember { mutableStateOf("") }
+    var untangleInput by remember { mutableStateOf("") }
+    var prefillLocation by remember { mutableStateOf("") }
+    var gpsLat by remember { mutableStateOf(0.0) }
+    var gpsLng by remember { mutableStateOf(0.0) }
     val lifecycleOwner = LocalLifecycleOwner.current
     var pendingLocationRequestId by remember { mutableStateOf<String?>(null) }
     var locationPermissionGeneration by remember { mutableIntStateOf(0) }
@@ -327,15 +294,7 @@ fun MainScreen(
             lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED),
         )
     }
-    var phoneLocationState by remember {
-        mutableStateOf(
-            if (initialUntangleState?.location.isNullOrBlank()) {
-                PhoneLocationState.IDLE
-            } else {
-                PhoneLocationState.READY
-            },
-        )
-    }
+    var phoneLocationState by remember { mutableStateOf(PhoneLocationState.IDLE) }
     var activeLocationHandle by remember { mutableStateOf<LocationCapture.Handle?>(null) }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
@@ -383,62 +342,17 @@ fun MainScreen(
         }
     }
 
-    fun untangleSnapshot(
-        phase: UntanglePhase,
-        proposal: DeepSeekAnalysisService.ProposedAction? = sheetAction,
-    ): UntangleRecoveryState {
-        val requestId = sheetRequestId.ifBlank {
-            "ui-${UUID.randomUUID()}".also { sheetRequestId = it }
-        }
-        return UntangleRecoveryState(
-            requestId = requestId,
-            inputText = untangleInput,
-            location = prefillLocation,
-            lat = gpsLat,
-            lng = gpsLng,
-            phase = phase,
-            proposal = proposal,
-            journalDate = untangleJournalDate,
-            journalLine = untangleJournalLine,
-            submissionInput = untangleSubmissionInput,
-            submissionStamp = untangleSubmissionStamp,
-            submissionLocation = untangleSubmissionLocation,
-            requiresFreshSubmission = untangleRequiresFreshSubmission,
-        )
-    }
-
-    fun saveUntangleState(
-        phase: UntanglePhase,
-        proposal: DeepSeekAnalysisService.ProposedAction? = sheetAction,
-    ) {
-        untangleStore.enqueue(untangleSnapshot(phase, proposal))
-    }
-
-    fun discardUntangleState(requestId: String = sheetRequestId) {
-        if (requestId.isBlank()) return
-        scope.launch {
-            untangleWriteMutex.withLock { untangleStore.delete(requestId) }
-        }
-    }
-
     LaunchedEffect(
         showScheduleSheet,
-        sheetRequestId,
         pendingLocationRequestId,
         locationPermissionGeneration,
         phoneLocationForeground,
         thinking,
         sheetAction,
-        untangleJournalLine,
     ) {
         val targetRequestId = pendingLocationRequestId ?: return@LaunchedEffect
         if (!phoneLocationForeground) return@LaunchedEffect
-        if (!showScheduleSheet ||
-            sheetRequestId != targetRequestId ||
-            thinking ||
-            sheetAction != null ||
-            untangleJournalLine.isNotBlank()
-        ) {
+        if (!showScheduleSheet || thinking || sheetAction != null) {
             pendingLocationRequestId = null
             if (!showScheduleSheet) phoneLocationState = PhoneLocationState.IDLE
             return@LaunchedEffect
@@ -451,14 +365,7 @@ fun MainScreen(
         )
         val fix = LocationCapture.capture(context)
 
-        fun isCurrentEditingRequest(): Boolean =
-            showScheduleSheet &&
-                sheetRequestId == targetRequestId &&
-                !thinking &&
-                sheetAction == null &&
-                untangleJournalLine.isBlank()
-
-        if (!isCurrentEditingRequest()) return@LaunchedEffect
+        if (!showScheduleSheet || thinking || sheetAction != null) return@LaunchedEffect
 
         val resolvedLocation = fix?.let {
             Log.w(LLM_LOG_TAG, "request=$targetRequestId calling Amap")
@@ -470,7 +377,7 @@ fun MainScreen(
                 "result=${if (fix == null) "unavailable" else "fix"} " +
                 "reverseGeocoded=${resolvedLocation.isNotBlank()}",
         )
-        if (!isCurrentEditingRequest()) return@LaunchedEffect
+        if (!showScheduleSheet || thinking || sheetAction != null) return@LaunchedEffect
 
         if (fix == null) {
             phoneLocationState = PhoneLocationState.UNAVAILABLE
@@ -488,13 +395,7 @@ fun MainScreen(
         }
         pendingLocationRequestId = null
 
-        // Location is persisted with the phone-created request before submission. A delayed
-        // geocoder response can never overwrite a closed, submitted, or replacement sheet.
-        untangleWriteMutex.withLock {
-            if (isCurrentEditingRequest()) {
-                untangleStore.save(untangleSnapshot(UntanglePhase.EDITING, proposal = null))
-            }
-        }
+        // Location prefill is transient — closing the sheet discards it.
     }
 
     /** Open the AI schedule-extraction sheet directly from the phone UI. */
@@ -510,35 +411,13 @@ fun MainScreen(
                 showScheduleSheet = true
                 thinking = false
                 sheetAction = null
-                val previousRequestId = sheetRequestId
                 val openedRequestId = "direct-${UUID.randomUUID()}"
                 sheetRequestId = openedRequestId
                 untangleInput = ""
                 prefillLocation = ""
                 gpsLat = 0.0; gpsLng = 0.0
-                untangleJournalDate = ""
-                untangleJournalLine = ""
-                untangleSubmissionInput = ""
-                untangleSubmissionStamp = ""
-                untangleSubmissionLocation = ""
-                untangleRequiresFreshSubmission = false
                 phoneLocationState = PhoneLocationState.LOCATING
-                untangleWriteMutex.withLock {
-                    untangleStore.replace(
-                        previousRequestId,
-                        UntangleRecoveryState(
-                            requestId = openedRequestId,
-                            inputText = "",
-                            location = "",
-                            lat = 0.0,
-                            lng = 0.0,
-                            phase = UntanglePhase.EDITING,
-                        ),
-                    )
-                }
 
-                // The durable write may suspend while the user closes the sheet or the Activity
-                // leaves the foreground. Never launch a late permission dialog in either case.
                 if (!showScheduleSheet ||
                     sheetRequestId != openedRequestId ||
                     !phoneLocationForeground
@@ -659,17 +538,12 @@ fun MainScreen(
         mutableStateOf(initialEventRecovery as? EventDraftRecovery.Conflict)
     }
 
-    suspend fun revealNextEventDraft() {
-        when (val next = eventStore.latestEventDraftRecovery()) {
-            is EventDraftRecovery.Recovered -> {
-                if (next.stage == EventEditStage.NAMING) pendingNewEvent = next.event
-                else editingEvent = next.event
-            }
-            is EventDraftRecovery.Conflict -> eventConflict = next
-            EventDraftRecovery.None,
-            null,
-            -> Unit
-        }
+    fun revealNextEventDraft() {
+        eventActions.revealNextDraft(
+            onPending = { pendingNewEvent = it },
+            onEdit = { editingEvent = it },
+            onConflict = { eventConflict = it },
+        )
     }
 
     fun beginNewEvent(type: String) {
@@ -761,217 +635,57 @@ fun MainScreen(
 
     // ── Schedule extraction flow ────────────────────────────────────────
 
-    val submitForExtraction: (String) -> Unit = { text ->
-        val originalRequestId = sheetRequestId
-        val changedSinceSubmitted = untangleRequiresFreshSubmission ||
-            (untangleJournalLine.isNotBlank() && untangleSubmissionInput != text)
-        val requestId = when {
-            changedSinceSubmitted -> "ui-${UUID.randomUUID()}"
-            sheetRequestId.isBlank() -> "ui-${UUID.randomUUID()}"
-            else -> sheetRequestId
-        }
+    val submitForExtraction: (String) -> Unit = lambda@{ text ->
+        if (thinking) return@lambda
+        val requestId = "ui-${UUID.randomUUID()}"
         sheetRequestId = requestId
         untangleInput = text
-        untangleRequiresFreshSubmission = false
-        val now = System.currentTimeMillis()
-        val isExactRetry = !changedSinceSubmitted &&
-            untangleJournalLine.isNotBlank() &&
-            untangleJournalDate.isNotBlank()
-        val stamp = if (isExactRetry) {
-            untangleSubmissionStamp
-        } else {
-            java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).apply {
-                timeZone = appLegacyTimeZone()
-            }.format(java.util.Date(now))
-        }
-        val loc = if (isExactRetry) untangleSubmissionLocation else prefillLocation.ifBlank { "" }
-        val journalDate = if (isExactRetry) untangleJournalDate else appToday().toString()
-        val locationPart = if (loc.isNotBlank()) " · $loc" else ""
-        // appendTodayOnce adds one separator newline and its own hidden idempotency marker.
-        val entryLine = if (isExactRetry) {
-            untangleJournalLine
-        } else {
-            "\n---\n\n### $stamp$locationPart\n\n$text"
-        }
-        untangleJournalDate = journalDate
-        untangleJournalLine = entryLine
-        untangleSubmissionInput = text
-        untangleSubmissionStamp = stamp
-        untangleSubmissionLocation = loc
-        val thinkingState = UntangleRecoveryState(
-            requestId = requestId,
-            inputText = text,
-            location = loc,
-            lat = gpsLat,
-            lng = gpsLng,
-            phase = UntanglePhase.THINKING,
-            journalDate = journalDate,
-            journalLine = entryLine,
-            submissionInput = text,
-            submissionStamp = stamp,
-            submissionLocation = loc,
-        )
+        val stamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).apply {
+            timeZone = appLegacyTimeZone()
+        }.format(java.util.Date())
+        val loc = prefillLocation.ifBlank { "" }
 
         Log.i(
             LLM_LOG_TAG,
-            "request=$requestId phase=submit inputChars=${text.length} locationProvided=${loc.isNotBlank()} " +
-                "serviceConfigured=${deepseekService != null}",
+            "request=$requestId phase=submit inputChars=${text.length} locationProvided=${loc.isNotBlank()}",
         )
         thinking = true
         sheetAction = null
         scope.launch {
             try {
-                // Persist the request before any irreversible side effect. On recovery THINKING is
-                // presented as EDITING, so retry uses the same requestId.
-                untangleWriteMutex.withLock {
-                    if (changedSinceSubmitted && originalRequestId.isNotBlank()) {
-                        untangleStore.replace(originalRequestId, thinkingState)
-                    } else {
-                        untangleStore.save(thinkingState)
-                    }
-                }
-
-                val (durableText, journalConflictDetails) = journalWriteMutex.withLock {
-                    val recoveredDraft = store.getDraft(journalDate)
-                    if (recoveredDraft == null) {
-                        store.appendOnce(journalDate, requestId, entryLine)
-                        store.get(journalDate) to null
-                    } else {
-                        val marker = journalOnceMarker(requestId)
-                        val candidate = if (marker in recoveredDraft) {
-                            recoveredDraft
-                        } else {
-                            recoveredDraft.trimEnd() + "\n" + entryLine + "\n" + marker
-                        }
-                        store.saveDraft(journalDate, candidate)
-                        val commit = store.commitDraft(journalDate, candidate)
-                        candidate to (commit as? DraftCommitResult.Conflict)?.details
-                    }
-                }
-                val hasConflict = journalConflictDetails != null
-                if (journalDate == journalDateKey) {
-                    content = durableText
-                    journalHasDraft = hasConflict
-                }
-                if (hasConflict) {
-                    journalConflict = JournalConflictPrompt(requireNotNull(journalConflictDetails))
-                    Toast.makeText(
-                        context,
-                        "日记已在其他设备修改；本次记录和原草稿均已保留，未自动覆盖",
-                        Toast.LENGTH_LONG,
-                    ).show()
-                }
-
-                if (sheetRequestId != requestId || !showScheduleSheet) {
-                    untangleWriteMutex.withLock { untangleStore.delete(requestId) }
-                    return@launch
-                }
                 val action = deepseekService?.extractSchedule(text, stamp, loc, requestId)
-                if (sheetRequestId != requestId || !showScheduleSheet) {
-                    untangleWriteMutex.withLock { untangleStore.delete(requestId) }
-                    return@launch
-                }
+                if (sheetRequestId != requestId || !showScheduleSheet) return@launch
 
                 if (action != null) {
-                    Log.i(
-                        LLM_LOG_TAG,
-                        "request=${action.requestId} phase=route result=proposal type=${action.type} " +
-                            "titlePresent=${action.title.isNotBlank()} checklistCount=${action.checklist.size} " +
-                            "alarmEnabled=${action.alarmEnabled}",
-                    )
-                    // The proposal must be durable before its confirm button becomes clickable.
-                    untangleWriteMutex.withLock {
-                        untangleStore.save(thinkingState.copy(
-                            phase = UntanglePhase.PROPOSAL,
-                            proposal = action,
-                            updatedAt = System.currentTimeMillis(),
-                        ))
-                    }
-                    if (sheetRequestId != requestId || !showScheduleSheet) {
-                        untangleWriteMutex.withLock { untangleStore.delete(requestId) }
-                        return@launch
-                    }
+                    Log.i(LLM_LOG_TAG, "request=$requestId phase=route result=proposal type=${action.type}")
                     sheetAction = action
                     thinking = false
                 } else {
-                    Log.w(
-                        LLM_LOG_TAG,
-                        "request=$requestId phase=route result=unavailable " +
-                            "serviceConfigured=${deepseekService != null}",
-                    )
-                    untangleWriteMutex.withLock {
-                        untangleStore.save(thinkingState.copy(
-                            phase = UntanglePhase.EDITING,
-                            updatedAt = System.currentTimeMillis(),
-                        ))
-                    }
+                    Log.w(LLM_LOG_TAG, "request=$requestId phase=route result=unavailable")
                     if (sheetRequestId == requestId && showScheduleSheet) {
                         thinking = false
-                        Toast.makeText(
-                            context,
-                            R.string.ai_service_unavailable,
-                            Toast.LENGTH_LONG,
-                        ).show()
-                    } else {
-                        untangleWriteMutex.withLock { untangleStore.delete(requestId) }
+                        Toast.makeText(context, R.string.ai_service_unavailable, Toast.LENGTH_LONG).show()
                     }
                 }
             } catch (error: Exception) {
-                Log.e(
-                    LLM_LOG_TAG,
-                    "request=$requestId phase=submit result=failed " +
-                        "errorType=${error.javaClass.simpleName} at=${error.locationForLog()}",
-                )
-                runCatching {
-                    untangleWriteMutex.withLock {
-                        if (showScheduleSheet && sheetRequestId == requestId) {
-                            untangleStore.save(thinkingState.copy(
-                                phase = UntanglePhase.EDITING,
-                                updatedAt = System.currentTimeMillis(),
-                            ))
-                        } else {
-                            untangleStore.delete(requestId)
-                        }
-                    }
-                }
+                Log.e(LLM_LOG_TAG, "request=$requestId phase=submit result=failed errorType=${error.javaClass.simpleName}", error)
                 if (showScheduleSheet && sheetRequestId == requestId) {
                     thinking = false
-                    Toast.makeText(
-                        context,
-                        R.string.schedule_create_failed_toast,
-                        Toast.LENGTH_SHORT,
-                    ).show()
+                    Toast.makeText(context, R.string.schedule_create_failed_toast, Toast.LENGTH_SHORT).show()
                 }
             }
         }
     }
 
     fun confirmAction(act: DeepSeekAnalysisService.ProposedAction) {
-        val requestId = act.requestId.ifBlank { sheetRequestId }
-        if (requestId.isBlank()) {
-            Toast.makeText(context, R.string.schedule_create_failed_toast, Toast.LENGTH_SHORT).show()
-            return
-        }
+        val requestId = sheetRequestId.ifBlank { return }
         val start = parseAgentDatetime(act.startIso)
         val end = parseAgentDatetime(act.endIso)
         if (start == null || end == null || !end.isAfter(start)) {
-            Log.w(
-                LLM_LOG_TAG,
-                "request=$requestId phase=tool_validate tool=create_schedule result=invalid_datetime " +
-                    "startParsed=${start != null} endParsed=${end != null} " +
-                    "endAfterStart=${start != null && end != null && end.isAfter(start)}",
-            )
             Toast.makeText(context, R.string.schedule_create_failed_toast, Toast.LENGTH_SHORT).show()
             sheetAction = null
-            saveUntangleState(UntanglePhase.EDITING, proposal = null)
             return
         }
-        Log.i(
-            LLM_LOG_TAG,
-            "request=$requestId phase=tool_validate tool=create_schedule result=accepted type=${act.type} " +
-                "titlePresent=${act.title.isNotBlank()} checklistCount=${act.checklist.size} " +
-                "alarmEnabled=${act.alarmEnabled} alarmOffsetMinutes=${act.alarmOffsetMinutes}",
-        )
         val ev = TaskEvent(
             id = stableUntangleId("event", requestId),
             title = act.title,
@@ -991,88 +705,34 @@ fun MainScreen(
             lat = gpsLat,
             lng = gpsLng,
         )
-        // Hide the confirmation controls immediately; the database CAS below still protects
-        // against two taps delivered before this state change is recomposed.
+        if (thinking) return
         thinking = true
         scope.launch {
             try {
-                val commitResult = untangleWriteMutex.withLock {
-                    eventWriteMutex.withLock {
-                        eventStore.saveAndClearPendingAction(ev, requestId)
-                    }
-                }
-                Log.i(
-                    LLM_LOG_TAG,
-                    "request=$requestId phase=tool_execute tool=create_schedule " +
-                        "result=${commitResult.name.lowercase()} " +
-                        "alarmEnabled=${act.alarmEnabled}",
-                )
-                if (commitResult == PendingActionCommitResult.INVALID_STATE) {
-                    if (showScheduleSheet && sheetRequestId == requestId) {
-                        thinking = false
-                        Toast.makeText(
-                            context,
-                            R.string.schedule_create_failed_toast,
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                    }
-                    return@launch
-                }
+                eventWriteMutex.withLock { eventStore.save(ev) }
                 if (showScheduleSheet && sheetRequestId == requestId) {
-                    if (commitResult == PendingActionCommitResult.SAVED) {
-                        val toastMessage = when {
-                            !act.alarmEnabled ->
-                                context.getString(R.string.schedule_created_toast, act.title)
-                            TaskAlarmScheduler.canScheduleExactAlarms(context) ->
-                                context.getString(R.string.schedule_created_with_alarm_toast, act.title)
-                            else -> context.getString(
-                                R.string.schedule_created_with_fallback_alarm_toast,
-                                act.title,
-                            )
-                        }
-                        Toast.makeText(context, toastMessage, Toast.LENGTH_SHORT).show()
-                    }
-                    // Room already committed the event and consumed the proposal. Close this
-                    // generation before best-effort network/watch work, so transport failure can
-                    // never be reported as a failed creation or expose a dead confirm button.
                     showScheduleSheet = false
                     thinking = false
                     sheetAction = null
                     sheetRequestId = ""
                     untangleInput = ""
                     prefillLocation = ""
-                    gpsLat = 0.0
-                    gpsLng = 0.0
-                    untangleJournalDate = ""
-                    untangleJournalLine = ""
-                    untangleSubmissionInput = ""
-                    untangleSubmissionStamp = ""
-                    untangleSubmissionLocation = ""
-                    untangleRequiresFreshSubmission = false
+                    gpsLat = 0.0; gpsLng = 0.0
+                    val alarmMsg = when {
+                        !act.alarmEnabled -> context.getString(R.string.schedule_created_toast, act.title)
+                        TaskAlarmScheduler.canScheduleExactAlarms(context) ->
+                            context.getString(R.string.schedule_created_with_alarm_toast, act.title)
+                        else -> context.getString(R.string.schedule_created_with_fallback_alarm_toast, act.title)
+                    }
+                    Toast.makeText(context, alarmMsg, Toast.LENGTH_SHORT).show()
                 }
                 runCatching { manager.fetchEvents(serverUrl) }
                     .onSuccess { refreshed -> events = refreshed }
-                    .onFailure { error ->
-                        Log.w(LLM_LOG_TAG, "request=$requestId post-commit sync failed", error)
-                    }
-                Log.i(
-                    LLM_LOG_TAG,
-                    "request=$requestId phase=tool_execute tool=create_schedule " +
-                        "result=completed visibleEventCount=${events.size}",
-                )
             } catch (e: Exception) {
-                Log.e(
-                    LLM_LOG_TAG,
-                    "request=$requestId phase=tool_execute tool=create_schedule result=failed " +
-                        "errorType=${e.javaClass.simpleName} at=${e.locationForLog()}",
-                )
+                Log.e(LLM_LOG_TAG, "request=$requestId phase=confirm result=failed", e)
                 if (showScheduleSheet && sheetRequestId == requestId) {
                     thinking = false
-                    Toast.makeText(
-                        context,
-                        R.string.schedule_create_failed_toast,
-                        Toast.LENGTH_SHORT,
-                    ).show()
+                    Toast.makeText(context, R.string.schedule_create_failed_toast, Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -1090,101 +750,48 @@ fun MainScreen(
                 action = sheetAction,
                 onTextChange = { text ->
                     untangleInput = text
-                    saveUntangleState(UntanglePhase.EDITING, proposal = null)
                 },
                 onDismiss = {
-                    val dismissedRequestId = sheetRequestId
-                    Log.d(
-                        LLM_LOG_TAG,
-                        "request=${sheetAction?.requestId ?: sheetRequestId.ifBlank { "none" }} " +
-                            "phase=sheet_close reason=dismissed",
-                    )
+                    Log.d(LLM_LOG_TAG, "phase=sheet_close reason=dismissed")
                     showScheduleSheet = false
                     thinking = false
                     sheetAction = null
                     sheetRequestId = ""
                     untangleInput = ""
-                    discardUntangleState(dismissedRequestId)
                 },
                 onSubmit = submitForExtraction,
                 onConfirmAction = ::confirmAction,
                 onDeclineAction = {
-                    val declinedRequestId = sheetRequestId
-                    Log.d(
-                        LLM_LOG_TAG,
-                        "request=${sheetAction?.requestId ?: sheetRequestId.ifBlank { "none" }} " +
-                            "phase=sheet_close reason=proposal_declined",
-                    )
+                    Log.d(LLM_LOG_TAG, "phase=sheet_close reason=proposal_declined")
                     showScheduleSheet = false
                     thinking = false
                     sheetAction = null
                     sheetRequestId = ""
                     untangleInput = ""
-                    discardUntangleState(declinedRequestId)
                 },
             )
-        } else if (isPhone) {
-            Box(Modifier.fillMaxSize().imePadding()) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 10.dp)
-                        .padding(bottom = 10.dp),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = SURFACE),
-                    elevation = CardDefaults.cardElevation(0.dp),
-                ) {
-                    phoneTabStateHolder.SaveableStateProvider(phoneTab) {
-                        when (phoneTab) {
-                            0 -> notesCardContent()
-                            1 -> taskCardContent()
-                            2 -> timelineCardContent()
-                            else -> notesCardContent()
-                        }
-                    }
-                }
-
-                PhoneTabBar(
-                    selected = phoneTab,
-                    onSelect = { selected ->
-                        if (selected == 1 && phoneTab == 1) showListSheet = true
-                        phoneTab = selected
+        } else {
+            MainLayout(
+                isPhone = isPhone,
+                phoneTab = phoneTab,
+                onPhoneTabSelected = { selected ->
+                    phoneTab = selected
+                    primaryNavigationGeneration++
+                    chromeMode = ChromeMode.PrimaryNavigation
+                },
+                onListSheetRequest = { showListSheet = true },
+                chromeHidden = chromeHidden,
+                chromeMode = chromeMode,
+                onNavigationRequested = {
+                    if (!chromeHidden) {
                         primaryNavigationGeneration++
                         chromeMode = ChromeMode.PrimaryNavigation
-                    },
-                    modifier = Modifier.align(Alignment.BottomCenter),
-                    presentation = when {
-                        chromeHidden -> PhoneTabBarPresentation.Hidden
-                        chromeMode == ChromeMode.PrimaryNavigation ->
-                            PhoneTabBarPresentation.Expanded
-                        else -> PhoneTabBarPresentation.HandleOnly
-                    },
-                    onExpandRequest = {
-                        if (!chromeHidden) {
-                            primaryNavigationGeneration++
-                            chromeMode = ChromeMode.PrimaryNavigation
-                        }
-                    },
-                )
-            }
-        } else {
-            Box(Modifier.fillMaxSize().padding(10.dp).imePadding()) {
-                Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Card(
-                        modifier  = Modifier.weight(1.618f).fillMaxHeight(),
-                        shape     = RoundedCornerShape(20.dp),
-                        colors    = CardDefaults.cardColors(containerColor = SURFACE),
-                        elevation = CardDefaults.cardElevation(0.dp)
-                    ) { notesCardContent() }
-
-                    Card(
-                        modifier  = Modifier.weight(1.0f).fillMaxHeight(),
-                        shape     = RoundedCornerShape(20.dp),
-                        colors    = CardDefaults.cardColors(containerColor = SURFACE),
-                        elevation = CardDefaults.cardElevation(0.dp)
-                    ) { taskCardContent() }
-                }
-            }
+                    }
+                },
+                notesCard = notesCardContent,
+                taskCard = taskCardContent,
+                timelineCard = timelineCardContent,
+            )
         }
     }
 
@@ -1385,23 +992,11 @@ fun MainScreen(
             confirmButton = {
                 if (conflictDraft != null) {
                     TextButton(onClick = {
-                        scope.launch {
-                            try {
-                                val saved = eventWriteMutex.withLock {
-                                    eventStore.saveConflictAsCopy(conflictDraft, conflict.details)
-                                } != null
-                                if (!saved) {
-                                    eventConflict = null
-                                    revealNextEventDraft()
-                                    return@launch
-                                }
-                                eventConflict = null
-                                revealNextEventDraft()
-                                Toast.makeText(context, "草稿已另存为冲突副本", Toast.LENGTH_LONG).show()
-                            } catch (_: Exception) {
-                                Toast.makeText(context, "另存失败，原草稿仍已保留", Toast.LENGTH_LONG).show()
-                            }
-                        }
+                        eventActions.resolveConflictSaveAsCopy(
+                            conflict,
+                            { eventConflict = null; revealNextEventDraft() },
+                            { msg -> Toast.makeText(context, msg, Toast.LENGTH_LONG).show() },
+                        )
                     }) { Text("另存副本") }
                 } else {
                     TextButton(onClick = { eventConflict = null }) { Text("保留草稿") }
@@ -1413,25 +1008,11 @@ fun MainScreen(
                         TextButton(onClick = { eventConflict = null }) { Text("保留草稿") }
                     }
                     TextButton(onClick = {
-                        scope.launch {
-                            try {
-                                val discarded = eventWriteMutex.withLock {
-                                    eventStore.discardEventDraft(
-                                        conflict.details.target.entityId,
-                                        conflict.details,
-                                    )
-                                }
-                                if (!discarded) {
-                                    eventConflict = null
-                                    revealNextEventDraft()
-                                    return@launch
-                                }
-                                eventConflict = null
-                                revealNextEventDraft()
-                            } catch (_: Exception) {
-                                Toast.makeText(context, "读取当前版本失败", Toast.LENGTH_LONG).show()
-                            }
-                        }
+                        eventActions.resolveConflictDiscard(
+                            conflict,
+                            { eventConflict = null; revealNextEventDraft() },
+                            { msg -> Toast.makeText(context, msg, Toast.LENGTH_LONG).show() },
+                        )
                     }) { Text("使用当前版本") }
                 }
             },

@@ -11,7 +11,6 @@ import com.hamhuo.tplanner.persistence.EventWireMapper
 import com.hamhuo.tplanner.persistence.EventDraftRecovery
 import com.hamhuo.tplanner.persistence.EventEditDraftCodec
 import com.hamhuo.tplanner.persistence.EventEditStage
-import com.hamhuo.tplanner.persistence.PendingActionCommitResult
 import com.hamhuo.tplanner.persistence.RoomDraftRepository
 import com.hamhuo.tplanner.persistence.RoomEventRepository
 import com.hamhuo.tplanner.persistence.TPlannerDatabase
@@ -285,29 +284,6 @@ class EventStore(
             }
         }
         return copy
-    }
-
-    suspend fun saveAndClearPendingAction(
-        event: TaskEvent,
-        requestId: String,
-    ): PendingActionCommitResult {
-        val result = DurableWriteQueue.submitAndAwait(
-            key = UNTANGLE_QUEUE_KEY,
-            clearsPreviousFailure = { it != PendingActionCommitResult.INVALID_STATE },
-        ) {
-            DurableWriteQueue.submitAndAwait(
-                key = EVENT_FACT_QUEUE_KEY,
-                clearsPreviousFailure = { it != PendingActionCommitResult.INVALID_STATE },
-            ) {
-                repository.saveOneLocal(event, clearPendingActionId = requestId).also { committed ->
-                    if (committed == PendingActionCommitResult.SAVED) {
-                        reconcileAlarms(repository.getAll())
-                        scheduleSync()
-                    }
-                }
-            }
-        }
-        return result
     }
 
     suspend fun applySync(events: List<TaskEvent>, captured: Map<String, String>) {

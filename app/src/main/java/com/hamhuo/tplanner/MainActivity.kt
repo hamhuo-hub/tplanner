@@ -99,7 +99,6 @@ class MainActivity : ComponentActivity() {
         val store = JournalStore(this, database)
         eventStore = EventStore(this, database)
         val manager = LanSyncManager(this, store, eventStore)
-        val untangleStore = UntangleStateStore(this, database)
         val deepseekKey = BuildConfig.DEEPSEEK_API_KEY
         val amapKey = BuildConfig.AMAP_API_KEY
         AmapGeocoder.setApiKey(amapKey)
@@ -120,7 +119,6 @@ class MainActivity : ComponentActivity() {
             is JournalDraftRecovery.Recovered -> initialJournalRecovery.text
             is JournalDraftRecovery.Conflict -> initialJournalRecovery.text
         }
-        val initialUntangleState = untangleStore.latest()
         val initialEventRecovery = eventStore.latestEventDraftRecovery()
         val initialEvents = eventStore.getAll()
         val initialServerUrl = manager.getServerUrl()
@@ -141,8 +139,6 @@ class MainActivity : ComponentActivity() {
                 initialJournalRecovery = initialJournalRecovery,
                 initialServerUrl = initialServerUrl,
                 initialEventRecovery = initialEventRecovery,
-                untangleStore = untangleStore,
-                initialUntangleState = initialUntangleState,
             )
         }
     }

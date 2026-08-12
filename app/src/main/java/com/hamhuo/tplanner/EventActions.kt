@@ -4,6 +4,7 @@ import android.content.Context
 import android.widget.Toast
 import com.hamhuo.tplanner.persistence.EventDraftRecovery
 import com.hamhuo.tplanner.persistence.EventEditStage
+import com.hamhuo.tplanner.persistence.DraftConflict
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -145,6 +146,62 @@ class EventActions(
             scope.launch {
                 eventWriteMutex.withLock { eventStore.save(updated) }
                 onEventsChanged(fetchEvents(serverUrl()))
+            }
+        }
+    }
+
+    fun resolveConflictSaveAsCopy(
+        conflict: EventDraftRecovery.Conflict,
+        onRevealNext: () -> Unit,
+        onToast: (String) -> Unit,
+    ) {
+        val event = conflict.event ?: return
+        scope.launch {
+            try {
+                val saved = eventWriteMutex.withLock {
+                    eventStore.saveConflictAsCopy(event, conflict.details)
+                } != null
+                onRevealNext()
+                if (saved) onToast("草稿已另存为冲突副本")
+            } catch (_: Exception) {
+                onToast("另存失败，原草稿仍已保留")
+            }
+        }
+    }
+
+    fun resolveConflictDiscard(
+        conflict: EventDraftRecovery.Conflict,
+        onRevealNext: () -> Unit,
+        onToast: (String) -> Unit,
+    ) {
+        scope.launch {
+            try {
+                val discarded = eventWriteMutex.withLock {
+                    eventStore.discardEventDraft(
+                        conflict.details.target.entityId, conflict.details,
+                    )
+                }
+                onRevealNext()
+                if (!discarded) onToast("读取当前版本失败")
+            } catch (_: Exception) {
+                onToast("读取当前版本失败")
+            }
+        }
+    }
+
+    fun revealNextDraft(
+        onPending: (TaskEvent) -> Unit,
+        onEdit: (TaskEvent) -> Unit,
+        onConflict: (EventDraftRecovery.Conflict) -> Unit,
+    ) {
+        scope.launch {
+            when (val next = eventStore.latestEventDraftRecovery()) {
+                is EventDraftRecovery.Recovered -> {
+                    if (next.stage == EventEditStage.NAMING) onPending(next.event)
+                    else onEdit(next.event)
+                }
+                is EventDraftRecovery.Conflict -> onConflict(next)
+                else -> {}
             }
         }
     }
