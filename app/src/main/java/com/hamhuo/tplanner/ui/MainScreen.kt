@@ -47,6 +47,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -77,6 +78,7 @@ import java.util.UUID
 private const val LLM_LOG_TAG = "TplannerLLM"
 private const val PRIMARY_NAVIGATION_VISIBLE_MILLIS = 2_500L
 private const val LOCATION_CAPTURE_WAIT_MILLIS = 12_000L
+private const val JOURNAL_DAY_POLL_MILLIS = 30_000L
 
 private enum class PhoneLocationState {
     IDLE,
@@ -149,21 +151,66 @@ fun MainScreen(
         )
     }
     val journalDateKey = journalDate.toString()
+    val currentJournalDateKey by rememberUpdatedState(journalDateKey)
 
-    LaunchedEffect(journalEditing, journalHasDraft) {
-        while (!journalEditing && !journalHasDraft) {
+    LaunchedEffect(journalEditing, journalDate) {
+        while (!journalEditing) {
             val today = appToday()
-            if (today != journalDate) {
-                journalDate = today
-                journalConflict = null
+            val rollover = planJournalDayRollover(
+                displayedDate = journalDate,
+                today = today,
+                isEditing = journalEditing,
+                hasDraft = journalHasDraft,
+                content = content,
+            )
+            if (rollover != null) {
+                var rolloverConflict: JournalConflictPrompt? = null
+                val canAdvance = rollover.draftContent?.let { draft ->
+                    val result = try {
+                        journalWriteMutex.withLock {
+                            store.commitDraft(rollover.previousDate.toString(), draft)
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        Log.w(
+                            "TPlannerJournal",
+                            "Unable to commit the previous day's note before rollover",
+                            error,
+                        )
+                        null
+                    }
+                    when (result) {
+                        null -> false
+                        DraftCommitResult.Saved,
+                        DraftCommitResult.AlreadySaved,
+                        -> true
+                        is DraftCommitResult.Conflict -> {
+                            rolloverConflict = JournalConflictPrompt(result.details)
+                            true
+                        }
+                    }
+                } ?: true
+
+                if (canAdvance) {
+                    val nextContent = store.get(rollover.nextDate.toString())
+                    journalDate = rollover.nextDate
+                    content = nextContent
+                    journalHasDraft = false
+                    journalConflict = rolloverConflict
+                        ?: journalConflict?.takeUnless {
+                            it.date == rollover.previousDate.toString()
+                        }
+                    break
+                }
             }
-            delay(30_000L)
+            delay(JOURNAL_DAY_POLL_MILLIS)
         }
     }
     val journalActions = remember {
         JournalActions(
             scope, context, store, journalWriteMutex,
-            { journalDateKey }, { content }, { content = it },
+            { currentJournalDateKey }, { content }, { content = it },
             { journalHasDraft }, { journalHasDraft = it },
             { journalConflict }, { journalConflict = it },
         )

@@ -28,24 +28,26 @@ class JournalActions(
     private val setConflict: (JournalConflictPrompt?) -> Unit,
 ) {
     fun saveDraft(text: String) {
+        val dateKey = getDateKey()
         setHasDraft(true)
-        store.enqueueDraft(getDateKey(), text)
+        store.enqueueDraft(dateKey, text)
     }
 
     fun commitDraft(text: String) {
+        val dateKey = getDateKey()
         setHasDraft(true)
-        store.enqueueDraft(getDateKey(), text)
+        store.enqueueDraft(dateKey, text)
         scope.launch {
             try {
                 val result = mutex.withLock {
-                    store.commitDraft(getDateKey(), text)
+                    store.commitDraft(dateKey, text)
                 }
                 when (result) {
                     DraftCommitResult.Saved,
                     DraftCommitResult.AlreadySaved,
-                    -> setHasDraft(false)
+                    -> if (getDateKey() == dateKey) setHasDraft(false)
                     is DraftCommitResult.Conflict -> {
-                        setHasDraft(true)
+                        if (getDateKey() == dateKey) setHasDraft(true)
                         setConflict(JournalConflictPrompt(result.details))
                         Toast.makeText(
                             context,
@@ -55,7 +57,7 @@ class JournalActions(
                     }
                 }
             } catch (_: Exception) {
-                setHasDraft(true)
+                if (getDateKey() == dateKey) setHasDraft(true)
                 Toast.makeText(context, "保存失败，草稿仍保留在本机", Toast.LENGTH_LONG).show()
             }
         }
@@ -82,7 +84,7 @@ class JournalActions(
             try {
                 mutex.withLock { store.discardDraft(details) }
                 setConflict(null)
-                setHasDraft(false)
+                if (details.target.entityId == getDateKey()) setHasDraft(false)
             } catch (_: Exception) {
                 Toast.makeText(context, "操作失败，请重试", Toast.LENGTH_SHORT).show()
             }
