@@ -344,7 +344,7 @@ fun ScheduleItemDetailScreen(
                     HorizontalDivider(color = BORDER)
                     Spacer(Modifier.height(20.dp))
 
-                    // Inbox is represented by an empty listId; custom lists use their stable id.
+                    // Empty listId means unclassified. Inbox and Today are filters, not lists.
                     DetailSectionLabel(stringResource(R.string.section_list))
                     Spacer(Modifier.height(10.dp))
                     Row(
@@ -352,7 +352,7 @@ fun ScheduleItemDetailScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         ListAssignmentChip(
-                            label = stringResource(R.string.list_inbox),
+                            label = stringResource(R.string.list_none),
                             selected = listId.isBlank(),
                             onClick = {
                                 listId = ""

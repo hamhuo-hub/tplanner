@@ -43,10 +43,10 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ListPickerSheet(
-    selectedList: EventList,
+    selectedView: TaskView,
     userLists: List<UserList>,
     listSheetState: androidx.compose.material3.SheetState,
-    onSelectList: (String) -> Unit,
+    onSelectView: (String) -> Unit,
     onDismiss: () -> Unit,
     onNewListRequest: () -> Unit,
     onDeleteList: (String) -> Unit,
@@ -77,25 +77,25 @@ fun ListPickerSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("清单", color = Color(0xFFE0D8C8), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    stringResource(R.string.task_view_picker_title),
+                    color = Color(0xFFE0D8C8),
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                )
                 Icon(
                     Icons.Default.Close, contentDescription = "Close", tint = DIM,
                     modifier = Modifier.size(18.dp).clickable { onDismiss() },
                 )
             }
             Spacer(Modifier.height(12.dp))
-            // 清单项：内置 + 自定义
-            val current = selectedList
-            val allItems = EventList.BUILT_IN + userLists.map {
-                EventList.Custom(it.id, it.name)
-            }
-            allItems.forEach { item ->
-                val isSelected = current.key == item.key
-                val isCustom = item is EventList.Custom
+            val renderItem: @Composable (TaskView) -> Unit = { item ->
+                val isSelected = selectedView.key == item.key
+                val isCustom = item is TaskView.CustomList
                 val row = @Composable {
                     Row(
                         modifier = Modifier.fillMaxWidth().clickable {
-                            onSelectList(item.key)
+                            onSelectView(item.key)
                         }.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -106,9 +106,9 @@ fun ListPickerSheet(
                         ) {
                             Icon(
                                 imageVector = when (item) {
-                                    is EventList.Today -> Icons.Filled.Today
-                                    is EventList.Inbox -> Icons.Filled.Inbox
-                                    is EventList.Custom -> Icons.Filled.Inbox
+                                    is TaskView.Today -> Icons.Filled.Today
+                                    is TaskView.Inbox -> Icons.Filled.Inbox
+                                    is TaskView.CustomList -> Icons.Filled.Inbox
                                 },
                                 contentDescription = null,
                                 tint = if (isSelected) Color(0xFF0E0E0E) else Color(0xFFE0D8C8),
@@ -119,18 +119,18 @@ fun ListPickerSheet(
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text(
                                 when (item) {
-                                    is EventList.Today -> stringResource(R.string.list_today)
-                                    is EventList.Inbox -> stringResource(R.string.list_inbox)
-                                    is EventList.Custom -> item.label
+                                    is TaskView.Today -> stringResource(R.string.list_today)
+                                    is TaskView.Inbox -> stringResource(R.string.list_inbox)
+                                    is TaskView.CustomList -> item.name
                                 },
                                 color = if (isSelected) GOLD else Color(0xFFE0D8C8),
                                 fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
                             )
                             Text(
                                 when (item) {
-                                    is EventList.Today -> "仅显示今天的事项"
-                                    is EventList.Inbox -> "所有未删除的事项"
-                                    is EventList.Custom -> "自定义清单"
+                                    is TaskView.Today -> stringResource(R.string.task_view_today_description)
+                                    is TaskView.Inbox -> stringResource(R.string.task_view_inbox_description)
+                                    is TaskView.CustomList -> stringResource(R.string.task_view_custom_list_description)
                                 },
                                 color = DIM, fontSize = 13.sp,
                             )
@@ -163,6 +163,25 @@ fun ListPickerSheet(
                     row()
                 }
             }
+
+            Text(
+                stringResource(R.string.task_view_filters),
+                color = DIM,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
+            )
+            TaskView.FILTERS.forEach { renderItem(it) }
+
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.task_view_custom_lists),
+                color = DIM,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
+            )
+            userLists.map { TaskView.CustomList(it.id, it.name) }.forEach { renderItem(it) }
             Spacer(Modifier.height(8.dp))
             // 新建清单
             Row(

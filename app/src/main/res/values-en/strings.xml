@@ -22,7 +22,14 @@
     <string name="timeline_recurring_task">Recurring task</string>
     <string name="list_inbox">Inbox</string>
     <string name="list_today">Today</string>
+    <string name="list_none">Unclassified</string>
     <string name="list_new">New List…</string>
+    <string name="task_view_picker_title">Filters &amp; Lists</string>
+    <string name="task_view_filters">Filters</string>
+    <string name="task_view_custom_lists">Custom lists</string>
+    <string name="task_view_inbox_description">Show all non-deleted items</string>
+    <string name="task_view_today_description">Show only today’s items</string>
+    <string name="task_view_custom_list_description">Filter by assigned custom list</string>
     <string name="section_list">List</string>
     <string name="section_time">Time</string>
     <string name="section_alarm">System alarm</string>

@@ -287,6 +287,28 @@ class RoomEventRepository(private val db: TPlannerDatabase) {
     suspend fun capturedMutations(): Map<String, String> =
         db.syncDao().outbox(SyncDatasets.EVENTS).associate { it.entityId to it.mutationToken }
 
+    /** Deletes a custom-list definition and atomically returns its active items to no list. */
+    suspend fun deleteUserListAndUnassignItems(
+        listId: String,
+        now: Long = System.currentTimeMillis(),
+    ): Int = db.withTransaction {
+        var changedItems = 0
+        db.eventDao().getAll().forEach { row ->
+            val event = PersistenceMapper.eventToDomain(row)
+            if (event.deletedAt != 0L || event.listId != listId) return@forEach
+
+            val unassigned = event.copy(
+                listId = "",
+                updatedAt = maxOf(now, event.updatedAt + 1L),
+            )
+            db.eventDao().upsert(PersistenceMapper.eventToEntity(unassigned, row.sortIndex))
+            enqueue(unassigned, now)
+            changedItems++
+        }
+        db.userListDao().delete(listId)
+        changedItems
+    }
+
     private suspend fun enqueue(event: ScheduleItem, now: Long) {
         val existing = db.syncDao().outboxEntry(SyncDatasets.EVENTS, event.id)
         val payload = EventWireMapper.encodeObject(event).toString()

@@ -72,13 +72,13 @@ private fun taskStatus(e: ScheduleItem, now: Instant): String {
 @Composable
 fun TaskWidget(
     events: List<ScheduleItem>,
-    list: EventList,
+    view: TaskView,
     onToggle: (String, Boolean) -> Unit,
     onAddEvent: (String) -> Unit,
     onDelete: (String) -> Unit,
     onItemClick: (ScheduleItem) -> Unit,
     onTypeChange: (String, String) -> Unit = { _, _ -> },
-    onListFilterClick: () -> Unit = {},
+    onViewPickerClick: () -> Unit = {},
     onModalVisibilityChange: (Boolean) -> Unit = {},
 ) {
     val now    = remember { Instant.now() }
@@ -101,28 +101,21 @@ fun TaskWidget(
         onDispose { currentOnModalVisibilityChange(false) }
     }
 
-    val isToday = list is EventList.Today
-    val isCustom = list is EventList.Custom
-    val source  = remember(events, isToday, isCustom, list.key) {
-        when {
-            isToday -> events.forToday()
-            isCustom -> events.filter { it.deletedAt == 0L && it.listId == list.key }
-            else -> events.filter { it.deletedAt == 0L }
-        }
-    }
+    val isToday = view is TaskView.Today
+    val source = remember(events, view.key, today) { view.filter(events, today) }
 
     val groupNowLabel   = stringResource(R.string.group_now)
     val groupLaterLabel = stringResource(R.string.group_later)
     val groupPastLabel  = stringResource(R.string.group_past)
     val groupDoneLabel  = stringResource(R.string.group_done)
 
-    val groups = remember(source, events, isToday, groupNowLabel, groupLaterLabel, groupPastLabel, groupDoneLabel) {
+    val groups = remember(source, isToday, groupNowLabel, groupLaterLabel, groupPastLabel, groupDoneLabel) {
         val current  = mutableListOf<ScheduleItem>()
         val upcoming = mutableListOf<ScheduleItem>()
         val past     = mutableListOf<ScheduleItem>()
         val done     = mutableListOf<ScheduleItem>()
-        // Now / Later / Done: 按 source（Today=当天, Inbox=全部）过滤
-        // Past 只展示任务类型——提醒和状态过了就过了，不需要追踪。
+        // Every group is derived from the selected view. A custom list must never receive
+        // overdue items from the global task dataset.
         source.forEach { e ->
             if (e.type == "task" && e.completed) { done += e; return@forEach }
             when (taskStatus(e, now)) {
@@ -132,15 +125,7 @@ fun TaskWidget(
                 else   -> upcoming += e
             }
         }
-        // Past: 始终取全部未完成任务——不管哪天，没做完就该显示
-        val pastIds = past.map { it.id }.toSet()
-        events.filter { it.deletedAt == 0L }.forEach { e ->
-            if (e.id in pastIds) return@forEach
-            if (e.type != "task") return@forEach
-            if (e.completed) return@forEach
-            if (taskStatus(e, now) == "past") past += e
-        }
-        // Today: Now → Later → Past → Done. Inbox: Past → Now → Later → Done.
+        // Today: Now → Later → Past → Done. Other views: Past → Now → Later → Done.
         if (isToday) {
             mapOf(groupNowLabel to current, groupLaterLabel to upcoming, groupPastLabel to past, groupDoneLabel to done)
         } else {
@@ -153,14 +138,14 @@ fun TaskWidget(
     val laterExpanded = rememberSaveable { mutableStateOf(false) }
     val doneExpanded  = rememberSaveable { mutableStateOf(false) }
 
-    val listLabel = when (list) {
-        is EventList.Today -> stringResource(R.string.list_today)
-        is EventList.Inbox -> stringResource(R.string.list_inbox)
-        is EventList.Custom -> list.label
+    val viewLabel = when (view) {
+        is TaskView.Today -> stringResource(R.string.list_today)
+        is TaskView.Inbox -> stringResource(R.string.list_inbox)
+        is TaskView.CustomList -> view.name
     }
 
-    val taskTotal = events.count { it.deletedAt == 0L && it.type == "task" }
-    val taskDone  = events.count { it.deletedAt == 0L && it.type == "task" && it.completed }
+    val taskTotal = source.count { it.type == "task" }
+    val taskDone  = source.count { it.type == "task" && it.completed }
 
     Column(Modifier.fillMaxSize()) {
         // 标题行
@@ -174,13 +159,13 @@ fun TaskWidget(
                     modifier = Modifier
                         .background(Color(0xFF252525), RoundedCornerShape(50.dp))
                         .border(1.dp, BORDER, RoundedCornerShape(50.dp))
-                        .clickable(onClick = onListFilterClick)
+                        .clickable(onClick = onViewPickerClick)
                         .padding(start = 10.dp, end = 5.dp, top = 4.dp, bottom = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     Text(
-                        listLabel,
+                        viewLabel,
                         color = GOLD,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,

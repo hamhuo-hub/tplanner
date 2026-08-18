@@ -345,7 +345,10 @@ class ScheduleItemStore(
     }
 
     suspend fun deleteUserList(id: String) {
-        userLists.delete(id)
+        DurableWriteQueue.submitAndAwait(EVENT_FACT_QUEUE_KEY) {
+            val changedItems = repository.deleteUserListAndUnassignItems(id)
+            if (changedItems > 0) scheduleSync()
+        }
     }
 
     private companion object {

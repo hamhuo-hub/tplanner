@@ -23,7 +23,14 @@
     <string name="journal_edit_hint">记录今天的想法、灵感…</string>
     <string name="list_inbox">收件箱</string>
     <string name="list_today">今天</string>
+    <string name="list_none">未归类</string>
     <string name="list_new">新建清单…</string>
+    <string name="task_view_picker_title">筛选与清单</string>
+    <string name="task_view_filters">筛选</string>
+    <string name="task_view_custom_lists">自定义清单</string>
+    <string name="task_view_inbox_description">显示所有未删除事项</string>
+    <string name="task_view_today_description">仅显示今天的事项</string>
+    <string name="task_view_custom_list_description">按事项的清单归属筛选</string>
     <string name="section_list">所属清单</string>
     <string name="section_time">时间</string>
     <string name="section_alarm">系统闹铃</string>

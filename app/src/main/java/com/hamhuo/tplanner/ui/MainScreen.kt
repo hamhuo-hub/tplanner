@@ -275,12 +275,12 @@ fun MainScreen(
     var phoneTab by rememberSaveable { mutableStateOf(0) } // 0=Notes, 1=Inbox, 2=Timeline
     var chromeMode by remember { mutableStateOf(ChromeMode.PrimaryNavigation) }
     var primaryNavigationGeneration by remember { mutableIntStateOf(0) }
-    var selectedListKey by rememberSaveable { mutableStateOf(EventList.Inbox.key) }
+    var selectedViewKey by rememberSaveable { mutableStateOf(TaskView.Inbox.key) }
     var userLists by remember { mutableStateOf(emptyList<UserList>()) }
     LaunchedEffect(eventStore) {
         eventStore.observeUserLists().collect { userLists = it }
     }
-    val selectedList = EventList.fromKey(selectedListKey, userLists)
+    val selectedView = TaskView.fromKey(selectedViewKey, userLists)
     var showListSheet by remember { mutableStateOf(false) }
     var showNewListSheet by remember { mutableStateOf(false) }
     var taskWidgetModalVisible by remember { mutableStateOf(false) }
@@ -470,7 +470,7 @@ fun MainScreen(
     }
 
     fun beginNewItem(type: String) {
-        eventActions.beginNewItem(type, selectedList.assignmentId()) { pendingNewItem = it }
+        eventActions.beginNewItem(type, selectedView.listIdForNewItem()) { pendingNewItem = it }
     }
 
     fun openItem(event: ScheduleItem) {
@@ -507,7 +507,7 @@ fun MainScreen(
     val taskCardContent: @Composable () -> Unit = {
         TaskWidget(
             events   = events,
-            list     = selectedList,
+            view     = selectedView,
             onToggle = { eventId, completed ->
                 eventActions.toggleCompleted(events, eventId, completed) { events = it }
             },
@@ -516,7 +516,7 @@ fun MainScreen(
                 eventActions.softDelete(events, eventId) { events = it }
             },
             onItemClick = ::openItem,
-            onListFilterClick = { showListSheet = true },
+            onViewPickerClick = { showListSheet = true },
             onTypeChange = { eventId, newType ->
                 eventActions.changeType(events, eventId, newType) { events = it }
             },
@@ -721,16 +721,16 @@ fun MainScreen(
     // ── List picker ────────────────────────────────────────────────────
     if (showListSheet) {
         ListPickerSheet(
-            selectedList = selectedList,
+            selectedView = selectedView,
             userLists = userLists,
             listSheetState = listSheetState,
-            onSelectList = { key -> selectedListKey = key; showListSheet = false },
+            onSelectView = { key -> selectedViewKey = key; showListSheet = false },
             onDismiss = { showListSheet = false },
             onNewListRequest = { showNewListSheet = true },
             onDeleteList = { id ->
                 scope.launch {
                     eventStore.deleteUserList(id)
-                    if (selectedListKey == id) selectedListKey = EventList.Inbox.key
+                    if (selectedViewKey == id) selectedViewKey = TaskView.Inbox.key
                 }
             },
         )
@@ -787,7 +787,7 @@ fun MainScreen(
                 showNewListSheet = false
                 scope.launch {
                     val list = eventStore.createUserList(name.trim())
-                    selectedListKey = list.id
+                    selectedViewKey = list.id
                 }
             },
         )
