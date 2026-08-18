@@ -109,11 +109,9 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
-        val crownAxis = event.rotaryScrollAxisOrNull()
         if (
-            crownAxis != null &&
             ::dashboard.isInitialized &&
-            dashboard.scrollPageWithCrown(crownAxis)
+            dashboard.scrollPageWithCrown(event)
         ) {
             return true
         }

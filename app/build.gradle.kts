@@ -42,8 +42,8 @@ android {
         applicationId = "com.hamhuo.tplanner"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "mobile_2.0.0"
+        versionCode = 601
+        versionName = "PUKEKO_6.0.1"
 
         buildConfigField("String", "DEEPSEEK_API_KEY", "\"$deepseekApiKey\"")
         buildConfigField(
@@ -58,7 +58,8 @@ android {
             signingConfig = signingConfigs.findByName("project") ?: signingConfigs.getByName("debug")
         }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             signingConfigs.findByName("project")?.let { signingConfig = it }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -103,6 +104,7 @@ dependencies {
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.datastore.preferences)
+    testImplementation(libs.junit)
 }
 
 ksp {

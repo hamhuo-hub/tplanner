@@ -22,6 +22,7 @@ class ScheduleItemActions(
 ) {
     fun beginNewItem(
         type: String,
+        listId: String = "",
         onPending: (ScheduleItem) -> Unit,
     ) {
         val now = Instant.now()
@@ -39,6 +40,7 @@ class ScheduleItemActions(
             updatedAt = now.toEpochMilli(),
             alarmEnabled = type == "event",
             alarmOffsetMinutes = 0,
+            listId = listId,
         )
         scope.launch {
             try {

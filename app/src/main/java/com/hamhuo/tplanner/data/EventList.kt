@@ -11,6 +11,9 @@ sealed class EventList(val key: String, open val label: String) {
     /** key 由后端决定；label 是清单标题文本。 */
     data class Custom(val id: String, override val label: String) : EventList(id, label)
 
+    /** Only a custom list is persisted on an item; Inbox and Today remain computed views. */
+    fun assignmentId(): String = (this as? Custom)?.id.orEmpty()
+
     companion object {
         /** get() 延迟求值——避免伴生对象立即初始化时 Inbox 尚未完成构造导致 null。 */
         val BUILT_IN: List<EventList>

@@ -24,6 +24,7 @@
     <string name="list_inbox">收件箱</string>
     <string name="list_today">今天</string>
     <string name="list_new">新建清单…</string>
+    <string name="section_list">所属清单</string>
     <string name="section_time">时间</string>
     <string name="section_alarm">系统闹铃</string>
     <string name="section_checklist">清单</string>

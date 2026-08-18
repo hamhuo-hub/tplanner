@@ -32,8 +32,8 @@ android {
         // VibrationEffect.createOneShot 需要 API 26，故 minSdk 提到 26。
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "mobile_2.0.0"
+        versionCode = 601
+        versionName = "PUKEKO_6.0.1"
     }
 
     buildTypes {
@@ -41,7 +41,8 @@ android {
             signingConfig = signingConfigs.findByName("project") ?: signingConfigs.getByName("debug")
         }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             signingConfigs.findByName("project")?.let { signingConfig = it }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

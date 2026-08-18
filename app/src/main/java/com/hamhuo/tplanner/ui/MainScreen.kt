@@ -66,6 +66,7 @@ import com.hamhuo.tplanner.timeline.TimelineScreen
 import com.hamhuo.tplanner.persistence.DraftCommitResult
 import com.hamhuo.tplanner.persistence.EventDraftRecovery
 import com.hamhuo.tplanner.persistence.EventEditStage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -222,41 +223,51 @@ fun MainScreen(
         ScheduleItemActions(scope, context, eventStore, eventWriteMutex, { url -> manager.fetchEvents(url) }, { serverUrl })
     }
 
-    val syncedTemplate  = stringResource(R.string.sync_success_with_name)
+    val syncedTemplate = stringResource(R.string.sync_success_with_name)
+    val unknownSyncError = stringResource(R.string.unknown_error)
 
     fun serverHost(url: String): String =
         try { java.net.URL(LanSyncManager.normalizeServerUrl(url)).host } catch (_: Exception) { url }
 
     val onSync: () -> Unit = {
-        scope.launch {
-            syncStatus = "syncing"; syncMsg = ""
-            manager.saveServerUrl(serverUrl)
-            when (val r = manager.syncJournals(serverUrl)) {
-                is LanSyncManager.SyncResult.Success -> {
-                    refreshJournalRecovery(journalDateKey)
-                    syncStatus = "success"; syncMsg = syncedTemplate.format(serverHost(serverUrl))
-                    events = manager.fetchEvents(serverUrl)
-                }
-                is LanSyncManager.SyncResult.Error -> {
-                    syncStatus = "error"; syncMsg = r.message
+        if (syncStatus != "syncing") {
+            // Flip the state before launching so rapid taps cannot queue duplicate full syncs.
+            syncStatus = "syncing"
+            syncMsg = ""
+            val requestedServerUrl = serverUrl
+            scope.launch {
+                try {
+                    manager.saveServerUrl(requestedServerUrl)
+                    val savedServerUrl = manager.getServerUrl()
+                    manager.syncAllOrThrow()
+                    syncStatus = "success"
+                    syncMsg = syncedTemplate.format(serverHost(savedServerUrl))
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    syncStatus = "error"
+                    syncMsg = error.message ?: unknownSyncError
+                } finally {
+                    // Journal sync may have committed before a later event sync failure.
+                    runCatching { refreshJournalRecovery(journalDateKey) }
                 }
             }
         }
     }
 
     LaunchedEffect(Unit) {
-        syncStatus = "syncing"; syncMsg = ""
-        when (val r = manager.syncJournals(serverUrl)) {
-            is LanSyncManager.SyncResult.Success -> {
-                val recovered = store.getDraft(journalDateKey)
-                journalHasDraft = recovered != null
-                content = recovered ?: store.get(journalDateKey)
-                syncStatus = "success"; syncMsg = syncedTemplate.format(serverHost(serverUrl))
-                events = manager.fetchEvents(serverUrl)
-            }
-            is LanSyncManager.SyncResult.Error -> {
-                syncStatus = "idle"
-            }
+        syncStatus = "syncing"
+        syncMsg = ""
+        try {
+            manager.syncAllOrThrow(serverUrl)
+            syncStatus = "success"
+            syncMsg = syncedTemplate.format(serverHost(serverUrl))
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            syncStatus = "idle"
+        } finally {
+            runCatching { refreshJournalRecovery(journalDateKey) }
         }
     }
 
@@ -459,7 +470,7 @@ fun MainScreen(
     }
 
     fun beginNewItem(type: String) {
-        eventActions.beginNewItem(type) { pendingNewItem = it }
+        eventActions.beginNewItem(type, selectedList.assignmentId()) { pendingNewItem = it }
     }
 
     fun openItem(event: ScheduleItem) {
@@ -785,6 +796,7 @@ fun MainScreen(
     editingItem?.let { ev ->
         ScheduleItemDetailScreen(
             event = ev,
+            userLists = userLists,
             onDraftChange = { snapshot ->
                 eventStore.enqueueEventDraft(snapshot, EventEditStage.DETAIL)
             },

@@ -26,7 +26,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.TPlanner"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="false">
 
         <activity
             android:name=".MainActivity"
@@ -39,7 +39,7 @@
             </intent-filter>
         </activity>
 
-        <!-- One durable DataItem per watch-created task. This receiver owns persistence and
+        <!-- One durable DataItem per watch task mutation. This receiver owns persistence and
              publishes a business-level ACK without bringing the phone UI to the foreground. -->
         <service
             android:name=".WatchTaskDataLayerService"
@@ -50,6 +50,10 @@
                     android:scheme="wear"
                     android:host="*"
                     android:pathPrefix="/tplanner/task/create/" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/tplanner/task/delete/" />
             </intent-filter>
         </service>
 

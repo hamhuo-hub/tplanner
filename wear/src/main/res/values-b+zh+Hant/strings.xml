@@ -19,6 +19,7 @@
 
     <string name="task_list_choose_action">%1$s，輕觸選擇清單</string>
     <string name="task_list_new">新增</string>
+    <string name="task_list_delete">刪除</string>
     <string name="task_list_updated">清單已更新</string>
     <string name="task_list_syncing">正在同步…</string>
     <string name="task_list_sync_complete">同步完成</string>

@@ -94,6 +94,7 @@ import java.util.UUID
 @Composable
 fun ScheduleItemDetailScreen(
     event: ScheduleItem,
+    userLists: List<UserList>,
     onDraftChange: (ScheduleItem) -> Unit,
     onSave: (ScheduleItem, (Boolean) -> Unit) -> Unit,
     onNoteSave: (ScheduleItem, (Boolean) -> Unit) -> Unit,
@@ -111,6 +112,7 @@ fun ScheduleItemDetailScreen(
     var noteEditorCloseRequested by remember { mutableStateOf(false) }
     var colorId   by remember { mutableStateOf(event.colorId) }
     var type      by remember { mutableStateOf(event.type) }
+    var listId    by remember(event.id) { mutableStateOf(event.listId) }
     var alarmEnabled by remember { mutableStateOf(event.alarmEnabled) }
     var alarmOffsetMinutes by remember { mutableStateOf(event.alarmOffsetMinutes) }
 
@@ -144,6 +146,7 @@ fun ScheduleItemDetailScreen(
         completed = if (type == "task") completed else false,
         note      = if (noteEditorOpen) noteEditorDraft else note,
         colorId   = colorId,
+        listId    = listId,
         alarmEnabled = alarmEnabled,
         alarmOffsetMinutes = alarmOffsetMinutes.coerceIn(0, MAX_ALARM_OFFSET_MINUTES),
         updatedAt = updatedAt,
@@ -338,6 +341,37 @@ fun ScheduleItemDetailScreen(
                     }
 
                     Spacer(Modifier.height(28.dp))
+                    HorizontalDivider(color = BORDER)
+                    Spacer(Modifier.height(20.dp))
+
+                    // Inbox is represented by an empty listId; custom lists use their stable id.
+                    DetailSectionLabel(stringResource(R.string.section_list))
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        ListAssignmentChip(
+                            label = stringResource(R.string.list_inbox),
+                            selected = listId.isBlank(),
+                            onClick = {
+                                listId = ""
+                                persistDraft()
+                            },
+                        )
+                        userLists.forEach { list ->
+                            ListAssignmentChip(
+                                label = list.name,
+                                selected = listId == list.id,
+                                onClick = {
+                                    listId = list.id
+                                    persistDraft()
+                                },
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(24.dp))
                     HorizontalDivider(color = BORDER)
                     Spacer(Modifier.height(20.dp))
 
@@ -607,6 +641,32 @@ fun ScheduleItemDetailScreen(
 @Composable
 private fun DetailSectionLabel(text: String) {
     Text(text, color = Color(0xFF6B5928), fontSize = 13.sp, letterSpacing = 0.12.sp, fontWeight = FontWeight.SemiBold)
+}
+
+@Composable
+private fun ListAssignmentChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .background(
+                if (selected) GOLD else Color(0xFF1F1F1F),
+                RoundedCornerShape(20.dp),
+            )
+            .border(1.dp, if (selected) GOLD else BORDER, RoundedCornerShape(20.dp))
+            .clickable(enabled = !selected, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    ) {
+        Text(
+            text = label,
+            color = if (selected) Color(0xFF0E0E0E) else Color(0xFFE0D8C8),
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            maxLines = 1,
+        )
+    }
 }
 
 @Composable

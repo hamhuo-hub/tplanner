@@ -206,7 +206,7 @@ class CreateTimeActivity : WearPageActivity() {
             ?: return super.onGenericMotionEvent(event)
         adjust(if (crownAxis > 0f) 1 else -1)
         (if (selectedHour) hourText else minuteText)
-            .performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+            .performCrownItemFocusFeedback(event)
         return true
     }
 

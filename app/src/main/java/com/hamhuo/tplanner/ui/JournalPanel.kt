@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.util.Base64
 import android.view.GestureDetector
 import android.view.MotionEvent
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
@@ -63,6 +64,8 @@ import androidx.compose.ui.zIndex
 import kotlinx.coroutines.launch
 import java.time.format.DateTimeFormatter
 import java.time.LocalDate
+
+private const val MARKDOWN_VIEWER_URL = "file:///android_asset/md_viewer.html"
 
 @Composable
 fun NotesHeader(date: LocalDate, syncStatus: String, onPanelToggle: () -> Unit) {
@@ -170,6 +173,7 @@ fun MonoInput(value: String, placeholder: String, onValue: (String) -> Unit, mod
     )
 }
 
+@Suppress("DEPRECATION")
 @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
 @Composable
 fun MarkdownViewer(
@@ -206,10 +210,24 @@ fun MarkdownViewer(
         factory  = { ctx ->
             WebView(ctx).apply {
                 settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
+                settings.javaScriptCanOpenWindowsAutomatically = false
+                settings.domStorageEnabled = false
+                settings.allowContentAccess = false
+                settings.allowFileAccessFromFileURLs = false
+                settings.allowUniversalAccessFromFileURLs = false
                 setBackgroundColor(0x00000000)
                 webViewClient = object : WebViewClient() {
-                    override fun onPageFinished(view: WebView, url: String) { pageReady = true }
+                    override fun shouldOverrideUrlLoading(
+                        view: WebView,
+                        request: WebResourceRequest,
+                    ): Boolean = request.url.toString() != MARKDOWN_VIEWER_URL
+
+                    override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean =
+                        url != MARKDOWN_VIEWER_URL
+
+                    override fun onPageFinished(view: WebView, url: String) {
+                        pageReady = url == MARKDOWN_VIEWER_URL
+                    }
                 }
                 var lastTouchY = 0f
                 // The task detail page wraps this fixed-height preview in a Compose
@@ -249,7 +267,7 @@ fun MarkdownViewer(
 
                     false // always let WebView handle the event for scrolling
                 }
-                loadUrl("file:///android_asset/md_viewer.html")
+                loadUrl(MARKDOWN_VIEWER_URL)
                 webView = this
             }
         },

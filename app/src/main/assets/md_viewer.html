@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
 <style>
   :root {
     --bg:        #1A1A1A;
@@ -87,28 +89,6 @@
 <body>
 <div id="content"><p class="hint">加载中…</p></div>
 <script src="marked.umd.js"></script>
-<script>
-  function renderMarkdown(text) {
-    var el = document.getElementById('content');
-    if (!text || !text.trim()) {
-      el.innerHTML = '<p class="hint">记录今天的想法、灵感…</p>';
-      return;
-    }
-    el.innerHTML = marked.parse(text, { async: false, breaks: true });
-  }
-
-  // Kotlin passes content as UTF-8 base64 to avoid JS string escaping issues
-  function renderBase64(b64) {
-    try {
-      var binary = atob(b64);
-      var bytes = new Uint8Array(binary.length);
-      for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      var text = new TextDecoder('utf-8').decode(bytes);
-      renderMarkdown(text);
-    } catch (e) {
-      renderMarkdown('');
-    }
-  }
-</script>
+<script src="md_viewer.js"></script>
 </body>
 </html>

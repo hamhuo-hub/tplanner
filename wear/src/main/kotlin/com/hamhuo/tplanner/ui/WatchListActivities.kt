@@ -101,8 +101,7 @@ abstract class WearPageActivity : ComponentActivity() {
     }
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
-        val crownAxis = event.rotaryScrollAxisOrNull()
-        if (crownAxis != null && window.decorView.scrollPageWithCrown(crownAxis)) {
+        if (window.decorView.scrollPageWithCrown(event)) {
             return true
         }
         return super.dispatchGenericMotionEvent(event)
