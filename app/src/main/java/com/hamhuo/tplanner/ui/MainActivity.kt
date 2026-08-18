@@ -15,6 +15,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.hamhuo.tplanner.persistence.LegacyImportResult
 import com.hamhuo.tplanner.persistence.LegacyPreferencesImporter
 import com.hamhuo.tplanner.persistence.TPlannerDatabase
@@ -140,6 +142,11 @@ class MainActivity : ComponentActivity() {
                 initialServerUrl = initialServerUrl,
                 initialEventRecovery = initialEventRecovery,
             )
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                RemoteChangeMonitor(manager).run()
+            }
         }
     }
 

@@ -9,7 +9,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runInterruptible
 import java.net.HttpURLConnection
+import java.net.URLEncoder
 import java.net.URL
 
 /** Full-dataset three-way synchronization backed by Room shadows and a durable local outbox. */
@@ -20,6 +22,7 @@ class LanSyncManager(
 ) {
     private val appContext = context.applicationContext
     private val settings = SettingsRepository(appContext)
+    private val clientId = SyncClientIdentity.get(appContext)
 
     sealed class SyncResult {
         data class Success(val todayText: String) : SyncResult()
@@ -77,6 +80,17 @@ class LanSyncManager(
         syncJournalsOrThrow(resolvedUrl)
         syncEventsOrThrow(resolvedUrl)
     }
+
+    internal suspend fun awaitRemoteChanges(serverUrl: String, since: Long): RemoteChangeNotice =
+        runInterruptible(Dispatchers.IO) {
+            val base = normalizeServerUrl(serverUrl)
+            val encodedClientId = URLEncoder.encode(clientId, Charsets.UTF_8.name())
+            val raw = httpGet(
+                "$base/tplanner/changes?since=$since&clientId=$encodedClientId&wait=$CHANGE_WAIT_MILLIS",
+                readTimeoutMillis = CHANGE_READ_TIMEOUT_MILLIS,
+            )
+            RemoteChangeNotice.fromJson(raw)
+        }
 
     private fun mergeEventsWithBase(
         local: List<ScheduleItem>,
@@ -156,11 +170,12 @@ class LanSyncManager(
         return if (localKey >= remoteKey) local else remote
     }
 
-    private fun httpGet(url: String): String {
+    private fun httpGet(url: String, readTimeoutMillis: Int = NETWORK_TIMEOUT_MILLIS): String {
         val connection = URL(url).openConnection() as HttpURLConnection
         connection.requestMethod = "GET"
         connection.connectTimeout = NETWORK_TIMEOUT_MILLIS
-        connection.readTimeout = NETWORK_TIMEOUT_MILLIS
+        connection.readTimeout = readTimeoutMillis
+        connection.setRequestProperty(CLIENT_ID_HEADER, clientId)
         return try {
             if (connection.responseCode != HttpURLConnection.HTTP_OK) {
                 throw Exception("HTTP ${connection.responseCode}")
@@ -178,6 +193,7 @@ class LanSyncManager(
         connection.readTimeout = NETWORK_TIMEOUT_MILLIS
         connection.doOutput = true
         connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        connection.setRequestProperty(CLIENT_ID_HEADER, clientId)
         try {
             connection.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(body) }
             if (connection.responseCode !in 200..299) {
@@ -191,6 +207,9 @@ class LanSyncManager(
     companion object {
         const val DEFAULT_SERVER_URL = SettingsRepository.DEFAULT_SERVER_URL
         private const val NETWORK_TIMEOUT_MILLIS = 10_000
+        private const val CHANGE_WAIT_MILLIS = 25_000
+        private const val CHANGE_READ_TIMEOUT_MILLIS = 30_000
+        private const val CLIENT_ID_HEADER = "X-TPlanner-Client"
         private val syncMutex = Mutex()
 
         fun normalizeServerUrl(url: String): String {
