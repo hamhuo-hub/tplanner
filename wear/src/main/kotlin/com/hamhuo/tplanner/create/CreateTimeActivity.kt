@@ -202,13 +202,12 @@ class CreateTimeActivity : WearPageActivity() {
 
     // ── rotary ────────────────────────────────────────────────────────
     override fun onGenericMotionEvent(event: MotionEvent?): Boolean {
-        if (event == null) return false
-        val scroll = event.getAxisValue(MotionEvent.AXIS_SCROLL)
-        if (scroll != 0f) {
-            adjust(if (scroll > 0f) 1 else -1)
-            return true
-        }
-        return super.onGenericMotionEvent(event)
+        val crownAxis = event?.rotaryScrollAxisOrNull()
+            ?: return super.onGenericMotionEvent(event)
+        adjust(if (crownAxis > 0f) 1 else -1)
+        (if (selectedHour) hourText else minuteText)
+            .performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+        return true
     }
 
     override fun onResume() {

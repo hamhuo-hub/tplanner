@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.MotionEvent
 import androidx.activity.ComponentActivity
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -105,6 +106,18 @@ class MainActivity : ComponentActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) hideSystemUi()
+    }
+
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        val crownAxis = event.rotaryScrollAxisOrNull()
+        if (
+            crownAxis != null &&
+            ::dashboard.isInitialized &&
+            dashboard.scrollPageWithCrown(crownAxis)
+        ) {
+            return true
+        }
+        return super.dispatchGenericMotionEvent(event)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

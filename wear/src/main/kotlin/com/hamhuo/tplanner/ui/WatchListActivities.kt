@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -97,6 +98,14 @@ abstract class WearPageActivity : ComponentActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) hideSystemUi()
+    }
+
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        val crownAxis = event.rotaryScrollAxisOrNull()
+        if (crownAxis != null && window.decorView.scrollPageWithCrown(crownAxis)) {
+            return true
+        }
+        return super.dispatchGenericMotionEvent(event)
     }
 
     private fun hideSystemUi() {
