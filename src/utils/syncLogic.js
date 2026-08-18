@@ -19,9 +19,10 @@
 // "同版本异内容"走字节抽签，编辑被随机回滚。version 字段保留为元数据，
 // 但不再参与裁决，也不进入内容比较键。
 import { setClockOffset, now } from './clock';
+import { getSyncClientId } from './syncClient';
 
 export const DEFAULT_SERVER_URL = 'https://sync.hamhuo.top';
-export const DEFAULT_CONFIG = { serverUrl: DEFAULT_SERVER_URL, autoSync: false, interval: 60 };
+export const DEFAULT_CONFIG = { serverUrl: DEFAULT_SERVER_URL };
 
 export function normalizeServerUrl(url) {
     const trimmed = (url || '').trim();
@@ -291,7 +292,10 @@ export async function syncAndPush(adapter, serverUrl, localData, baseKeys = null
         const remoteData = await res.json();
         const r = adapter.mergeWithBase(localData, remoteData, baseKeys, resolutions);
         await fetch(`${base}${adapter.endpoint}`, {
-            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            method: 'PUT', headers: {
+                'Content-Type': 'application/json',
+                'X-TPlanner-Client': getSyncClientId(),
+            },
             body: JSON.stringify(r.pushData), signal: AbortSignal.timeout(10000),
         });
         return r;

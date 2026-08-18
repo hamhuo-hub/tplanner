@@ -8,6 +8,8 @@
  * Used only when !isElectron (i.e., running in a browser, not the desktop app).
  */
 
+import { getSyncClientId } from './syncClient';
+
 const API = ''; // same origin — the server IS the web host
 const AUTH_SESSION_KEY = 'tplanner_web_auth_session';
 const AUTH_PERSIST_KEY = 'tplanner_web_auth_persist';
@@ -51,6 +53,7 @@ export function clearWebAuth() {
 async function apiFetch(input, init = {}, authorization = authHeader) {
     const headers = new Headers(init.headers || {});
     if (authorization) headers.set('Authorization', authorization);
+    headers.set('X-TPlanner-Client', getSyncClientId());
     return fetch(input, { ...init, headers });
 }
 
@@ -112,7 +115,7 @@ export async function loadEvents() {
     const res = await apiFetch(`${API}/tplanner/events`);
     if (!res.ok) throw new Error(`GET events: HTTP ${res.status}`);
     const raw = await res.json();
-    return hydrateDates(raw).filter(e => !e.deletedAt);
+    return hydrateDates(raw);
 }
 
 export async function saveEvents(events) {
@@ -163,5 +166,23 @@ export async function saveJournals(journals) {
 export async function loadInsights() {
     const res = await apiFetch(`${API}/tplanner/insights`);
     if (!res.ok) throw new Error(`GET insights: HTTP ${res.status}`);
+    return res.json();
+}
+
+// ── Cross-device change feed ──────────────────────────────────────────────
+
+/** Long-poll until another client writes data, then return affected datasets. */
+export async function waitForRemoteChanges(since, signal) {
+    const query = new URLSearchParams({
+        since: String(since || 0),
+        clientId: getSyncClientId(),
+        wait: '25000',
+    });
+    const res = await apiFetch(`${API}/tplanner/changes?${query}`, {
+        method: 'GET',
+        cache: 'no-store',
+        signal,
+    });
+    if (!res.ok) throw new Error(`GET changes: HTTP ${res.status}`);
     return res.json();
 }

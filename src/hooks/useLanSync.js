@@ -12,6 +12,7 @@ import {
     syncClockOffset, fetchAndAnalyze, syncAndPush,
     BUILTIN_ADAPTERS,
 } from '../utils/syncLogic';
+import { waitForRemoteChanges } from '../utils/syncClient';
 
 // ── base 快照持久化 ──────────────────────────────────────────────────────────
 // 按数据类型存 { id → contentKey }。假设单一同步服务器（固定地址），
@@ -39,7 +40,6 @@ export default function useLanSync(props = {}) {
     // Conflict preview: { results: [{ adapter, analysis, remoteData }], serverUrl }
     const [preview, setPreview]     = useState(null);
 
-    const autoTimerRef = useRef(null);
     const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
 
     const adaptersRef = useRef(adapters);
@@ -55,18 +55,9 @@ export default function useLanSync(props = {}) {
         });
     }, [isElectron]);
 
-    // Auto-sync timer
     const doSyncRef = useRef(null);
-    useEffect(() => {
-        clearInterval(autoTimerRef.current);
-        const serverUrl = normalizeServerUrl(config.serverUrl);
-        if (config.autoSync && serverUrl) {
-            autoTimerRef.current = setInterval(
-                () => doSyncRef.current?.(serverUrl, true),
-                (config.interval || 60) * 1000);
-        }
-        return () => clearInterval(autoTimerRef.current);
-    }, [config.autoSync, config.interval, config.serverUrl]);
+    const automaticSyncChainRef = useRef(Promise.resolve());
+    const mutationTimersRef = useRef(new Set());
 
     const saveConfig = useCallback((next) => {
         setConfig(next);
@@ -74,13 +65,16 @@ export default function useLanSync(props = {}) {
     }, [isElectron]);
 
     // ── 同步（含冲突预览） ────────────────────────────────────────────────
-    const doSync = useCallback(async (serverUrl, skipPreview = false) => {
+    const doSync = useCallback(async (serverUrl, skipPreview = false, datasetTypes = null) => {
         const base = normalizeServerUrl(serverUrl);
         if (!base) { setStatus('error'); setStatusMsg('未配置服务器地址'); return; }
         setStatus('syncing'); setStatusMsg('');
         try {
             await syncClockOffset(base);
-            const ads = adaptersRef.current;
+            const requestedTypes = datasetTypes ? new Set(datasetTypes) : null;
+            const ads = requestedTypes
+                ? adaptersRef.current.filter(adapter => requestedTypes.has(adapter.type))
+                : adaptersRef.current;
 
             if (!skipPreview) {
                 const results = [];
@@ -113,6 +107,71 @@ export default function useLanSync(props = {}) {
 
     useEffect(() => { doSyncRef.current = doSync; }, [doSync]);
 
+    const queueAutomaticSync = useCallback((serverUrl, datasetTypes = null) => {
+        automaticSyncChainRef.current = automaticSyncChainRef.current
+            .catch(() => undefined)
+            .then(() => doSyncRef.current?.(serverUrl, true, datasetTypes));
+        return automaticSyncChainRef.current;
+    }, []);
+
+    // A completed local save/delete requests exactly the affected dataset. The short settle
+    // delay lets the RxDB subscription publish its post-commit snapshot first.
+    useEffect(() => {
+        if (!isElectron || !props.syncRequest?.sequence) return;
+        const base = normalizeServerUrl(config.serverUrl);
+        if (!base) return;
+        const dataset = props.syncRequest.dataset;
+        const timer = setTimeout(() => {
+            mutationTimersRef.current.delete(timer);
+            queueAutomaticSync(base, [dataset]);
+        }, 150);
+        mutationTimersRef.current.add(timer);
+    }, [isElectron, props.syncRequest?.sequence, props.syncRequest?.dataset, config.serverUrl, queueAutomaticSync]);
+
+    useEffect(() => () => {
+        for (const timer of mutationTimersRef.current) clearTimeout(timer);
+        mutationTimersRef.current.clear();
+    }, []);
+
+    // Keep one long-poll open while the desktop app is running. A notification contains only
+    // dataset names; the client actively pulls and merges the authoritative payload itself.
+    useEffect(() => {
+        if (!isElectron) return;
+        const base = normalizeServerUrl(config.serverUrl);
+        if (!base) return;
+
+        const controller = new AbortController();
+        let revision = 0;
+        let retryDelay = 1000;
+        let retryTimer = null;
+
+        const waitBeforeRetry = () => new Promise(resolve => {
+            retryTimer = setTimeout(resolve, retryDelay);
+            retryDelay = Math.min(retryDelay * 2, 30000);
+        });
+
+        const listen = async () => {
+            while (!controller.signal.aborted) {
+                try {
+                    const notice = await waitForRemoteChanges(base, revision, controller.signal);
+                    revision = Number(notice.revision) || revision;
+                    retryDelay = 1000;
+                    const datasets = Array.isArray(notice.datasets) ? notice.datasets : [];
+                    if (datasets.length > 0) await queueAutomaticSync(base, datasets);
+                } catch (error) {
+                    if (controller.signal.aborted || error?.name === 'AbortError') return;
+                    await waitBeforeRetry();
+                }
+            }
+        };
+
+        listen();
+        return () => {
+            controller.abort();
+            clearTimeout(retryTimer);
+        };
+    }, [isElectron, config.serverUrl, queueAutomaticSync]);
+
     // resolutions: { [adapterType]: { [id]: 'local' | 'remote' } }
     const executeMerge = useCallback(async (serverUrl, resolutions = {}, currentAdapters) => {
         const base = normalizeServerUrl(serverUrl);
@@ -123,7 +182,7 @@ export default function useLanSync(props = {}) {
             const localData = a._getLocal ? a._getLocal() : [];
             const r = await syncAndPush(a, base, localData, loadBaseKeys(a.type), resolutions[a.type] || {});
             if (r !== null) {
-                if (a._writeLocal) a._writeLocal(r.merged);
+                if (a._writeLocal) await a._writeLocal(r.merged);
                 saveBaseKeys(a.type, r.newBaseKeys);
                 totalUnresolved += r.unresolved;
                 if (Array.isArray(r.merged)) totalMerged += r.merged.length;

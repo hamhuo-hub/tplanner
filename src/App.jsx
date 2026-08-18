@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { debounceTime } from 'rxjs'
 import { format } from 'date-fns'
 import { useTranslation } from 'react-i18next'
@@ -53,6 +53,13 @@ function PlannerApp() {
     const [db, setDb] = useState(null);
     // Detect Electron environment
     const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
+    const [syncRequest, setSyncRequest] = useState({ sequence: 0, dataset: null });
+    const requestUnitSync = useCallback((dataset) => {
+        if (!isElectron) return;
+        setSyncRequest(previous => ({ sequence: previous.sequence + 1, dataset }));
+    }, [isElectron]);
+    const eventsRef = useRef(events);
+    eventsRef.current = events;
 
     // ── Database & Native Init ───────────────────────────────────────────
     // Electron: RxDB (IndexedDB) with observable subscription
@@ -157,13 +164,14 @@ function PlannerApp() {
                     const patch = { completed, updatedAt: clockNow() };
                     if (checklist !== undefined) patch.checklist = checklist;
                     await doc.update({ $set: patch });
+                    requestUnitSync('events');
                 }
             } catch (err) {
                 console.error('Widget→RxDB sync failed', err);
             }
         });
         return () => { if (typeof off === 'function') off(); };
-    }, [db, isElectron]);
+    }, [db, isElectron, requestUnitSync]);
 
     // ── Journal (随笔) ────────────────────────────────────────────────────
     // 条目格式：{ text, updatedAt, deletedAt }，与 events 的 tombstone 模型一致。
@@ -186,6 +194,8 @@ function PlannerApp() {
     };
 
     const [journals, setJournals] = useState({});
+    const journalsRef = useRef(journals);
+    journalsRef.current = journals;
 
     // 用于展示的纯文本映射：过滤掉 tombstone，解包出 text
     const visibleJournals = useMemo(() => {
@@ -248,6 +258,7 @@ function PlannerApp() {
             }
             return { ...prev, [dateStr]: entry };
         });
+        requestUnitSync('journals');
     };
 
     // ── Web-mode auto-save journals to server ─────────────────────────────
@@ -261,6 +272,63 @@ function PlannerApp() {
             );
         }, 500);
     }, [journals, isElectron]);
+
+    // Browser clients also keep a long-poll open. Before applying a remote notice, flush any
+    // pending local edit so the server's LWW merge sees both sides, then pull fresh snapshots.
+    useEffect(() => {
+        if (isElectron || !isLoaded) return;
+        const controller = new AbortController();
+        let revision = 0;
+        let retryDelay = 1000;
+        let retryTimer = null;
+
+        const pause = () => new Promise(resolve => {
+            retryTimer = setTimeout(resolve, retryDelay);
+            controller.signal.addEventListener('abort', resolve, { once: true });
+            retryDelay = Math.min(retryDelay * 2, 30000);
+        });
+
+        const pullDatasets = async (datasets) => {
+            if (datasets.includes('events')) {
+                clearTimeout(webEventSaveTimerRef.current);
+                await webApi.saveEvents(eventsRef.current);
+                setEvents(await webApi.loadEvents());
+            }
+            if (datasets.includes('journals')) {
+                clearTimeout(webJournalSaveTimerRef.current);
+                await webApi.saveJournals(journalsRef.current);
+                const remote = normalizeJournals(await webApi.loadJournals());
+                setJournals(remote);
+                for (const [date, entry] of Object.entries(remote)) {
+                    const key = `tplanner_journal_${date}`;
+                    if (entry?.deletedAt) localStorage.removeItem(key);
+                    else localStorage.setItem(key, JSON.stringify(entry));
+                }
+            }
+        };
+
+        const listen = async () => {
+            while (!controller.signal.aborted) {
+                try {
+                    const notice = await webApi.waitForRemoteChanges(revision, controller.signal);
+                    revision = Number(notice.revision) || revision;
+                    retryDelay = 1000;
+                    const datasets = Array.isArray(notice.datasets) ? notice.datasets : [];
+                    if (datasets.length > 0) await pullDatasets(datasets);
+                } catch (error) {
+                    if (controller.signal.aborted || error?.name === 'AbortError') return;
+                    console.error('Remote change listener failed', error);
+                    await pause();
+                }
+            }
+        };
+
+        listen();
+        return () => {
+            controller.abort();
+            clearTimeout(retryTimer);
+        };
+    }, [isElectron, isLoaded]);
 
     const [viewRange, setViewRange] = useState(createViewRange);
 
@@ -351,6 +419,7 @@ function PlannerApp() {
             if (doc) {
                 const v = (doc.get('version') || 0) + 1;
                 await doc.update({ $set: { completed: completedStatus, version: v, updatedAt: clockNow() } });
+                requestUnitSync('events');
             }
         } catch (err) {
             console.error('Update failed', err);
@@ -405,6 +474,7 @@ function PlannerApp() {
                 return cleanUpdate;
             });
             await db.events.bulkUpsert(upserts);
+            requestUnitSync('events');
         } catch (err) {
             console.error('Error saving events to RxDB', err);
         }
@@ -434,6 +504,7 @@ function PlannerApp() {
             setSelectedEvent(null);
             return;
         }
+        let changed = false;
         try {
             const now = clockNow();
             if (scope === 'all' && event?.groupId) {
@@ -443,6 +514,7 @@ function PlannerApp() {
                     const old = doc.toJSON();
                     return { ...old, version: (old.version || 0) + 1, deletedAt: now, updatedAt: now };
                 }));
+                changed = docsObj.length > 0;
             } else if (scope === 'future' && event?.groupId) {
                 const cutoff = new Date(event.start).getTime();
                 const docsObj = await db.events.find({ selector: { groupId: event.groupId } }).exec();
@@ -452,14 +524,19 @@ function PlannerApp() {
                         const old = doc.toJSON();
                         return { ...old, version: (old.version || 0) + 1, deletedAt: now, updatedAt: now };
                     }));
+                    changed = true;
                 }
             } else {
                 const doc = await db.events.findOne(id).exec();
-                if (doc) await softDelete(doc);
+                if (doc) {
+                    await softDelete(doc);
+                    changed = true;
+                }
             }
         } catch (err) {
             console.error('Error deleting event', err);
         }
+        if (changed) requestUnitSync('events');
         setSelectedEvent(null);
     };
 
@@ -485,7 +562,10 @@ function PlannerApp() {
                 const old = doc.toJSON();
                 return { ...old, version: (old.version || 0) + 1, deletedAt: now, updatedAt: now };
             });
-            if (upserts.length) await db.events.bulkUpsert(upserts);
+            if (upserts.length) {
+                await db.events.bulkUpsert(upserts);
+                requestUnitSync('events');
+            }
         } catch (err) {
             console.error('Error batch deleting events', err);
         }
@@ -522,6 +602,7 @@ function PlannerApp() {
         }
         try {
             await db.events.insert(copy);
+            requestUnitSync('events');
         } catch (err) {
             console.error('Paste failed', err);
         }
@@ -606,6 +687,7 @@ function PlannerApp() {
                         return cleanUpdate;
                     });
                     await db.events.bulkUpsert(upserts);
+                    requestUnitSync('events');
                     const today = new Date();
                     setViewRange(createViewRange(today));
                     alert(t('messages.importSuccess'));
@@ -713,6 +795,7 @@ function PlannerApp() {
                     {/* LAN Sync — 适配器驱动 */}
                     {isElectron  && (
                         <LanSync
+                            syncRequest={syncRequest}
                             adapters={[
                                 {
                                     ...BUILTIN_ADAPTERS.events,

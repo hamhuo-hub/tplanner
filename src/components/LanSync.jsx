@@ -232,15 +232,8 @@ export default function LanSync(props) {
                         <input type="text" placeholder="https://sync.hamhuo.top" value={config.serverUrl}
                             onChange={e => setConfig(c => ({ ...c, serverUrl: e.target.value }))}
                             onBlur={() => saveConfig(config)} style={inputStyle} />
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            <Toggle label="自动同步" checked={config.autoSync} onChange={v => saveConfig({ ...config, autoSync: v })} />
-                            {config.autoSync && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--clr-text-dim)', paddingLeft: 4 }}>
-                                    间隔 <input type="number" value={config.interval} min={10}
-                                        onChange={e => setConfig(c => ({ ...c, interval: Number(e.target.value) }))}
-                                        onBlur={() => saveConfig(config)} style={{ ...inputStyle, width: 56 }} /> 秒
-                                </div>
-                            )}
+                        <div style={{ fontSize: 11, lineHeight: 1.6, color: 'var(--clr-text-dim)' }}>
+                            保存、完成或删除后立即同步；其他在线设备收到通知后会主动拉取。
                         </div>
                         {statusMsg && <span style={{ fontSize: 10, color: statusColor, fontFamily: 'var(--font-mono)' }}>{statusMsg}</span>}
                         <button className="btn btn--primary" onClick={() => doSync(serverUrl)} disabled={status === 'syncing' || !serverUrl}
@@ -258,18 +251,6 @@ export default function LanSync(props) {
                     onCancel={() => setPreview(null)} />
             )}
         </>
-    );
-}
-
-function Toggle({ label, checked, onChange }) {
-    return (
-        <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', fontSize: 11, color: 'var(--clr-text)' }}>
-            <span>{label}</span>
-            <div onClick={() => onChange(!checked)}
-                style={{ width: 32, height: 18, borderRadius: 9, background: checked ? 'var(--clr-blue,#5B8FCC)' : 'var(--clr-border,#333)', position: 'relative', transition: 'background 150ms', cursor: 'pointer' }}>
-                <div style={{ position: 'absolute', top: 2, left: checked ? 16 : 2, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 150ms' }} />
-            </div>
-        </label>
     );
 }
 

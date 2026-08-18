@@ -7,6 +7,7 @@
  * API:
  *   GET  /tplanner/events        → 返回全部事件 JSON
  *   PUT  /tplanner/events        → 合并上传的事件（updatedAt 优先）
+ *   GET  /tplanner/changes       → 长轮询其他设备的数据集变更通知
  *   GET  /health                 → 健康检查
  */
 
@@ -341,11 +342,73 @@ function mergeInsights(local, incoming) {
     return { entries, reports };
 }
 
+// ── Cross-device change feed ─────────────────────────────────────────────────
+// Clients hold GET /tplanner/changes open. A successful data write wakes every
+// other client with dataset names only; recipients then actively GET + merge.
+const CHANGE_DATASETS = ['events', 'journals', 'goals', 'insights'];
+const MAX_CHANGE_LOG = 256;
+let changeRevision = Date.now();
+let changeLogFloor = changeRevision;
+const changeLog = [];
+const changeWaiters = new Set();
+
+function datasetsSince(since, clientId) {
+    if (!Number.isFinite(since) || since <= 0 || since > changeRevision) {
+        return [...CHANGE_DATASETS];
+    }
+    if (since < changeLogFloor) {
+        return [...CHANGE_DATASETS];
+    }
+    return [...new Set(
+        changeLog
+            .filter(change => change.revision > since && change.source !== clientId)
+            .map(change => change.dataset)
+    )];
+}
+
+function finishChangeWaiter(waiter, datasets) {
+    if (!changeWaiters.delete(waiter)) return;
+    clearTimeout(waiter.timer);
+    waiter.req.off('close', waiter.onClose);
+    json(waiter.res, 200, { revision: changeRevision, datasets });
+}
+
+function publishChange(dataset, source) {
+    changeRevision = Math.max(Date.now(), changeRevision + 1);
+    changeLog.push({ revision: changeRevision, dataset, source: source || '' });
+    if (changeLog.length > MAX_CHANGE_LOG) {
+        const removed = changeLog.splice(0, changeLog.length - MAX_CHANGE_LOG);
+        changeLogFloor = removed[removed.length - 1].revision;
+    }
+
+    for (const waiter of [...changeWaiters]) {
+        const datasets = datasetsSince(waiter.since, waiter.clientId);
+        if (datasets.length > 0) finishChangeWaiter(waiter, datasets);
+    }
+}
+
+function waitForChanges(req, res, since, clientId, waitMs) {
+    const datasets = datasetsSince(since, clientId);
+    if (datasets.length > 0) {
+        json(res, 200, { revision: changeRevision, datasets });
+        return;
+    }
+
+    const waiter = { req, res, since, clientId, timer: null, onClose: null };
+    waiter.onClose = () => {
+        clearTimeout(waiter.timer);
+        changeWaiters.delete(waiter);
+    };
+    waiter.timer = setTimeout(() => finishChangeWaiter(waiter, []), waitMs);
+    req.once('close', waiter.onClose);
+    changeWaiters.add(waiter);
+}
+
 // ── HTTP 工具 ─────────────────────────────────────────────────────────────────
 function setCORS(res) {
     res.setHeader('Access-Control-Allow-Origin',  '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-TPlanner-Client');
 }
 
 function json(res, statusCode, data) {
@@ -377,6 +440,7 @@ function readBody(req) {
 // ── 请求路由 ──────────────────────────────────────────────────────────────────
 async function handleRequest(req, res) {
     const { method, url } = req;
+    const requestUrl = new URL(url, `http://${req.headers.host || 'localhost'}`);
 
     setCORS(res);
 
@@ -388,6 +452,20 @@ async function handleRequest(req, res) {
     }
 
     log('INFO', `${method} ${url} from ${req.socket.remoteAddress}`);
+
+    // ── GET /tplanner/changes ────────────────────────────────────────────────
+    if (method === 'GET' && requestUrl.pathname === '/tplanner/changes') {
+        const since = Number(requestUrl.searchParams.get('since') || 0);
+        const requestedWait = Number(requestUrl.searchParams.get('wait') || 25000);
+        const waitMs = Number.isFinite(requestedWait)
+            ? Math.min(30000, Math.max(1000, requestedWait))
+            : 25000;
+        const clientId = String(
+            requestUrl.searchParams.get('clientId') || req.headers['x-tplanner-client'] || ''
+        ).slice(0, 128);
+        waitForChanges(req, res, since, clientId, waitMs);
+        return;
+    }
 
     // ── GET /health ──────────────────────────────────────────────────────────
     if (method === 'GET' && url === '/health') {
@@ -448,10 +526,14 @@ async function handleRequest(req, res) {
 
         const local  = readEvents();
         const merged = mergeEvents(local, incoming);
-        writeEvents(merged);
+        const changed = stableStringify(local) !== stableStringify(merged);
+        if (changed) {
+            writeEvents(merged);
+            publishChange('events', String(req.headers['x-tplanner-client'] || '').slice(0, 128));
+        }
 
         log('INFO', `Merged: local=${local.length} incoming=${incoming.length} result=${merged.length}`);
-        json(res, 200, { ok: true, count: merged.length });
+        json(res, 200, { ok: true, changed, count: merged.length });
         return;
     }
 
@@ -474,9 +556,13 @@ async function handleRequest(req, res) {
         }
         const local  = readJournals();
         const merged = mergeJournals(local, incoming);
-        writeJournals(merged);
+        const changed = stableStringify(local) !== stableStringify(merged);
+        if (changed) {
+            writeJournals(merged);
+            publishChange('journals', String(req.headers['x-tplanner-client'] || '').slice(0, 128));
+        }
         log('INFO', `Journals merged: ${Object.keys(merged).length} entries`);
-        json(res, 200, { ok: true, count: Object.keys(merged).length });
+        json(res, 200, { ok: true, changed, count: Object.keys(merged).length });
         return;
     }
 
@@ -497,9 +583,13 @@ async function handleRequest(req, res) {
         if (!Array.isArray(incoming)) { json(res, 400, { error: 'Expected array' }); return; }
         const local  = readGoals();
         const merged = mergeGoals(local, incoming);
-        writeGoals(merged);
+        const changed = stableStringify(local) !== stableStringify(merged);
+        if (changed) {
+            writeGoals(merged);
+            publishChange('goals', String(req.headers['x-tplanner-client'] || '').slice(0, 128));
+        }
         log('INFO', `Goals merged: local=${local.length} incoming=${incoming.length} result=${merged.length}`);
-        json(res, 200, { ok: true, count: merged.length });
+        json(res, 200, { ok: true, changed, count: merged.length });
         return;
     }
 
@@ -522,9 +612,13 @@ async function handleRequest(req, res) {
         }
         const local  = readInsights();
         const merged = mergeInsights(local, incoming);
-        writeInsights(merged);
+        const changed = stableStringify(local) !== stableStringify(merged);
+        if (changed) {
+            writeInsights(merged);
+            publishChange('insights', String(req.headers['x-tplanner-client'] || '').slice(0, 128));
+        }
         log('INFO', `Insights merged: ${(merged.entries||[]).length} entries, ${Object.keys(merged.reports||{}).length} reports`);
-        json(res, 200, { ok: true, entries: (merged.entries||[]).length, reports: Object.keys(merged.reports||{}).length });
+        json(res, 200, { ok: true, changed, entries: (merged.entries||[]).length, reports: Object.keys(merged.reports||{}).length });
         return;
     }
 
