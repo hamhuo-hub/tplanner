@@ -55,6 +55,8 @@ object WatchScheduleSync {
     private const val SYNC_JOB_ID = 0x545053
     private const val RFCOMM_CONNECT_TIMEOUT_MS = 10_000L
     private const val RFCOMM_ACK_TIMEOUT_MS = 5_000L
+    private const val DATA_LAYER_ACK_TIMEOUT_MS = 8_000L
+    private const val DATA_LAYER_ACK_POLL_MS = 100L
 
     /** Shared RFCOMM UUID — must match the watch-side value in BluetoothScheduleBridgeService. */
     private val RFCOMM_UUID: UUID = UUID.fromString("7f8a9b2c-3d4e-5f6a-7b8c-9d0e1f2a3b4c")
@@ -93,11 +95,13 @@ object WatchScheduleSync {
         val version: Long,
         val hash: String,
         val taskCount: Int,
+        val payload: String,
     )
 
-    fun push(context: Context, events: List<ScheduleItem>) {
+    /** Queues a durable snapshot and returns the exact payload offered to the watch. */
+    fun push(context: Context, events: List<ScheduleItem>): String? {
         val appContext = context.applicationContext
-        try {
+        return try {
             // Build, version, and persist under the same lock. Otherwise an older concurrent
             // caller can allocate a lower version, finish last, and overwrite the newer fact.
             val queued = synchronized(stateLock) {
@@ -164,14 +168,14 @@ object WatchScheduleSync {
                     .putString(KEY_PENDING_PAYLOAD, payload)
                     .commit()
                 if (committed) {
-                    QueuedSnapshot(days.first().date, version, hash, tasks.size)
+                    QueuedSnapshot(days.first().date, version, hash, tasks.size, payload)
                 } else {
                     null
                 }
             }
             if (queued == null) {
                 Log.e(TAG, "push: failed to persist snapshot")
-                return
+                return null
             }
             scheduleJob(appContext)
             Log.d(
@@ -180,8 +184,10 @@ object WatchScheduleSync {
                     "tasks=${queued.taskCount} version=${queued.version} " +
                     "hash=${queued.hash.take(12)}",
             )
+            queued.payload
         } catch (e: Exception) {
             Log.e(TAG, "push: failed to build snapshot", e)
+            null
         }
     }
 
@@ -214,7 +220,7 @@ object WatchScheduleSync {
                 Log.w(TAG, "flushPending: DataItem stored but no Wear node is connected; trying Bluetooth")
                 false
             } else {
-                true
+                awaitDataLayerAcknowledgement(appContext, payload)
             }
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
@@ -238,25 +244,64 @@ object WatchScheduleSync {
             return flushViaBluetooth(appContext, payload)
         }
 
-        val cleared = synchronized(stateLock) {
-            if (prefs.getString(KEY_PENDING_PAYLOAD, null) != payload) {
-                false
-            } else {
-                prefs.edit().remove(KEY_PENDING_PAYLOAD).commit()
-            }
-        }
-        if (!cleared) {
-            Log.d(TAG, "flushPending: newer or uncleared payload remains")
-            return false
-        }
-
         val metadata = JSONObject(payload)
         Log.d(
             TAG,
-            "flushPending: stored version=${metadata.optLong("version")} " +
+            "flushPending: watch ACKed version=${metadata.optLong("version")} " +
                 "hash=${metadata.optString("hash").take(12)}",
         )
         return true
+    }
+
+    /** Clears only the exact snapshot the watch reports as durably accepted. */
+    internal fun acknowledgeSnapshot(
+        context: Context,
+        version: Long,
+        hash: String,
+    ): Boolean {
+        val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        return synchronized(stateLock) {
+            val pending = prefs.getString(KEY_PENDING_PAYLOAD, null) ?: return@synchronized true
+            val identity = runCatching {
+                WatchScheduleRefreshProtocol.snapshotIdentity(pending)
+            }.getOrElse { error ->
+                Log.e(TAG, "acknowledgeSnapshot: invalid pending payload", error)
+                return@synchronized false
+            }
+            if (identity.version != version || identity.hash != hash) {
+                Log.d(
+                    TAG,
+                    "acknowledgeSnapshot: receipt does not match pending " +
+                        "receipt=$version/${hash.take(12)} " +
+                        "pending=${identity.version}/${identity.hash.take(12)}",
+                )
+                return@synchronized false
+            }
+            prefs.edit().remove(KEY_PENDING_PAYLOAD).commit()
+        }
+    }
+
+    private fun awaitDataLayerAcknowledgement(context: Context, payload: String): Boolean {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(DATA_LAYER_ACK_TIMEOUT_MS)
+        while (!Thread.currentThread().isInterrupted && System.nanoTime() < deadline) {
+            val pending = synchronized(stateLock) {
+                prefs.getString(KEY_PENDING_PAYLOAD, null)
+            }
+            if (pending == null) return true
+            if (pending != payload) {
+                Log.d(TAG, "flushPending: a newer snapshot replaced the one awaiting ACK")
+                return false
+            }
+            try {
+                Thread.sleep(DATA_LAYER_ACK_POLL_MS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return false
+            }
+        }
+        Log.w(TAG, "flushPending: connected node did not ACK the schedule; trying Bluetooth")
+        return false
     }
 
     // ── Bluetooth RFCOMM fallback ──────────────────────────────────────

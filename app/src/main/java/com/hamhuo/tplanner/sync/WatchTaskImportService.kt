@@ -256,6 +256,7 @@ class WatchTaskImportService : Service() {
             status = WatchTaskProtocol.Status.RETRY,
             errorCode = "INCOMPLETE_FRAME",
         )
+        var handledScheduleRefresh = false
         try {
             val remote = socket.remoteDevice
             if (remote.bondState != BluetoothDevice.BOND_BONDED) {
@@ -265,28 +266,93 @@ class WatchTaskImportService : Service() {
                 )
             } else {
                 val raw = ScheduleRfcommProtocol.readFrame(socket.inputStream)
-                response = WatchTaskImporter.importBlocking(
-                    applicationContext,
-                    raw,
-                    fallbackRequestId = null,
-                )
-                Log.d(
-                    TAG,
-                    "Handled request=${response.requestId} status=${response.status} " +
-                        "peer=${runCatching { remote.address }.getOrDefault("unknown")}",
-                )
+                if (WatchScheduleRefreshProtocol.isRefreshRequest(raw)) {
+                    handledScheduleRefresh = true
+                    handleScheduleRefresh(socket, raw)
+                } else {
+                    response = WatchTaskImporter.importBlocking(
+                        applicationContext,
+                        raw,
+                        fallbackRequestId = null,
+                    )
+                    Log.d(
+                        TAG,
+                        "Handled request=${response.requestId} status=${response.status} " +
+                            "peer=${runCatching { remote.address }.getOrDefault("unknown")}",
+                    )
+                }
             }
         } catch (error: Exception) {
             Log.w(TAG, "Rejected incomplete RFCOMM transfer", error)
         } finally {
             timeout.cancel(false)
-            runCatching {
-                val payload = ScheduleRfcommProtocol.encodePayload(
-                    WatchTaskProtocol.encodeResponse(response),
-                )
-                ScheduleRfcommProtocol.writeFrame(socket.outputStream, payload)
+            if (!handledScheduleRefresh) {
+                runCatching {
+                    val payload = ScheduleRfcommProtocol.encodePayload(
+                        WatchTaskProtocol.encodeResponse(response),
+                    )
+                    ScheduleRfcommProtocol.writeFrame(socket.outputStream, payload)
+                }.onFailure { error ->
+                    Log.w(TAG, "Unable to send RFCOMM response", error)
+                }
+            }
+        }
+    }
+
+    private fun handleScheduleRefresh(socket: BluetoothSocket, raw: String) {
+        var finalAck = ScheduleRfcommProtocol.NAK_BYTE
+        try {
+            val request = WatchScheduleRefreshProtocol.decodeRequest(raw)
+            val snapshot = runCatching {
+                WatchScheduleSnapshotProvider.queueCurrent(applicationContext)
             }.onFailure { error ->
-                Log.w(TAG, "Unable to send RFCOMM response", error)
+                Log.e(TAG, "Unable to prepare RFCOMM refresh request=${request.requestId}", error)
+            }.getOrNull()
+            val response = WatchScheduleRefreshProtocol.Response(
+                requestId = request.requestId,
+                snapshot = snapshot,
+                errorCode = if (snapshot == null) "SNAPSHOT_UNAVAILABLE" else null,
+            )
+            ScheduleRfcommProtocol.writeFrame(
+                socket.outputStream,
+                WatchScheduleRefreshProtocol.encodeResponse(response)
+                    .toByteArray(Charsets.UTF_8),
+            )
+            if (snapshot == null) return
+
+            val receipt = WatchScheduleRefreshProtocol.decodeReceipt(
+                ScheduleRfcommProtocol.readFrame(socket.inputStream),
+            )
+            val expected = WatchScheduleRefreshProtocol.receiptFor(
+                requestId = request.requestId,
+                snapshot = snapshot,
+                acceptedAtEpochMs = receipt.acceptedAtEpochMs,
+            )
+            if (
+                receipt.requestId == expected.requestId &&
+                receipt.version == expected.version &&
+                receipt.hash == expected.hash
+            ) {
+                val pendingCleared = WatchScheduleSync.acknowledgeSnapshot(
+                    applicationContext,
+                    receipt.version,
+                    receipt.hash,
+                )
+                finalAck = ScheduleRfcommProtocol.ACK_BYTE
+                Log.d(
+                    TAG,
+                    "RFCOMM refresh acknowledged request=${request.requestId} " +
+                        "pendingCleared=$pendingCleared",
+                )
+            }
+        } catch (error: Exception) {
+            Log.w(TAG, "RFCOMM schedule refresh failed", error)
+        } finally {
+            runCatching {
+                socket.outputStream.write(finalAck)
+                socket.outputStream.flush()
+            }.onFailure { error ->
+                Log.w(TAG, "Unable to send RFCOMM refresh acknowledgement", error)
             }
         }
     }

@@ -2,13 +2,17 @@ package com.hamhuo.tplanner
 
 import android.content.Context
 import android.util.Log
+import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
+import com.google.android.gms.wearable.PutDataRequest
+import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
 import java.time.LocalDate
+import java.util.concurrent.TimeUnit
 
 /** Receives the phone's durable latest-task snapshot and commits it locally. */
 class ScheduleReceiverService : WearableListenerService() {
@@ -27,7 +31,34 @@ class ScheduleReceiverService : WearableListenerService() {
     }
 
     private fun storeSchedule(raw: String) {
-        ScheduleStore.store(this, raw)
+        val result = ScheduleStore.store(this, raw)
+        if (result.shouldAcknowledge) publishDeliveryReceipt(raw)
+    }
+
+    private fun publishDeliveryReceipt(snapshot: String) {
+        try {
+            val identity = WatchScheduleRefreshProtocol.snapshotIdentity(snapshot)
+            val requestId = "delivery-${identity.version}"
+            val receipt = WatchScheduleRefreshProtocol.receiptFor(
+                requestId = requestId,
+                snapshot = snapshot,
+                acceptedAtEpochMs = System.currentTimeMillis(),
+            )
+            val request = PutDataRequest.create(
+                WatchScheduleRefreshProtocol.deliveryAckPath(identity.version),
+            ).setUrgent().apply {
+                data = WatchScheduleRefreshProtocol.encodeReceipt(receipt)
+                    .toByteArray(Charsets.UTF_8)
+            }
+            Tasks.await(
+                Wearable.getDataClient(applicationContext).putDataItem(request),
+                ACK_TIMEOUT_SECONDS,
+                TimeUnit.SECONDS,
+            )
+            Log.d(TAG, "Published schedule receipt version=${identity.version}")
+        } catch (error: Exception) {
+            Log.w(TAG, "Unable to publish schedule receipt", error)
+        }
     }
 
     private fun clearSchedule() {
@@ -41,6 +72,7 @@ class ScheduleReceiverService : WearableListenerService() {
     private companion object {
         const val TAG = "TplannerScheduleRcv"
         const val PATH = "/tplanner/schedule"
+        const val ACK_TIMEOUT_SECONDS = 10L
     }
 }
 
