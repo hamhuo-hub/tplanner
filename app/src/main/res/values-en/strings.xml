@@ -24,6 +24,8 @@
     <string name="list_today">Today</string>
     <string name="list_none">Unclassified</string>
     <string name="list_new">New List…</string>
+    <string name="list_entity_name">List</string>
+    <string name="list_new_description">Create a custom list</string>
     <string name="task_view_picker_title">Filters &amp; Lists</string>
     <string name="task_view_filters">Filters</string>
     <string name="task_view_custom_lists">Custom lists</string>

@@ -25,6 +25,8 @@
     <string name="list_today">今天</string>
     <string name="list_none">未归类</string>
     <string name="list_new">新建清单…</string>
+    <string name="list_entity_name">清单</string>
+    <string name="list_new_description">创建自定义清单</string>
     <string name="task_view_picker_title">筛选与清单</string>
     <string name="task_view_filters">筛选</string>
     <string name="task_view_custom_lists">自定义清单</string>

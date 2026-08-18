@@ -827,6 +827,7 @@ fun MainScreen(
     if (showNewListSheet) {
         NameInputSheet(
             type = "task",
+            entityLabel = stringResource(R.string.list_entity_name),
             initialText = "",
             onDraftChange = {},
             onCancel = { showNewListSheet = false },

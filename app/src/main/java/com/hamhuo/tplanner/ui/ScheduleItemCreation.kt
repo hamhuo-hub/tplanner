@@ -298,13 +298,14 @@ fun ItemTypeChangeSheet(currentType: String, onSelect: (String) -> Unit, onDismi
 @Composable
 fun NameInputSheet(
     type: String,
+    entityLabel: String? = null,
     initialText: String? = null,
     onDraftChange: (String) -> Unit = {},
     onCancel: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val label = typeLabel(type)
+    val label = entityLabel ?: typeLabel(type)
     val defaultName = stringResource(R.string.default_name_template, label)
     val startingText = initialText?.takeIf { it.isNotBlank() } ?: defaultName
     var text by remember(type) {
