@@ -20,6 +20,10 @@
     <string name="task_list_choose_action">%1$s，輕觸選擇清單</string>
     <string name="task_list_new">新增</string>
     <string name="task_list_updated">清單已更新</string>
+    <string name="task_list_syncing">正在同步…</string>
+    <string name="task_list_sync_complete">同步完成</string>
+    <string name="task_list_sync_waiting">未收到手機更新</string>
+    <string name="task_list_sync_failed">同步失敗</string>
     <string name="task_list_permission_title">需要藍牙權限</string>
     <string name="task_list_permission_hint">輕觸授權，繼續接收手機清單</string>
     <string name="task_list_waiting_title">等待手機清單</string>

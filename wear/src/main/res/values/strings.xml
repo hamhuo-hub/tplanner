@@ -21,6 +21,10 @@
     <string name="task_list_new">New</string>
     <string name="task_list_delete">Delete</string>
     <string name="task_list_updated">List updated</string>
+    <string name="task_list_syncing">Syncing…</string>
+    <string name="task_list_sync_complete">Sync complete</string>
+    <string name="task_list_sync_waiting">No phone update received</string>
+    <string name="task_list_sync_failed">Sync failed</string>
     <string name="task_list_permission_title">Bluetooth permission required</string>
     <string name="task_list_permission_hint">Tap to allow access and keep receiving lists from your phone</string>
     <string name="task_list_waiting_title">Waiting for a phone list</string>

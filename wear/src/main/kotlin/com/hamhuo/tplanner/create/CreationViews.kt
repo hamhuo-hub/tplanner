@@ -23,14 +23,15 @@ const val TYPE_STATUS = "status"
 const val TYPE_TASK = "task"
 const val TAG_VALUE = "task_creation_value"
 
-const val CREATION_PRIMARY = 0xFFF5F5F7.toInt()
-const val CREATION_ACCENT = 0xFFFFD60A.toInt()
-const val CREATION_DIM = 0xFF8E8E93.toInt()
-const val CREATION_CARD = 0xFF202022.toInt()
-const val CREATION_CARD_PRESSED = 0x33FFFFFF
-val CREATION_REGULAR = Typeface.create("sans-serif", Typeface.NORMAL)
-val CREATION_MEDIUM = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-val CREATION_BOLD = Typeface.create("sans-serif", Typeface.BOLD)
+const val CREATION_PRIMARY = WEAR_PRIMARY
+const val CREATION_ACCENT = WEAR_GOLD
+const val CREATION_DIM = WEAR_DIM
+const val CREATION_CARD = WEAR_SURFACE2
+const val CREATION_BORDER = WEAR_BORDER
+const val CREATION_CARD_PRESSED = WEAR_CONTROL_PRESSED
+val CREATION_REGULAR = WEAR_REGULAR
+val CREATION_MEDIUM = WEAR_MEDIUM
+val CREATION_BOLD = WEAR_BOLD
 val CREATION_ZONE = ZoneId.of(WatchTaskProtocol.DEFAULT_TIME_ZONE_ID)
 val TASK_COLORS = intArrayOf(
     0xFF5B8FCC.toInt(),
@@ -46,7 +47,7 @@ val TASK_COLORS = intArrayOf(
 // ── shared View builders ───────────────────────────────────────────────
 
 fun Context.creationScrollPage(content: LinearLayout): View = FrameLayout(this).apply {
-    setBackgroundColor(Color.BLACK)
+    setBackgroundColor(WEAR_BG)
     addView(
         ScrollView(context).apply {
             isFillViewport = true
@@ -190,13 +191,14 @@ fun Context.creationRowText(
     ellipsize = TextUtils.TruncateAt.END
 }
 
-fun creationRounded(color: Int, radius: Float): GradientDrawable = GradientDrawable().apply {
+fun Context.creationRounded(color: Int, radius: Float): GradientDrawable = GradientDrawable().apply {
     shape = GradientDrawable.RECTANGLE
     cornerRadius = radius
     setColor(color)
+    if (color == CREATION_CARD) setStroke(dp(1), CREATION_BORDER)
 }
 
-fun creationRippleRounded(normal: Int, pressed: Int, radius: Float): RippleDrawable =
+fun Context.creationRippleRounded(normal: Int, pressed: Int, radius: Float): RippleDrawable =
     RippleDrawable(
         ColorStateList.valueOf(pressed),
         creationRounded(normal, radius),

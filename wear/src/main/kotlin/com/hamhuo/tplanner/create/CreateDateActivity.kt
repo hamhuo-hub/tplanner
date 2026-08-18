@@ -1,7 +1,6 @@
 package com.hamhuo.tplanner
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.os.Bundle
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
@@ -52,7 +51,7 @@ class CreateDateActivity : WearPageActivity() {
         month = initialDate.monthValue
 
         val root = FrameLayout(this).apply {
-            setBackgroundColor(Color.BLACK)
+            setBackgroundColor(WEAR_BG)
         }
 
         val heading = creationHeading("Set date").apply {
@@ -146,14 +145,14 @@ class CreateDateActivity : WearPageActivity() {
 
         val doneButton = TextView(this).apply {
             text = "Done"
-            setTextColor(Color.BLACK)
+            setTextColor(WEAR_BG)
             textSize = 15f
             typeface = CREATION_BOLD
             includeFontPadding = false
             gravity = Gravity.CENTER
             background = creationRippleRounded(
                 CREATION_ACCENT,
-                0xFFE0B900.toInt(),
+                WEAR_GOLD_PRESSED,
                 dp(20).toFloat(),
             )
             isClickable = true
@@ -335,5 +334,3 @@ class CreateDateActivity : WearPageActivity() {
             Intent(context, CreateDateActivity::class.java).putCreationRoute(route)
     }
 }
-
-

@@ -266,20 +266,31 @@ private class FrostedHeaderClipView(context: Context) : FrameLayout(context) {
 /** The launcher screen only. Secondary destinations are independent Wear OS activities. */
 class NextDashboardView(context: Context) : FrameLayout(context) {
     private val contentHost = FrameLayout(context).apply {
-        setBackgroundColor(Color.BLACK)
+        setBackgroundColor(BG)
     }
     private val frostedHeader = FrostedHeaderView(context, contentHost)
     private val frostedHeaderClip = FrostedHeaderClipView(context)
     private val collapsedTitle = textView(12f, ACCENT, MEDIUM)
     private val newButton = ImageButton(context).apply {
         setImageResource(R.drawable.ic_add_rounded_24)
-        imageTintList = ColorStateList.valueOf(Color.BLACK)
+        imageTintList = ColorStateList.valueOf(ACCENT)
         scaleType = ImageView.ScaleType.CENTER_INSIDE
         setPadding(dp(13), dp(12), dp(12), dp(12))
-        background = rippleRounded(ACCENT, NEW_BUTTON_RIPPLE, dp(NEW_BUTTON_SIZE_DP / 2).toFloat())
+        background = rippleRounded(CONTROL, CARD_PRESSED, dp(NEW_BUTTON_SIZE_DP / 2).toFloat())
         contentDescription = context.getString(R.string.task_list_new)
         isClickable = true
         isFocusable = true
+    }
+    private val syncFeedback = textView(10f, ACCENT, WEAR_MONOSPACE).apply {
+        gravity = Gravity.CENTER
+        letterSpacing = 0.02f
+        setPadding(dp(12), dp(6), dp(12), dp(6))
+        background = rounded(CARD, dp(15).toFloat())
+        alpha = 0f
+        visibility = INVISIBLE
+        elevation = dp(8).toFloat()
+        isClickable = false
+        isFocusable = false
     }
 
     private val timeFormatter = LocalizedDateTimeFormatter(context, R.string.task_time_pattern)
@@ -296,9 +307,21 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
     private var newTaskAction: (() -> Unit)? = null
     private var taskOpenAction: ((WatchEventMarks.NextTask) -> Unit)? = null
     private var taskDeleteAction: ((WatchEventMarks.NextTask) -> Unit)? = null
+    private var syncAction: (() -> Unit)? = null
+    private var syncInProgress = false
+    private var syncPullEligible = false
+    private var syncPullStartX = 0f
+    private var syncPullStartY = 0f
+    private val hideSyncFeedback = Runnable {
+        syncFeedback.animate()
+            .alpha(0f)
+            .setDuration(180L)
+            .withEndAction { syncFeedback.visibility = INVISIBLE }
+            .start()
+    }
 
     init {
-        setBackgroundColor(Color.BLACK)
+        setBackgroundColor(BG)
         clipChildren = false
         clipToPadding = false
 
@@ -356,6 +379,12 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
                 bottomMargin = dp(28)
             },
         )
+        addView(
+            syncFeedback,
+            LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
+                topMargin = dp(9)
+            },
+        )
 
         marks = WatchEventMarks.load(context)
         rebuildMainPage()
@@ -381,6 +410,35 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         taskDeleteAction = listener
     }
 
+    fun setSyncAction(listener: (() -> Unit)?) {
+        syncAction = listener
+    }
+
+    internal fun showSyncing() {
+        syncInProgress = true
+        showSyncFeedback(
+            message = context.getString(R.string.task_list_syncing),
+            color = ACCENT,
+            autoHide = false,
+        )
+    }
+
+    internal fun showSyncResult(result: WatchManualSync.Result) {
+        syncInProgress = false
+        val (message, color) = when (result) {
+            WatchManualSync.Result.COMPLETED ->
+                context.getString(R.string.task_list_sync_complete) to SUCCESS
+
+            WatchManualSync.Result.WAITING_FOR_PHONE ->
+                context.getString(R.string.task_list_sync_waiting) to ERROR
+
+            WatchManualSync.Result.FAILED ->
+                context.getString(R.string.task_list_sync_failed) to ERROR
+        }
+        performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+        showSyncFeedback(message, color, autoHide = true)
+    }
+
     fun announceTaskQueued() {
         announceForAccessibility(context.getString(R.string.task_create_queued))
     }
@@ -389,6 +447,9 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
 
     fun setSelectedFilter(filter: WatchListFilter) {
         if (selectedFilter == filter) return
+        // Filters are projections of one canonical task snapshot, not independent stores.
+        // Reload first so persisted local deletes are reflected before rebuilding another view.
+        marks = WatchEventMarks.load(context)
         selectedFilter = filter
         mainScrollY = 0
         mainScroll?.scrollTo(0, 0)
@@ -413,6 +474,39 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         if (!permissionRequired) return
         permissionRequired = false
         rebuildMainPage()
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        var triggerSync = false
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                syncPullStartX = event.x
+                syncPullStartY = event.y
+                syncPullEligible =
+                    !syncInProgress &&
+                    syncAction != null &&
+                    mainScroll?.scrollY == 0
+            }
+
+            MotionEvent.ACTION_UP -> {
+                val deltaX = event.x - syncPullStartX
+                val deltaY = event.y - syncPullStartY
+                triggerSync =
+                    syncPullEligible &&
+                    deltaY >= dp(SYNC_PULL_DISTANCE_DP) &&
+                    kotlin.math.abs(deltaY) > kotlin.math.abs(deltaX) * 1.2f
+                syncPullEligible = false
+            }
+
+            MotionEvent.ACTION_CANCEL -> syncPullEligible = false
+        }
+
+        val handled = super.dispatchTouchEvent(event)
+        if (triggerSync) {
+            performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            post { syncAction?.invoke() }
+        }
+        return handled
     }
 
     private fun rebuildMainPage() {
@@ -640,11 +734,19 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
     }
 
     private fun filteredTasks(filter: WatchListFilter): List<WatchEventMarks.NextTask> {
-        if (filter == WatchListFilter.INBOX) return marks.items
+        // Keep the local tombstone set authoritative even if another caller updates it between
+        // snapshot reloads. This prevents a stale Marks instance from resurrecting a task.
+        val deletedIds = WatchLocalDeletes.all(context)
+        val available = if (deletedIds.isEmpty()) {
+            marks.items
+        } else {
+            marks.items.filterNot { it.id in deletedIds }
+        }
+        if (filter == WatchListFilter.INBOX) return available
         val today = LocalDate.now(APP_ZONE)
         val start = today.atStartOfDay(APP_ZONE).toInstant().toEpochMilli()
         val end = today.plusDays(1).atStartOfDay(APP_ZONE).toInstant().toEpochMilli()
-        return marks.items.filter { task ->
+        return available.filter { task ->
             task.endEpochMs > start && task.startEpochMs < end
         }
     }
@@ -694,6 +796,7 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         shape = GradientDrawable.RECTANGLE
         cornerRadius = radius
         setColor(color)
+        if (color == CARD || color == CONTROL) setStroke(dp(1), BORDER)
     }
 
     private fun rippleRounded(normal: Int, pressed: Int, radius: Float): RippleDrawable =
@@ -704,6 +807,18 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         )
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
+
+    private fun showSyncFeedback(message: String, color: Int, autoHide: Boolean) {
+        removeCallbacks(hideSyncFeedback)
+        syncFeedback.animate().cancel()
+        syncFeedback.text = message
+        syncFeedback.setTextColor(color)
+        syncFeedback.contentDescription = message
+        syncFeedback.visibility = VISIBLE
+        syncFeedback.alpha = 1f
+        announceForAccessibility(message)
+        if (autoHide) postDelayed(hideSyncFeedback, SYNC_FEEDBACK_DURATION_MS)
+    }
 
     /** Wraps a task card with a swipe-to-reveal delete button. Vertical scroll passes through. */
     private inner class SwipeTaskCardView(
@@ -726,7 +841,7 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
             val deleteButton = textView(14f, PRIMARY, MEDIUM).apply {
                 text = context.getString(R.string.task_list_delete)
                 gravity = Gravity.CENTER
-                background = rounded(0xFFD32F2F.toInt(), dp(13).toFloat())
+                background = rounded(ERROR, dp(13).toFloat())
                 minimumWidth = revealWidth
                 setOnClickListener {
                     if (isDeleting) return@setOnClickListener
@@ -851,16 +966,22 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         const val COMPACT_HEADER_HEIGHT_DP = 54
         const val FROSTED_HEADER_SOURCE_HEIGHT_DP = COMPACT_HEADER_HEIGHT_DP + 16
         const val NEW_BUTTON_SIZE_DP = 48
+        const val SYNC_PULL_DISTANCE_DP = 52
+        const val SYNC_FEEDBACK_DURATION_MS = 1_600L
 
-        val REGULAR: Typeface = Typeface.create("sans-serif", Typeface.NORMAL)
-        val MEDIUM: Typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        val BOLD: Typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        val REGULAR: Typeface = WEAR_REGULAR
+        val MEDIUM: Typeface = WEAR_MEDIUM
+        val BOLD: Typeface = WEAR_BOLD
 
-        const val PRIMARY = 0xFFF5F5F7.toInt()
-        const val SECONDARY = 0xFF9A9AA1.toInt()
-        const val ACCENT = 0xFFFFD60A.toInt()
-        const val CARD = 0xFF202022.toInt()
-        const val CARD_PRESSED = 0x33FFFFFF
-        const val NEW_BUTTON_RIPPLE = 0x33000000
+        const val BG = WEAR_BG
+        const val PRIMARY = WEAR_PRIMARY
+        const val SECONDARY = WEAR_DIM
+        const val ACCENT = WEAR_GOLD
+        const val SUCCESS = WEAR_TEAL
+        const val ERROR = WEAR_RED
+        const val BORDER = WEAR_BORDER
+        const val CARD = WEAR_SURFACE2
+        const val CONTROL = WEAR_CONTROL
+        const val CARD_PRESSED = WEAR_CONTROL_PRESSED
     }
 }

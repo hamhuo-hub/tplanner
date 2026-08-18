@@ -1,7 +1,6 @@
 package com.hamhuo.tplanner
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.os.Bundle
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
@@ -41,7 +40,7 @@ class CreateTimeActivity : WearPageActivity() {
         // This page deliberately does NOT use creationScrollPage().
         // Everything is laid out inside one fixed screen so the Next button is always visible.
         val root = FrameLayout(this).apply {
-            setBackgroundColor(Color.BLACK)
+            setBackgroundColor(WEAR_BG)
         }
 
         val heading = creationHeading(getString(R.string.task_create_time_page)).apply {
@@ -179,12 +178,12 @@ class CreateTimeActivity : WearPageActivity() {
                 REQUEST_CREATION_NEXT,
             )
         }.apply {
-            setTextColor(Color.BLACK)
+            setTextColor(WEAR_BG)
             textSize = 15f
             setPadding(0, 0, 0, 0)
             background = creationRippleRounded(
                 CREATION_ACCENT,
-                0xFFE0B900.toInt(),
+                WEAR_GOLD_PRESSED,
                 dp(20).toFloat(),
             )
         }

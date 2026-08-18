@@ -18,6 +18,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var dashboard: NextDashboardView
     private var permissionRequestAttempted = false
     private var selectedFilter = WatchListFilter.INBOX
+    private var manualSyncInProgress = false
 
     private val marksPreferences: SharedPreferences by lazy {
         getSharedPreferences(WATCH_MARKS_PREFS, MODE_PRIVATE)
@@ -48,9 +49,15 @@ class MainActivity : ComponentActivity() {
             }
             setTaskDeleteAction { task ->
                 WatchLocalDeletes.markDeleted(this@MainActivity, task.id)
+                // The delete animation removes only the current card. Reload the canonical
+                // snapshot now so switching filters cannot rebuild from the stale in-memory list.
+                dashboard.refreshContent(showFeedback = false)
                 dashboard.post {
                     WatchTaskOutbox.enqueueDelete(this@MainActivity, task.id)
                 }
+            }
+            setSyncAction {
+                startManualSync()
             }
             setPermissionAction {
                 if (needsBluetoothPermission()) {
@@ -146,6 +153,18 @@ class MainActivity : ComponentActivity() {
     private fun needsBluetoothPermission(): Boolean =
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
             !BluetoothScheduleBridgeService.hasBluetoothConnectPermission(this)
+
+    private fun startManualSync() {
+        if (manualSyncInProgress) return
+        manualSyncInProgress = true
+        dashboard.showSyncing()
+        WatchManualSync.request(this) { result ->
+            manualSyncInProgress = false
+            if (isDestroyed) return@request
+            dashboard.refreshContent(showFeedback = false)
+            dashboard.showSyncResult(result)
+        }
+    }
 
     @Suppress("DEPRECATION")
     private fun openListSelection() {

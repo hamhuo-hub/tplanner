@@ -3,7 +3,6 @@ package com.hamhuo.tplanner
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
@@ -116,7 +115,7 @@ private class ListSelectionView(
     onSelected: (WatchListFilter) -> Unit,
 ) : FrameLayout(context) {
     init {
-        setBackgroundColor(Color.BLACK)
+        setBackgroundColor(WEAR_BG)
         val scroll = ScrollView(context).apply {
             isFillViewport = true
             isVerticalScrollBarEnabled = false
@@ -181,6 +180,7 @@ private class ListSelectionView(
         shape = GradientDrawable.RECTANGLE
         cornerRadius = radius
         setColor(color)
+        if (color == CARD) setStroke(dp(1), WEAR_BORDER)
     }
 
     private fun rippleRounded(normal: Int, pressed: Int, radius: Float): RippleDrawable =
@@ -201,7 +201,7 @@ private class TaskDetailView(
         LocalizedDateTimeFormatter(context, R.string.task_list_long_date_pattern)
 
     init {
-        setBackgroundColor(Color.BLACK)
+        setBackgroundColor(WEAR_BG)
         val scroll = ScrollView(context).apply {
             isFillViewport = true
             isVerticalScrollBarEnabled = false
@@ -330,7 +330,7 @@ private class TaskDetailView(
     }
 
     private fun checklistItemView(text: String, completed: Boolean): TextView =
-        textView(14f, if (completed) DIM else PRIMARY, REGULAR).apply {
+        textView(14f, if (completed) WEAR_DIM else PRIMARY, REGULAR).apply {
             setText(text)
             maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
@@ -366,14 +366,15 @@ private class TaskDetailView(
         shape = GradientDrawable.RECTANGLE
         cornerRadius = radius
         setColor(color)
+        if (color == CARD) setStroke(dp(1), WEAR_BORDER)
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
 }
 
-private val REGULAR: Typeface = Typeface.create("sans-serif", Typeface.NORMAL)
-private val MEDIUM: Typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-private const val PRIMARY = 0xFFF5F5F7.toInt()
-private const val ACCENT = 0xFFFFD60A.toInt()
-private const val CARD = 0xFF202022.toInt()
-private const val CARD_PRESSED = 0x33FFFFFF
+private val REGULAR: Typeface = WEAR_REGULAR
+private val MEDIUM: Typeface = WEAR_MEDIUM
+private const val PRIMARY = WEAR_PRIMARY
+private const val ACCENT = WEAR_GOLD
+private const val CARD = WEAR_SURFACE2
+private const val CARD_PRESSED = WEAR_CONTROL_PRESSED
