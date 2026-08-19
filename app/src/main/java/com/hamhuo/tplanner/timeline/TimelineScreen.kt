@@ -19,6 +19,7 @@ import com.hamhuo.tplanner.ScheduleItem
 import com.hamhuo.tplanner.timeline.components.TimelineAddButton
 import com.hamhuo.tplanner.timeline.components.TimelineBody
 import com.hamhuo.tplanner.timeline.components.TimelineDayHeader
+import com.hamhuo.tplanner.timeline.components.TimelineStatusStrip
 import java.time.Instant
 import java.time.LocalDate
 
@@ -90,14 +91,18 @@ fun TimelineScreen(
             TimelineDayHeader(
                 selectedDay = selectedDay,
                 today = today,
-                events = visibleEvents,
-                zone = zone,
                 onDaySelected = state::goToDate,
                 onCalendarClick = {
                     if (selectedDay == today) openDatePicker() else state.goToToday(today)
                 },
                 allowExpandedControls = allowExpandedNavigation,
                 onExpandedControlsChange = onNavigationExpandedChange,
+            )
+            TimelineStatusStrip(
+                day = selectedDay,
+                events = visibleEvents,
+                zone = zone,
+                onEventClick = onEventClick,
             )
             TimelineBody(
                 days = days,

@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -37,11 +36,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hamhuo.tplanner.BORDER
 import com.hamhuo.tplanner.DIM
-import com.hamhuo.tplanner.EVENT_COLORS
 import com.hamhuo.tplanner.GOLD
 import com.hamhuo.tplanner.R
 import com.hamhuo.tplanner.SURFACE2
-import com.hamhuo.tplanner.ScheduleItem
 import com.hamhuo.tplanner.timeline.TIMELINE_DATE_WINDOW_CENTER
 import com.hamhuo.tplanner.timeline.TIMELINE_DATE_WINDOW_COUNT
 import com.hamhuo.tplanner.timeline.TimelineGeometry
@@ -49,7 +46,6 @@ import com.hamhuo.tplanner.timeline.timelineDateAtIndex
 import com.hamhuo.tplanner.timeline.timelineDateFitsWindow
 import com.hamhuo.tplanner.timeline.timelineDateIndex
 import java.time.LocalDate
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -65,8 +61,6 @@ private val DateCellWidth = 46.dp
 internal fun TimelineDayHeader(
     selectedDay: LocalDate,
     today: LocalDate,
-    events: List<ScheduleItem>,
-    zone: ZoneId,
     onDaySelected: (LocalDate) -> Unit,
     onCalendarClick: () -> Unit,
     allowExpandedControls: Boolean = true,
@@ -136,7 +130,6 @@ internal fun TimelineDayHeader(
                     day = day,
                     selected = day == selectedDay,
                     today = day == today,
-                    statusColor = statusColorForDay(day, events, zone),
                     weekdayFormatter = weekdayFormatter,
                     locale = locale,
                     onClick = { onDaySelected(day) },
@@ -191,7 +184,6 @@ private fun TimelineDateCell(
     day: LocalDate,
     selected: Boolean,
     today: Boolean,
-    statusColor: Color?,
     weekdayFormatter: DateTimeFormatter,
     locale: Locale,
     onClick: () -> Unit,
@@ -238,38 +230,6 @@ private fun TimelineDateCell(
             fontWeight = FontWeight.Bold,
             maxLines = 1,
         )
-        if (statusColor != null) {
-            Box(
-                Modifier
-                    .padding(top = 1.dp)
-                    .width(11.dp)
-                    .height(2.dp)
-                    .background(
-                        if (selected) Color(0xFF0E0E0E).copy(alpha = 0.55f)
-                        else statusColor.copy(alpha = 0.9f),
-                        RoundedCornerShape(50),
-                    ),
-            )
-        } else {
-            Spacer(Modifier.height(3.dp))
-        }
-    }
-}
-
-private fun statusColorForDay(
-    day: LocalDate,
-    events: List<ScheduleItem>,
-    zone: ZoneId,
-): Color? {
-    val dayStart = day.atStartOfDay(zone).toInstant()
-    val dayEnd = day.plusDays(1).atStartOfDay(zone).toInstant()
-    val status = events.firstOrNull {
-        it.type == "status" &&
-            it.deletedAt == 0L &&
-            it.start.isBefore(dayEnd) &&
-            it.end.isAfter(dayStart)
-    }
-    return status?.let {
-        EVENT_COLORS.getOrElse(it.colorId) { GOLD }
+        Spacer(Modifier.height(3.dp))
     }
 }
