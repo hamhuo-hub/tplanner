@@ -86,4 +86,4 @@ tplanner-linux
 /智能手表表盘设计
 手表表盘·全部方案.html
 /.vite
-package-lock.json
+# 桌面版跟踪 lockfile:CI 用 npm ci 可复现安装,setup-node 用它做依赖缓存键
