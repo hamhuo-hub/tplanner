@@ -124,9 +124,6 @@
     "sync": {
         "title": "Sync Server",
         "serverUrl": "https://sync.hamhuo.top",
-        "autoSync": "Auto Sync",
-        "interval": "Interval",
-        "seconds": "s",
         "syncNow": "Sync Now",
         "preview": "Sync Preview",
         "noChanges": "Data is identical, no merge needed",

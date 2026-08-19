@@ -35,6 +35,13 @@ function createViewRange(anchorDate = new Date()) {
     return { start, end };
 }
 
+function hydrateEventDocuments(docs) {
+    return docs.map(doc => {
+        const event = doc.toJSON();
+        return { ...event, start: new Date(event.start), end: new Date(event.end) };
+    });
+}
+
 function PlannerApp() {
     const { t, i18n } = useTranslation();
     const [events, setEvents] = useState([]);
@@ -70,11 +77,7 @@ function PlannerApp() {
             getDatabase().then(database => {
                 setDb(database);
                 subscription = database.events.find().$.pipe(debounceTime(50)).subscribe(docs => {
-                    const hydrated = docs.map(doc => {
-                        const e = doc.toJSON();
-                        return { ...e, start: new Date(e.start), end: new Date(e.end) };
-                    });
-                    setEvents(hydrated);
+                    setEvents(hydrateEventDocuments(docs));
                     setIsLoaded(true);
                 });
             }).catch(err => {
@@ -139,19 +142,15 @@ function PlannerApp() {
         }, 300);
     }, [events, isLoaded, isElectron]);
 
-    const syncTimerRef = useRef(null);
     useEffect(() => {
         if (!isLoaded) return;
         if (!isElectron || !window.electronAPI?.syncEvents) return;
-        clearTimeout(syncTimerRef.current);
-        syncTimerRef.current = setTimeout(() => {
-            const serial = events.map(e => ({
-                ...e,
-                start: e.start instanceof Date ? e.start.toISOString() : e.start,
-                end:   e.end   instanceof Date ? e.end.toISOString()   : e.end,
-            }));
-            window.electronAPI.syncEvents(serial);
-        }, 150);
+        const serial = events.map(e => ({
+            ...e,
+            start: e.start instanceof Date ? e.start.toISOString() : e.start,
+            end:   e.end   instanceof Date ? e.end.toISOString()   : e.end,
+        }));
+        window.electronAPI.syncEvents(serial);
     }, [events, isLoaded, isElectron]);
 
     // Mirror task-toggles done in the widget back into RxDB so both views agree.
@@ -208,13 +207,22 @@ function PlannerApp() {
 
     useEffect(() => {
         if (isElectron && window.electronAPI?.getJournals) {
-            window.electronAPI.getJournals().then(j => setJournals(normalizeJournals(j)));
+            window.electronAPI.getJournals().then(j => {
+                const normalized = normalizeJournals(j);
+                journalsRef.current = normalized;
+                setJournals(normalized);
+            });
             const off1 = window.electronAPI.onJournalUpdated?.((date, entry) => {
-                setJournals(prev => ({ ...prev, [date]: normalizeJournalEntry(entry) }));
+                const next = { ...journalsRef.current, [date]: normalizeJournalEntry(entry) };
+                journalsRef.current = next;
+                setJournals(next);
+                requestUnitSync('journals');
             });
             // LAN sync batch update
             const off2 = window.electronAPI.onJournalAllUpdated?.(merged => {
-                setJournals(normalizeJournals(merged));
+                const normalized = normalizeJournals(merged);
+                journalsRef.current = normalized;
+                setJournals(normalized);
             });
             return () => { off1?.(); off2?.(); };
         } else {
@@ -241,23 +249,23 @@ function PlannerApp() {
                 }
             }).catch(() => { /* server unavailable, use localStorage */ });
         }
-    }, [isElectron]);
+    }, [isElectron, requestUnitSync]);
 
     const handleSaveJournal = (dateStr, text) => {
-        setJournals(prev => {
-            const oldVer = prev[dateStr]?.version || 0;
-            const ts = clockNow();
-            const entry = text?.trim()
-                ? { text, version: oldVer + 1, updatedAt: ts, deletedAt: null }
-                : { text: '', version: oldVer + 1, updatedAt: ts, deletedAt: ts };
-            if (isElectron && window.electronAPI?.saveJournal) {
-                window.electronAPI.saveJournal(dateStr, entry);
-            } else {
-                // Web mode: save to localStorage (instant) + server (debounced in useEffect below)
-                localStorage.setItem(`tplanner_journal_${dateStr}`, JSON.stringify(entry));
-            }
-            return { ...prev, [dateStr]: entry };
-        });
+        const oldVer = journalsRef.current[dateStr]?.version || 0;
+        const ts = clockNow();
+        const entry = text?.trim()
+            ? { text, version: oldVer + 1, updatedAt: ts, deletedAt: null }
+            : { text: '', version: oldVer + 1, updatedAt: ts, deletedAt: ts };
+        const nextJournals = { ...journalsRef.current, [dateStr]: entry };
+        journalsRef.current = nextJournals;
+        setJournals(nextJournals);
+        if (isElectron && window.electronAPI?.saveJournal) {
+            window.electronAPI.saveJournal(dateStr, entry);
+        } else {
+            // Web mode: save to localStorage (instant) + server (debounced in useEffect below)
+            localStorage.setItem(`tplanner_journal_${dateStr}`, JSON.stringify(entry));
+        }
         requestUnitSync('journals');
     };
 
@@ -799,7 +807,11 @@ function PlannerApp() {
                             adapters={[
                                 {
                                     ...BUILTIN_ADAPTERS.events,
-                                    _getLocal: () => events,
+                                    _getLocal: async () => {
+                                        if (!db) return eventsRef.current;
+                                        const docs = await db.events.find().exec();
+                                        return hydrateEventDocuments(docs);
+                                    },
                                     _writeLocal: async (merged) => {
                                         if (!db) return;
                                         try { await db.events.bulkUpsert(merged); } catch (err) { console.error('LAN merge failed', err); }
@@ -807,9 +819,10 @@ function PlannerApp() {
                                 },
                                 {
                                     ...BUILTIN_ADAPTERS.journals,
-                                    _getLocal: () => journals,
+                                    _getLocal: () => journalsRef.current,
                                     _writeLocal: (merged) => {
                                         const normalized = normalizeJournals(merged);
+                                        journalsRef.current = normalized;
                                         setJournals(normalized);
                                         if (isElectron && window.electronAPI?.saveAllJournals) {
                                             window.electronAPI.saveAllJournals(normalized);

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { marked, Renderer } from 'marked';
 import { Maximize2, X } from 'lucide-react';
@@ -113,6 +113,20 @@ export default function NoteEditor({ value = '', onChange, onCommit, placeholder
 
     const [editing, setEditing]       = useState(false);
     const [fullscreen, setFullscreen] = useState(false);
+    const operationStartRef = useRef(value);
+    const operationActiveRef = useRef(false);
+
+    const beginTextOperation = () => {
+        if (operationActiveRef.current) return;
+        operationStartRef.current = value;
+        operationActiveRef.current = true;
+    };
+
+    const commitTextOperation = () => {
+        if (!operationActiveRef.current) return;
+        operationActiveRef.current = false;
+        if (value !== operationStartRef.current) onCommit?.(value);
+    };
 
     const rendered = useMemo(() => {
         const r = marked.parse(value || '', {
@@ -135,17 +149,20 @@ export default function NoteEditor({ value = '', onChange, onCommit, placeholder
 
     const handleBlur = () => {
         setEditing(false);
-        onCommit?.(value);
+        commitTextOperation();
     };
 
     const openFullscreen = () => {
-        if (!readOnly) setFullscreen(true);
+        if (!readOnly) {
+            beginTextOperation();
+            setFullscreen(true);
+        }
     };
 
     const closeFullscreen = () => {
         setFullscreen(false);
         setEditing(false);
-        onCommit?.(value);
+        commitTextOperation();
     };
 
     /* ESC 关闭全屏 — capture 阶段拦截，防止 MUI Dialog 先消费 */
@@ -214,6 +231,8 @@ export default function NoteEditor({ value = '', onChange, onCommit, placeholder
                     autoFocus
                     value={value}
                     onChange={e => onChange?.(e.target.value)}
+                    onFocus={beginTextOperation}
+                    onBlur={commitTextOperation}
                     spellCheck={false}
                     style={{
                         flex: 1,
@@ -265,6 +284,7 @@ export default function NoteEditor({ value = '', onChange, onCommit, placeholder
                         autoFocus
                         value={value}
                         onChange={e => onChange?.(e.target.value)}
+                        onFocus={beginTextOperation}
                         onBlur={handleBlur}
                         spellCheck={false}
                         style={textareaStyle}
@@ -282,6 +302,7 @@ export default function NoteEditor({ value = '', onChange, onCommit, placeholder
                                 onChange?.(newVal);
                                 onCommit?.(newVal);
                             } else {
+                                beginTextOperation();
                                 setEditing(true);
                             }
                         }}

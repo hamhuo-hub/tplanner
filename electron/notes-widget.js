@@ -52,7 +52,7 @@
     var api = window.notesAPI;
     var editor = $('notes-editor');
     var rawText = '';
-    var saveTimer = null;
+    var operationStartText = '';
 
     if (!api) {
       editor.textContent = 'notesAPI 不可用 — preload 未注入';
@@ -78,31 +78,30 @@
 
     // Focus → switch to raw markdown for editing
     editor.addEventListener('focus', function () {
+      operationStartText = rawText;
       if (editor.classList.contains('rendered')) {
         showRaw(editor, rawText);
       }
     });
 
-    // Input → keep rawText in sync + debounced save
+    // Input only updates the in-memory draft. One focus→blur session is one operation;
+    // network sync is requested only after that operation has committed.
     // 用 innerText 而不是 textContent：contenteditable 里按回车会插入 <div>/<br>，
     // textContent 只拼接文本节点、吞掉这些块级换行，导致保存时丢失所有换行符。
     // innerText 会按渲染结果（含 white-space: pre-wrap）把块级换行转成 \n。
     editor.addEventListener('input', function () {
       rawText = editor.innerText;
-      clearTimeout(saveTimer);
-      saveTimer = setTimeout(function () {
-        api.saveJournal(todayKey(), rawText);
-        showSaved();
-      }, 500);
     });
 
-    // Blur → re-render markdown + save
+    // Blur commits exactly once, and unchanged focus sessions do not produce writes.
     editor.addEventListener('blur', function () {
       rawText = editor.innerText;
       showRendered(editor, rawText);
-      clearTimeout(saveTimer);
-      api.saveJournal(todayKey(), rawText);
-      showSaved();
+      if (rawText !== operationStartText) {
+        api.saveJournal(todayKey(), rawText);
+        showSaved();
+      }
+      operationStartText = rawText;
     });
 
     // Always-on-top pin

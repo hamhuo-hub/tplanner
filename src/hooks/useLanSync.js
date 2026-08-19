@@ -57,7 +57,6 @@ export default function useLanSync(props = {}) {
 
     const doSyncRef = useRef(null);
     const automaticSyncChainRef = useRef(Promise.resolve());
-    const mutationTimersRef = useRef(new Set());
 
     const saveConfig = useCallback((next) => {
         setConfig(next);
@@ -79,7 +78,7 @@ export default function useLanSync(props = {}) {
             if (!skipPreview) {
                 const results = [];
                 for (const a of ads) {
-                    const localData = a._getLocal ? a._getLocal() : [];
+                    const localData = a._getLocal ? await a._getLocal() : [];
                     const r = await fetchAndAnalyze(a, base, localData, loadBaseKeys(a.type));
                     if (r) results.push(r);
                     else if (a.isRequired) throw new Error(`${a.type} 拉取失败`);
@@ -114,24 +113,15 @@ export default function useLanSync(props = {}) {
         return automaticSyncChainRef.current;
     }, []);
 
-    // A completed local save/delete requests exactly the affected dataset. The short settle
-    // delay lets the RxDB subscription publish its post-commit snapshot first.
+    // A completed local operation immediately queues exactly the affected dataset. Local
+    // adapters read the committed source of truth, so no timer/debounce is needed here.
     useEffect(() => {
         if (!isElectron || !props.syncRequest?.sequence) return;
         const base = normalizeServerUrl(config.serverUrl);
         if (!base) return;
         const dataset = props.syncRequest.dataset;
-        const timer = setTimeout(() => {
-            mutationTimersRef.current.delete(timer);
-            queueAutomaticSync(base, [dataset]);
-        }, 150);
-        mutationTimersRef.current.add(timer);
+        queueAutomaticSync(base, [dataset]);
     }, [isElectron, props.syncRequest?.sequence, props.syncRequest?.dataset, config.serverUrl, queueAutomaticSync]);
-
-    useEffect(() => () => {
-        for (const timer of mutationTimersRef.current) clearTimeout(timer);
-        mutationTimersRef.current.clear();
-    }, []);
 
     // Keep one long-poll open while the desktop app is running. A notification contains only
     // dataset names; the client actively pulls and merges the authoritative payload itself.
@@ -179,7 +169,7 @@ export default function useLanSync(props = {}) {
         let totalMerged = 0, totalUnresolved = 0;
 
         for (const a of ads) {
-            const localData = a._getLocal ? a._getLocal() : [];
+            const localData = a._getLocal ? await a._getLocal() : [];
             const r = await syncAndPush(a, base, localData, loadBaseKeys(a.type), resolutions[a.type] || {});
             if (r !== null) {
                 if (a._writeLocal) await a._writeLocal(r.merged);

@@ -124,9 +124,6 @@
     "sync": {
         "title": "同步服务器",
         "serverUrl": "https://sync.hamhuo.top",
-        "autoSync": "自动同步",
-        "interval": "间隔",
-        "seconds": "秒",
         "syncNow": "立即同步",
         "preview": "同步预览",
         "noChanges": "数据完全一致，无需合并",
