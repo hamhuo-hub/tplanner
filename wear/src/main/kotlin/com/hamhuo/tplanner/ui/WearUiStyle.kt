@@ -1,20 +1,21 @@
 package com.hamhuo.tplanner
 
 import android.graphics.Typeface
+import com.hamhuo.tplanner.designsystem.TPlannerColors
 
 /** Wear app controls mapped to the phone app's visual tokens. */
-internal const val WEAR_BG = 0xFF0E0E0E.toInt()
-internal const val WEAR_SURFACE = 0xFF1A1A1A.toInt()
-internal const val WEAR_SURFACE2 = 0xFF222222.toInt()
-internal const val WEAR_CONTROL = 0xFF252525.toInt()
-internal const val WEAR_PRIMARY = 0xFFE0D8C8.toInt()
-internal const val WEAR_GOLD = 0xFFC9A84C.toInt()
-internal const val WEAR_DIM = 0xFF7A7163.toInt()
-internal const val WEAR_BLUE = 0xFF5B8FCC.toInt()
-internal const val WEAR_TEAL = 0xFF4A9DA8.toInt()
-internal const val WEAR_RED = 0xFFC0392B.toInt()
-internal const val WEAR_BORDER = 0xFF2D2D2D.toInt()
-internal const val WEAR_CONTROL_PRESSED = 0x1FC9A84C
+internal const val WEAR_BG = TPlannerColors.Background
+internal const val WEAR_SURFACE = TPlannerColors.Surface
+internal const val WEAR_SURFACE2 = TPlannerColors.SurfaceRaised
+internal const val WEAR_CONTROL = TPlannerColors.Control
+internal const val WEAR_PRIMARY = TPlannerColors.TextPrimary
+internal const val WEAR_GOLD = TPlannerColors.Gold
+internal const val WEAR_DIM = TPlannerColors.TextSecondary
+internal const val WEAR_BLUE = TPlannerColors.Blue
+internal const val WEAR_TEAL = TPlannerColors.Teal
+internal const val WEAR_RED = TPlannerColors.Red
+internal const val WEAR_BORDER = TPlannerColors.Border
+internal const val WEAR_CONTROL_PRESSED = TPlannerColors.GoldGhost
 internal const val WEAR_GOLD_PRESSED = 0xFF9C823A.toInt()
 
 internal val WEAR_REGULAR: Typeface = Typeface.create("sans-serif", Typeface.NORMAL)

@@ -9,10 +9,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -21,9 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -45,13 +41,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.hamhuo.tplanner.designsystem.TPlannerTaskUnitModel
+import com.hamhuo.tplanner.ui.components.TPlannerTaskUnit
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -389,108 +386,34 @@ fun TaskItem(
     onToggle: (String, Boolean) -> Unit,
     onTypeChangeRequest: () -> Unit = {},
 ) {
-    val status     = taskStatus(event, now)
-    val isDone     = event.type == "task" && event.completed
-    val isPast     = status == "past"
-    val isNow      = status == "now"
-    val color      = EVENT_COLORS.getOrElse(event.colorId) { EVENT_COLORS[0] }
-    val doneCount  = event.checklist.count { it.completed }
-    val totalCheck = event.checklist.size
-
-    val rowAlpha   = if (isDone || isPast) 0.45f else 1f
-    val bgColor    = if (isNow) Color(0x0F5B8FCC) else Color.Transparent
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(bgColor)
-            .then(if (isNow) Modifier.border(
-                width = 1.dp,
-                color = Color(0x305B8FCC),
-                shape = RoundedCornerShape(0.dp)
-            ) else Modifier)
-            .padding(horizontal = 14.dp, vertical = 5.dp),
-        verticalAlignment = Alignment.Top,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        // 勾选框 / 颜色条
-        if (event.type == "task") {
-            Box(
-                modifier = Modifier
-                    .size(15.dp)
-                    .background(
-                        if (isDone) GOLD else Color.Transparent,
-                        RoundedCornerShape(2.dp)
-                    )
-                    .border(1.5.dp, if (isDone) GOLD else BORDER, RoundedCornerShape(2.dp))
-                    .clickable { onToggle(event.id, !event.completed) },
-                contentAlignment = Alignment.Center
-            ) {
-                if (isDone) Icon(Icons.Default.Check, contentDescription = "Done", tint = Color.Black, modifier = Modifier.size(12.dp))
-            }
-        } else {
-            Box(
-                Modifier
-                    .width(3.dp)
-                    .height(28.dp)
-                    .background(color, RoundedCornerShape(1.dp))
-                    .clickable { onTypeChangeRequest() }
-            )
-        }
-
-        Column(Modifier.weight(1f).then(if (rowAlpha < 1f) Modifier.then(Modifier) else Modifier)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text       = event.title.ifBlank { stringResource(R.string.untitled_event) },
-                    color      = if (isDone) DIM else Color(0xFFE0D8C8),
-                    fontSize   = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines   = 1,
-                    modifier   = Modifier.weight(1f, fill = false),
-                    style      = if (isDone) TextStyle(
-                        color          = DIM,
-                        fontSize       = 15.sp,
-                        textDecoration = TextDecoration.LineThrough
-                    ) else TextStyle(color = Color(0xFFE0D8C8), fontSize = 15.sp)
-                )
-                if (totalCheck > 0) {
-                    val allDone = doneCount == totalCheck
-                    Box(
-                        Modifier
-                            .background(
-                                if (allDone) Color(0x334A7C59) else Color(0x1FC9A84C),
-                                RoundedCornerShape(2.dp)
-                            )
-                            .padding(horizontal = 4.dp, vertical = 1.dp)
-                    ) {
-                        Text(
-                            "$doneCount/$totalCheck",
-                            color    = if (allDone) Color(0xFF4A7C59) else Color(0xFF6B5928),
-                            fontSize = 13.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    }
-                }
-                if (event.alarmEnabled && !isDone) {
-                    Icon(
-                        Icons.Outlined.Alarm,
-                        contentDescription = stringResource(R.string.section_alarm),
-                        tint = GOLD,
-                        modifier = Modifier.size(13.dp),
-                    )
-                }
-                if (isNow) Text(stringResource(R.string.status_now), color = Color(0xFF8BB8E8), fontSize = 11.sp)
-                else if (status == "soon") Text(stringResource(R.string.status_soon), color = GOLD, fontSize = 11.sp)
-            }
-            val startFmt = event.start.atZone(zone).format(fmt)
-            val endFmt   = event.end.atZone(zone).format(fmt)
-            Text(
-                "$startFmt – $endFmt",
-                color = DIM, fontSize = 14.sp, fontFamily = FontFamily.Monospace
-            )
-        }
+    val status = taskStatus(event, now)
+    val isDone = event.type == "task" && event.completed
+    val startText = event.start.atZone(zone).format(fmt)
+    val endText = event.end.atZone(zone).format(fmt)
+    val statusLabel = when (status) {
+        "now" -> stringResource(R.string.status_now)
+        "soon" -> stringResource(R.string.status_soon)
+        else -> ""
     }
+    TPlannerTaskUnit(
+        model = TPlannerTaskUnitModel(
+            title = event.title.ifBlank { stringResource(R.string.untitled_event) },
+            supportingText = "$startText \u2013 $endText",
+            isTask = event.type == "task",
+            completed = isDone,
+            past = status == "past",
+            current = status == "now",
+            accentColor = EVENT_COLORS.getOrElse(event.colorId) { EVENT_COLORS[0] }.toArgb(),
+            checklistDone = event.checklist.count { it.completed },
+            checklistTotal = event.checklist.size,
+            statusLabel = statusLabel,
+            alarmEnabled = event.alarmEnabled && !isDone,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+        onLeadingClick = if (event.type == "task") {
+            { onToggle(event.id, !event.completed) }
+        } else {
+            onTypeChangeRequest
+        },
+    )
 }

@@ -34,6 +34,10 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.hamhuo.tplanner.designsystem.TPlannerTaskUnitModel
+import com.hamhuo.tplanner.designsystem.TPlannerTaskUnitVariant
+import com.hamhuo.tplanner.designsystem.TPlannerTaskUnitView
+import org.json.JSONArray
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZonedDateTime
@@ -650,42 +654,39 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         }
     }
 
-    private fun taskCard(task: WatchEventMarks.NextTask): View = LinearLayout(context).apply {
-        orientation = LinearLayout.VERTICAL
-        gravity = Gravity.CENTER_VERTICAL
-        minimumHeight = dp(58)
-        setPadding(dp(13), dp(9), dp(13), dp(9))
-        background = rippleRounded(CARD, CARD_PRESSED, dp(13).toFloat())
-        isClickable = true
-        isFocusable = true
-        contentDescription = context.getString(
-            R.string.task_list_item_accessibility,
-            task.title,
-            taskSubtitle(task),
-        )
-        addView(
-            textView(17f, PRIMARY, MEDIUM).apply {
-                text = task.title
-                maxLines = 2
-                ellipsize = TextUtils.TruncateAt.END
-            },
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
-        )
-        addView(
-            textView(13f, SECONDARY, REGULAR).apply {
-                text = taskSubtitle(task)
-                maxLines = 1
-                ellipsize = TextUtils.TruncateAt.END
-            },
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(2)
-            },
-        )
-        setOnClickListener {
-            performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-            taskOpenAction?.invoke(task)
+    private fun taskCard(task: WatchEventMarks.NextTask): View {
+        val (checklistDone, checklistTotal) = checklistProgress(task.checklistJson)
+        return TPlannerTaskUnitView(context).apply {
+            render(
+                model = TPlannerTaskUnitModel(
+                    title = task.title,
+                    supportingText = taskSubtitle(task),
+                    isTask = task.type == "task",
+                    checklistDone = checklistDone,
+                    checklistTotal = checklistTotal,
+                    accessibilityLabel = context.getString(
+                        R.string.task_list_item_accessibility,
+                        task.title,
+                        taskSubtitle(task),
+                    ),
+                ),
+                variant = TPlannerTaskUnitVariant.WEAR,
+                onClick = {
+                    performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                    taskOpenAction?.invoke(task)
+                },
+            )
         }
     }
+
+    private fun checklistProgress(raw: String): Pair<Int, Int> = runCatching {
+        val array = JSONArray(raw)
+        var done = 0
+        for (index in 0 until array.length()) {
+            if (array.optJSONObject(index)?.optBoolean("completed") == true) done += 1
+        }
+        done to array.length()
+    }.getOrDefault(0 to 0)
 
     private fun stateCard(
         title: String,
