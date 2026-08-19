@@ -261,7 +261,7 @@ export function createSyncAdapter(config) {
         analyze(local, remote, baseKeys = null) {
             return convertResults(analyzeEntities(_localToEntities(local), _remoteToEntities(remote), baseKeys), fromEnt);
         },
-        // 三方合并：返回 { merged(本地形状), pushData(本地形状), newBaseKeys, unresolved }
+        // 三方合并：返回合并数据以及可供冲突弹窗直接展示的分析结果。
         mergeWithBase(local, remote, baseKeys = null, resolutions = {}) {
             const r = mergeEntitiesWithBase(_localToEntities(local), _remoteToEntities(remote), baseKeys, resolutions);
             return {
@@ -269,6 +269,7 @@ export function createSyncAdapter(config) {
                 pushData: _entitiesToLocal(r.pushData),
                 newBaseKeys: r.newBaseKeys,
                 unresolved: r.unresolved,
+                analysis: convertResults(r.analysis, fromEnt),
             };
         },
     };

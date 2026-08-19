@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Wifi, RefreshCw, CheckCircle, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { Wifi, RefreshCw, CheckCircle, X, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
 import useLanSync from '../hooks/useLanSync';
 
 // ── 子组件：冲突预览弹窗 ──────────────────────────────────────────────────────
@@ -117,7 +117,7 @@ function ConflictSection({ adapter, analysis, choices, onChoose }) {
     );
 }
 
-function ConflictModal({ results, serverUrl, onConfirm, onCancel }) {
+function ConflictModal({ results, serverUrl, automatic = false, onConfirm, onCancel }) {
     // 人工裁决选择：{ `${type}::${id}` → 'local' | 'remote' }
     const [choices, setChoices] = useState({});
     const onChoose = (type, id, c) => setChoices(prev => ({ ...prev, [`${type}::${id}`]: c }));
@@ -149,9 +149,17 @@ function ConflictModal({ results, serverUrl, onConfirm, onCancel }) {
         <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <div style={{ width: 460, maxHeight: '85vh', overflow: 'auto', background: 'var(--clr-surface,#1e1e1e)', border: '1px solid var(--clr-border,#333)', borderRadius: 10, padding: 20, display: 'flex', flexDirection: 'column', gap: 12, boxShadow: '0 16px 48px rgba(0,0,0,0.6)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontFamily: 'var(--font-display)', fontSize: 13, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--clr-text)' }}>同步预览</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 7, fontFamily: 'var(--font-display)', fontSize: 13, letterSpacing: '0.1em', textTransform: 'uppercase', color: automatic ? 'var(--clr-red,#C0392B)' : 'var(--clr-text)' }}>
+                        {automatic && <AlertTriangle size={16} />}
+                        {automatic ? '同步冲突警告' : '同步预览'}
+                    </span>
                     <button onClick={onCancel} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--clr-text-dim)' }}><X size={16} /></button>
                 </div>
+                {automatic && (
+                    <div role="alert" style={{ padding: '8px 10px', borderRadius: 4, border: '1px solid rgba(192,57,43,0.45)', background: 'rgba(192,57,43,0.12)', color: 'var(--clr-text)', fontSize: 12, lineHeight: 1.55 }}>
+                        本机与服务器修改了同一条记录。自动同步已停止覆盖，请逐条选择要保留的版本。
+                    </div>
+                )}
                 <div style={{ fontSize: 11, color: 'var(--clr-text-dim)', fontFamily: 'var(--font-mono)', padding: '6px 10px', background: 'rgba(255,255,255,0.04)', borderRadius: 4 }}>{serverUrl}</div>
 
                 {!hasAnyChanges && (
@@ -247,6 +255,7 @@ export default function LanSync(props) {
 
             {preview && (
                 <ConflictModal results={preview.results} serverUrl={preview.serverUrl}
+                    automatic={preview.automatic}
                     onConfirm={(resolutions) => executeMerge(preview.serverUrl, resolutions)}
                     onCancel={() => setPreview(null)} />
             )}

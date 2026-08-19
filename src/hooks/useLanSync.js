@@ -167,6 +167,7 @@ export default function useLanSync(props = {}) {
         const base = normalizeServerUrl(serverUrl);
         const ads = currentAdapters || adaptersRef.current;
         let totalMerged = 0, totalUnresolved = 0;
+        const conflictResults = [];
 
         for (const a of ads) {
             const localData = a._getLocal ? await a._getLocal() : [];
@@ -175,6 +176,9 @@ export default function useLanSync(props = {}) {
                 if (a._writeLocal) await a._writeLocal(r.merged);
                 saveBaseKeys(a.type, r.newBaseKeys);
                 totalUnresolved += r.unresolved;
+                if (r.unresolved > 0) {
+                    conflictResults.push({ adapter: a, analysis: r.analysis });
+                }
                 if (Array.isArray(r.merged)) totalMerged += r.merged.length;
             } else if (a.isRequired) {
                 setStatus('error'); setStatusMsg(`${a.type} 同步失败`); return;
@@ -183,13 +187,14 @@ export default function useLanSync(props = {}) {
 
         setPendingConflicts(totalUnresolved);
         if (totalUnresolved > 0) {
-            setStatus('success');
-            setStatusMsg(`同步完成 · ⚡ ${totalUnresolved} 条冲突待手动解决（点「立即同步」处理）`);
+            setStatus('error');
+            setStatusMsg(`发现 ${totalUnresolved} 条同步冲突，请在弹窗中选择保留版本`);
+            setPreview({ results: conflictResults, serverUrl: base, automatic: true });
         } else {
             setStatus('success');
             setStatusMsg(totalMerged > 0 ? `已同步 ${totalMerged} 条记录` : '同步完成');
+            setPreview(null);
         }
-        setPreview(null);
     }, []);
 
     const serverUrl = normalizeServerUrl(config.serverUrl);
