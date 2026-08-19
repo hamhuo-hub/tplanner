@@ -1,3 +1,5 @@
+import { eventColors } from '../design-system/tokens';
+
 /**
  * @typedef {Object} Event
  * @property {string} id
@@ -26,16 +28,7 @@ export const EVENT_TYPES = {
 // Default event color palette — lower saturation, harmonious tones.
 // These are also exposed as CSS variables --clr-event-0 … --clr-event-7
 // so that .tptheme packages can override them via their "eventColors" field.
-export const MASSEY_COLORS = [
-    "#5B8FCC", // 0: Steel Blue
-    "#C9A84C", // 1: Antique Gold
-    "#C0697A", // 2: Dusty Rose
-    "#5B9E72", // 3: Sage Green
-    "#8B6BAE", // 4: Dusty Lavender
-    "#C87D5A", // 5: Burnt Sienna
-    "#4A9DA8", // 6: Steel Teal
-    "#8A8A8A", // 7: Stone Grey
-];
+export const MASSEY_COLORS = eventColors;
 
 // CSS variable names corresponding to each color slot.
 export const EVENT_COLOR_VARS = MASSEY_COLORS.map((_, i) => `--clr-event-${i}`);

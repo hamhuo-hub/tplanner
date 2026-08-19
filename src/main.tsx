@@ -9,6 +9,9 @@ import { LocalizationProvider } from '@mui/x-date-pickers'
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
 import theme from './theme'
 import App from './App.jsx'
+import { installDesignTokens } from './design-system'
+
+installDesignTokens()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
