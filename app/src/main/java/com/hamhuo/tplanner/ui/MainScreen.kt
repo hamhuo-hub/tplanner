@@ -868,11 +868,19 @@ fun MainScreen(
                 eventStore.enqueueEventDraft(snapshot, EventEditStage.DETAIL)
             },
             onSave = { updated, onFinished ->
-                val nextEvents = upsertEventPreservingOrder(events, updated)
+                val updates = if (events.none { it.id == updated.id }) {
+                    createRecurringTaskInstances(updated)
+                } else {
+                    listOf(updated)
+                }
+                val nextEvents = updates.fold(events, ::upsertEventPreservingOrder)
                 scope.launch {
                     try {
                         when (val result = eventWriteMutex.withLock {
-                            eventStore.saveAndClearEventDraft(updated)
+                            eventStore.saveAndClearEventDraft(
+                                event = updates.first(),
+                                additionalEvents = updates.drop(1),
+                            )
                         }) {
                             DraftCommitResult.Saved,
                             DraftCommitResult.AlreadySaved,

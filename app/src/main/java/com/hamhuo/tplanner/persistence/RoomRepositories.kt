@@ -196,6 +196,7 @@ class RoomEventRepository(private val db: TPlannerDatabase) {
 
     suspend fun commitDraft(
         event: ScheduleItem,
+        additionalEvents: List<ScheduleItem> = emptyList(),
         now: Long = System.currentTimeMillis(),
     ): DraftCommitResult = db.withTransaction {
         val target = DraftTarget.event(event.id)
@@ -238,6 +239,16 @@ class RoomEventRepository(private val db: TPlannerDatabase) {
                 val sortIndex = existingSortIndex ?: (db.eventDao().maxSortIndex() + 1L)
                 db.eventDao().upsert(PersistenceMapper.eventToEntity(event, sortIndex))
                 enqueue(event, now)
+                additionalEvents.forEach { additional ->
+                    if (additional.id == event.id) return@forEach
+                    val existingAdditional = db.eventDao().get(additional.id)
+                    val additionalSortIndex = existingAdditional?.sortIndex
+                        ?: (db.eventDao().maxSortIndex() + 1L)
+                    db.eventDao().upsert(
+                        PersistenceMapper.eventToEntity(additional, additionalSortIndex),
+                    )
+                    enqueue(additional, now)
+                }
                 db.draftDao().delete(target.storageKey)
                 DraftCommitResult.Saved
             }

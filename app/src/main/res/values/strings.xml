@@ -35,12 +35,19 @@
     <string name="task_view_custom_list_description">按事项的清单归属筛选</string>
     <string name="section_list">所属清单</string>
     <string name="section_time">时间</string>
+    <string name="section_recurrence">重复任务</string>
     <string name="section_alarm">系统闹铃</string>
     <string name="section_checklist">清单</string>
     <string name="section_note">备注</string>
     <string name="section_color">颜色</string>
     <string name="label_start">开始</string>
     <string name="label_end">结束</string>
+    <string name="recurrence_none">不重复</string>
+    <string name="recurrence_daily">每天</string>
+    <string name="recurrence_weekly">每周</string>
+    <string name="recurrence_monthly">每月</string>
+    <string name="recurrence_count">共 %1$d 次</string>
+    <string name="recurrence_independent_hint">每次重复都会创建为独立任务，编辑或删除互不影响。</string>
 
     <!-- 任务分组 -->
     <string name="group_now">进行中</string>

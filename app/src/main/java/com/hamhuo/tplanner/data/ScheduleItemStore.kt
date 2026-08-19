@@ -251,10 +251,13 @@ class ScheduleItemStore(
         }
     }
 
-    suspend fun saveAndClearEventDraft(event: ScheduleItem): DraftCommitResult {
+    suspend fun saveAndClearEventDraft(
+        event: ScheduleItem,
+        additionalEvents: List<ScheduleItem> = emptyList(),
+    ): DraftCommitResult {
         val result = DurableWriteQueue.submitAndAwait(draftQueueKey(event.id)) {
             DurableWriteQueue.submitAndAwait(EVENT_FACT_QUEUE_KEY) {
-                repository.commitDraft(event).also { committed ->
+                repository.commitDraft(event, additionalEvents).also { committed ->
                     if (committed is DraftCommitResult.Saved) {
                         reconcileAlarms(repository.getAll())
                         scheduleSync()

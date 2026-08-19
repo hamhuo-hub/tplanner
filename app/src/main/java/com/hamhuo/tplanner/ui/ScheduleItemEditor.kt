@@ -116,6 +116,20 @@ fun ScheduleItemDetailScreen(
     var listId    by remember(event.id) { mutableStateOf(event.listId) }
     var alarmEnabled by remember { mutableStateOf(event.alarmEnabled) }
     var alarmOffsetMinutes by remember { mutableStateOf(event.alarmOffsetMinutes) }
+    var recurrenceType by remember(event.id) {
+        mutableStateOf(
+            event.extras["recurrenceType"]
+                ?.toString()
+                ?.lowercase()
+                ?.takeIf { it in setOf("daily", "weekly", "monthly") }
+                ?: "none",
+        )
+    }
+    var recurrenceCount by remember(event.id) {
+        val raw = event.extras["recurrenceCount"]
+        val count = if (raw is Number) raw.toInt() else raw?.toString()?.toIntOrNull() ?: 1
+        mutableStateOf(count.coerceIn(1, MAX_TASK_RECURRENCE_COUNT))
+    }
 
     var showTypeSheet by remember { mutableStateOf(false) }
     val typeSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -139,22 +153,35 @@ fun ScheduleItemDetailScreen(
         }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
     }
 
-    fun buildResult(updatedAt: Long = System.currentTimeMillis()) = event.copy(
-        title     = title.ifBlank { event.title },
-        type      = type,
-        start     = start,
-        end       = end,
-        // Non-task editors hide checklist controls, but the data must survive a
-        // temporary type conversion so converting back to a task is lossless.
-        checklist = checklist,
-        completed = if (type == "task") completed else false,
-        note      = if (noteEditorOpen) noteEditorDraft else note,
-        colorId   = colorId,
-        listId    = listId,
-        alarmEnabled = alarmEnabled,
-        alarmOffsetMinutes = alarmOffsetMinutes.coerceIn(0, MAX_ALARM_OFFSET_MINUTES),
-        updatedAt = updatedAt,
-    )
+    fun buildResult(updatedAt: Long = System.currentTimeMillis()): ScheduleItem {
+        val nextExtras = event.extras.toMutableMap().apply {
+            if (recurrenceType == "none") {
+                remove("recurrenceType")
+                remove("recurrenceCount")
+            } else {
+                put("recurrenceType", recurrenceType)
+                put("recurrenceCount", recurrenceCount.coerceIn(1, MAX_TASK_RECURRENCE_COUNT))
+            }
+            remove("groupId")
+        }
+        return event.copy(
+            title     = title.ifBlank { event.title },
+            type      = type,
+            start     = start,
+            end       = end,
+            // Non-task editors hide checklist controls, but the data must survive a
+            // temporary type conversion so converting back to a task is lossless.
+            checklist = checklist,
+            completed = if (type == "task") completed else false,
+            note      = if (noteEditorOpen) noteEditorDraft else note,
+            colorId   = colorId,
+            listId    = listId,
+            alarmEnabled = alarmEnabled,
+            alarmOffsetMinutes = alarmOffsetMinutes.coerceIn(0, MAX_ALARM_OFFSET_MINUTES),
+            updatedAt = updatedAt,
+            extras = nextExtras,
+        )
+    }
 
     fun persistDraft() {
         if (!saveRequested && !noteEditorCloseRequested) {
@@ -431,6 +458,87 @@ fun ScheduleItemDetailScreen(
                                 persistDraft()
                             } }
                         )
+                    }
+
+                    if (type == "task") {
+                        Spacer(Modifier.height(24.dp))
+                        HorizontalDivider(color = BORDER)
+                        Spacer(Modifier.height(20.dp))
+
+                        DetailSectionLabel(stringResource(R.string.section_recurrence))
+                        Spacer(Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            listOf(
+                                "none" to stringResource(R.string.recurrence_none),
+                                "daily" to stringResource(R.string.recurrence_daily),
+                                "weekly" to stringResource(R.string.recurrence_weekly),
+                                "monthly" to stringResource(R.string.recurrence_monthly),
+                            ).forEach { (value, label) ->
+                                ListAssignmentChip(
+                                    label = label,
+                                    selected = recurrenceType == value,
+                                    onClick = {
+                                        recurrenceType = value
+                                        if (value != "none" && recurrenceCount < 2) {
+                                            recurrenceCount = 2
+                                        }
+                                        persistDraft()
+                                    },
+                                )
+                            }
+                        }
+                        if (recurrenceType != "none") {
+                            Spacer(Modifier.height(12.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                Text(
+                                    stringResource(R.string.recurrence_count, recurrenceCount),
+                                    modifier = Modifier.weight(1f),
+                                    color = Color(0xFFE0D8C8),
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .background(Color(0xFF1F1F1F), RoundedCornerShape(9.dp))
+                                        .border(1.dp, BORDER, RoundedCornerShape(9.dp))
+                                        .clickable(enabled = recurrenceCount > 1) {
+                                            recurrenceCount--
+                                            persistDraft()
+                                        },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text("−", color = Color(0xFFE0D8C8), fontSize = 20.sp)
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .background(Color(0xFF1F1F1F), RoundedCornerShape(9.dp))
+                                        .border(1.dp, BORDER, RoundedCornerShape(9.dp))
+                                        .clickable(enabled = recurrenceCount < MAX_TASK_RECURRENCE_COUNT) {
+                                            recurrenceCount++
+                                            persistDraft()
+                                        },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text("+", color = Color(0xFFE0D8C8), fontSize = 18.sp)
+                                }
+                            }
+                            Text(
+                                stringResource(R.string.recurrence_independent_hint),
+                                color = DIM,
+                                fontSize = 12.sp,
+                                lineHeight = 18.sp,
+                                modifier = Modifier.padding(top = 8.dp),
+                            )
+                        }
                     }
 
                     Spacer(Modifier.height(24.dp))

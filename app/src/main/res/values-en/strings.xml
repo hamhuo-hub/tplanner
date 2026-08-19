@@ -34,12 +34,19 @@
     <string name="task_view_custom_list_description">Filter by assigned custom list</string>
     <string name="section_list">List</string>
     <string name="section_time">Time</string>
+    <string name="section_recurrence">Repeat task</string>
     <string name="section_alarm">System alarm</string>
     <string name="section_checklist">Checklist</string>
     <string name="section_note">Note</string>
     <string name="section_color">Color</string>
     <string name="label_start">Start</string>
     <string name="label_end">End</string>
+    <string name="recurrence_none">Never</string>
+    <string name="recurrence_daily">Daily</string>
+    <string name="recurrence_weekly">Weekly</string>
+    <string name="recurrence_monthly">Monthly</string>
+    <string name="recurrence_count">%1$d occurrences</string>
+    <string name="recurrence_independent_hint">Each occurrence is an independent task; edits and deletions do not affect the others.</string>
 
     <!-- Task groups -->
     <string name="group_now">In Progress</string>
