@@ -4,6 +4,10 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import com.hamhuo.tplanner.syncv3.SyncCommandEntity
+import com.hamhuo.tplanner.syncv3.SyncReceiptEntity
+import com.hamhuo.tplanner.syncv3.SyncStateEntity
+import com.hamhuo.tplanner.syncv3.SyncV3Dao
 
 @Database(
     entities = [
@@ -15,8 +19,11 @@ import androidx.room.RoomDatabase
         PendingActionEntity::class,
         MigrationMarkerEntity::class,
         UserListEntity::class,
+        SyncCommandEntity::class,
+        SyncStateEntity::class,
+        SyncReceiptEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class TPlannerDatabase : RoomDatabase() {
@@ -27,6 +34,7 @@ abstract class TPlannerDatabase : RoomDatabase() {
     abstract fun pendingActionDao(): PendingActionDao
     abstract fun migrationDao(): MigrationDao
     abstract fun userListDao(): UserListDao
+    abstract fun syncV3Dao(): SyncV3Dao
 
     companion object {
         @Volatile
@@ -38,7 +46,7 @@ abstract class TPlannerDatabase : RoomDatabase() {
                 TPlannerDatabase::class.java,
                 DATABASE_NAME,
             )
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build().also { instance = it }
         }
 
@@ -54,6 +62,51 @@ abstract class TPlannerDatabase : RoomDatabase() {
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_user_lists_sort_order ON user_lists(sort_order)")
                 db.execSQL("ALTER TABLE events ADD COLUMN list_id TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        // V3 同步:命令 outbox / 设备元数据 / 回执(见 docs/sync-v3.md §15)
+        private val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS sync_commands (" +
+                        "command_id TEXT NOT NULL PRIMARY KEY, " +
+                        "batch_id TEXT NOT NULL, " +
+                        "client_sequence INTEGER NOT NULL, " +
+                        "command_type TEXT NOT NULL, " +
+                        "aggregate_id TEXT, " +
+                        "arguments_json TEXT NOT NULL, " +
+                        "state TEXT NOT NULL, " +
+                        "attempt_count INTEGER NOT NULL, " +
+                        "next_attempt_at INTEGER NOT NULL, " +
+                        "last_error_code TEXT)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_sync_commands_client_sequence " +
+                        "ON sync_commands(client_sequence)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_sync_commands_state ON sync_commands(state)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS sync_state (" +
+                        "singleton_id INTEGER NOT NULL PRIMARY KEY, " +
+                        "device_id TEXT NOT NULL, " +
+                        "next_client_sequence INTEGER NOT NULL, " +
+                        "installed_snapshot_version INTEGER NOT NULL, " +
+                        "installed_snapshot_hash TEXT, " +
+                        "server_instance_id TEXT)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS sync_receipts (" +
+                        "command_id TEXT NOT NULL PRIMARY KEY, " +
+                        "client_sequence INTEGER NOT NULL, " +
+                        "status TEXT NOT NULL, " +
+                        "snapshot_version INTEGER, " +
+                        "error_code TEXT)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_sync_receipts_client_sequence " +
+                        "ON sync_receipts(client_sequence)"
+                )
             }
         }
     }
