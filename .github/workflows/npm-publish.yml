@@ -1,11 +1,15 @@
 name: Build & Release
 
 # 触发条件：
-#   1. 推送 TUI_* / desktop_* 标签 → 构建并发布
+#   1. 推送 v* / TUI_* / desktop_* 标签 → 构建并发布
 #   2. 手动触发 → 只构建、上传产物，便于测试
+#
+# 注意：tag 推送时 GitHub 会从默认分支(master)解析 workflow 文件，
+# 因此本文件在 master 与 mobile_andorid 上都保留，改时两边同步。
 on:
   push:
     tags:
+      - 'v*'
       - 'TUI_*'
       - 'desktop_*'
   workflow_dispatch:
@@ -15,8 +19,30 @@ permissions:
   contents: write
 
 jobs:
+  # Android 也发 v* 标签，此护栏保证桌面流程只处理 master 上的标签。
+  guard:
+    name: Ensure tag belongs to master
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Check tag ancestry
+        run: |
+          git fetch origin master --quiet
+          if git merge-base --is-ancestor "$GITHUB_SHA" origin/master; then
+            echo "tag $GITHUB_REF_NAME is on master"
+          else
+            echo "::notice::tag $GITHUB_REF_NAME is not on master; skipping desktop jobs"
+            exit 78
+          fi
+
   build:
     name: Build (${{ matrix.platform }})
+    needs: guard
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false          # 某个平台失败不影响其它平台继续
