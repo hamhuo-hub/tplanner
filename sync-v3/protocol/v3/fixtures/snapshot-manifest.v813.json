@@ -1,0 +1,11 @@
+{
+  "snapshotVersion": 813,
+  "parentVersion": 812,
+  "schemaVersion": 3,
+  "stateHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "compressedHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "encoding": "gzip",
+  "compressedBytes": 48231,
+  "uncompressedBytes": 118522,
+  "serverInstanceId": "srv-0198f2a1"
+}

@@ -1,0 +1,30 @@
+{
+  "snapshotSchemaVersion": 3,
+  "snapshotVersion": 813,
+  "parentVersion": 812,
+  "serverInstanceId": "srv-0198f2a1",
+  "brokerFromSequence": 10321,
+  "brokerToSequence": 10328,
+  "createdAt": "2026-08-19T12:34:56.789Z",
+  "state": {
+    "tasks": {
+      "task-1": {
+        "title": "开会",
+        "note": "",
+        "schedule": { "startAt": "2026-08-20T01:00:00.000Z", "endAt": null },
+        "completed": false,
+        "itemType": "task",
+        "recurrence": null,
+        "listId": null,
+        "createdAt": "2026-08-18T02:00:00.000Z",
+        "updatedAt": "2026-08-19T12:34:00.000Z"
+      }
+    },
+    "customLists": {
+      "list-1": { "title": "工作", "color": "gold", "createdAt": "2026-08-01T00:00:00.000Z" }
+    },
+    "journals": {},
+    "goals": {},
+    "insights": {}
+  }
+}
