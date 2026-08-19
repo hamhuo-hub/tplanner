@@ -12,6 +12,7 @@ ExecStart=/usr/bin/node /opt/tplanner-sync/sync-server/src/api/server.js
 Restart=on-failure
 RestartSec=5
 Environment=TPLANNER_DB_PATH=/var/lib/tplanner-sync/state/tplanner.db
+Environment=NATS_CREDS_FILE=/opt/tplanner-sync/sync-server/deploy/nats.creds
 Environment=PORT=37401
 
 [Install]

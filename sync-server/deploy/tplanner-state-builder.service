@@ -14,6 +14,7 @@ RestartSec=5
 StartLimitIntervalSec=60
 StartLimitBurst=5
 Environment=TPLANNER_DB_PATH=/var/lib/tplanner-sync/state/tplanner.db
+Environment=NATS_CREDS_FILE=/opt/tplanner-sync/sync-server/deploy/nats.creds
 
 [Install]
 WantedBy=multi-user.target

@@ -87,3 +87,5 @@ tplanner-linux
 手表表盘·全部方案.html
 /.vite
 package-lock.json
+# 服务器需要锁文件保证可复现安装
+!sync-server/package-lock.json
