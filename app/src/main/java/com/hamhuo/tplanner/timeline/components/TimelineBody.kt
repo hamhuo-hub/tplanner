@@ -13,9 +13,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.hamhuo.tplanner.BG
@@ -31,6 +33,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZonedDateTime
+import kotlin.math.roundToInt
 
 @Composable
 internal fun TimelineBody(
@@ -43,10 +46,12 @@ internal fun TimelineBody(
     state: TimelineState,
     hourHeightPx: Float,
     onEventClick: (ScheduleItem) -> Unit,
+    onAddTaskAt: (Instant) -> Unit,
     onEventMove: (ScheduleItem, Instant, Instant) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
+    val haptics = LocalHapticFeedback.current
 
     BoxWithConstraints(
         modifier = modifier
@@ -63,6 +68,7 @@ internal fun TimelineBody(
         val dayWidth =
             (maxWidth - TimelineGeometry.timeGutterWidth) / visibleDayCount
         val dayWidthPx = with(density) { dayWidth.toPx() }
+        val timeGutterPx = with(density) { TimelineGeometry.timeGutterWidth.toPx() }
         val pixelsPerMinute = hourHeightPx / 60f
         val renderSpecs = remember(placements, dayWidth, zone, state.draggingEventId) {
             TimelinePlacementMapper.createRenderSpecs(
@@ -79,7 +85,30 @@ internal fun TimelineBody(
                 .height(TimelineGeometry.hourHeight * 24)
                 .background(BG),
         ) {
-            TimelineGrid(days = days)
+            TimelineGrid(
+                days = days,
+                onLongPress = { position ->
+                    if (position.x >= timeGutterPx) {
+                        val dayIndex = (
+                            (position.x - timeGutterPx) / dayWidthPx
+                            ).toInt().coerceIn(days.indices)
+                        val snappedMinutes = (
+                            position.y / pixelsPerMinute / TimelineGeometry.snapMinutes
+                            ).roundToInt() * TimelineGeometry.snapMinutes
+                        val start = days[dayIndex]
+                            .atStartOfDay(zone)
+                            .plusMinutes(
+                                snappedMinutes.coerceIn(
+                                    0,
+                                    24 * 60 - TimelineGeometry.snapMinutes,
+                                ).toLong(),
+                            )
+                            .toInstant()
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onAddTaskAt(start)
+                    }
+                },
+            )
             state.highlight?.let { highlight ->
                 TimelineConflictHighlight(
                     highlight = highlight,

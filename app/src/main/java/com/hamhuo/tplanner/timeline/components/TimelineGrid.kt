@@ -1,14 +1,18 @@
 package com.hamhuo.tplanner.timeline.components
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -24,13 +28,25 @@ import java.util.Locale
 @Composable
 internal fun TimelineGrid(
     days: List<LocalDate>,
+    onLongPress: (Offset) -> Unit,
 ) {
     val density = LocalDensity.current
+    val currentOnLongPress by rememberUpdatedState(onLongPress)
     val timeGutterPx = with(density) { TimelineGeometry.timeGutterWidth.toPx() }
     val hourHeightPx = with(density) { TimelineGeometry.hourHeight.toPx() }
     val lineWidthPx = with(density) { 0.7.dp.toPx() }
 
-    Canvas(Modifier.fillMaxSize()) {
+    Canvas(
+        Modifier
+            .fillMaxSize()
+            .pointerInput(days) {
+                detectTapGestures(
+                    onLongPress = { position ->
+                        currentOnLongPress(position)
+                    },
+                )
+            },
+    ) {
         for (hour in 0..24) {
             val y = hour * hourHeightPx
             drawLine(

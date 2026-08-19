@@ -526,6 +526,14 @@ fun MainScreen(
         eventActions.beginNewItem(type, selectedView.listIdForNewItem()) { pendingNewItem = it }
     }
 
+    fun beginTaskAt(start: Instant) {
+        eventActions.beginNewItem(
+            type = "task",
+            listId = selectedView.listIdForNewItem(),
+            initialStart = start,
+        ) { pendingNewItem = it }
+    }
+
     fun openItem(event: ScheduleItem) {
         eventActions.openItem(
             event = event,
@@ -586,6 +594,7 @@ fun MainScreen(
             events = events,
             onEventClick = ::openItem,
             onAddEvent = ::beginNewItem,
+            onAddTaskAt = ::beginTaskAt,
             onEventMove = { event, newStart, newEnd ->
                 val updated = event.copy(
                     start = newStart,

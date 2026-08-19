@@ -32,6 +32,7 @@ fun TimelineScreen(
     events: List<ScheduleItem>,
     onEventClick: (ScheduleItem) -> Unit,
     onAddEvent: (String) -> Unit,
+    onAddTaskAt: (Instant) -> Unit,
     onEventMove: (ScheduleItem, Instant, Instant) -> Unit,
     modifier: Modifier = Modifier,
     allowExpandedNavigation: Boolean = true,
@@ -114,6 +115,7 @@ fun TimelineScreen(
                 state = state,
                 hourHeightPx = hourHeightPx,
                 onEventClick = onEventClick,
+                onAddTaskAt = onAddTaskAt,
                 onEventMove = onEventMove,
                 modifier = Modifier.weight(1f),
             )

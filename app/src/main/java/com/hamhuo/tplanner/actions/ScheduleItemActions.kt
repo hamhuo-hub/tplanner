@@ -23,6 +23,7 @@ class ScheduleItemActions(
     fun beginNewItem(
         type: String,
         listId: String = "",
+        initialStart: Instant = Instant.now(),
         onPending: (ScheduleItem) -> Unit,
     ) {
         val now = Instant.now()
@@ -30,8 +31,8 @@ class ScheduleItemActions(
             id = UUID.randomUUID().toString(),
             title = "",
             type = type,
-            start = now,
-            end = now.plusSeconds(3_600),
+            start = initialStart,
+            end = initialStart.plusSeconds(3_600),
             completed = false,
             checklist = emptyList(),
             colorId = 0,
