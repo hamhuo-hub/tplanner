@@ -3,7 +3,6 @@ package com.hamhuo.tplanner
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.os.SystemClock
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -82,6 +81,7 @@ import java.util.UUID
 
 private const val LLM_LOG_TAG = "TplannerLLM"
 private const val PRIMARY_NAVIGATION_VISIBLE_MILLIS = 2_500L
+private const val SYNC_SPINNER_VISIBLE_MILLIS = 1_500L
 private const val LOCATION_CAPTURE_WAIT_MILLIS = 12_000L
 private const val JOURNAL_DAY_POLL_MILLIS = 30_000L
 
@@ -273,6 +273,21 @@ fun MainScreen(
     var syncMsg    by remember { mutableStateOf("") }
     var syncFeedback by remember { mutableStateOf<TPlannerSyncFeedbackPresentation?>(null) }
     var syncFeedbackGeneration by remember { mutableIntStateOf(0) }
+    // 转圈动画与同步结果解耦:固定展示 SYNC_SPINNER_VISIBLE_MILLIS 后收起,
+    // 即使同步迟迟不返回结果也不会一直转。generation 防止旧定时器盖掉新动画。
+    var syncSpinnerVisible by remember { mutableStateOf(false) }
+    var syncSpinnerGeneration by remember { mutableIntStateOf(0) }
+
+    fun showSyncSpinner() {
+        val generation = ++syncSpinnerGeneration
+        syncSpinnerVisible = true
+        scope.launch {
+            delay(SYNC_SPINNER_VISIBLE_MILLIS)
+            if (syncSpinnerGeneration == generation) {
+                syncSpinnerVisible = false
+            }
+        }
+    }
     val eventActions = remember(serverUrl) {
         ScheduleItemActions(scope, context, eventStore, eventWriteMutex, { url -> manager.fetchEvents(url) }, { serverUrl })
     }
@@ -290,9 +305,9 @@ fun MainScreen(
             // Flip the state before launching so rapid taps cannot queue duplicate full syncs.
             syncStatus = "syncing"
             syncMsg = ""
+            showSyncSpinner()
             val requestedServerUrl = serverUrl
             scope.launch {
-                val animationStartedAt = SystemClock.elapsedRealtime()
                 val result = try {
                     manager.saveServerUrl(requestedServerUrl)
                     val savedServerUrl = manager.getServerUrl()
@@ -315,11 +330,7 @@ fun MainScreen(
                     // Journal sync may have committed before a later event sync failure.
                     runCatching { refreshJournalRecovery(journalDateKey) }
                 }
-                val resultDelay = manualSyncResultDelayMillis(
-                    animationStartedAt,
-                    SystemClock.elapsedRealtime(),
-                )
-                if (resultDelay > 0L) delay(resultDelay)
+                // 结果拿到即展示,不再等待转圈动画补足时长。
                 syncStatus = result.first
                 syncMsg = result.second
                 syncFeedbackGeneration++
@@ -329,12 +340,16 @@ fun MainScreen(
                     tone = result.third,
                 )
             }
+        } else {
+            // 同步仍在进行:重亮一次转圈提示,避免下拉后界面毫无反应。
+            showSyncSpinner()
         }
     }
 
     LaunchedEffect(Unit) {
         syncStatus = "syncing"
         syncMsg = ""
+        showSyncSpinner()
         try {
             manager.syncAllOrThrow(serverUrl)
             syncStatus = "success"
@@ -457,7 +472,7 @@ fun MainScreen(
     // ── Panel building blocks ────────────────────────────────────────────
     val notesCardContent: @Composable () -> Unit = {
         TPlannerPullToSync(
-            isSyncing = syncStatus == "syncing",
+            isSyncing = syncSpinnerVisible,
             onSync = onSync,
             enabled = isPhone,
             modifier = Modifier.fillMaxSize(),
@@ -596,7 +611,7 @@ fun MainScreen(
 
     val taskCardContent: @Composable () -> Unit = {
         TPlannerPullToSync(
-            isSyncing = syncStatus == "syncing",
+            isSyncing = syncSpinnerVisible,
             onSync = onSync,
             enabled = isPhone,
             modifier = Modifier.fillMaxSize(),
