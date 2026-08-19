@@ -434,7 +434,7 @@ function PlannerApp() {
         }
     };
 
-    const handleSaveEvent = async (eventData, config = { scope: 'single' }) => {
+    const handleSaveEvent = async (eventData) => {
         if (!db) {
             // Web mode: update state directly (autosave effect will PUT to server)
             const updates = Array.isArray(eventData) ? eventData : [eventData];
@@ -457,22 +457,11 @@ function PlannerApp() {
             setIsAddModalOpen(false);
             if (!Array.isArray(eventData) && selectedEvent && selectedEvent.id === eventData.id) {
                 setSelectedEvent(eventData);
-            } else if (config.scope !== 'single' && selectedEvent) {
-                setSelectedEvent(null);
             }
             return;
         }
         const updates = Array.isArray(eventData) ? eventData : [eventData];
         try {
-            if (config.scope === 'all' && config.originalGroupId) {
-                const docsObj = await db.events.find({ selector: { groupId: config.originalGroupId } }).exec();
-                await Promise.all(docsObj.map(doc => doc.remove()));
-            } else if (config.scope === 'future' && config.originalGroupId && config.originalStartDate) {
-                const cutoff = new Date(config.originalStartDate).getTime();
-                const docsObj = await db.events.find({ selector: { groupId: config.originalGroupId } }).exec();
-                const toRemove = docsObj.filter(doc => new Date(doc.get('start')).getTime() >= cutoff);
-                await Promise.all(toRemove.map(doc => doc.remove()));
-            }
             const upserts = updates.map(update => {
                 const cleanUpdate = { ...update };
                 cleanUpdate.start = new Date(cleanUpdate.start).toISOString();
@@ -490,8 +479,6 @@ function PlannerApp() {
         setIsAddModalOpen(false);
         if (!Array.isArray(eventData) && selectedEvent && selectedEvent.id === eventData.id) {
             setSelectedEvent(eventData);
-        } else if (config.scope !== 'single' && selectedEvent) {
-            setSelectedEvent(null);
         }
     };
 
@@ -502,7 +489,7 @@ function PlannerApp() {
         await doc.update({ $set: { deletedAt: clockNow(), version: v, updatedAt: clockNow() } });
     };
 
-    const handleDeleteEvent = async (id, scope = 'single', event = null) => {
+    const handleDeleteEvent = async (id) => {
         if (!db) {
             // Web mode: tombstone directly in state (autosave will PUT to server)
             const now = clockNow();
@@ -514,32 +501,10 @@ function PlannerApp() {
         }
         let changed = false;
         try {
-            const now = clockNow();
-            if (scope === 'all' && event?.groupId) {
-                const docsObj = await db.events.find({ selector: { groupId: event.groupId } }).exec();
-                // bulkUpsert fires a single batch write → single subscription emission
-                await db.events.bulkUpsert(docsObj.map(doc => {
-                    const old = doc.toJSON();
-                    return { ...old, version: (old.version || 0) + 1, deletedAt: now, updatedAt: now };
-                }));
-                changed = docsObj.length > 0;
-            } else if (scope === 'future' && event?.groupId) {
-                const cutoff = new Date(event.start).getTime();
-                const docsObj = await db.events.find({ selector: { groupId: event.groupId } }).exec();
-                const toMark = docsObj.filter(doc => new Date(doc.get('start')).getTime() >= cutoff);
-                if (toMark.length) {
-                    await db.events.bulkUpsert(toMark.map(doc => {
-                        const old = doc.toJSON();
-                        return { ...old, version: (old.version || 0) + 1, deletedAt: now, updatedAt: now };
-                    }));
-                    changed = true;
-                }
-            } else {
-                const doc = await db.events.findOne(id).exec();
-                if (doc) {
-                    await softDelete(doc);
-                    changed = true;
-                }
+            const doc = await db.events.findOne(id).exec();
+            if (doc) {
+                await softDelete(doc);
+                changed = true;
             }
         } catch (err) {
             console.error('Error deleting event', err);
@@ -593,7 +558,6 @@ function PlannerApp() {
             ...clipboard,
             id: crypto.randomUUID(),
             title: clipboard.title + t('event.copySuffix'),
-            groupId: crypto.randomUUID(),
             start: new Date(start).toISOString(),
             end:   new Date(start.getTime() + duration).toISOString(),
             completed: false,
@@ -687,7 +651,7 @@ function PlannerApp() {
                         cleanUpdate.updatedAt = clockNow();
                         if (!cleanUpdate.note) cleanUpdate.note = "";
                         if (!cleanUpdate.timezone) cleanUpdate.timezone = "";
-                        if (!cleanUpdate.groupId) cleanUpdate.groupId = "";
+                        delete cleanUpdate.groupId;
                         if (cleanUpdate.completed === undefined) cleanUpdate.completed = false;
                         if (cleanUpdate.checklist === undefined) cleanUpdate.checklist = [];
                         if (!cleanUpdate.recurrenceType) cleanUpdate.recurrenceType = "none";

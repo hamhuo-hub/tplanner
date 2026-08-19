@@ -58,13 +58,14 @@ const toIsoMs = (v) => {
 export function canonicalEvent(e) {
     const c = { ...e,
         type: e.type || 'event', start: toIsoMs(e.start), end: toIsoMs(e.end),
-        note: e.note || '', timezone: e.timezone || '', groupId: e.groupId || '',
+        note: e.note || '', timezone: e.timezone || '',
         colorId: e.colorId ?? 0, completed: e.completed ?? false,
         checklist: e.checklist ?? [], recurrenceType: e.recurrenceType || 'none',
         recurrenceCount: e.recurrenceCount || 1,
         updatedAt: e.updatedAt || 0, deletedAt: e.deletedAt ?? 0,
     };
     delete c.version;
+    delete c.groupId;
     return c;
 }
 

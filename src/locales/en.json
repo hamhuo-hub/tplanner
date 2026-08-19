@@ -35,12 +35,7 @@
         "weekly": "Weekly",
         "monthly": "Monthly",
         "count": "Repeat Count",
-        "max": "(Max 50)",
-        "editScope": "Edit Scope",
-        "deleteScope": "Delete Scope",
-        "scopeSingle": "This event only",
-        "scopeFuture": "This and following events",
-        "scopeAll": "All events in series"
+        "max": "(Max 50)"
     },
     "event": {
         "title": "Title",

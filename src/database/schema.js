@@ -1,6 +1,6 @@
 export const eventSchema = {
     title: 'event schema',
-    version: 2,
+    version: 3,
     primaryKey: 'id',
     type: 'object',
     properties: {
@@ -12,7 +12,6 @@ export const eventSchema = {
         timezone: { type: 'string' },
         note: { type: 'string' },
         colorId: { type: 'number' },
-        groupId: { type: 'string' },
         checklist: { type: 'array', items: { type: 'object' } },
         completed: { type: 'boolean' },
         recurrenceType: { type: 'string' },

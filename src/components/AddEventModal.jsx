@@ -53,7 +53,6 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
     // Recurrence State
     const [recurrenceType, setRecurrenceType] = useState('none'); // 'none', 'daily', 'weekly', 'monthly'
     const [recurrenceCount, setRecurrenceCount] = useState(1);
-    const [editScope, setEditScope] = useState('single');
 
     const [allDay, setAllDay] = useState(false);
 
@@ -83,7 +82,6 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                 // Edit recurrence
                 setRecurrenceType(initialEvent.recurrenceType || 'none');
                 setRecurrenceCount(initialEvent.recurrenceCount || 1);
-                setEditScope('single');
             } else {
                 // Create Mode
                 const now = defaultDate || new Date();
@@ -150,9 +148,8 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
         }
 
         const eventsToSave = [];
-        const groupId = (initialEvent && editScope !== 'single') ? initialEvent.groupId : crypto.randomUUID();
 
-        if ((editScope === 'single' && initialEvent) || recurrenceType === 'none') {
+        if (initialEvent || recurrenceType === 'none') {
             // Single Event
             eventsToSave.push({
                 id: initialEvent ? initialEvent.id : crypto.randomUUID(),
@@ -165,9 +162,8 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                 checklist: type === EVENT_TYPES.TASK ? checklist : undefined,
                 completed: initialEvent ? (initialEvent.completed ?? false) : false,
                 colorId,
-                groupId: (initialEvent && editScope === 'single') ? initialEvent.groupId : groupId,
-                recurrenceType: (initialEvent && editScope === 'single') ? initialEvent.recurrenceType : recurrenceType,
-                recurrenceCount: (initialEvent && editScope === 'single') ? initialEvent.recurrenceCount : recurrenceCount
+                recurrenceType: initialEvent ? initialEvent.recurrenceType : recurrenceType,
+                recurrenceCount: initialEvent ? initialEvent.recurrenceCount : recurrenceCount
             });
         } else {
             // Recurring Events
@@ -203,19 +199,15 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                     timezone: eventTimezone,
                     note,
                     checklist: type === EVENT_TYPES.TASK ? [...checklist] : undefined, // Clone checklist
+                    completed: false,
                     colorId,
-                    groupId,
                     recurrenceType,
                     recurrenceCount
                 });
             }
         }
 
-        onSave(eventsToSave, {
-            scope: editScope,
-            originalGroupId: initialEvent?.groupId,
-            originalStartDate: initialEvent?.start
-        });
+        onSave(eventsToSave);
         onClose();
     };
 
@@ -291,23 +283,6 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                                 </Stack>
                             )}
                         </Box>
-
-                        {/* Edit Scope - Only when editing a recurring event */}
-                        {initialEvent && initialEvent.groupId && (
-                            <TextField
-                                select
-                                label={t('recurrence.editScope', 'Apply changes to')}
-                                value={editScope}
-                                onChange={(e) => setEditScope(e.target.value)}
-                                SelectProps={{ native: true }}
-                                size="small"
-                                fullWidth
-                            >
-                                <option value="single">{t('recurrence.scopeSingle')}</option>
-                                <option value="future">{t('recurrence.scopeFuture')}</option>
-                                <option value="all">{t('recurrence.scopeAll')}</option>
-                            </TextField>
-                        )}
 
                         {/* Title */}
                         <TextField

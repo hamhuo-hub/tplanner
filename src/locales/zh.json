@@ -35,12 +35,7 @@
         "weekly": "每周",
         "monthly": "每月",
         "count": "重复次数",
-        "max": "(最大 50)",
-        "editScope": "编辑范围",
-        "deleteScope": "删除范围",
-        "scopeSingle": "仅此事件",
-        "scopeFuture": "此事件及后续事件",
-        "scopeAll": "系列中的所有事件"
+        "max": "(最大 50)"
     },
     "event": {
         "title": "标题",

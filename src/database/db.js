@@ -34,6 +34,12 @@ export const getDatabase = async () => {
                     1: (oldDoc) => ({ ...oldDoc, deletedAt: 0 }),
                     // v1 → v2: add version field (seed from updatedAt for legacy data)
                     2: (oldDoc) => ({ ...oldDoc, version: oldDoc.updatedAt || 0 }),
+                    // v2 → v3: recurring instances are independent; remove legacy grouping.
+                    3: (oldDoc) => {
+                        const migrated = { ...oldDoc };
+                        delete migrated.groupId;
+                        return migrated;
+                    },
                 },
             },
         });

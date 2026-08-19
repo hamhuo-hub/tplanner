@@ -10,7 +10,6 @@ import NoteEditor from './NoteEditor';
 export default function EventDetailsModal({ event, travelTimezone, onClose, onDelete, onEdit, onSave }) {
     const { t, i18n } = useTranslation();
     const locale = getDateLocale(i18n.language);
-    const [deleteScope, setDeleteScope] = useState('single');
     const [confirmingDelete, setConfirmingDelete] = useState(false);
 
     useEffect(() => { setConfirmingDelete(false); }, [event?.id]);
@@ -122,19 +121,10 @@ export default function EventDetailsModal({ event, travelTimezone, onClose, onDe
                                 </button>
                             ) : (
                                 <>
-                                    {event.groupId && (
-                                        <select value={deleteScope} onChange={e => setDeleteScope(e.target.value)}
-                                            style={{ background: 'var(--clr-void)', border: '1px solid var(--clr-border)', color: 'var(--clr-text-dim)', fontFamily: 'var(--font-mono)', fontSize: '10px', padding: '4px 6px', borderRadius: 2, outline: 'none', cursor: 'pointer' }}
-                                        >
-                                            <option value="single">{t('recurrence.scopeSingle')}</option>
-                                            <option value="future">{t('recurrence.scopeFuture')}</option>
-                                            <option value="all">{t('recurrence.scopeAll')}</option>
-                                        </select>
-                                    )}
                                     <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--clr-text-dim)' }}>
                                         {t('messages.deleteConfirmation')}
                                     </span>
-                                    <button className="btn btn--danger" onClick={() => { onDelete(event.id, deleteScope, event); onClose(); }}>
+                                    <button className="btn btn--danger" onClick={() => { onDelete(event.id); onClose(); }}>
                                         {t('actions.confirm')}
                                     </button>
                                     <button className="btn" onClick={() => setConfirmingDelete(false)}>

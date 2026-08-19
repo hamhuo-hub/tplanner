@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { createSyncAdapter } from './syncLogic';
+import { canonicalEvent, createSyncAdapter } from './syncLogic';
 
 const adapter = createSyncAdapter({
     type: 'records',
@@ -27,5 +27,19 @@ describe('SyncAdapter conflict result', () => {
             local: local[0],
             remote: remote[0],
         }]);
+    });
+});
+
+describe('canonicalEvent', () => {
+    test('drops the retired groupId field from synchronized events', () => {
+        const canonical = canonicalEvent({
+            id: 'task-1',
+            title: 'Independent repeat',
+            start: '2026-08-19T01:00:00.000Z',
+            end: '2026-08-19T02:00:00.000Z',
+            groupId: 'legacy-series',
+        });
+
+        expect(canonical).not.toHaveProperty('groupId');
     });
 });
