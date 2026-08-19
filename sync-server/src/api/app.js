@@ -2,7 +2,7 @@
 // 端点见 docs/sync-v3.md §11。
 import Fastify from 'fastify';
 
-export function buildServer({ publisher, validateBatch, store, health }) {
+export function buildServer({ publisher, validateBatch, store, health, legacy }) {
   const app = Fastify({ logger: false });
 
   // 命令批次入口。BROKER_PERSISTED 只表示"broker 已持久接收",不是全端同步成功。
@@ -97,6 +97,26 @@ export function buildServer({ publisher, validateBatch, store, health }) {
 
   // 运行指标(§15)
   app.get('/tplanner/v3/status', async () => health.status());
+
+  // ── V1 兼容路由(§21,过渡期专用;legacy 未注入则整个不注册)──
+  if (legacy) {
+    app.get('/tplanner/events', async () => legacy.getEvents());
+    app.put('/tplanner/events', async (request) => legacy.putEvents(request.body));
+    app.get('/tplanner/journals', async () => legacy.getJournals());
+    app.put('/tplanner/journals', async (request) => legacy.putJournals(request.body));
+    app.get('/tplanner/goals', async () => legacy.getGoals());
+    app.put('/tplanner/goals', async (request) => legacy.putGoals(request.body));
+    app.get('/tplanner/insights', async () => legacy.getInsights());
+    app.put('/tplanner/insights', async (request) => legacy.putInsights(request.body));
+    app.get('/tplanner/changes', async (request, reply) => {
+      const since = Number(request.query.since ?? 0);
+      if (!Number.isInteger(since) || since < 0) {
+        return reply.code(400).send({ error: 'BAD_SINCE' });
+      }
+      return legacy.changes({ since });
+    });
+    app.get('/tplanner/time', async () => legacy.serverTime());
+  }
 
   return app;
 }

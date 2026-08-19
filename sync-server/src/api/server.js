@@ -9,6 +9,7 @@ import { createNatsConnection } from '../broker/natsConnection.js';
 import { ensureStreams } from '../broker/streams.js';
 import { createCommandPublisher } from '../broker/publisher.js';
 import { loadBatchValidator } from './validation.js';
+import { createLegacyAdapter } from './legacyCompat.js';
 import { resolveServerInstanceId } from '../serverInstance.js';
 
 const PORT = Number(process.env.PORT || 37401);
@@ -24,7 +25,8 @@ const validateBatch = await loadBatchValidator();
 const serverInstanceId = resolveServerInstanceId(DB_PATH);
 const store = createStore(db, { serverInstanceId });
 const health = createMonitoring({ db, jsm, serverInstanceId });
+const legacy = createLegacyAdapter({ db, publisher });
 
-const app = buildServer({ publisher, validateBatch, store, health });
+const app = buildServer({ publisher, validateBatch, store, health, legacy });
 await app.listen({ port: PORT, host: '127.0.0.1' });
 console.log(`tplanner-sync-api listening on 127.0.0.1:${PORT}`);
