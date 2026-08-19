@@ -1,0 +1,82 @@
+{
+  "description": "Broker-ordered command stream: create, concurrent field edits, delete, stale edit after delete, restore, edit after restore.",
+  "commands": [
+    {
+      "brokerSequence": 501,
+      "deviceId": "phone-0198f200",
+      "command": {
+        "commandId": "0198f2a1-0101-7000-8000-000000000101",
+        "clientSequence": 1,
+        "type": "task.create",
+        "aggregateId": "task-1",
+        "arguments": { "title": "旧标题", "itemType": "task" }
+      }
+    },
+    {
+      "brokerSequence": 502,
+      "deviceId": "desktop-0198f201",
+      "command": {
+        "commandId": "0198f2a1-0102-7000-8000-000000000102",
+        "clientSequence": 1,
+        "type": "task.setTitle",
+        "aggregateId": "task-1",
+        "arguments": { "title": "新标题" }
+      }
+    },
+    {
+      "brokerSequence": 503,
+      "deviceId": "watch-0198f202",
+      "command": {
+        "commandId": "0198f2a1-0103-7000-8000-000000000103",
+        "clientSequence": 1,
+        "type": "task.setCompleted",
+        "aggregateId": "task-1",
+        "arguments": { "completed": true }
+      }
+    },
+    {
+      "brokerSequence": 504,
+      "deviceId": "phone-0198f200",
+      "command": {
+        "commandId": "0198f2a1-0104-7000-8000-000000000104",
+        "clientSequence": 2,
+        "type": "task.delete",
+        "aggregateId": "task-1",
+        "arguments": {}
+      }
+    },
+    {
+      "brokerSequence": 505,
+      "deviceId": "desktop-0198f201",
+      "command": {
+        "commandId": "0198f2a1-0105-7000-8000-000000000105",
+        "clientSequence": 2,
+        "type": "task.setNote",
+        "aggregateId": "task-1",
+        "arguments": { "note": "不应生效" }
+      }
+    },
+    {
+      "brokerSequence": 506,
+      "deviceId": "phone-0198f200",
+      "command": {
+        "commandId": "0198f2a1-0106-7000-8000-000000000106",
+        "clientSequence": 3,
+        "type": "task.restore",
+        "aggregateId": "task-1",
+        "arguments": {}
+      }
+    },
+    {
+      "brokerSequence": 507,
+      "deviceId": "phone-0198f200",
+      "command": {
+        "commandId": "0198f2a1-0107-7000-8000-000000000107",
+        "clientSequence": 4,
+        "type": "task.setNote",
+        "aggregateId": "task-1",
+        "arguments": { "note": "恢复后的备注" }
+      }
+    }
+  ]
+}
