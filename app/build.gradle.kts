@@ -42,8 +42,9 @@ android {
         applicationId = "com.hamhuo.tplanner"
         minSdk = 26
         targetSdk = 35
-        versionCode = 601
-        versionName = "PUKEKO_6.0.1"
+        // 版本号由根 build.gradle.kts 从 git tag（v*）推导，见 scripts/release.ps1
+        versionCode = rootProject.extra["appVersionCode"] as Int
+        versionName = rootProject.extra["appVersionName"] as String
 
         buildConfigField("String", "DEEPSEEK_API_KEY", "\"$deepseekApiKey\"")
         buildConfigField(
