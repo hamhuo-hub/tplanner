@@ -1,0 +1,38 @@
+{
+  "protocolVersion": 3,
+  "batchId": "0198f2a1-3c4b-7d5e-8f90-1234567890ab",
+  "deviceId": "phone-0198f200",
+  "firstClientSequence": 421,
+  "lastClientSequence": 424,
+  "baseSnapshotVersion": 812,
+  "commands": [
+    {
+      "commandId": "0198f2a1-0001-7000-8000-000000000001",
+      "clientSequence": 421,
+      "type": "task.setCompleted",
+      "aggregateId": "task-123",
+      "arguments": { "completed": true }
+    },
+    {
+      "commandId": "0198f2a1-0002-7000-8000-000000000002",
+      "clientSequence": 422,
+      "type": "checklist.setCompleted",
+      "aggregateId": "task-456",
+      "arguments": { "checklistItemId": "item-7", "completed": true }
+    },
+    {
+      "commandId": "0198f2a1-0003-7000-8000-000000000003",
+      "clientSequence": 423,
+      "type": "task.setTitle",
+      "aggregateId": "task-456",
+      "arguments": { "title": "开会" }
+    },
+    {
+      "commandId": "0198f2a1-0004-7000-8000-000000000004",
+      "clientSequence": 424,
+      "type": "task.delete",
+      "aggregateId": "task-123",
+      "arguments": {}
+    }
+  ]
+}
