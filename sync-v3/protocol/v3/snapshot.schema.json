@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tplanner.hamhuo.com/sync-v3/snapshot.schema.json",
   "title": "Sync V3 Immutable Global Snapshot",
-  "description": "The complete authoritative state produced by the State Builder. It is the ONLY downlink data format; clients never receive remote fragments. stateHash is the RFC 8785 (JCS) canonical hash of this entire document.",
+  "description": "The complete authoritative state produced by the State Builder. It is the ONLY downlink data format; clients never receive remote fragments. stateHash is the RFC 8785 (JCS) canonical hash of the `state` object only; envelope metadata (createdAt, serverInstanceId, broker sequences) is excluded so that replaying the same command stream always yields the same hash.",
   "type": "object",
   "additionalProperties": false,
   "required": [
