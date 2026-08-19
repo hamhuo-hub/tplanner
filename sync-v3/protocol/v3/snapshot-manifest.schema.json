@@ -21,7 +21,7 @@
     "stateHash": {
       "type": "string",
       "pattern": "^sha256:[0-9a-f]{64}$",
-      "description": "SHA-256 over the canonical (RFC 8785) uncompressed snapshot document."
+      "description": "SHA-256 over the canonical (RFC 8785) `state` object of the snapshot (envelope metadata excluded)."
     },
     "compressedHash": {
       "type": "string",
