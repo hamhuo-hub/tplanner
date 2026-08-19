@@ -78,8 +78,6 @@
     <!-- 同步 -->
     <string name="sync_success_with_name">已同步 · %1$s</string>
     <string name="sync_server_title">同步服务器</string>
-    <string name="syncing_label">同步中…</string>
-    <string name="sync_now_label">立即同步</string>
     <string name="unknown_error">未知错误</string>
     <string name="schedule_created_toast">已创建日程：%1$s</string>
     <string name="schedule_create_failed_toast">日程创建失败，请重试</string>

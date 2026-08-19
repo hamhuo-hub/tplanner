@@ -3,6 +3,7 @@ package com.hamhuo.tplanner
 import android.annotation.SuppressLint
 import android.util.Base64
 import android.view.GestureDetector
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -29,7 +30,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -64,19 +65,14 @@ import androidx.compose.ui.zIndex
 import kotlinx.coroutines.launch
 import java.time.format.DateTimeFormatter
 import java.time.LocalDate
+import kotlin.math.abs
 
 private const val MARKDOWN_VIEWER_URL = "file:///android_asset/md_viewer.html"
 
 @Composable
-fun NotesHeader(date: LocalDate, syncStatus: String, onPanelToggle: () -> Unit) {
+fun NotesHeader(date: LocalDate, onPanelToggle: () -> Unit) {
     val datePattern = stringResource(R.string.date_pattern_full)
     val today = date.format(DateTimeFormatter.ofPattern(datePattern))
-    val iconColor = when (syncStatus) {
-        "success" -> TEAL
-        "error"   -> RED
-        "syncing" -> GOLD
-        else      -> DIM
-    }
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -87,20 +83,23 @@ fun NotesHeader(date: LocalDate, syncStatus: String, onPanelToggle: () -> Unit) 
             Text(today, color = DIM, fontSize = 14.sp)
         }
         IconButton(onClick = onPanelToggle) {
-            Icon(Icons.Default.SwapHoriz, contentDescription = "Sync", tint = iconColor, modifier = Modifier.size(20.dp))
+            Icon(
+                Icons.Default.Settings,
+                contentDescription = stringResource(R.string.sync_server_title),
+                tint = DIM,
+                modifier = Modifier.size(20.dp),
+            )
         }
     }
 }
 
 @Composable
-fun SyncPanel(
+fun SyncSettingsPanel(
     modifier: Modifier,
     serverUrl: String,
     syncStatus: String,
     syncMsg: String,
-    canSync: Boolean,
     onUrlChange: (String) -> Unit,
-    onSync: () -> Unit,
     onClose: () -> Unit,
 ) {
     val msgColor = when (syncStatus) {
@@ -133,23 +132,6 @@ fun SyncPanel(
             if (syncMsg.isNotBlank()) {
                 Text(syncMsg, color = msgColor, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
             }
-
-            // 同步按钮
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(if (canSync) BLUE else Color(0xFF2A2A2A), RoundedCornerShape(5.dp))
-                    .clickable(enabled = canSync) { onSync() }
-                    .padding(vertical = 8.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text  = if (syncStatus == "syncing") stringResource(R.string.syncing_label) else stringResource(R.string.sync_now_label),
-                    color = if (canSync) Color.White else DIM,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
         }
     }
 }
@@ -179,12 +161,14 @@ fun MonoInput(value: String, placeholder: String, onValue: (String) -> Unit, mod
 fun MarkdownViewer(
     content: String,
     onTap: () -> Unit = {},
+    onPullRefresh: (() -> Unit)? = null,
     onRendered: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var webView   by remember { mutableStateOf<WebView?>(null) }
     var pageReady by remember { mutableStateOf(false) }
     val currentOnTap by rememberUpdatedState(onTap)
+    val currentOnPullRefresh by rememberUpdatedState(onPullRefresh)
     val currentOnRendered by rememberUpdatedState(onRendered)
 
     val context = LocalContext.current
@@ -230,6 +214,11 @@ fun MarkdownViewer(
                     }
                 }
                 var lastTouchY = 0f
+                var pullStartX = 0f
+                var pullStartY = 0f
+                var pullEligible = false
+                var pullTriggered = false
+                val pullThreshold = 72f * resources.displayMetrics.density
                 // The task detail page wraps this fixed-height preview in a Compose
                 // verticalScroll. Keep drags in the WebView while it can scroll, then
                 // hand them back to the outer page at the top/bottom edge.
@@ -239,6 +228,10 @@ fun MarkdownViewer(
                     when (event.actionMasked) {
                         MotionEvent.ACTION_DOWN -> {
                             lastTouchY = event.y
+                            pullStartX = event.x
+                            pullStartY = event.y
+                            pullEligible = !view.canScrollVertically(-1)
+                            pullTriggered = false
                             view.parent?.requestDisallowInterceptTouchEvent(
                                 view.canScrollVertically(-1) || view.canScrollVertically(1)
                             )
@@ -257,12 +250,25 @@ fun MarkdownViewer(
                                 view.canScrollVertically(scrollDirection)
                             }
                             view.parent?.requestDisallowInterceptTouchEvent(canScroll)
+                            val pullDistance = event.y - pullStartY
+                            if (
+                                pullEligible &&
+                                !pullTriggered &&
+                                pullDistance >= pullThreshold &&
+                                pullDistance > abs(event.x - pullStartX) * 1.2f
+                            ) {
+                                pullTriggered = true
+                                view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                                currentOnPullRefresh?.invoke()
+                            }
                             lastTouchY = event.y
                         }
 
                         MotionEvent.ACTION_UP,
-                        MotionEvent.ACTION_CANCEL ->
+                        MotionEvent.ACTION_CANCEL -> {
+                            pullEligible = false
                             view.parent?.requestDisallowInterceptTouchEvent(false)
+                        }
                     }
 
                     false // always let WebView handle the event for scrolling
@@ -387,6 +393,7 @@ fun MarkdownField(
     onEditStart: suspend () -> String? = { null },
     onDraftChange: (String) -> Unit = {},
     onEditingChange: (Boolean) -> Unit = {},
+    onPullRefresh: (() -> Unit)? = null,
     onEditRequest: (() -> Unit)? = null,
     onPreviewRendered: (String) -> Unit = {},
 ) {
@@ -443,6 +450,7 @@ fun MarkdownField(
                 else -> content
             },
             onTap = { if (!isEditing) beginEditing() },
+            onPullRefresh = onPullRefresh,
             onRendered = { renderedContent ->
                 lastRenderedContent = renderedContent
                 onPreviewRendered(renderedContent)

@@ -64,6 +64,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.hamhuo.tplanner.timeline.TimelineScreen
+import com.hamhuo.tplanner.ui.components.TPlannerPullToSync
 import com.hamhuo.tplanner.persistence.DraftCommitResult
 import com.hamhuo.tplanner.persistence.EventDraftRecovery
 import com.hamhuo.tplanner.persistence.EventEditStage
@@ -426,67 +427,72 @@ fun MainScreen(
 
     // ── Panel building blocks ────────────────────────────────────────────
     val notesCardContent: @Composable () -> Unit = {
-        Box(Modifier.fillMaxSize()) {
-            Column(Modifier.fillMaxSize()) {
-                NotesHeader(
-                    date = journalDate,
-                    syncStatus = syncStatus,
-                    onPanelToggle = { panelOpen = !panelOpen }
-                )
-                HorizontalDivider(color = BORDER, thickness = 1.dp)
-                MarkdownField(
-                    content = content,
-                    onEditStart = {
-                        val recovery = journalWriteMutex.withLock { store.beginDraft(journalDateKey) }
-                        val sessionText = when (recovery) {
-                            JournalDraftRecovery.None -> store.get(journalDateKey)
-                            is JournalDraftRecovery.Recovered -> recovery.text
-                            is JournalDraftRecovery.Conflict -> recovery.text
-                        }
-                        content = sessionText
-                        journalHasDraft = recovery != JournalDraftRecovery.None
-                        sessionText
-                    },
-                    onSave = { text ->
-                        content = text
-                        commitJournalDraft(text)
-                    },
-                    onDraftChange = { text ->
-                        content = text
-                        saveJournalDraft(text)
-                    },
-                    onEditingChange = { journalEditing = it },
-                    placeholder = stringResource(R.string.journal_edit_hint),
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            if (panelOpen) {
-                SyncPanel(
-                    modifier    = Modifier.align(Alignment.TopEnd).padding(top = 50.dp, end = 8.dp),
-                    serverUrl   = serverUrl,
-                    syncStatus  = syncStatus,
-                    syncMsg     = syncMsg,
-                    canSync     = serverUrl.isNotBlank() && syncStatus != "syncing",
-                    onUrlChange = { serverUrl = it },
-                    onSync      = onSync,
-                    onClose     = { panelOpen = false }
-                )
-            }
-            if (deepseekService != null) {
-                IconButton(
-                    onClick = { startDirectAiExtraction() },
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = 12.dp, bottom = 12.dp)
-                        .size(40.dp)
-                        .background(GOLD, CircleShape),
-                ) {
-                    Icon(
-                        Icons.Filled.AutoAwesome,
-                        contentDescription = stringResource(R.string.ai_schedule_extraction),
-                        tint = BG,
-                        modifier = Modifier.size(20.dp),
+        TPlannerPullToSync(
+            isSyncing = syncStatus == "syncing",
+            onSync = onSync,
+            enabled = isPhone,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            Box(Modifier.fillMaxSize()) {
+                Column(Modifier.fillMaxSize()) {
+                    NotesHeader(
+                        date = journalDate,
+                        onPanelToggle = { panelOpen = !panelOpen },
                     )
+                    HorizontalDivider(color = BORDER, thickness = 1.dp)
+                    MarkdownField(
+                        content = content,
+                        onEditStart = {
+                            val recovery = journalWriteMutex.withLock { store.beginDraft(journalDateKey) }
+                            val sessionText = when (recovery) {
+                                JournalDraftRecovery.None -> store.get(journalDateKey)
+                                is JournalDraftRecovery.Recovered -> recovery.text
+                                is JournalDraftRecovery.Conflict -> recovery.text
+                            }
+                            content = sessionText
+                            journalHasDraft = recovery != JournalDraftRecovery.None
+                            sessionText
+                        },
+                        onSave = { text ->
+                            content = text
+                            commitJournalDraft(text)
+                        },
+                        onDraftChange = { text ->
+                            content = text
+                            saveJournalDraft(text)
+                        },
+                        onEditingChange = { journalEditing = it },
+                        onPullRefresh = if (isPhone) onSync else null,
+                        placeholder = stringResource(R.string.journal_edit_hint),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                if (panelOpen) {
+                    SyncSettingsPanel(
+                        modifier = Modifier.align(Alignment.TopEnd).padding(top = 50.dp, end = 8.dp),
+                        serverUrl = serverUrl,
+                        syncStatus = syncStatus,
+                        syncMsg = syncMsg,
+                        onUrlChange = { serverUrl = it },
+                        onClose = { panelOpen = false },
+                    )
+                }
+                if (deepseekService != null) {
+                    IconButton(
+                        onClick = { startDirectAiExtraction() },
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 12.dp, bottom = 12.dp)
+                            .size(40.dp)
+                            .background(GOLD, CircleShape),
+                    ) {
+                        Icon(
+                            Icons.Filled.AutoAwesome,
+                            contentDescription = stringResource(R.string.ai_schedule_extraction),
+                            tint = BG,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
                 }
             }
         }
@@ -552,23 +558,30 @@ fun MainScreen(
     }
 
     val taskCardContent: @Composable () -> Unit = {
-        TaskWidget(
-            events   = events,
-            view     = selectedView,
-            onToggle = { eventId, completed ->
-                eventActions.toggleCompleted(events, eventId, completed) { events = it }
-            },
-            onAddEvent = ::beginNewItem,
-            onDelete = { eventId ->
-                eventActions.softDelete(events, eventId) { events = it }
-            },
-            onItemClick = ::openItem,
-            onViewPickerClick = { showListSheet = true },
-            onTypeChange = { eventId, newType ->
-                eventActions.changeType(events, eventId, newType) { events = it }
-            },
-            onModalVisibilityChange = { taskWidgetModalVisible = it },
-        )
+        TPlannerPullToSync(
+            isSyncing = syncStatus == "syncing",
+            onSync = onSync,
+            enabled = isPhone,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            TaskWidget(
+                events = events,
+                view = selectedView,
+                onToggle = { eventId, completed ->
+                    eventActions.toggleCompleted(events, eventId, completed) { events = it }
+                },
+                onAddEvent = ::beginNewItem,
+                onDelete = { eventId ->
+                    eventActions.softDelete(events, eventId) { events = it }
+                },
+                onItemClick = ::openItem,
+                onViewPickerClick = { showListSheet = true },
+                onTypeChange = { eventId, newType ->
+                    eventActions.changeType(events, eventId, newType) { events = it }
+                },
+                onModalVisibilityChange = { taskWidgetModalVisible = it },
+            )
+        }
     }
 
     val timelineCardContent: @Composable () -> Unit = {
