@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { openDatabase } from '../src/state/database.js';
-import { createMaterializer } from '../src/materializer/materializer.js';
+import { createMaterializer, createInitialSnapshot } from '../src/materializer/materializer.js';
 import { applyCommand } from '../src/materializer/reducer.js';
+import { parseLegacyData, importIntoDatabase } from '../src/state/v1Importer.js';
 
 const SERVER_ID = 'srv-test-deterministic';
 
@@ -26,6 +27,27 @@ async function loadFixtures() {
 
 // fixture 是扁平的 broker 命令流(无 client batch 信封);补上 batchId 满足回执表 NOT NULL。
 const withBatchId = (entries) => entries.map((e, i) => ({ ...e, batchId: `batch-${i + 1}` }));
+
+test('createInitialSnapshot bootstraps V1 from imported entities, idempotently', () => {
+  const db = openDatabase(':memory:');
+  const { entities } = parseLegacyData({
+    events: [{ id: 'task-1', payload: { title: '旧数据' }, updatedAt: 1000, deletedAt: null }],
+  });
+  importIntoDatabase(db, entities);
+
+  const manifest = createInitialSnapshot(db, { serverInstanceId: SERVER_ID });
+  assert.ok(manifest, 'snapshot V1 must be created');
+  assert.equal(manifest.snapshotVersion, 1);
+  assert.equal(db.prepare('SELECT COUNT(*) AS c FROM snapshots').get().c, 1);
+  assert.equal(db.prepare('SELECT version FROM latest_snapshot WHERE singleton_id = 1').get().version, 1);
+  assert.equal(db.prepare('SELECT COUNT(*) AS c FROM publication_outbox').get().c, 1);
+
+  assert.equal(createInitialSnapshot(db, { serverInstanceId: SERVER_ID }), null, 'second call is a no-op');
+
+  const m = createMaterializer({ db, applyCommand, serverInstanceId: SERVER_ID });
+  assert.equal(m.getSnapshotVersion(), 1, 'materializer continues from V1');
+  db.close();
+});
 
 test('replays the fixture command stream to the expected state and receipts', async () => {
   const { entries, expectedState, expectedReceipts } = await loadFixtures();
