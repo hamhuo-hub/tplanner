@@ -13,3 +13,4 @@ package-lock.json
 *.keystore
 keystore.properties
 *.log
+/build
