@@ -170,9 +170,9 @@ export default function useLanSync(props = {}) {
         const conflictResults = [];
 
         for (const a of ads) {
-            const localData = a._getLocal ? await a._getLocal() : [];
-            const r = await syncAndPush(a, base, localData, loadBaseKeys(a.type), resolutions[a.type] || {});
-            if (r !== null) {
+            try {
+                const localData = a._getLocal ? await a._getLocal() : [];
+                const r = await syncAndPush(a, base, localData, loadBaseKeys(a.type), resolutions[a.type] || {});
                 if (a._writeLocal) await a._writeLocal(r.merged);
                 saveBaseKeys(a.type, r.newBaseKeys);
                 totalUnresolved += r.unresolved;
@@ -180,8 +180,13 @@ export default function useLanSync(props = {}) {
                     conflictResults.push({ adapter: a, analysis: r.analysis });
                 }
                 if (Array.isArray(r.merged)) totalMerged += r.merged.length;
-            } else if (a.isRequired) {
-                setStatus('error'); setStatusMsg(`${a.type} 同步失败`); return;
+            } catch (error) {
+                console.error(`[LAN sync] ${a.type} failed`, error);
+                if (a.isRequired) {
+                    setStatus('error');
+                    setStatusMsg(error?.message || `${a.type} 同步失败`);
+                    return;
+                }
             }
         }
 

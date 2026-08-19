@@ -23,6 +23,10 @@ import { getSyncClientId } from './syncClient';
 
 export const DEFAULT_SERVER_URL = 'https://sync.hamhuo.top';
 export const DEFAULT_CONFIG = { serverUrl: DEFAULT_SERVER_URL };
+const SYNC_READ_TIMEOUT_MS = 10000;
+// Full-dataset uploads currently pass through Cloudflare Tunnel before the Raspberry Pi can
+// merge and acknowledge them. Production event PUTs can legitimately take more than 10 seconds.
+const SYNC_WRITE_TIMEOUT_MS = 30000;
 
 export function normalizeServerUrl(url) {
     const trimmed = (url || '').trim();
@@ -278,7 +282,7 @@ export function createSyncAdapter(config) {
 
 export async function fetchAndAnalyze(adapter, serverUrl, localData, baseKeys = null) {
     try {
-        const res = await fetch(`${serverUrl}${adapter.endpoint}`, { method: 'GET', signal: AbortSignal.timeout(10000) });
+        const res = await fetch(`${serverUrl}${adapter.endpoint}`, { method: 'GET', signal: AbortSignal.timeout(SYNC_READ_TIMEOUT_MS) });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const remoteData = await res.json();
         return { adapter, remoteData, analysis: adapter.analyze(localData, remoteData, baseKeys) };
@@ -289,19 +293,25 @@ export async function fetchAndAnalyze(adapter, serverUrl, localData, baseKeys = 
 export async function syncAndPush(adapter, serverUrl, localData, baseKeys = null, resolutions = {}) {
     const base = normalizeServerUrl(serverUrl);
     try {
-        const res = await fetch(`${base}${adapter.endpoint}`, { method: 'GET', signal: AbortSignal.timeout(10000) });
+        const res = await fetch(`${base}${adapter.endpoint}`, { method: 'GET', signal: AbortSignal.timeout(SYNC_READ_TIMEOUT_MS) });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const remoteData = await res.json();
         const r = adapter.mergeWithBase(localData, remoteData, baseKeys, resolutions);
-        await fetch(`${base}${adapter.endpoint}`, {
+        const putResponse = await fetch(`${base}${adapter.endpoint}`, {
             method: 'PUT', headers: {
                 'Content-Type': 'application/json',
                 'X-TPlanner-Client': getSyncClientId(),
             },
-            body: JSON.stringify(r.pushData), signal: AbortSignal.timeout(10000),
+            body: JSON.stringify(r.pushData), signal: AbortSignal.timeout(SYNC_WRITE_TIMEOUT_MS),
         });
+        if (!putResponse.ok) throw new Error(`HTTP ${putResponse.status}`);
         return r;
-    } catch (_) { return null; }
+    } catch (error) {
+        const reason = error?.name === 'TimeoutError' || error?.name === 'AbortError'
+            ? '请求超时'
+            : (error?.message || String(error));
+        throw new Error(`${adapter.type} 同步失败：${reason}`, { cause: error });
+    }
 }
 
 // ── 内置 adapters ────────────────────────────────────────────────────────────
