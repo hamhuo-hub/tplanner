@@ -1,5 +1,6 @@
 package com.hamhuo.tplanner.designsystem
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -14,7 +15,15 @@ enum class TPlannerSyncFeedbackTone {
     ERROR,
 }
 
-/** Compact top-of-screen sync feedback shared by the phone and Wear launchers. */
+/**
+ * Compact top-of-screen sync feedback shared by the phone and Wear launchers.
+ *
+ * Deliberately extends the framework [TextView] rather than AppCompatTextView:
+ * this design-system primitive sets its own colors/background/typeface and uses no
+ * AppCompat theming, and the :wear module (which also compiles shared sources)
+ * does not depend on androidx.appcompat.
+ */
+@SuppressLint("AppCompatCustomView")
 class TPlannerSyncFeedbackView(context: Context) : TextView(context) {
     private val hideFeedback = Runnable {
         animate()
