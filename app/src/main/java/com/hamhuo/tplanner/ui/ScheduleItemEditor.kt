@@ -142,7 +142,9 @@ fun ScheduleItemDetailScreen(
         type      = type,
         start     = start,
         end       = end,
-        checklist = if (type == "task") checklist else emptyList(),
+        // Non-task editors hide checklist controls, but the data must survive a
+        // temporary type conversion so converting back to a task is lossless.
+        checklist = checklist,
         completed = if (type == "task") completed else false,
         note      = if (noteEditorOpen) noteEditorDraft else note,
         colorId   = colorId,

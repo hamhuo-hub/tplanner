@@ -138,7 +138,6 @@ class ScheduleItemActions(
                 it.copy(
                     type = newType,
                     completed = if (newType == "task") it.completed else false,
-                    checklist = if (newType == "task") it.checklist else emptyList(),
                     updatedAt = System.currentTimeMillis(),
                 )
             } else it
