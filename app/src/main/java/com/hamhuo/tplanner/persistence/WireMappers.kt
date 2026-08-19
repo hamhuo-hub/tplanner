@@ -13,7 +13,7 @@ class WireFormatException(message: String, cause: Throwable? = null) : Exception
 
 /** The only event JSON codec used by persistence, migration, and network synchronization. */
 object EventWireMapper {
-    val knownKeys: Set<String> = setOf(
+    private val knownKeys: Set<String> = setOf(
         "id",
         "title",
         "type",
@@ -31,6 +31,9 @@ object EventWireMapper {
         "lng",
         "listId",
     )
+    private val retiredKeys: Set<String> = setOf("groupId")
+
+    fun preservesExtra(key: String): Boolean = key !in knownKeys && key !in retiredKeys
 
     fun decodeArrayStrict(json: String): List<ScheduleItem> {
         val array = try {
@@ -69,7 +72,7 @@ object EventWireMapper {
         }
         val extras = linkedMapOf<String, Any?>()
         obj.keys().forEach { key ->
-            if (key !in knownKeys) extras[key] = obj.get(key)
+            if (preservesExtra(key)) extras[key] = obj.get(key)
         }
         return ScheduleItem(
             id = obj.getString("id"),
@@ -99,7 +102,7 @@ object EventWireMapper {
 
     fun encodeObject(event: ScheduleItem): JSONObject = JSONObject().apply {
         event.extras.forEach { (key, value) ->
-            if (key !in knownKeys) put(key, value)
+            if (preservesExtra(key)) put(key, value)
         }
         put("id", event.id)
         put("title", event.title)
@@ -228,7 +231,7 @@ object PersistenceMapper {
         }.toString()
         val extrasJson = JSONObject().apply {
             event.extras.forEach { (key, value) ->
-                if (key !in EventWireMapper.knownKeys) put(key, value)
+                if (EventWireMapper.preservesExtra(key)) put(key, value)
             }
         }.toString()
         return ScheduleItemEntity(
@@ -265,7 +268,9 @@ object PersistenceMapper {
         }
         val extrasObject = JSONObject(row.extrasJson)
         val extras = linkedMapOf<String, Any?>().apply {
-            extrasObject.keys().forEach { key -> put(key, extrasObject.get(key)) }
+            extrasObject.keys().forEach { key ->
+                if (EventWireMapper.preservesExtra(key)) put(key, extrasObject.get(key))
+            }
         }
         return ScheduleItem(
             id = row.id,
