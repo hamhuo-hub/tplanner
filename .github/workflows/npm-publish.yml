@@ -4,6 +4,7 @@ name: Build & Release
 #   1. 推送 v* / TUI_* / desktop_* 标签 → 构建并发布
 #   2. 手动触发 → 只构建、上传产物，便于测试
 #
+# 桌面版只认自己的 v* / TUI_* / desktop_* 标签（Android 用 mobile_*），不会互相触发。
 # 注意：tag 推送时 GitHub 会从默认分支(master)解析 workflow 文件，
 # 因此本文件在 master 与 mobile_andorid 上都保留，改时两边同步。
 on:
@@ -19,30 +20,8 @@ permissions:
   contents: write
 
 jobs:
-  # Android 也发 v* 标签，此护栏保证桌面流程只处理 master 上的标签。
-  guard:
-    name: Ensure tag belongs to master
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Check tag ancestry
-        run: |
-          git fetch origin master --quiet
-          if git merge-base --is-ancestor "$GITHUB_SHA" origin/master; then
-            echo "tag $GITHUB_REF_NAME is on master"
-          else
-            echo "::notice::tag $GITHUB_REF_NAME is not on master; skipping desktop jobs"
-            exit 78
-          fi
-
   build:
     name: Build (${{ matrix.platform }})
-    needs: guard
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false          # 某个平台失败不影响其它平台继续
@@ -61,6 +40,8 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22       # 与你本地 nvm use 22 保持一致；需要的话改 24
+          cache: npm             # 缓存 ~/.npm，加速后续 npm ci
+          cache-dependency-path: package-lock.json
 
       # deb 打包在部分环境需要 fakeroot；AppImage 由 electron-builder 自动处理
       - name: Install Linux build deps
@@ -68,7 +49,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y fakeroot
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund  # master 不跟踪 package-lock.json
+        run: npm ci             # 依赖 package-lock.json，确保已提交到仓库
 
       - name: Build renderer & main
         run: npm run build      # tsc -b && vite build，产出 dist/ 与 dist-electron/
