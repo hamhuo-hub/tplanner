@@ -47,22 +47,34 @@ export function buildServer({ publisher, validateBatch, store, health }) {
     };
   });
 
-  // 最新快照:no-store,下载的是 gzip 信封(§11)
+  // 最新快照:no-store,下载的是 gzip 信封;ETag 条件请求返回 304(§11/§22)
   app.get('/tplanner/v3/snapshots/latest', async (request, reply) => {
-    const snap = store.latestSnapshot();
-    if (!snap) return reply.code(404).send({ error: 'SNAPSHOT_NOT_FOUND' });
-    return sendSnapshot(reply, snap, { immutable: false });
+    const meta = store.latestSnapshotMeta();
+    if (!meta) return reply.code(404).send({ error: 'SNAPSHOT_NOT_FOUND' });
+    if (isNotModified(request, meta.compressedHash)) {
+      return snapshotHeaders(reply, meta, { immutable: false }).code(304).send();
+    }
+    return snapshotHeaders(reply, meta, { immutable: false })
+      .header('Content-Type', 'application/octet-stream')
+      .header('Content-Encoding', 'gzip')
+      .send(store.snapshotPayload(meta.version));
   });
 
-  // 指定版本快照:immutable + ETag = compressedHash(§11)
+  // 指定版本快照:immutable + ETag = compressedHash,支持 304(§11/§22)
   app.get('/tplanner/v3/snapshots/:version', async (request, reply) => {
     const version = Number(request.params.version);
     if (!Number.isInteger(version) || version < 1) {
       return reply.code(400).send({ error: 'BAD_SNAPSHOT_VERSION' });
     }
-    const snap = store.snapshotByVersion(version);
-    if (!snap) return reply.code(404).send({ error: 'SNAPSHOT_NOT_FOUND' });
-    return sendSnapshot(reply, snap, { immutable: true });
+    const meta = store.snapshotMeta(version);
+    if (!meta) return reply.code(404).send({ error: 'SNAPSHOT_NOT_FOUND' });
+    if (isNotModified(request, meta.compressedHash)) {
+      return snapshotHeaders(reply, meta, { immutable: true }).code(304).send();
+    }
+    return snapshotHeaders(reply, meta, { immutable: true })
+      .header('Content-Type', 'application/octet-stream')
+      .header('Content-Encoding', 'gzip')
+      .send(store.snapshotPayload(version));
   });
 
   // 设备快照安装 ACK:更新 device_progress(§11)
@@ -89,13 +101,14 @@ export function buildServer({ publisher, validateBatch, store, health }) {
   return app;
 }
 
-function sendSnapshot(reply, snap, { immutable }) {
+function isNotModified(request, compressedHash) {
+  return request.headers['if-none-match'] === `"${compressedHash}"`;
+}
+
+function snapshotHeaders(reply, meta, { immutable }) {
   return reply
-    .header('Content-Type', 'application/octet-stream')
-    .header('Content-Encoding', 'gzip')
-    .header('ETag', `"${snap.compressedHash}"`)
-    .header('X-Snapshot-Version', String(snap.version))
-    .header('X-State-Hash', snap.stateHash)
-    .header('Cache-Control', immutable ? 'private, max-age=31536000, immutable' : 'no-store')
-    .send(Buffer.from(snap.compressedPayload));
+    .header('ETag', `"${meta.compressedHash}"`)
+    .header('X-Snapshot-Version', String(meta.version))
+    .header('X-State-Hash', meta.stateHash)
+    .header('Cache-Control', immutable ? 'private, max-age=31536000, immutable' : 'no-store');
 }

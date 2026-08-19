@@ -142,6 +142,53 @@ test('snapshots/:version serves immutable bytes with ETag; 404 for unknown', asy
   db.close();
 });
 
+test('conditional download returns 304 when If-None-Match equals the compressedHash', async () => {
+  const db = openDatabase(':memory:');
+  seedCommands(db);
+  const { app } = buildApi(db);
+
+  const first = await app.inject({ method: 'GET', url: '/tplanner/v3/snapshots/1' });
+  const etag = first.headers.etag;
+
+  const notModified = await app.inject({
+    method: 'GET',
+    url: '/tplanner/v3/snapshots/1',
+    headers: { 'if-none-match': etag },
+  });
+  assert.equal(notModified.statusCode, 304);
+  assert.equal(notModified.rawPayload.length, 0);
+  assert.equal(notModified.headers.etag, etag);
+
+  // latest 同样支持 304;不同 hash 则返回 200 + 新载荷
+  const latest = await app.inject({
+    method: 'GET',
+    url: '/tplanner/v3/snapshots/latest',
+    headers: { 'if-none-match': etag },
+  });
+  assert.equal(latest.statusCode, 304);
+
+  const stale = await app.inject({
+    method: 'GET',
+    url: '/tplanner/v3/snapshots/1',
+    headers: { 'if-none-match': '"sha256:' + '0'.repeat(64) + '"' },
+  });
+  assert.equal(stale.statusCode, 200);
+  assert.ok(stale.rawPayload.length > 0);
+  db.close();
+});
+
+test('snapshot payloads are cached per version (same Buffer instance)', async () => {
+  const db = openDatabase(':memory:');
+  seedCommands(db);
+  const { store } = buildApi(db);
+
+  const a = store.snapshotPayload(1);
+  const b = store.snapshotPayload(1);
+  assert.ok(Buffer.isBuffer(a));
+  assert.equal(a, b); // 缓存命中:同一 Buffer 引用,不重复读 BLOB
+  db.close();
+});
+
 test('snapshot-acks records device progress', async () => {
   const db = openDatabase(':memory:');
   seedCommands(db);
