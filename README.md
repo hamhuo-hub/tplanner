@@ -62,6 +62,10 @@
 
 版本号以 git tag 为唯一来源，代码里不再手写：
 
+> **tag 命名约定**：master（桌面版）用 `v*`，mobile_andorid（Android）用 `mobile_*`，
+> 两者互不重叠、标签不会互相触发对方的工作流。历史前缀 `TUI_*`/`desktop_*`（桌面）、
+> `PUKEKO_*`（Android）仅作 `git describe` 兜底，不再用于新发版。
+
 1. 发版 = 打 tag：`.\scripts\release.ps1 6.0.2`（可选 `-Push` 推送远程），生成 `mobile_6.0.2`
 2. 构建时由根 `build.gradle.kts` 用 `git describe` 推导，`:app` / `:wear` 自动引用：
    - HEAD 恰好在 tag 上 → `versionName = 6.0.2`，`versionCode = 6002`（主×1000 + 次×100 + 补丁）
