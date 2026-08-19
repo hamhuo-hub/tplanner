@@ -37,6 +37,8 @@ import android.widget.TextView
 import com.hamhuo.tplanner.designsystem.TPlannerTaskUnitModel
 import com.hamhuo.tplanner.designsystem.TPlannerTaskUnitVariant
 import com.hamhuo.tplanner.designsystem.TPlannerTaskUnitView
+import com.hamhuo.tplanner.designsystem.TPlannerSyncFeedbackTone
+import com.hamhuo.tplanner.designsystem.TPlannerSyncFeedbackView
 import org.json.JSONArray
 import java.time.Instant
 import java.time.LocalDate
@@ -285,20 +287,7 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         isClickable = true
         isFocusable = true
     }
-    private val syncFeedback = textView(10f, ACCENT, WEAR_MONOSPACE).apply {
-        gravity = Gravity.CENTER
-        letterSpacing = 0.02f
-        maxLines = 1
-        ellipsize = TextUtils.TruncateAt.END
-        maxWidth = dp(172)
-        setPadding(dp(12), dp(6), dp(12), dp(6))
-        background = rounded(CARD, dp(15).toFloat())
-        alpha = 0f
-        visibility = INVISIBLE
-        elevation = dp(8).toFloat()
-        isClickable = false
-        isFocusable = false
-    }
+    private val syncFeedback = TPlannerSyncFeedbackView(context)
 
     private val timeFormatter = LocalizedDateTimeFormatter(context, R.string.task_time_pattern)
     private val shortDateFormatter =
@@ -319,14 +308,6 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
     private var syncPullEligible = false
     private var syncPullStartX = 0f
     private var syncPullStartY = 0f
-    private val hideSyncFeedback = Runnable {
-        syncFeedback.animate()
-            .alpha(0f)
-            .setDuration(180L)
-            .withEndAction { syncFeedback.visibility = INVISIBLE }
-            .start()
-    }
-
     init {
         setBackgroundColor(BG)
         clipChildren = false
@@ -423,24 +404,24 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
 
     internal fun showSyncing() {
         syncInProgress = true
-        showSyncFeedback(
+        syncFeedback.show(
             message = context.getString(R.string.task_list_syncing),
-            color = ACCENT,
+            tone = TPlannerSyncFeedbackTone.ACCENT,
             autoHide = false,
         )
     }
 
     internal fun showSyncResult(result: WatchManualSync.Result) {
         syncInProgress = false
-        val (message, color) = when (result) {
+        val (message, tone) = when (result) {
             WatchManualSync.Result.COMPLETED ->
-                context.getString(R.string.task_list_sync_complete) to SUCCESS
+                context.getString(R.string.task_list_sync_complete) to TPlannerSyncFeedbackTone.SUCCESS
 
             WatchManualSync.Result.FAILED ->
-                context.getString(R.string.task_list_sync_failed) to ERROR
+                context.getString(R.string.task_list_sync_failed) to TPlannerSyncFeedbackTone.ERROR
         }
         performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-        showSyncFeedback(message, color, autoHide = true)
+        syncFeedback.show(message, tone, autoHide = true)
     }
 
     fun announceTaskQueued() {
@@ -809,18 +790,6 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
 
-    private fun showSyncFeedback(message: String, color: Int, autoHide: Boolean) {
-        removeCallbacks(hideSyncFeedback)
-        syncFeedback.animate().cancel()
-        syncFeedback.text = message
-        syncFeedback.setTextColor(color)
-        syncFeedback.contentDescription = message
-        syncFeedback.visibility = VISIBLE
-        syncFeedback.alpha = 1f
-        announceForAccessibility(message)
-        if (autoHide) postDelayed(hideSyncFeedback, SYNC_FEEDBACK_DURATION_MS)
-    }
-
     /** Wraps a task card with a swipe-to-reveal delete button. Vertical scroll passes through. */
     private inner class SwipeTaskCardView(
         task: WatchEventMarks.NextTask,
@@ -968,8 +937,6 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         const val FROSTED_HEADER_SOURCE_HEIGHT_DP = COMPACT_HEADER_HEIGHT_DP + 16
         const val NEW_BUTTON_SIZE_DP = 48
         const val SYNC_PULL_DISTANCE_DP = 52
-        const val SYNC_FEEDBACK_DURATION_MS = 1_600L
-
         val REGULAR: Typeface = WEAR_REGULAR
         val MEDIUM: Typeface = WEAR_MEDIUM
         val BOLD: Typeface = WEAR_BOLD
@@ -978,7 +945,6 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         const val PRIMARY = WEAR_PRIMARY
         const val SECONDARY = WEAR_DIM
         const val ACCENT = WEAR_GOLD
-        const val SUCCESS = WEAR_TEAL
         const val ERROR = WEAR_RED
         const val BORDER = WEAR_BORDER
         const val CARD = WEAR_SURFACE2

@@ -3,6 +3,7 @@ package com.hamhuo.tplanner
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.SystemClock
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -65,6 +66,9 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.hamhuo.tplanner.timeline.TimelineScreen
 import com.hamhuo.tplanner.ui.components.TPlannerPullToSync
+import com.hamhuo.tplanner.ui.components.TPlannerSyncFeedback
+import com.hamhuo.tplanner.ui.components.TPlannerSyncFeedbackPresentation
+import com.hamhuo.tplanner.designsystem.TPlannerSyncFeedbackTone
 import com.hamhuo.tplanner.persistence.DraftCommitResult
 import com.hamhuo.tplanner.persistence.EventDraftRecovery
 import com.hamhuo.tplanner.persistence.EventEditStage
@@ -267,11 +271,15 @@ fun MainScreen(
     var serverUrl  by remember { mutableStateOf(initialServerUrl) }
     var syncStatus by remember { mutableStateOf("idle") }
     var syncMsg    by remember { mutableStateOf("") }
+    var syncFeedback by remember { mutableStateOf<TPlannerSyncFeedbackPresentation?>(null) }
+    var syncFeedbackGeneration by remember { mutableIntStateOf(0) }
     val eventActions = remember(serverUrl) {
         ScheduleItemActions(scope, context, eventStore, eventWriteMutex, { url -> manager.fetchEvents(url) }, { serverUrl })
     }
 
     val syncedTemplate = stringResource(R.string.sync_success_with_name)
+    val syncCompleteMessage = stringResource(R.string.sync_complete)
+    val syncFailedMessage = stringResource(R.string.sync_failed)
     val unknownSyncError = stringResource(R.string.unknown_error)
 
     fun serverHost(url: String): String =
@@ -284,21 +292,42 @@ fun MainScreen(
             syncMsg = ""
             val requestedServerUrl = serverUrl
             scope.launch {
-                try {
+                val animationStartedAt = SystemClock.elapsedRealtime()
+                val result = try {
                     manager.saveServerUrl(requestedServerUrl)
                     val savedServerUrl = manager.getServerUrl()
                     manager.syncAllOrThrow()
-                    syncStatus = "success"
-                    syncMsg = syncedTemplate.format(serverHost(savedServerUrl))
+                    Triple(
+                        "success",
+                        syncedTemplate.format(serverHost(savedServerUrl)),
+                        TPlannerSyncFeedbackTone.SUCCESS,
+                    )
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Exception) {
-                    syncStatus = "error"
-                    syncMsg = error.message ?: unknownSyncError
+                    Log.e("TplannerSync", "Manual sync failed", error)
+                    Triple(
+                        "error",
+                        error.message ?: unknownSyncError,
+                        TPlannerSyncFeedbackTone.ERROR,
+                    )
                 } finally {
                     // Journal sync may have committed before a later event sync failure.
                     runCatching { refreshJournalRecovery(journalDateKey) }
                 }
+                val resultDelay = manualSyncResultDelayMillis(
+                    animationStartedAt,
+                    SystemClock.elapsedRealtime(),
+                )
+                if (resultDelay > 0L) delay(resultDelay)
+                syncStatus = result.first
+                syncMsg = result.second
+                syncFeedbackGeneration++
+                syncFeedback = TPlannerSyncFeedbackPresentation(
+                    generation = syncFeedbackGeneration,
+                    message = if (result.first == "success") syncCompleteMessage else syncFailedMessage,
+                    tone = result.third,
+                )
             }
         }
     }
@@ -781,6 +810,16 @@ fun MainScreen(
                 taskCard = taskCardContent,
                 timelineCard = timelineCardContent,
             )
+        }
+        if (isPhone) {
+            syncFeedback?.let { feedback ->
+                TPlannerSyncFeedback(
+                    presentation = feedback,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 9.dp),
+                )
+            }
         }
     }
 
