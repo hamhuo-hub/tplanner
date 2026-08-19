@@ -1,20 +1,25 @@
 /**
- * Web-mode data adapter — direct HTTP calls to the sync server API.
+ * Web-mode data adapter(V3)—— 与 Electron 共用同一套同步引擎
+ * (IndexedDB 镜像 + 命令 outbox + 快照安装,见 src/syncV3/)。
  *
- * Since the web app and sync server run on the same Raspberry Pi, there is no
- * need for LanSync or RxDB. The web app reads/writes directly via the server's
- * existing REST endpoints, which persist to JSON files on disk.
- *
- * Used only when !isElectron (i.e., running in a browser, not the desktop app).
+ * Web 不再把树莓派 REST 数据当直接状态,也不再 GET 整库后再 PUT 整库:
+ * 本地改动先 diff 成语义命令上传,展示数据永远是"中央镜像 + 本地 pending"的投影。
+ * 认证仍走 V1 兼容端点(过渡期内服务器保留 /tplanner/events 的 Basic Auth)。
  */
+import { createSyncEngine } from '../syncV3/createSyncEngine';
+import { appendCommands } from '../syncV3/commandOutbox';
+import {
+    diffEventsToCommands,
+    diffJournalsToCommands,
+    toLegacyEvents,
+    toLegacyJournals,
+} from '../syncV3/commandsFromData';
 
-import { getSyncClientId } from './syncClient';
-
-const API = ''; // same origin — the server IS the web host
 const AUTH_SESSION_KEY = 'tplanner_web_auth_session';
 const AUTH_PERSIST_KEY = 'tplanner_web_auth_persist';
 
 let authHeader = null;
+let enginePromise = null;
 
 function readStoredAuth() {
     if (typeof window === 'undefined') return null;
@@ -53,16 +58,11 @@ export function clearWebAuth() {
 async function apiFetch(input, init = {}, authorization = authHeader) {
     const headers = new Headers(init.headers || {});
     if (authorization) headers.set('Authorization', authorization);
-    headers.set('X-TPlanner-Client', getSyncClientId());
     return fetch(input, { ...init, headers });
 }
 
 async function verifyAuthorization(authorization) {
-    const response = await apiFetch(`${API}/tplanner/events`, {
-        method: 'GET',
-        cache: 'no-store',
-    }, authorization);
-
+    const response = await apiFetch('/tplanner/events', { method: 'GET', cache: 'no-store' }, authorization);
     if (response.status === 401) return false;
     if (!response.ok) throw new Error(`认证服务暂时不可用（HTTP ${response.status}）`);
     return true;
@@ -79,110 +79,85 @@ export async function authenticateWeb(account, password, remember = true) {
 export async function restoreWebAuth() {
     const stored = readStoredAuth();
     if (!stored) return false;
-
     const authenticated = await verifyAuthorization(stored);
     if (!authenticated) clearWebAuth();
     else authHeader = stored;
     return authenticated;
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// ── V3 引擎(同源部署:serverUrl 用相对路径)───────────────────────────────
 
-/** Hydrate ISO date strings back to Date objects. */
-function hydrateDates(obj) {
-    if (!obj) return obj;
-    if (Array.isArray(obj)) return obj.map(hydrateDates);
-    if (typeof obj !== 'object') return obj;
-    const out = { ...obj };
-    for (const k of ['start', 'end', 'updatedAt', 'deletedAt']) {
-        if (out[k] && typeof out[k] === 'string' && out[k].match(/^\d{4}-\d{2}-\d{2}T/)) {
-            const d = new Date(out[k]);
-            if (!isNaN(d.getTime())) out[k] = d;
-        }
+async function getEngine() {
+    if (!enginePromise) {
+        enginePromise = createSyncEngine({ serverUrl: '' });
     }
-    if (Array.isArray(out.checklist)) out.checklist = out.checklist.map(hydrateDates);
-    return out;
+    return enginePromise;
 }
 
-/** Serialize Date objects back to ISO for the wire. */
-function serializeForWire(obj) {
-    return JSON.parse(JSON.stringify(obj));
+/** 把本地现状 diff 成命令上传,安装最新快照,返回展示数据投影。 */
+async function syncWithLocal({ events, journals } = {}) {
+    const engine = await getEngine();
+    const mirror = (await engine.installer.getServerMirror())
+        ?? { tasks: {}, customLists: {}, journals: {}, goals: {}, insights: {} };
+
+    const commands = [
+        ...diffEventsToCommands(mirror, events ?? []),
+        ...diffJournalsToCommands(mirror, journals ?? {}),
+    ];
+    if (commands.length > 0) await appendCommands(engine.store, commands);
+
+    await engine.uploader.flush();
+    await engine.installer.syncToLatest();
+    const display = (await engine.installer.getDisplayState())
+        ?? (await engine.installer.getServerMirror())
+        ?? { tasks: {}, journals: {} };
+
+    return {
+        events: toLegacyEvents(display),
+        journals: toLegacyJournals(display),
+    };
 }
 
-// ── Events ─────────────────────────────────────────────────────────────────
+// ── 数据接口(签名与旧版一致,内部已无 GET-before-save)────────────────────
 
 export async function loadEvents() {
-    const res = await apiFetch(`${API}/tplanner/events`);
-    if (!res.ok) throw new Error(`GET events: HTTP ${res.status}`);
-    const raw = await res.json();
-    return hydrateDates(raw);
+    const { events } = await syncWithLocal({});
+    return events;
 }
 
 export async function saveEvents(events) {
-    // Merge with server: read current, upsert our changes, write back.
-    // This keeps tombstones and other clients' changes intact.
-    const res = await apiFetch(`${API}/tplanner/events`);
-    if (!res.ok) throw new Error(`GET events before save: HTTP ${res.status}`);
-    const serverEvents = await res.json();
-
-    const map = new Map(serverEvents.map(e => [e.id, e]));
-    for (const ev of events) {
-        const existing = map.get(ev.id);
-        if (!existing || (ev.updatedAt || 0) >= (existing.updatedAt || 0)) {
-            map.set(ev.id, serializeForWire(ev));
-        }
-    }
-    const merged = Array.from(map.values());
-
-    const putRes = await apiFetch(`${API}/tplanner/events`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(merged),
-    });
-    if (!putRes.ok) throw new Error(`PUT events: HTTP ${putRes.status}`);
-    return putRes.json();
+    const result = await syncWithLocal({ events });
+    return result.events;
 }
 
-// ── Journals ───────────────────────────────────────────────────────────────
-
 export async function loadJournals() {
-    const res = await apiFetch(`${API}/tplanner/journals`);
-    if (!res.ok) throw new Error(`GET journals: HTTP ${res.status}`);
-    return res.json();
+    const { journals } = await syncWithLocal({});
+    return journals;
 }
 
 export async function saveJournals(journals) {
-    const res = await apiFetch(`${API}/tplanner/journals`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(journals),
-    });
-    if (!res.ok) throw new Error(`PUT journals: HTTP ${res.status}`);
-    return res.json();
+    const result = await syncWithLocal({ journals });
+    return result.journals;
 }
-
-// ── Insights (read-only for web) ───────────────────────────────────────────
 
 export async function loadInsights() {
-    const res = await apiFetch(`${API}/tplanner/insights`);
-    if (!res.ok) throw new Error(`GET insights: HTTP ${res.status}`);
-    return res.json();
+    const engine = await getEngine();
+    const mirror = await engine.installer.getServerMirror();
+    const insights = mirror?.insights ?? {};
+    const entries = Object.entries(insights).map(([id, payload]) => ({ id, ...payload }));
+    return { entries, reports: {} };
 }
 
-// ── Cross-device change feed ──────────────────────────────────────────────
+// ── 版本监听与展示刷新 ────────────────────────────────────────────────────
 
-/** Long-poll until another client writes data, then return affected datasets. */
-export async function waitForRemoteChanges(since, signal) {
-    const query = new URLSearchParams({
-        since: String(since || 0),
-        clientId: getSyncClientId(),
-        wait: '25000',
-    });
-    const res = await apiFetch(`${API}/tplanner/changes?${query}`, {
-        method: 'GET',
-        cache: 'no-store',
-        signal,
-    });
-    if (!res.ok) throw new Error(`GET changes: HTTP ${res.status}`);
-    return res.json();
+/** 挂起直到服务器发布新版本(长轮询),返回前完成安装。 */
+export async function waitForServerChange() {
+    const engine = await getEngine();
+    const { notified } = await engine.notifications.pollOnce();
+    if (notified) await engine.installer.syncToLatest();
+}
+
+/** 收到通知后调用:先冲刷本地改动,再返回最新展示数据。 */
+export async function refreshAndGetDisplay(events, journals) {
+    return syncWithLocal({ events, journals });
 }

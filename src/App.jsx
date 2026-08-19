@@ -18,7 +18,6 @@ import { TIMEZONES } from './utils/constants'
 import { Plus, Languages, Printer, Globe, Download, Upload, Power, X } from 'lucide-react'
 import { getDatabase } from './database/db'
 import { now as clockNow } from './utils/clock'
-import { BUILTIN_ADAPTERS } from './utils/syncLogic'
 import * as webApi from './utils/webDataAdapter'
 import LoginScreen from './components/LoginScreen'
 
@@ -281,61 +280,42 @@ function PlannerApp() {
         }, 500);
     }, [journals, isElectron]);
 
-    // Browser clients also keep a long-poll open. Before applying a remote notice, flush any
-    // pending local edit so the server's LWW merge sees both sides, then pull fresh snapshots.
+    // Browser clients follow server snapshot versions via the shared V3 engine:
+    // 收到新版本 → 安装 → 刷新本地展示数据(无合并、无人工裁决)。
     useEffect(() => {
         if (isElectron || !isLoaded) return;
-        const controller = new AbortController();
-        let revision = 0;
-        let retryDelay = 1000;
-        let retryTimer = null;
+        let disposed = false;
 
-        const pause = () => new Promise(resolve => {
-            retryTimer = setTimeout(resolve, retryDelay);
-            controller.signal.addEventListener('abort', resolve, { once: true });
-            retryDelay = Math.min(retryDelay * 2, 30000);
-        });
-
-        const pullDatasets = async (datasets) => {
-            if (datasets.includes('events')) {
-                clearTimeout(webEventSaveTimerRef.current);
-                await webApi.saveEvents(eventsRef.current);
-                setEvents(await webApi.loadEvents());
-            }
-            if (datasets.includes('journals')) {
-                clearTimeout(webJournalSaveTimerRef.current);
-                await webApi.saveJournals(journalsRef.current);
-                const remote = normalizeJournals(await webApi.loadJournals());
-                setJournals(remote);
-                for (const [date, entry] of Object.entries(remote)) {
-                    const key = `tplanner_journal_${date}`;
-                    if (entry?.deletedAt) localStorage.removeItem(key);
-                    else localStorage.setItem(key, JSON.stringify(entry));
-                }
+        const refresh = async () => {
+            clearTimeout(webEventSaveTimerRef.current);
+            clearTimeout(webJournalSaveTimerRef.current);
+            const display = await webApi.refreshAndGetDisplay(eventsRef.current, journalsRef.current);
+            setEvents(display.events);
+            const remote = normalizeJournals(display.journals);
+            setJournals(remote);
+            for (const [date, entry] of Object.entries(remote)) {
+                const key = `tplanner_journal_${date}`;
+                if (entry?.deletedAt) localStorage.removeItem(key);
+                else localStorage.setItem(key, JSON.stringify(entry));
             }
         };
 
-        const listen = async () => {
-            while (!controller.signal.aborted) {
+        const loop = async () => {
+            while (!disposed) {
                 try {
-                    const notice = await webApi.waitForRemoteChanges(revision, controller.signal);
-                    revision = Number(notice.revision) || revision;
-                    retryDelay = 1000;
-                    const datasets = Array.isArray(notice.datasets) ? notice.datasets : [];
-                    if (datasets.length > 0) await pullDatasets(datasets);
+                    await webApi.waitForServerChange();
+                    if (disposed) return;
+                    await refresh();
                 } catch (error) {
-                    if (controller.signal.aborted || error?.name === 'AbortError') return;
+                    if (disposed) return;
                     console.error('Remote change listener failed', error);
-                    await pause();
+                    await new Promise(r => setTimeout(r, 2000));
                 }
             }
         };
 
-        listen();
-        return () => {
-            controller.abort();
-            clearTimeout(retryTimer);
-        };
+        loop();
+        return () => { disposed = true; };
     }, [isElectron, isLoaded]);
 
     const [viewRange, setViewRange] = useState(createViewRange);
@@ -770,7 +750,7 @@ function PlannerApp() {
                             syncRequest={syncRequest}
                             adapters={[
                                 {
-                                    ...BUILTIN_ADAPTERS.events,
+                                    type: 'events',
                                     _getLocal: async () => {
                                         if (!db) return eventsRef.current;
                                         const docs = await db.events.find().exec();
@@ -778,11 +758,11 @@ function PlannerApp() {
                                     },
                                     _writeLocal: async (merged) => {
                                         if (!db) return;
-                                        try { await db.events.bulkUpsert(merged); } catch (err) { console.error('LAN merge failed', err); }
+                                        try { await db.events.bulkUpsert(merged); } catch (err) { console.error('LAN snapshot apply failed', err); }
                                     },
                                 },
                                 {
-                                    ...BUILTIN_ADAPTERS.journals,
+                                    type: 'journals',
                                     _getLocal: () => journalsRef.current,
                                     _writeLocal: (merged) => {
                                         const normalized = normalizeJournals(merged);
