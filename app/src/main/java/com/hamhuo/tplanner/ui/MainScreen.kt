@@ -567,9 +567,6 @@ fun MainScreen(
             TaskWidget(
                 events = events,
                 view = selectedView,
-                onToggle = { eventId, completed ->
-                    eventActions.toggleCompleted(events, eventId, completed) { events = it }
-                },
                 onAddEvent = ::beginNewItem,
                 onDelete = { eventId ->
                     eventActions.softDelete(events, eventId) { events = it }

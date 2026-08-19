@@ -23,6 +23,7 @@ data class TPlannerTaskUnitModel(
     val title: String,
     val supportingText: String,
     val isTask: Boolean = true,
+    val showTaskCheckbox: Boolean = true,
     val completed: Boolean = false,
     val past: Boolean = false,
     val current: Boolean = false,
@@ -142,8 +143,10 @@ class TPlannerTaskUnitView(context: Context) : LinearLayout(context) {
         wear: Boolean,
         onLeadingClick: (() -> Unit)?,
     ) {
-        if (wear) {
+        if (wear || (model.isTask && !model.showTaskCheckbox)) {
             leading.visibility = GONE
+            leading.isClickable = false
+            leading.setOnClickListener(null)
             return
         }
         leading.visibility = VISIBLE

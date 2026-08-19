@@ -70,7 +70,6 @@ private fun taskStatus(e: ScheduleItem, now: Instant): String {
 fun TaskWidget(
     events: List<ScheduleItem>,
     view: TaskView,
-    onToggle: (String, Boolean) -> Unit,
     onAddEvent: (String) -> Unit,
     onDelete: (String) -> Unit,
     onItemClick: (ScheduleItem) -> Unit,
@@ -238,7 +237,7 @@ fun TaskWidget(
                         items(list, key = { "${label}-${it.id}" }) { e ->
                             SwipeableTaskRow(
                                 event = e, fmt = fmt, zone = zone, now = now,
-                                onToggle = onToggle, onDelete = onDelete, onItemClick = onItemClick,
+                                onDelete = onDelete, onItemClick = onItemClick,
                                 onTypeChangeRequest = { typeChangeTarget = e }
                             )
                         }
@@ -326,7 +325,6 @@ private fun SwipeableTaskRow(
     fmt: DateTimeFormatter,
     zone: ZoneId,
     now: Instant,
-    onToggle: (String, Boolean) -> Unit,
     onDelete: (String) -> Unit,
     onItemClick: (ScheduleItem) -> Unit,
     onTypeChangeRequest: () -> Unit = {},
@@ -369,7 +367,6 @@ private fun SwipeableTaskRow(
                 fmt    = fmt,
                 zone   = zone,
                 now    = now,
-                onToggle = onToggle,
                 onClick = { onItemClick(event) },
                 onTypeChangeRequest = onTypeChangeRequest
             )
@@ -383,7 +380,6 @@ fun TaskItem(
     fmt: DateTimeFormatter,
     zone: ZoneId,
     now: Instant,
-    onToggle: (String, Boolean) -> Unit,
     onClick: () -> Unit,
     onTypeChangeRequest: () -> Unit = {},
 ) {
@@ -401,6 +397,7 @@ fun TaskItem(
             title = event.title.ifBlank { stringResource(R.string.untitled_event) },
             supportingText = "$startText \u2013 $endText",
             isTask = event.type == "task",
+            showTaskCheckbox = false,
             completed = isDone,
             past = status == "past",
             current = status == "now",
@@ -412,10 +409,6 @@ fun TaskItem(
         ),
         modifier = Modifier.fillMaxWidth(),
         onClick = onClick,
-        onLeadingClick = if (event.type == "task") {
-            { onToggle(event.id, !event.completed) }
-        } else {
-            onTypeChangeRequest
-        },
+        onLeadingClick = if (event.type == "task") null else onTypeChangeRequest,
     )
 }
