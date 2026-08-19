@@ -167,7 +167,8 @@ export function createMaterializer({
           aggregateId: command.aggregateId ?? null,
           status: receipt.status,
           errorCode: receipt.errorCode ?? null,
-          snapshotVersion: snapshot?.manifest.snapshotVersion ?? null,
+          snapshotVersion:
+            receipt.status === 'APPLIED' ? (snapshot?.manifest.snapshotVersion ?? null) : null,
           resultJson: null,
           processedAt: now(),
         });
