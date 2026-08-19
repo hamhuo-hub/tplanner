@@ -363,7 +363,6 @@ private fun SwipeableTaskRow(
             modifier = Modifier
                 .clip(RoundedCornerShape(12.dp))
                 .background(SURFACE2)
-                .clickable { onItemClick(event) }
         ) {
             TaskItem(
                 event  = event,
@@ -371,6 +370,7 @@ private fun SwipeableTaskRow(
                 zone   = zone,
                 now    = now,
                 onToggle = onToggle,
+                onClick = { onItemClick(event) },
                 onTypeChangeRequest = onTypeChangeRequest
             )
         }
@@ -384,6 +384,7 @@ fun TaskItem(
     zone: ZoneId,
     now: Instant,
     onToggle: (String, Boolean) -> Unit,
+    onClick: () -> Unit,
     onTypeChangeRequest: () -> Unit = {},
 ) {
     val status = taskStatus(event, now)
@@ -410,6 +411,7 @@ fun TaskItem(
             alarmEnabled = event.alarmEnabled && !isDone,
         ),
         modifier = Modifier.fillMaxWidth(),
+        onClick = onClick,
         onLeadingClick = if (event.type == "task") {
             { onToggle(event.id, !event.completed) }
         } else {
