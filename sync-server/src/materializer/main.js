@@ -19,6 +19,7 @@ import { createMaterializer } from './materializer.js';
 import { applyCommand } from './reducer.js';
 import { createNatsConnection } from '../broker/natsConnection.js';
 import { ensureStreams } from '../broker/streams.js';
+import { resolveServerInstanceId } from '../serverInstance.js';
 
 const STREAM_COMMANDS = 'TPLANNER_COMMANDS';
 const CONSUMER_NAME = 'state-builder';
@@ -45,11 +46,12 @@ export function expandMessage(msg) {
 
 export async function startStateBuilder({
   dbPath = process.env.TPLANNER_DB_PATH || '/var/lib/tplanner-sync/state/tplanner.db',
-  serverInstanceId = process.env.TPLANNER_SERVER_INSTANCE_ID ?? `srv-${randomUUID()}`,
+  serverInstanceId,
   leaseTtlMs = 30_000,
   log = console,
 } = {}) {
   const db = openDatabase(dbPath);
+  const instanceId = serverInstanceId ?? resolveServerInstanceId(dbPath);
 
   // 1. 写者租约:失败即抛,绝不带着第二个消费者启动
   const ownerId = `builder-${randomUUID()}`;
@@ -89,7 +91,7 @@ export async function startStateBuilder({
     }
     const consumer = await js.consumers.get(STREAM_COMMANDS, CONSUMER_NAME);
 
-    const materializer = createMaterializer({ db, applyCommand, serverInstanceId });
+    const materializer = createMaterializer({ db, applyCommand, serverInstanceId: instanceId });
     const outbox = createOutboxDriver(db, {
       publish: async (_type, payload, dedupeKey) => {
         await js.publish(SUBJECT_SNAPSHOT_READY, JSON.stringify(payload), { msgID: dedupeKey });
