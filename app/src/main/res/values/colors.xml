@@ -3,4 +3,5 @@
     <color name="bg">#FF0E0E0E</color>
     <color name="surface">#FF1A1A1A</color>
     <color name="gold">#FFC9A84C</color>
+    <color name="ic_launcher_transparent">#00000000</color>
 </resources>
