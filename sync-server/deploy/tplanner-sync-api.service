@@ -1,0 +1,18 @@
+[Unit]
+Description=tPlanner Sync V3 API
+After=network.target nats-server.service tplanner-state-builder.service
+Requires=nats-server.service
+Wants=tplanner-state-builder.service
+
+[Service]
+Type=simple
+User=tplanner
+WorkingDirectory=/opt/tplanner-sync/sync-server
+ExecStart=/usr/bin/node /opt/tplanner-sync/sync-server/src/api/server.js
+Restart=on-failure
+RestartSec=5
+Environment=TPLANNER_DB_PATH=/var/lib/tplanner-sync/state/tplanner.db
+Environment=PORT=37401
+
+[Install]
+WantedBy=multi-user.target
