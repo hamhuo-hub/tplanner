@@ -44,7 +44,10 @@ export default function EventBlock({ event, onClick, isConflicting, displayTimez
             onContextMenu={e => { e.preventDefault(); e.stopPropagation(); onContextMenu?.(e, event); }}
             className={blockClass}
             style={{
-                backgroundColor: 'var(--clr-raised)',
+                // Use the event palette for the whole unit, matching the colored
+                // timeline cells instead of reducing color to a narrow accent.
+                backgroundColor: `color-mix(in srgb, ${colorVar} 50%, var(--clr-raised))`,
+                borderColor: `color-mix(in srgb, ${colorVar} 75%, rgba(255,255,255,0.18))`,
                 opacity: isShadow ? 0.25 : isCompleted ? 0.45 : 1,
                 left:  `${leftPercent}%`,
                 width: `${widthPercent}%`,
