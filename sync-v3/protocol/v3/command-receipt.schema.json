@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tplanner.hamhuo.com/sync-v3/command-receipt.schema.json",
+  "title": "Sync V3 Command Receipt",
+  "description": "Per-command processing result produced by the State Builder. A receipt becomes visible only after the SQLite transaction that applied (or rejected) the command has committed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "commandId",
+    "clientSequence",
+    "status"
+  ],
+  "properties": {
+    "commandId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "clientSequence": { "type": "integer", "minimum": 1 },
+    "brokerSequence": { "type": "integer", "minimum": 1 },
+    "status": {
+      "type": "string",
+      "enum": [
+        "APPLIED",
+        "NOOP",
+        "REJECTED",
+        "SEQUENCE_GAP",
+        "ENTITY_DELETED",
+        "ID_ALREADY_EXISTS",
+        "SCHEMA_UNSUPPORTED"
+      ]
+    },
+    "errorCode": { "type": "string" },
+    "snapshotVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Snapshot version that first included this command's effect, when APPLIED."
+    }
+  }
+}

@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tplanner.hamhuo.com/sync-v3/command-batch.schema.json",
+  "title": "Sync V3 Command Batch",
+  "description": "An ordered batch of semantic commands uploaded by a device. clientSequence must be continuous within the batch, and batches from one device must be uploaded strictly in order.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocolVersion",
+    "batchId",
+    "deviceId",
+    "firstClientSequence",
+    "lastClientSequence",
+    "commands"
+  ],
+  "properties": {
+    "protocolVersion": { "const": 3 },
+    "batchId": { "$ref": "#/$defs/uuidV7" },
+    "deviceId": { "$ref": "#/$defs/idString" },
+    "firstClientSequence": { "type": "integer", "minimum": 1 },
+    "lastClientSequence": { "type": "integer", "minimum": 1 },
+    "baseSnapshotVersion": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Audit-only hint about the snapshot the device believed current; never used for conflict resolution."
+    },
+    "commands": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/command" }
+    }
+  },
+  "$defs": {
+    "uuidV7": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "description": "UUIDv7, lowercase."
+    },
+    "idString": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commandId", "clientSequence", "type"],
+      "properties": {
+        "commandId": { "$ref": "#/$defs/uuidV7" },
+        "clientSequence": { "type": "integer", "minimum": 1 },
+        "type": { "$ref": "#/$defs/commandType" },
+        "aggregateId": {
+          "$ref": "#/$defs/idString",
+          "description": "Target entity id; optional for create-family commands."
+        },
+        "arguments": {
+          "type": "object",
+          "description": "Command payload. Per-command argument subschemas are enforced by the central reducer; the transport layer only requires well-formed JSON."
+        }
+      }
+    },
+    "commandType": {
+      "type": "string",
+      "enum": [
+        "task.create",
+        "task.setTitle",
+        "task.setNote",
+        "task.setSchedule",
+        "task.setCompleted",
+        "task.delete",
+        "task.restore",
+        "task.changeType",
+        "task.setRecurrence",
+        "task.assignList",
+        "task.moveInTimeline",
+        "checklist.createItem",
+        "checklist.setTitle",
+        "checklist.setCompleted",
+        "checklist.deleteItem",
+        "checklist.reorderItem",
+        "list.create",
+        "list.rename",
+        "list.setColor",
+        "list.delete",
+        "journal.setText",
+        "journal.delete",
+        "goal.create",
+        "goal.patch",
+        "goal.delete",
+        "insight.upsert",
+        "insight.delete",
+        "legacy.entityReplace"
+      ]
+    }
+  }
+}
