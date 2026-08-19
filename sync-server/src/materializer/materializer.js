@@ -1,16 +1,23 @@
 // 有序 materializer 核心(见 docs/sync-v3.md §5/§6/§9/§10)。
 //
 // 职责:按 broker sequence 顺序应用中央 reducer,单 SQLite 事务写
-// entities / 回执 / 快照 / latest / 发布 outbox。不直接接触 NATS ——
-// 消息源由 main.js 注入,便于确定性重放测试。
+// entities / 回执 / 设备进度 / 快照 / latest / 发布 outbox。不直接接触
+// NATS —— 消息源由 main.js 注入,便于确定性重放测试。
 //
 // 铁律:
 //   - 一个 integration batch 一条事务、最多一个快照(§6)。
 //   - 重复 commandId 返回原回执,不重复执行(§5/§10)。
+//   - clientSequence 缺口:拒绝 SEQUENCE_GAP、不推进 accepted;客户端重传补齐
+//     缺口后重新裁决(§5)。
 //   - reducer 抛错 → 事务回滚、状态不变,由上层停止消费等待重投,绝不静默跳过。
 import { randomUUID } from 'node:crypto';
 import { emptyState } from './reducer.js';
-import { findReceipt, insertReceipt } from '../state/receipts.js';
+import {
+  deleteReceipt,
+  findReceipt,
+  findReceiptByDeviceSequence,
+  insertReceipt,
+} from '../state/receipts.js';
 import { buildSnapshot } from './snapshot.js';
 
 // reducer 状态 map 键 → entities 表 entity_type
@@ -42,6 +49,14 @@ export function loadStateFromDb(db) {
   return state;
 }
 
+export function loadProgressFromDb(db) {
+  const accepted = new Map();
+  for (const row of db.prepare('SELECT device_id, accepted_client_sequence FROM device_progress').all()) {
+    accepted.set(row.device_id, row.accepted_client_sequence);
+  }
+  return accepted;
+}
+
 // reducer 不可变更新:未变实体保持同一引用,引用不等即已变化。
 function changedKeys(oldMap, newMap) {
   const keys = new Set([...Object.keys(oldMap ?? {}), ...Object.keys(newMap ?? {})]);
@@ -57,6 +72,7 @@ export function createMaterializer({
 }) {
   let state = loadStateFromDb(db);
   let snapshotVersion = db.prepare('SELECT COALESCE(MAX(version), 0) AS v FROM snapshots').get().v;
+  const acceptedSeq = loadProgressFromDb(db);
 
   const upsertEntity = db.prepare(`
     INSERT INTO entities
@@ -70,6 +86,16 @@ export function createMaterializer({
       last_broker_sequence = excluded.last_broker_sequence,
       updated_at = excluded.updated_at,
       deleted_at = excluded.deleted_at
+  `);
+
+  const upsertProgress = db.prepare(`
+    INSERT INTO device_progress
+      (device_id, accepted_client_sequence, installed_snapshot_version,
+       installed_snapshot_hash, last_seen_at, protocol_version)
+    VALUES (@deviceId, @accepted, 0, NULL, @lastSeenAt, 3)
+    ON CONFLICT(device_id) DO UPDATE SET
+      accepted_client_sequence = MAX(accepted_client_sequence, excluded.accepted_client_sequence),
+      last_seen_at = excluded.last_seen_at
   `);
 
   const insertSnapshot = db.prepare(`
@@ -114,25 +140,48 @@ export function createMaterializer({
     let changed = false;
     const seen = new Map(); // commandId → 首次出现的 receipt
     const outcomes = [];
+    const progressUpdates = new Map(); // deviceId → 本批最高 accepted clientSequence
 
     for (const entry of ordered) {
       const { brokerSequence, command } = entry;
       minSeq = Math.min(minSeq, brokerSequence);
       maxSeq = Math.max(maxSeq, brokerSequence);
 
+      // 曾因缺口被拒(SEQUENCE_GAP):重传 → 重新裁决,旧回执在本批事务内删除重写
       const existing = findReceipt(db, command.commandId);
-      if (existing) {
-        outcomes.push({ entry, receipt: existing, isNew: false });
+      const retryGap = existing !== undefined && existing.status === 'SEQUENCE_GAP';
+      if (existing && !retryGap) {
+        outcomes.push({ entry, receipt: existing, isNew: false, retryGap: false });
         continue;
       }
-      if (seen.has(command.commandId)) {
-        outcomes.push({ entry, receipt: seen.get(command.commandId), isNew: false });
+      if (!retryGap && seen.has(command.commandId)) {
+        outcomes.push({ entry, receipt: seen.get(command.commandId), isNew: false, retryGap: false });
+        continue;
+      }
+
+      const accepted = acceptedSeq.get(entry.deviceId) ?? 0;
+
+      // 已接受的序列:客户端重发 → 返回原回执,不重复执行
+      if (command.clientSequence <= accepted) {
+        const prior = findReceiptByDeviceSequence(db, entry.deviceId, command.clientSequence);
+        const receipt = prior ?? { status: 'NOOP', errorCode: 'DUPLICATE_CLIENT_SEQUENCE' };
+        outcomes.push({ entry, receipt, isNew: false, retryGap });
+        continue;
+      }
+
+      // 序列缺口:终态拒绝写回执,不推进 accepted;客户端重传补齐后重裁
+      if (command.clientSequence > accepted + 1) {
+        const receipt = { status: 'SEQUENCE_GAP', errorCode: 'SEQUENCE_GAP' };
+        seen.set(command.commandId, receipt);
+        outcomes.push({ entry, receipt, isNew: true, retryGap });
         continue;
       }
 
       const result = applyCommand(nextState, command, brokerSequence);
       seen.set(command.commandId, result.receipt);
-      outcomes.push({ entry, receipt: result.receipt, isNew: true });
+      outcomes.push({ entry, receipt: result.receipt, isNew: true, retryGap, advanceTo: command.clientSequence });
+      acceptedSeq.set(entry.deviceId, command.clientSequence);
+      progressUpdates.set(entry.deviceId, command.clientSequence);
       if (result.state !== nextState) {
         nextState = result.state;
         changed = true;
@@ -152,8 +201,12 @@ export function createMaterializer({
         })
       : null;
 
-    // 3. 单事务落库:回执 + 实体 diff + 快照 + latest + 发布 outbox(§10)
+    // 3. 单事务落库:重裁删除 → 回执 → 设备进度 → 实体 diff → 快照 → outbox(§10)
+    const before = new Map(acceptedSeq);
     const writeTx = db.transaction(() => {
+      for (const { entry, retryGap } of outcomes) {
+        if (retryGap) deleteReceipt(db, entry.command.commandId);
+      }
       for (const { entry, receipt, isNew } of outcomes) {
         if (!isNew) continue;
         const { brokerSequence, deviceId, batchId, command } = entry;
@@ -167,11 +220,13 @@ export function createMaterializer({
           aggregateId: command.aggregateId ?? null,
           status: receipt.status,
           errorCode: receipt.errorCode ?? null,
-          snapshotVersion:
-            receipt.status === 'APPLIED' ? (snapshot?.manifest.snapshotVersion ?? null) : null,
+          snapshotVersion: snapshot?.manifest.snapshotVersion ?? null,
           resultJson: null,
           processedAt: now(),
         });
+      }
+      for (const [deviceId, accepted] of progressUpdates) {
+        upsertProgress.run({ deviceId, accepted, lastSeenAt: now() });
       }
 
       if (snapshot) {
@@ -217,7 +272,13 @@ export function createMaterializer({
       }
     });
 
-    writeTx(); // 事务失败抛错:回滚,内存状态不变
+    try {
+      writeTx(); // 事务失败抛错:回滚,内存状态恢复
+    } catch (err) {
+      acceptedSeq.clear();
+      for (const [deviceId, accepted] of before) acceptedSeq.set(deviceId, accepted);
+      throw err;
+    }
 
     if (snapshot) snapshotVersion = newVersion;
     state = nextState;
@@ -226,7 +287,7 @@ export function createMaterializer({
       receipts: outcomes.map(({ entry, receipt }) => ({
         brokerSequence: entry.brokerSequence,
         deviceId: entry.deviceId,
-        commandId: entry.command.commandId,
+        commandId: receipt.commandId ?? entry.command.commandId,
         status: receipt.status,
         errorCode: receipt.errorCode,
       })),
@@ -238,5 +299,6 @@ export function createMaterializer({
     processIntegrationBatch,
     getState: () => state,
     getSnapshotVersion: () => snapshotVersion,
+    getAcceptedSequence: (deviceId) => acceptedSeq.get(deviceId) ?? 0,
   };
 }

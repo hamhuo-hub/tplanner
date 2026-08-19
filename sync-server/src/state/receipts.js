@@ -26,6 +26,18 @@ export function findReceipt(db, commandId) {
   return ROW_TO_CAMEL(row);
 }
 
+export function findReceiptByDeviceSequence(db, deviceId, clientSequence) {
+  const row = db
+    .prepare(`SELECT ${COLUMNS} FROM processed_commands WHERE device_id = ? AND client_sequence = ?`)
+    .get(deviceId, clientSequence);
+  return ROW_TO_CAMEL(row);
+}
+
+// SEQUENCE_GAP 回执是临时裁决:客户端重传后必须重新裁决,因此允许删除重写。
+export function deleteReceipt(db, commandId) {
+  return db.prepare('DELETE FROM processed_commands WHERE command_id = ?').run(commandId);
+}
+
 export function insertReceipt(db, r) {
   return db.prepare(`
     INSERT INTO processed_commands (${COLUMNS})

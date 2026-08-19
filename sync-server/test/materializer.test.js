@@ -170,3 +170,84 @@ test('unknown command type is rejected with a receipt but does not block the str
   assert.ok(m.getState().tasks['task-1']);
   db.close();
 });
+
+test('sequence gap is rejected with SEQUENCE_GAP until the client retransmits the missing batch', async () => {
+  const db = openDatabase(':memory:');
+  const m = createMaterializer({ db, applyCommand, serverInstanceId: SERVER_ID });
+
+  const mk = (commandId, clientSequence, aggregateId) => ({
+    brokerSequence: 0,
+    deviceId: 'dev-g',
+    batchId: 'b',
+    command: {
+      commandId,
+      clientSequence,
+      type: 'task.create',
+      aggregateId,
+      arguments: { title: aggregateId },
+    },
+  });
+
+  // 批次 1 丢失,直接来批次 2(seq 2/3)→ 缺口拒绝,不推进 accepted
+  const gapped = m.processIntegrationBatch([
+    { ...mk('c2', 2, 't-1'), brokerSequence: 10 },
+    { ...mk('c3', 3, 't-2'), brokerSequence: 11 },
+  ]);
+  assert.equal(gapped.receipts[0].status, 'SEQUENCE_GAP');
+  assert.equal(gapped.receipts[1].status, 'SEQUENCE_GAP');
+  assert.equal(gapped.snapshot, null);
+  assert.equal(m.getState().tasks['t-1'], undefined);
+  assert.equal(m.getAcceptedSequence('dev-g'), 0);
+
+  // 客户端重传完整批次 1+2(seq 1/2/3):缺口补齐后全部重裁应用
+  const retried = m.processIntegrationBatch([
+    { ...mk('c1', 1, 't-1'), brokerSequence: 12 },
+    { ...mk('c2', 2, 't-2'), brokerSequence: 13 },
+    { ...mk('c3', 3, 't-3'), brokerSequence: 14 },
+  ]);
+  assert.deepEqual(retried.receipts.map((r) => r.status), ['APPLIED', 'APPLIED', 'APPLIED']);
+  assert.ok(m.getState().tasks['t-1']);
+  assert.ok(m.getState().tasks['t-2']);
+  assert.ok(m.getState().tasks['t-3']);
+  assert.equal(retried.snapshot.manifest.snapshotVersion, 1);
+  assert.equal(m.getAcceptedSequence('dev-g'), 3);
+
+  // 旧 SEQUENCE_GAP 回执已被重写,库中不再残留
+  const gaps = db
+    .prepare("SELECT COUNT(*) AS c FROM processed_commands WHERE status = 'SEQUENCE_GAP'")
+    .get().c;
+  assert.equal(gaps, 0);
+  db.close();
+});
+
+test('re-sending an accepted clientSequence returns the prior receipt, even with a different commandId', async () => {
+  const db = openDatabase(':memory:');
+  const m = createMaterializer({ db, applyCommand, serverInstanceId: SERVER_ID });
+
+  const mk = (commandId, clientSequence, aggregateId) => ({
+    deviceId: 'dev-d',
+    batchId: 'b',
+    command: {
+      commandId,
+      clientSequence,
+      type: 'task.create',
+      aggregateId,
+      arguments: {},
+    },
+  });
+
+  m.processIntegrationBatch([{ ...mk('orig', 1, 't-1'), brokerSequence: 1 }]);
+
+  // 相同 commandId 重发:返回原回执,不重复执行
+  const replay = m.processIntegrationBatch([{ ...mk('orig', 1, 't-1'), brokerSequence: 2 }]);
+  assert.equal(replay.receipts[0].status, 'APPLIED');
+  assert.equal(replay.snapshot, null);
+
+  // 相同序列、不同 commandId:返回该序列的既有回执,不产生 UNIQUE 冲突、不新建实体
+  const differentId = m.processIntegrationBatch([{ ...mk('other', 1, 't-2'), brokerSequence: 3 }]);
+  assert.equal(differentId.receipts[0].commandId, 'orig');
+  assert.equal(differentId.receipts[0].status, 'APPLIED');
+  assert.equal(differentId.snapshot, null);
+  assert.equal(m.getState().tasks['t-2'], undefined);
+  db.close();
+});
