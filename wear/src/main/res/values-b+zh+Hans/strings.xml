@@ -23,7 +23,6 @@
     <string name="task_list_updated">清单已更新</string>
     <string name="task_list_syncing">正在同步…</string>
     <string name="task_list_sync_complete">同步完成</string>
-    <string name="task_list_sync_waiting">未收到手机更新</string>
     <string name="task_list_sync_failed">同步失败</string>
     <string name="task_list_permission_title">需要蓝牙权限</string>
     <string name="task_list_permission_hint">轻触授权，继续接收手机清单</string>

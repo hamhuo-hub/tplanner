@@ -284,6 +284,9 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
     private val syncFeedback = textView(10f, ACCENT, WEAR_MONOSPACE).apply {
         gravity = Gravity.CENTER
         letterSpacing = 0.02f
+        maxLines = 1
+        ellipsize = TextUtils.TruncateAt.END
+        maxWidth = dp(172)
         setPadding(dp(12), dp(6), dp(12), dp(6))
         background = rounded(CARD, dp(15).toFloat())
         alpha = 0f
@@ -428,9 +431,6 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         val (message, color) = when (result) {
             WatchManualSync.Result.COMPLETED ->
                 context.getString(R.string.task_list_sync_complete) to SUCCESS
-
-            WatchManualSync.Result.WAITING_FOR_PHONE ->
-                context.getString(R.string.task_list_sync_waiting) to ERROR
 
             WatchManualSync.Result.FAILED ->
                 context.getString(R.string.task_list_sync_failed) to ERROR
