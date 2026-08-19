@@ -202,7 +202,7 @@ export function diffInsightsToCommands(state, incoming) {
 
 // ── 适配器(含序列分配与回执等待)──────────────────────────────────────────
 
-export function createLegacyAdapter({ db, publisher, log = console }) {
+export function createLegacyAdapter({ db, publisher, log = console, writesDisabled = false }) {
   // legacy PUT 串行化:序列分配与回执等待之间不允许交错
   let chain = Promise.resolve();
   const serialize = (fn) => {
@@ -236,6 +236,11 @@ export function createLegacyAdapter({ db, publisher, log = console }) {
 
   const putDataset = (diffFn, projectFn) => (incoming) =>
     serialize(async () => {
+      if (writesDisabled) {
+        const err = new Error('V1 writes are disabled; upgrade to the V3 protocol');
+        err.code = 'V1_WRITES_DISABLED';
+        throw err;
+      }
       const state = loadStateFromDb(db);
       await publishCommands(diffFn(state, incoming));
       return projectFn();
@@ -245,6 +250,7 @@ export function createLegacyAdapter({ db, publisher, log = console }) {
     db.prepare('SELECT version FROM latest_snapshot WHERE singleton_id = 1').get()?.version ?? 0;
 
   return {
+    writesDisabled,
     getEvents: () => projectLegacy(db).events,
     getJournals: () => projectLegacy(db).journals,
     getGoals: () => projectLegacy(db).goals,

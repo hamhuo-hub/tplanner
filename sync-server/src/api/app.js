@@ -100,14 +100,28 @@ export function buildServer({ publisher, validateBatch, store, health, legacy })
 
   // ── V1 兼容路由(§21,过渡期专用;legacy 未注入则整个不注册)──
   if (legacy) {
+    const legacyPut = (fn) => async (request, reply) => {
+      if (legacy.writesDisabled) {
+        return reply.code(410).send({ error: 'V1_WRITES_DISABLED' });
+      }
+      try {
+        return await fn(request);
+      } catch (err) {
+        if (err?.code === 'V1_WRITES_DISABLED') {
+          return reply.code(410).send({ error: 'V1_WRITES_DISABLED' });
+        }
+        throw err;
+      }
+    };
+
     app.get('/tplanner/events', async () => legacy.getEvents());
-    app.put('/tplanner/events', async (request) => legacy.putEvents(request.body));
+    app.put('/tplanner/events', legacyPut((request) => legacy.putEvents(request.body)));
     app.get('/tplanner/journals', async () => legacy.getJournals());
-    app.put('/tplanner/journals', async (request) => legacy.putJournals(request.body));
+    app.put('/tplanner/journals', legacyPut((request) => legacy.putJournals(request.body)));
     app.get('/tplanner/goals', async () => legacy.getGoals());
-    app.put('/tplanner/goals', async (request) => legacy.putGoals(request.body));
+    app.put('/tplanner/goals', legacyPut((request) => legacy.putGoals(request.body)));
     app.get('/tplanner/insights', async () => legacy.getInsights());
-    app.put('/tplanner/insights', async (request) => legacy.putInsights(request.body));
+    app.put('/tplanner/insights', legacyPut((request) => legacy.putInsights(request.body)));
     app.get('/tplanner/changes', async (request, reply) => {
       const since = Number(request.query.since ?? 0);
       if (!Number.isInteger(since) || since < 0) {

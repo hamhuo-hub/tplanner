@@ -25,7 +25,12 @@ const validateBatch = await loadBatchValidator();
 const serverInstanceId = resolveServerInstanceId(DB_PATH);
 const store = createStore(db, { serverInstanceId });
 const health = createMonitoring({ db, jsm, serverInstanceId });
-const legacy = createLegacyAdapter({ db, publisher });
+const legacy = createLegacyAdapter({
+    db,
+    publisher,
+    // 过渡期终点(§21):连续 7 天无 V1 PUT 后由 cutover.sh 置 1,旧客户端写入返回 410
+    writesDisabled: process.env.TPLANNER_DISABLE_V1_WRITES === '1',
+});
 
 const app = buildServer({ publisher, validateBatch, store, health, legacy });
 await app.listen({ port: PORT, host: '127.0.0.1' });

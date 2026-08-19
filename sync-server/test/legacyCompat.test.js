@@ -207,6 +207,38 @@ test('changes long-poll wakes on a new snapshot revision', async () => {
   db.close();
 });
 
+test('V1 writes can be disabled (410) while reads stay available', async () => {
+  const { db, legacy } = seededAdapter();
+  const readOnly = createLegacyAdapter({ db, publisher: { publish: async () => ({}) }, log: { warn: () => {} }, writesDisabled: true });
+  const app = buildServer({
+    publisher: { publish: async () => ({}) },
+    validateBatch: () => null,
+    store: {
+      capabilities: () => ({}),
+      acceptedThrough: () => 0,
+      receiptsForDevice: () => [],
+      latestSnapshotMeta: () => null,
+      snapshotMeta: () => null,
+      snapshotPayload: () => null,
+      recordSnapshotAck: () => {},
+    },
+    health: { readiness: async () => ({ ok: true }), status: async () => ({}) },
+    legacy: readOnly,
+  });
+
+  const get = await app.inject({ method: 'GET', url: '/tplanner/events' });
+  assert.equal(get.statusCode, 200, 'V1 reads stay available during the write-disable window');
+
+  const put = await app.inject({
+    method: 'PUT',
+    url: '/tplanner/events',
+    payload: [{ id: 'task-1', payload: { title: 'x' }, deletedAt: null }],
+  });
+  assert.equal(put.statusCode, 410);
+  assert.equal(put.json().error, 'V1_WRITES_DISABLED');
+  db.close();
+});
+
 test('legacy routes are wired when the adapter is injected', async () => {
   const { legacy } = seededAdapter();
   const app = buildServer({
