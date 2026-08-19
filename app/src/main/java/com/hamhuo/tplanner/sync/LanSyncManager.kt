@@ -1,10 +1,14 @@
 package com.hamhuo.tplanner
 
 import android.content.Context
+import android.os.SystemClock
+import android.util.Log
 import com.hamhuo.tplanner.persistence.EventWireMapper
 import com.hamhuo.tplanner.persistence.JournalWireMapper
 import com.hamhuo.tplanner.persistence.SettingsRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -14,7 +18,7 @@ import java.net.HttpURLConnection
 import java.net.URLEncoder
 import java.net.URL
 
-/** Full-dataset three-way synchronization backed by Room shadows and a durable local outbox. */
+/** Snapshot-pull, outbox-delta-push synchronization backed by Room shadows and a durable outbox. */
 class LanSyncManager(
     context: Context,
     private val store: JournalStore,
@@ -42,16 +46,33 @@ class LanSyncManager(
         eventStore?.getAll() ?: emptyList()
     }
 
-    suspend fun syncEventsOrThrow(serverUrl: String): List<ScheduleItem> = syncMutex.withLock {
+    suspend fun syncEventsOrThrow(serverUrl: String): List<ScheduleItem> = eventSyncMutex.withLock {
         withContext(Dispatchers.IO) {
+            val startedAt = SystemClock.elapsedRealtime()
             val store = eventStore ?: return@withContext emptyList()
             val base = normalizeServerUrl(serverUrl)
             val captured = store.capturedMutations()
             val local = store.getAll()
+            val baseKeys = store.baseKeys()
+            val uploadIds = uploadEntityIds(
+                local = local,
+                baseKeys = baseKeys,
+                capturedIds = captured.keys,
+                idOf = ScheduleItem::id,
+                contentKeyOf = EventWireMapper::contentKey,
+            )
             val remote = store.fromJson(httpGet("$base/tplanner/events"))
-            val merged = mergeEventsWithBase(local, remote, store.baseKeys())
-            httpPut("$base/tplanner/events", store.toJson(merged))
+            val merged = mergeEventsWithBase(local, remote, baseKeys)
+            val delta = merged.filter { it.id in uploadIds }
+            if (delta.isNotEmpty()) {
+                httpPut("$base/tplanner/events", store.toJson(delta))
+            }
             store.applySync(merged, captured)
+            Log.d(
+                TAG,
+                "events sync remote=${remote.size} upload=${delta.size} " +
+                    "elapsedMs=${SystemClock.elapsedRealtime() - startedAt}",
+            )
             store.getAll()
         }
     }
@@ -62,23 +83,44 @@ class LanSyncManager(
         SyncResult.Error(error.message ?: appContext.getString(R.string.unknown_error))
     }
 
-    suspend fun syncJournalsOrThrow(serverUrl: String): String = syncMutex.withLock {
+    suspend fun syncJournalsOrThrow(serverUrl: String): String = journalSyncMutex.withLock {
         withContext(Dispatchers.IO) {
+            val startedAt = SystemClock.elapsedRealtime()
             val base = normalizeServerUrl(serverUrl)
             val captured = store.capturedMutations()
             val local = store.getAll()
+            val baseKeys = store.baseKeys()
+            val uploadDates = uploadEntityIds(
+                local = local.entries,
+                baseKeys = baseKeys,
+                capturedIds = captured.keys,
+                idOf = { it.key },
+                contentKeyOf = { JournalWireMapper.contentKey(it.value) },
+            )
             val remote = store.fromJson(httpGet("$base/tplanner/journals"))
-            val merged = mergeJournalsWithBase(local, remote, store.baseKeys())
-            httpPut("$base/tplanner/journals", store.toJson(merged))
+            val merged = mergeJournalsWithBase(local, remote, baseKeys)
+            val delta = merged.filterKeys { it in uploadDates }
+            if (delta.isNotEmpty()) {
+                httpPut("$base/tplanner/journals", store.toJson(delta))
+            }
             store.applySync(merged, captured)
+            Log.d(
+                TAG,
+                "journals sync remote=${remote.size} upload=${delta.size} " +
+                    "elapsedMs=${SystemClock.elapsedRealtime() - startedAt}",
+            )
             store.getToday()
         }
     }
 
     suspend fun syncAllOrThrow(serverUrl: String? = null) {
-        val resolvedUrl = serverUrl ?: getServerUrl()
-        syncJournalsOrThrow(resolvedUrl)
-        syncEventsOrThrow(resolvedUrl)
+        coroutineScope {
+            val resolvedUrl = serverUrl ?: getServerUrl()
+            val journals = async { syncJournalsOrThrow(resolvedUrl) }
+            val events = async { syncEventsOrThrow(resolvedUrl) }
+            journals.await()
+            events.await()
+        }
     }
 
     internal suspend fun awaitRemoteChanges(serverUrl: String, since: Long): RemoteChangeNotice =
@@ -190,7 +232,7 @@ class LanSyncManager(
         val connection = URL(url).openConnection() as HttpURLConnection
         connection.requestMethod = "PUT"
         connection.connectTimeout = NETWORK_TIMEOUT_MILLIS
-        connection.readTimeout = NETWORK_TIMEOUT_MILLIS
+        connection.readTimeout = WRITE_TIMEOUT_MILLIS
         connection.doOutput = true
         connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
         connection.setRequestProperty(CLIENT_ID_HEADER, clientId)
@@ -207,10 +249,13 @@ class LanSyncManager(
     companion object {
         const val DEFAULT_SERVER_URL = SettingsRepository.DEFAULT_SERVER_URL
         private const val NETWORK_TIMEOUT_MILLIS = 10_000
+        private const val WRITE_TIMEOUT_MILLIS = 30_000
         private const val CHANGE_WAIT_MILLIS = 25_000
         private const val CHANGE_READ_TIMEOUT_MILLIS = 30_000
         private const val CLIENT_ID_HEADER = "X-TPlanner-Client"
-        private val syncMutex = Mutex()
+        private const val TAG = "LanSyncManager"
+        private val eventSyncMutex = Mutex()
+        private val journalSyncMutex = Mutex()
 
         fun normalizeServerUrl(url: String): String {
             val trimmed = url.trim()
