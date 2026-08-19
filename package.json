@@ -6,10 +6,13 @@
   "main": "dist-electron/main.cjs",
   "scripts": {
     "dev": "vite --open",
+    "prebuild": "node scripts/version.mjs",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "prebuild:web": "node scripts/version.mjs",
     "build:web": "vite build",
+    "predeploy:web": "node scripts/version.mjs",
     "deploy:web": "node scripts/deploy-web.mjs",
     "package": "npm run build && electron-builder build --win --config",
     "package:linux": "bash package-linux.sh",
