@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tplanner.hamhuo.com/sync-v3/snapshot-manifest.schema.json",
+  "title": "Sync V3 Snapshot Manifest",
+  "description": "Lightweight descriptor for one immutable snapshot, used for notifications, ETags and download verification.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "snapshotVersion",
+    "schemaVersion",
+    "stateHash",
+    "compressedHash",
+    "encoding",
+    "compressedBytes",
+    "uncompressedBytes"
+  ],
+  "properties": {
+    "snapshotVersion": { "type": "integer", "minimum": 1 },
+    "parentVersion": { "type": "integer", "minimum": 0 },
+    "schemaVersion": { "const": 3 },
+    "stateHash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "SHA-256 over the canonical (RFC 8785) uncompressed snapshot document."
+    },
+    "compressedHash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "SHA-256 over the gzip payload, also used as the ETag."
+    },
+    "encoding": { "const": "gzip" },
+    "compressedBytes": { "type": "integer", "minimum": 0 },
+    "uncompressedBytes": { "type": "integer", "minimum": 0 },
+    "serverInstanceId": { "type": "string" }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tplanner.hamhuo.com/sync-v3/snapshot.schema.json",
+  "title": "Sync V3 Immutable Global Snapshot",
+  "description": "The complete authoritative state produced by the State Builder. It is the ONLY downlink data format; clients never receive remote fragments. stateHash is the RFC 8785 (JCS) canonical hash of this entire document.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "snapshotSchemaVersion",
+    "snapshotVersion",
+    "serverInstanceId",
+    "brokerFromSequence",
+    "brokerToSequence",
+    "createdAt",
+    "state"
+  ],
+  "properties": {
+    "snapshotSchemaVersion": { "const": 3 },
+    "snapshotVersion": { "type": "integer", "minimum": 1 },
+    "parentVersion": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Snapshot version this one builds upon; 0 for the initial snapshot."
+    },
+    "serverInstanceId": { "type": "string", "minLength": 1 },
+    "brokerFromSequence": { "type": "integer", "minimum": 0 },
+    "brokerToSequence": { "type": "integer", "minimum": 0 },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "state": { "$ref": "#/$defs/globalState" }
+  },
+  "$defs": {
+    "entityMap": {
+      "type": "object",
+      "additionalProperties": { "type": "object" }
+    },
+    "globalState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tasks", "customLists", "journals", "goals", "insights"],
+      "properties": {
+        "tasks": { "$ref": "#/$defs/entityMap" },
+        "customLists": {
+          "$ref": "#/$defs/entityMap",
+          "description": "Only real user-defined lists. Inbox and Today are computed filter views and MUST NOT appear here."
+        },
+        "journals": { "$ref": "#/$defs/entityMap" },
+        "goals": { "$ref": "#/$defs/entityMap" },
+        "insights": { "$ref": "#/$defs/entityMap" }
+      }
+    }
+  }
+}
