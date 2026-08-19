@@ -149,6 +149,8 @@
     "vitest": "^4.1.2"
   },
   "dependencies": {
-    "framer-motion": "^12.40.0"
+    "canonicalize": "^4.0.0",
+    "framer-motion": "^12.40.0",
+    "uuid": "^14.0.2"
   }
 }
