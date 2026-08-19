@@ -32,7 +32,8 @@ chown -R "$USER_NAME":"$USER_NAME" "$APP_DIR" "$DATA_DIR"
 # 4. NATS 凭据:替换配置占位符,另存一份 600 权限的 creds 供应用读取
 NATS_CONF="$APP_DIR/sync-server/deploy/nats-server.conf"
 NATS_CREDS="$APP_DIR/sync-server/deploy/nats.creds"
-NATS_PASS="$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 24)"
+# openssl rand 输出有限,避免 tr|head 的 SIGPIPE 在 pipefail 下杀死脚本
+NATS_PASS="$(openssl rand -hex 16)"
 sed -i "s/__TPlanner_PASSWORD_PLACEHOLDER__/$NATS_PASS/" "$NATS_CONF"
 umask 077
 printf 'tplanner:%s\n' "$NATS_PASS" > "$NATS_CREDS"
