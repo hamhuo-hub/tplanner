@@ -1,13 +1,24 @@
 {
   "name": "tplanner-sync-server",
-  "version": "1.2.0",
-  "description": "tPlanner LAN sync server for Raspberry Pi",
-  "main": "server.js",
-  "type": "commonjs",
-  "scripts": {
-    "start": "node server.js"
-  },
+  "version": "3.0.0",
+  "private": true,
+  "description": "tPlanner Sync V3: NATS JetStream + State Builder + Fastify API",
+  "type": "module",
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
+  },
+  "scripts": {
+    "start:api": "node src/api/server.js",
+    "start:builder": "node src/materializer/main.js",
+    "test": "node --test \"test/**/*.test.js\""
+  },
+  "dependencies": {
+    "@nats-io/jetstream": "^3.1.0",
+    "@nats-io/transport-node": "^3.1.0",
+    "ajv": "^8.17.1",
+    "canonicalize": "^2.0.0",
+    "fastify": "^5.3.0",
+    "pino": "^9.7.0",
+    "uuid": "^11.1.0"
   }
 }
