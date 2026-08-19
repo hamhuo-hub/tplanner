@@ -95,7 +95,10 @@ const TASK = {
 
   'task.assignList'(state, cmd) {
     const listId = cmd.arguments?.listId ?? null;
-    if (listId !== null && !state.customLists[listId]) return { state, receipt: REJECTED('LIST_NOT_FOUND') };
+    if (listId !== null) {
+      const list = state.customLists[listId];
+      if (!list || list.lifecycle === 'deleted') return { state, receipt: REJECTED('LIST_NOT_FOUND') };
+    }
     return updateTask(state, cmd.aggregateId, (t) => (t.listId === listId ? t : { ...t, listId }));
   },
 
@@ -187,7 +190,149 @@ function updateChecklistItem(state, cmd, updater) {
   return setField(state, cmd.aggregateId, { checklist: next });
 }
 
-const HANDLERS = { ...TASK, ...CHECKLIST };
+function updateInMap(state, mapKey, id, updater) {
+  const map = state[mapKey];
+  const entity = map[id];
+  if (!entity) return { state, receipt: REJECTED('ENTITY_NOT_FOUND') };
+  if (entity.lifecycle === 'deleted') return { state, receipt: { status: 'ENTITY_DELETED', errorCode: 'ENTITY_DELETED' } };
+  const next = updater(entity);
+  if (next === entity) return { state, receipt: NOOP() };
+  return { state: { ...state, [mapKey]: { ...map, [id]: next } }, receipt: { status: 'APPLIED' } };
+}
+
+function deleteFromMap(state, mapKey, id, seq) {
+  const map = state[mapKey];
+  const entity = map[id];
+  if (!entity) return { state, receipt: REJECTED('ENTITY_NOT_FOUND') };
+  if (entity.lifecycle === 'deleted') return { state, receipt: NOOP('NOOP_ALREADY_DELETED') };
+  return {
+    state: { ...state, [mapKey]: { ...map, [id]: { ...entity, lifecycle: 'deleted', deletedAt: seq } } },
+    receipt: { status: 'APPLIED' },
+  };
+}
+
+const LIST = {
+  'list.create'(state, cmd) {
+    const id = cmd.aggregateId;
+    if (!id) return { state, receipt: REJECTED('MISSING_AGGREGATE_ID') };
+    if (state.customLists[id]) return { state, receipt: { status: 'ID_ALREADY_EXISTS', errorCode: 'ID_ALREADY_EXISTS' } };
+    const args = cmd.arguments ?? {};
+    const customLists = {
+      ...state.customLists,
+      [id]: {
+        title: typeof args.title === 'string' ? args.title : '',
+        color: typeof args.color === 'string' ? args.color : null,
+        lifecycle: 'active',
+        deletedAt: null,
+      },
+    };
+    return { state: { ...state, customLists }, receipt: { status: 'APPLIED' } };
+  },
+
+  'list.rename'(state, cmd) {
+    const title = String(cmd.arguments?.title ?? '');
+    return updateInMap(state, 'customLists', cmd.aggregateId, (l) => (l.title === title ? l : { ...l, title }));
+  },
+
+  'list.setColor'(state, cmd) {
+    const color = cmd.arguments?.color ?? null;
+    return updateInMap(state, 'customLists', cmd.aggregateId, (l) => (l.color === color ? l : { ...l, color }));
+  },
+
+  // 删除自定义清单:其任务统一转为未分配(Inbox/Today 只是视图,不参与)
+  'list.delete'(state, cmd, seq) {
+    const id = cmd.aggregateId;
+    const before = deleteFromMap(state, 'customLists', id, seq);
+    if (before.receipt.status !== 'APPLIED') return before;
+    const tasks = {};
+    for (const [taskId, t] of Object.entries(before.state.tasks)) {
+      if (t.listId === id) {
+        const { listId, ...rest } = t;
+        tasks[taskId] = rest;
+      } else {
+        tasks[taskId] = t;
+      }
+    }
+    return { state: { ...before.state, tasks }, receipt: before.receipt };
+  },
+};
+
+const JOURNAL = {
+  'journal.setText'(state, cmd) {
+    const id = cmd.aggregateId;
+    if (!id) return { state, receipt: REJECTED('MISSING_AGGREGATE_ID') };
+    const text = String(cmd.arguments?.text ?? '');
+    const existing = state.journals[id];
+    if (!existing) {
+      const journals = { ...state.journals, [id]: { text, lifecycle: 'active', deletedAt: null } };
+      return { state: { ...state, journals }, receipt: { status: 'APPLIED' } };
+    }
+    return updateInMap(state, 'journals', id, (j) => (j.text === text ? j : { ...j, text }));
+  },
+
+  'journal.delete'(state, cmd, seq) {
+    return deleteFromMap(state, 'journals', cmd.aggregateId, seq);
+  },
+};
+
+const GOAL = {
+  'goal.create'(state, cmd) {
+    const id = cmd.aggregateId;
+    if (!id) return { state, receipt: REJECTED('MISSING_AGGREGATE_ID') };
+    if (state.goals[id]) return { state, receipt: { status: 'ID_ALREADY_EXISTS', errorCode: 'ID_ALREADY_EXISTS' } };
+    const goals = {
+      ...state.goals,
+      [id]: {
+        title: String(cmd.arguments?.title ?? ''),
+        lifecycle: 'active',
+        deletedAt: null,
+      },
+    };
+    return { state: { ...state, goals }, receipt: { status: 'APPLIED' } };
+  },
+
+  'goal.patch'(state, cmd) {
+    const patch = cmd.arguments?.patch;
+    if (typeof patch !== 'object' || patch === null || Array.isArray(patch)) {
+      return { state, receipt: REJECTED('INVALID_PATCH') };
+    }
+    const { lifecycle, deletedAt, ...safe } = patch; // 生命周期字段不可被 patch 篡改
+    return updateInMap(state, 'goals', cmd.aggregateId, (g) => {
+      const next = { ...g, ...safe };
+      return JSON.stringify(next) === JSON.stringify(g) ? g : next;
+    });
+  },
+
+  'goal.delete'(state, cmd, seq) {
+    return deleteFromMap(state, 'goals', cmd.aggregateId, seq);
+  },
+};
+
+const INSIGHT = {
+  'insight.upsert'(state, cmd) {
+    const id = cmd.aggregateId;
+    if (!id) return { state, receipt: REJECTED('MISSING_AGGREGATE_ID') };
+    const existing = state.insights[id];
+    if (existing?.lifecycle === 'deleted') {
+      return { state, receipt: { status: 'ENTITY_DELETED', errorCode: 'ENTITY_DELETED' } };
+    }
+    const payload = cmd.arguments?.payload;
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+      return { state, receipt: REJECTED('INVALID_PAYLOAD') };
+    }
+    const { lifecycle, deletedAt, ...safe } = payload;
+    const entity = { ...safe, lifecycle: 'active', deletedAt: null };
+    if (existing && JSON.stringify(existing) === JSON.stringify(entity)) return { state, receipt: NOOP() };
+    const insights = { ...state.insights, [id]: entity };
+    return { state: { ...state, insights }, receipt: { status: 'APPLIED' } };
+  },
+
+  'insight.delete'(state, cmd, seq) {
+    return deleteFromMap(state, 'insights', cmd.aggregateId, seq);
+  },
+};
+
+const HANDLERS = { ...TASK, ...CHECKLIST, ...LIST, ...JOURNAL, ...GOAL, ...INSIGHT };
 
 export function applyCommand(state, command, brokerSequence) {
   const handler = HANDLERS[command?.type];
