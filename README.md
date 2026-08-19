@@ -62,7 +62,7 @@
 
 版本号以 git tag 为唯一来源，代码里不再手写：
 
-1. 发版 = 打 tag：`.\scripts\release.ps1 6.0.2`（可选 `-Push` 推送远程），生成 `v6.0.2`
+1. 发版 = 打 tag：`.\scripts\release.ps1 6.0.2`（可选 `-Push` 推送远程），生成 `mobile_6.0.2`
 2. 构建时由根 `build.gradle.kts` 用 `git describe` 推导，`:app` / `:wear` 自动引用：
    - HEAD 恰好在 tag 上 → `versionName = 6.0.2`，`versionCode = 6002`（主×1000 + 次×100 + 补丁）
    - HEAD 在 tag 之后 → `versionName = 6.0.2-dev`（开发版，可带 `-dirty`）

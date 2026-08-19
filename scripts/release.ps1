@@ -3,7 +3,7 @@
 # derives versionName/versionCode via `git describe` at build time.
 #
 # Usage:
-#   .\scripts\release.ps1 6.0.2          # create tag v6.0.2 locally
+#   .\scripts\release.ps1 6.0.2          # create tag mobile_6.0.2 locally
 #   .\scripts\release.ps1 6.0.2 -Push    # create tag and push to origin
 #
 # After tagging, check the version that will be built: .\gradlew.bat printVersion
@@ -19,7 +19,7 @@ if ($Version -notmatch '^\d+\.\d+\.\d+$') {
     throw "Version must be x.y.z (e.g. 6.0.2), got: $Version"
 }
 $newParts = [int[]]($Version -split '\.')
-$tag = "v$Version"
+$tag = "mobile_$Version"
 
 # Zero-pad each semver part to 4 digits so that 6.0.10 > 6.0.2 compares correctly.
 function Pad([int[]]$parts) {
@@ -36,15 +36,16 @@ if (git tag -l $tag) {
     throw "Tag $tag already exists."
 }
 
-# 3. Version must be strictly higher than the latest release tag
-#    (v* plus legacy PUKEKO_*, so versionCode stays monotonic).
+# 3. Version must be strictly higher than the latest Android release tag
+#    (mobile_* plus legacy PUKEKO_*, so versionCode stays monotonic).
+#    Only this branch's own tags are considered; desktop's v* tags must not leak in here.
 $latest = git tag -l |
-    Where-Object { $_ -match '^(v|PUKEKO_)\d+\.\d+\.\d+$' } |
-    Sort-Object -Descending { Pad ([int[]](($_ -replace '^(v|PUKEKO_)', '') -split '\.')) } |
+    Where-Object { $_ -match '^(mobile_|PUKEKO_)\d+\.\d+\.\d+$' } |
+    Sort-Object -Descending { Pad ([int[]](($_ -replace '^(mobile_|PUKEKO_)', '') -split '\.')) } |
     Select-Object -First 1
 
 if ($latest) {
-    $latestNum = $latest -replace '^(v|PUKEKO_)', ''
+    $latestNum = $latest -replace '^(mobile_|PUKEKO_)', ''
     if ((Pad $newParts) -le (Pad ([int[]]($latestNum -split '\.')))) {
         throw "Version $Version is not higher than the latest tag $latest; bump the version."
     }

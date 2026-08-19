@@ -7,9 +7,9 @@ plugins {
 }
 
 // ── 版本管理：git tag 是唯一版本源 ─────────────────────────────────────────
-// 发版 = 打 tag `v6.0.2`（scripts/release.ps1 负责校验与打 tag）。
+// 发版 = 打 tag `mobile_6.0.2`（scripts/release.ps1 负责校验与打 tag）。
 // versionName / versionCode 在构建时由 git 推导，代码里不再手写版本号：
-//   - HEAD 恰好打在 v* tag 上 → 正式版：versionName = 6.0.2
+//   - HEAD 恰好打在 mobile_* tag 上 → 正式版：versionName = 6.0.2
 //   - HEAD 在 tag 之后       → 开发版：versionName = 6.0.2-dev[-dirty]
 //   - 仓库无匹配 tag / 无 git → 用 fallbackVersion 兜底
 // versionCode = 主×1000 + 次×100 + 补丁（三位以内无碰撞，单调递增）。
@@ -30,8 +30,8 @@ val runGit = fun(args: List<String>): String? = try {
     null
 }
 
-// 发版 tag 认 v*（新约定）与 PUKEKO_*（历史遗留，仅作兜底），屏蔽 TUI_/mobile_ 等杂 tag。
-// 前缀式解析，兼容 describe 输出的 "v6.0.1-24-g7fa3f81" 这类后缀。
+// 发版 tag 认 mobile_*（新约定）与 PUKEKO_*（历史遗留，仅作兜底）；桌面版用 v*，二者互不干扰。
+// 前缀式解析，兼容 describe 输出的 "mobile_6.0.1-24-g7fa3f81" 这类后缀。
 val semverRegex = Regex("""^(?:[A-Za-z]+[_-])?v?(\d+)\.(\d+)\.(\d+)""")
 
 fun parseSemver(text: String?): Triple<Int, Int, Int>? {
@@ -40,8 +40,8 @@ fun parseSemver(text: String?): Triple<Int, Int, Int>? {
     return Triple(m.groupValues[1].toInt(), m.groupValues[2].toInt(), m.groupValues[3].toInt())
 }
 
-val exactTag = runGit(listOf("describe", "--tags", "--match", "v*", "--match", "PUKEKO_*", "--exact-match"))
-val nearestTag = runGit(listOf("describe", "--tags", "--match", "v*", "--match", "PUKEKO_*", "--always"))
+val exactTag = runGit(listOf("describe", "--tags", "--match", "mobile_*", "--match", "PUKEKO_*", "--exact-match"))
+val nearestTag = runGit(listOf("describe", "--tags", "--match", "mobile_*", "--match", "PUKEKO_*", "--always"))
 val dirtyTree = runGit(listOf("status", "--porcelain")).orEmpty().isNotBlank()
 
 val exactVersion = parseSemver(exactTag)
