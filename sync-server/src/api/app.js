@@ -2,7 +2,7 @@
 // 端点见 docs/sync-v3.md §11。
 import Fastify from 'fastify';
 
-export function buildServer({ publisher, validateBatch, store }) {
+export function buildServer({ publisher, validateBatch, store, health }) {
   const app = Fastify({ logger: false });
 
   // 命令批次入口。BROKER_PERSISTED 只表示"broker 已持久接收",不是全端同步成功。
@@ -75,6 +75,16 @@ export function buildServer({ publisher, validateBatch, store }) {
     store.recordSnapshotAck(deviceId, { version, stateHash });
     return reply.code(202).send({ deviceId, version, state: 'ACK_RECORDED' });
   });
+
+  // 存活与就绪(§15)
+  app.get('/health/live', async () => ({ status: 'alive' }));
+  app.get('/health/ready', async (request, reply) => {
+    const r = await health.readiness();
+    return reply.code(r.ok ? 200 : 503).send(r);
+  });
+
+  // 运行指标(§15)
+  app.get('/tplanner/v3/status', async () => health.status());
 
   return app;
 }

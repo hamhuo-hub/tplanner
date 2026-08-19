@@ -20,11 +20,11 @@ import { applyCommand } from './reducer.js';
 import { createNatsConnection } from '../broker/natsConnection.js';
 import { ensureStreams } from '../broker/streams.js';
 import { resolveServerInstanceId } from '../serverInstance.js';
+import { SEQ_MULTIPLIER } from '../sequence.js';
 
 const STREAM_COMMANDS = 'TPLANNER_COMMANDS';
 const CONSUMER_NAME = 'state-builder';
 const SUBJECT_COMMANDS = 'tplanner.v3.commands';
-const SEQ_MULTIPLIER = 1_000_000;
 
 // integration batch 边界(§6)
 const LIMITS = {
