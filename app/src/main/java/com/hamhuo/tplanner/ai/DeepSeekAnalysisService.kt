@@ -9,8 +9,47 @@ import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.time.Instant
 import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.ZonedDateTime
 import java.util.concurrent.atomic.AtomicInteger
+
+internal fun nextScheduleHalfHour(now: LocalDateTime): LocalDateTime {
+    val base = now.withSecond(0).withNano(0)
+    return if (base.minute < 30) {
+        base.withMinute(30)
+    } else {
+        base.plusHours(1).withMinute(0)
+    }
+}
+
+internal fun parseScheduleLocalDateTime(value: String): LocalDateTime? {
+    val candidate = value.trim()
+    if (candidate.isBlank()) return null
+    return runCatching { LocalDateTime.parse(candidate) }.getOrNull()
+        ?: runCatching {
+            OffsetDateTime.parse(candidate).atZoneSameInstant(APP_ZONE).toLocalDateTime()
+        }.getOrNull()
+        ?: runCatching {
+            ZonedDateTime.parse(candidate).withZoneSameInstant(APP_ZONE).toLocalDateTime()
+        }.getOrNull()
+        ?: runCatching {
+            Instant.parse(candidate).atZone(APP_ZONE).toLocalDateTime()
+        }.getOrNull()
+}
+
+internal fun scheduleTemporalContext(now: LocalDateTime, timestamp: String): String {
+    val weekday = arrayOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")[now.dayOfWeek.value - 1]
+    val zonedNow = now.atZone(APP_ZONE)
+    return buildString {
+        append("当前基准时间（唯一基准）：$zonedNow，$weekday\n")
+        append("相对日期：今天=${now.toLocalDate()}，明天=${now.toLocalDate().plusDays(1)}，后天=${now.toLocalDate().plusDays(2)}\n")
+        if (timestamp.isNotBlank()) {
+            append("原始记录时间：$timestamp（仅在文字明确相对记录时刻时作为锚点）\n")
+        }
+    }
+}
 
 /**
  * DeepSeek-backed schedule extractor.
@@ -42,17 +81,17 @@ class DeepSeekAnalysisService(private val apiKey: String) {
     ): ProposedAction? = withContext(Dispatchers.IO) {
         val logRequestId = requestIdForLog(requestId)
         val startedAt = SystemClock.elapsedRealtime()
+        val referenceNow = LocalDateTime.now(APP_ZONE).withNano(0)
         Log.i(
             TAG,
             "request=$logRequestId phase=extract_start inputChars=${text.length} " +
                 "timestampProvided=${timestamp.isNotBlank()} locationProvided=${location.isNotBlank()}",
         )
         val prompt = buildString {
-            append("现在：${nowDescription()}\n")
+            append(scheduleTemporalContext(referenceNow, timestamp))
             if (location.isNotBlank()) append("地点：$location\n")
-            if (timestamp.isNotBlank()) append("记录时间：$timestamp\n")
             append("用户写下的文字：\n\"\"\"\n$text\n\"\"\"\n\n")
-            append("请立即调用 create_schedule。所有字段都必须填写——缺失字段用合理默认值。")
+            append("严格按上述时间基准解析今天、明天、周几、稍后、今晚等表达，然后立即调用 create_schedule。")
         }
         try {
             val action = callDeepSeek(prompt, logRequestId)
@@ -65,7 +104,7 @@ class DeepSeekAnalysisService(private val apiKey: String) {
                 )
                 null
             } else {
-                val normalized = fillDefaults(action, text)
+                val normalized = fillDefaults(action, text, referenceNow)
                 Log.i(
                     TAG,
                     "request=$logRequestId phase=extract_result result=proposal type=${normalized.type} " +
@@ -92,11 +131,11 @@ class DeepSeekAnalysisService(private val apiKey: String) {
     private fun fillDefaults(
         raw: ProposedAction,
         text: String,
+        referenceNow: LocalDateTime,
     ): ProposedAction {
-        val now = LocalDateTime.now(APP_ZONE)
-        val parsedStart = runCatching { LocalDateTime.parse(raw.startIso) }.getOrNull()
-        val start = parsedStart ?: now.plusHours(1).withMinute(0).withSecond(0)
-        val parsedEnd = runCatching { LocalDateTime.parse(raw.endIso) }.getOrNull()
+        val parsedStart = parseScheduleLocalDateTime(raw.startIso)
+        val start = parsedStart ?: nextScheduleHalfHour(referenceNow)
+        val parsedEnd = parseScheduleLocalDateTime(raw.endIso)
         val end = parsedEnd ?: start.plusHours(1)
         val normalized = ProposedAction(
             type = raw.type.takeIf { it in SCHEDULE_TYPES } ?: "event",
@@ -154,7 +193,7 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             put("tools", buildTools())
             put("tool_choice", "required")
             put("max_tokens", 2048)
-            put("temperature", 0.3)
+            put("temperature", 0.1)
         }.toString()
 
         val startedAt = SystemClock.elapsedRealtime()
@@ -290,7 +329,7 @@ class DeepSeekAnalysisService(private val apiKey: String) {
                         })
                         put("start_at", JSONObject().apply {
                             put("type", "string")
-                            put("description", "北京时间（Asia/Shanghai）ISO 8601。不明确时默认为今天最近的整点或半点（≥当前时间）")
+                            put("description", "北京时间（Asia/Shanghai）的 YYYY-MM-DDTHH:mm:ss。必须依据用户消息中的当前基准时间解析相对日期；只给时分且今天已过时顺延到明天。完全不明确时用严格晚于当前时间的下一个整点或半点")
                         })
                         put("end_at", JSONObject().apply {
                             put("type", "string")
@@ -333,14 +372,6 @@ class DeepSeekAnalysisService(private val apiKey: String) {
     )
 
     // ── helpers ─────────────────────────────────────────────────────────────
-
-    private fun nowDescription(): String {
-        val now = LocalDateTime.now(APP_ZONE)
-        val week = arrayOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")[now.dayOfWeek.value - 1]
-        return "%04d-%02d-%02d %02d:%02d %s".format(
-            now.year, now.monthValue, now.dayOfMonth, now.hour, now.minute, week,
-        )
-    }
 
     private fun requestIdForLog(requestId: String): String {
         val safe = requestId
@@ -390,13 +421,17 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             "对于每个字段：\n" +
             "- type: 有具体时间→event，待办事项→task，状态记录→status。默认为 event\n" +
             "- title: 从文字中提炼核心事项，最多 40 字。如果文字本身很短，直接用原文\n" +
-            "- start_at: 提取用户提到的时间。不明确时用今天下一个整点或半点（≥当前时间）\n" +
+            "- 时间基准: 只能使用用户消息中的“当前基准时间”，绝不能使用模型训练时间或自行猜测今天日期\n" +
+            "- 相对时间: 今天/明天/后天/本周/下周/周几/稍后/今晚都从当前基准时间计算；“原始记录时间”仅在文字明确相对记录时刻时使用\n" +
+            "- 只给时分: 优先安排在今天；若该时分已过且用户未明确描述过去，则顺延到明天。用户明确说昨天、刚才、之前时才允许过去时间\n" +
+            "- 周几: 没说本周或下周时选择严格晚于当前基准时间的最近一次该周几；不得落到已过去日期\n" +
+            "- start_at: 输出北京时间 YYYY-MM-DDTHH:mm:ss。完全不明确时使用严格晚于当前基准时间的下一个整点或半点\n" +
             "- end_at: 提取用户提到的结束时间。不明确时默认 start_at + 1 小时\n" +
             "- note: 提取补充说明。没有则传空字符串\n" +
             "- color_id: 用户指定了颜色就填入，否则默认 0\n" +
             "- checklist: task 类型时提取清单项为数组，其他类型传空数组\n" +
             "- alarm_enabled: event 类型且开始时间在未来时默认为 true，其他为 false\n" +
-            "- alarm_offset_minutes: 闹铃关闭时为 0；开启时用户指定了提前量就填入，否则默认 0" +
+            "- alarm_offset_minutes: 闹铃关闭时为 0；开启时用户指定了提前量就填入，否则默认 0\n" +
             "不要反问用户。不要输出内容（content 可以为空）。直接调用工具。"
     }
 }
