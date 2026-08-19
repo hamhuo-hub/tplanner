@@ -1,0 +1,16 @@
+{
+  "tasks": {
+    "task-1": {
+      "title": "新标题",
+      "note": "恢复后的备注",
+      "completed": true,
+      "itemType": "task",
+      "lifecycle": "active",
+      "deletedAt": null
+    }
+  },
+  "customLists": {},
+  "journals": {},
+  "goals": {},
+  "insights": {}
+}
