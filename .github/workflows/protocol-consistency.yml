@@ -1,0 +1,40 @@
+name: Protocol Consistency
+
+# sync-v3 协议文件(docs/sync-v3.md 与 sync-v3/)必须在这三个分支逐字节一致。
+# 任一分支被推送时,与另外两个分支的 origin 尖端比对,不一致即失败,
+# 强制协议变更以"先落后分支、后发先分支"的顺序成组落地。
+
+on:
+  push:
+    branches:
+      - 'sync_server'
+      - 'mobile_andorid'
+      - 'master'
+  pull_request:
+
+jobs:
+  protocol-identical:
+    name: sync-v3 protocol identical across branches
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Compare with the other two branches
+        shell: bash
+        run: |
+          set -euo pipefail
+          branches=(mobile_andorid master sync_server)
+          current="${GITHUB_REF_NAME}"
+          for branch in "${branches[@]}"; do
+            [ "$branch" = "$current" ] && continue
+            git fetch origin "$branch" --depth=1 --quiet
+            if ! git diff --quiet "origin/$branch" HEAD -- docs/sync-v3.md sync-v3/; then
+              echo "::error::sync-v3 protocol files differ from origin/$branch (branch $current)"
+              git diff --stat "origin/$branch" HEAD -- docs/sync-v3.md sync-v3/
+              exit 1
+            fi
+          done
+          echo "sync-v3 protocol files are byte-identical across mobile_andorid, master and sync_server"
