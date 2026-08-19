@@ -127,6 +127,36 @@ class ScheduleItemActions(
         }
     }
 
+    fun deleteFromEditor(
+        events: List<ScheduleItem>,
+        eventId: String,
+        onEventsChanged: (List<ScheduleItem>) -> Unit,
+        onFinished: (Boolean) -> Unit,
+    ) {
+        val now = System.currentTimeMillis()
+        val storedEvent = events.firstOrNull { it.id == eventId }
+        val nextEvents = events.map {
+            if (it.id == eventId) it.copy(deletedAt = now, updatedAt = now) else it
+        }
+        scope.launch {
+            try {
+                eventWriteMutex.withLock {
+                    if (storedEvent != null) {
+                        eventStore.save(storedEvent.copy(deletedAt = now, updatedAt = now))
+                    }
+                    // A detail editor always owns a durable draft. Clear it after the
+                    // deletion so a cold start cannot restore a deleted or cancelled item.
+                    eventStore.discardEventDraft(eventId)
+                }
+                onEventsChanged(nextEvents)
+                onFinished(true)
+            } catch (_: Exception) {
+                Toast.makeText(context, "删除失败，事项草稿仍保留在本机", Toast.LENGTH_LONG).show()
+                onFinished(false)
+            }
+        }
+    }
+
     fun changeType(
         events: List<ScheduleItem>,
         eventId: String,

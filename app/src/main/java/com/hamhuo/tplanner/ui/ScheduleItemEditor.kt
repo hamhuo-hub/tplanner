@@ -97,6 +97,7 @@ fun ScheduleItemDetailScreen(
     userLists: List<UserList>,
     onDraftChange: (ScheduleItem) -> Unit,
     onSave: (ScheduleItem, (Boolean) -> Unit) -> Unit,
+    onDelete: ((Boolean) -> Unit) -> Unit,
     onNoteSave: (ScheduleItem, (Boolean) -> Unit) -> Unit,
 ) {
     val initialNote = event.note
@@ -124,6 +125,7 @@ fun ScheduleItemDetailScreen(
     val dateFmt = remember(dateTimePattern) { DateTimeFormatter.ofPattern(dateTimePattern) }
     val context = LocalContext.current
     var saveRequested by remember { mutableStateOf(false) }
+    var deleteRequested by remember { mutableStateOf(false) }
 
     fun pickDateTime(initial: Instant, onPicked: (Instant) -> Unit) {
         val cal = Calendar.getInstance(appLegacyTimeZone()).apply {
@@ -163,10 +165,18 @@ fun ScheduleItemDetailScreen(
     }
 
     fun commitResult() {
-        if (saveRequested) return
+        if (saveRequested || deleteRequested) return
         saveRequested = true
         onSave(buildResult()) { completed ->
             if (!completed) saveRequested = false
+        }
+    }
+
+    fun deleteAndClose() {
+        if (saveRequested || deleteRequested) return
+        deleteRequested = true
+        onDelete { completed ->
+            if (!completed) deleteRequested = false
         }
     }
 
@@ -230,13 +240,31 @@ fun ScheduleItemDetailScreen(
                     IconButton(onClick = ::saveAndClose) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back), tint = Color(0xFFE0D8C8))
                     }
-                    Box(
-                        modifier = Modifier
-                            .background(GOLD, RoundedCornerShape(50.dp))
-                            .clickable(onClick = ::saveAndClose)
-                            .padding(horizontal = 22.dp, vertical = 8.dp)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(stringResource(R.string.action_done), color = Color(0xFF0E0E0E), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Box(
+                            modifier = Modifier
+                                .background(RED, RoundedCornerShape(50.dp))
+                                .clickable(enabled = !saveRequested && !deleteRequested, onClick = ::deleteAndClose)
+                                .padding(horizontal = 14.dp, vertical = 8.dp)
+                        ) {
+                            Text(
+                                stringResource(R.string.cd_delete),
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .background(GOLD, RoundedCornerShape(50.dp))
+                                .clickable(enabled = !saveRequested && !deleteRequested, onClick = ::saveAndClose)
+                                .padding(horizontal = 22.dp, vertical = 8.dp)
+                        ) {
+                            Text(stringResource(R.string.action_done), color = Color(0xFF0E0E0E), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
 

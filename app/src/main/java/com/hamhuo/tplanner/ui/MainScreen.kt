@@ -893,6 +893,17 @@ fun MainScreen(
                     }
                 }
             },
+            onDelete = { onFinished ->
+                eventActions.deleteFromEditor(
+                    events = events,
+                    eventId = ev.id,
+                    onEventsChanged = { events = it },
+                    onFinished = { deleted ->
+                        if (deleted) editingItem = null
+                        onFinished(deleted)
+                    },
+                )
+            },
             onNoteSave = { updated, onFinished ->
                 val nextEvents = upsertEventPreservingOrder(events, updated)
                 scope.launch {
