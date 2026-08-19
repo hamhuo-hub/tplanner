@@ -8,6 +8,7 @@ import canonicalize from 'canonicalize';
 import { loadSyncMeta, updateSyncMeta } from './syncMeta';
 import { listCommands } from './commandOutbox';
 import { applyCommand } from './localReducer';
+import { recordSnapshotInstall } from './history';
 
 export async function sha256Hex(input) {
     const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
@@ -69,6 +70,7 @@ export function createSnapshotInstaller({ store, fetchFn, serverUrl, decompress 
             installedSnapshotHash: stateHash,
             serverInstanceId: envelope.serverInstanceId,
         });
+        await recordSnapshotInstall(store, { version: envelope.snapshotVersion, stateHash });
 
         if (ackInstalled) {
             const meta2 = await loadSyncMeta(store);
