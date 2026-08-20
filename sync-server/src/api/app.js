@@ -130,6 +130,8 @@ export function buildServer({ publisher, validateBatch, store, health, legacy })
       return legacy.changes({ since });
     });
     app.get('/tplanner/time', async () => legacy.serverTime());
+    // V1 健康检查别名(旧客户端与外部探针依赖 /health)
+    app.get('/health', async () => ({ status: 'ok' }));
   }
 
   return app;
