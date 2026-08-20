@@ -26,10 +26,11 @@ const STREAM_COMMANDS = 'TPLANNER_COMMANDS';
 const CONSUMER_NAME = 'state-builder';
 const SUBJECT_COMMANDS = 'tplanner.v3.commands';
 
-// integration batch 边界(§6)
+// integration batch 边界(§6):nats.js v3 的 pull expires 下限 1000ms,
+// 静默窗口因此取 1000ms(单命令场景快照延迟 ≈1s);强制上限防长流无限合并。
 const LIMITS = {
-  quietMs: 50, // 距最后一条消息安静 50ms 结束
-  forcedMs: 200, // 自首条起 200ms 强制结束
+  quietMs: 1000, // 距最后一条消息安静 1000ms 结束
+  forcedMs: 5000, // 自首条起 5s 强制结束(兜底)
   maxCommands: 100,
   maxBytes: 256 * 1024,
 };
