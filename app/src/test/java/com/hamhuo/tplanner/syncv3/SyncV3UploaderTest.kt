@@ -34,10 +34,10 @@ class SyncV3UploaderTest {
     private class FakeHttp : SyncHttpClient {
         val posts = mutableListOf<Triple<String, String, String>>()
         var postResponse: (String) -> SyncHttpResponse = {
-            SyncHttpResponse(202, """{"batchId":"b1","brokerSequence":1,"state":"BROKER_PERSISTED"}""")
+            SyncHttpResponse.text(202, """{"batchId":"b1","brokerSequence":1,"state":"BROKER_PERSISTED"}""")
         }
         var receiptsResponse: () -> SyncHttpResponse = {
-            SyncHttpResponse(
+            SyncHttpResponse.text(
                 200,
                 """{"acceptedThrough":0,"results":[]}""",
             )
@@ -111,7 +111,7 @@ class SyncV3UploaderTest {
         val store = FakeStore(state())
         store.commands += command(1)
         val http = FakeHttp()
-        http.postResponse = { SyncHttpResponse(503, """{"error":"BROKER_UNAVAILABLE"}""") }
+        http.postResponse = { SyncHttpResponse.text(503, """{"error":"BROKER_UNAVAILABLE"}""") }
         val uploader = SyncV3Uploader(store, http, "https://sync.example")
 
         val e = assertThrows(SyncV3Uploader.SyncException::class.java) { uploader.pump() }
@@ -127,7 +127,7 @@ class SyncV3UploaderTest {
         store.commands += command(2).copy(state = "uploaded")
         val http = FakeHttp()
         http.receiptsResponse = {
-            SyncHttpResponse(
+            SyncHttpResponse.text(
                 200,
                 """{"acceptedThrough":2,"results":[
                     {"commandId":"c1","clientSequence":1,"status":"APPLIED","snapshotVersion":9},
