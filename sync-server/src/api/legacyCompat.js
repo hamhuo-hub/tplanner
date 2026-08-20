@@ -39,13 +39,23 @@ export function projectLegacy(db) {
 
     switch (row.entity_type) {
       case 'task':
-        events.push({ id: row.entity_id, payload, updatedAt, deletedAt });
+        // 旧版线上格式是扁平行:{ id, title, start, end, ..., updatedAt, deletedAt }
+        // V3 内部用 schedule {startAt,endAt},投影时换算回 start/end。
+        events.push({
+          id: row.entity_id,
+          ...payload,
+          type: payload.type ?? payload.itemType ?? 'task',
+          start: payload.schedule?.startAt ?? payload.start ?? null,
+          end: payload.schedule?.endAt ?? payload.end ?? null,
+          updatedAt,
+          deletedAt,
+        });
         break;
       case 'journal':
         journals[row.entity_id] = { text: payload.text ?? '', updatedAt, deletedAt };
         break;
       case 'goal':
-        goals.push({ id: row.entity_id, payload, updatedAt, deletedAt });
+        goals.push({ id: row.entity_id, ...payload, updatedAt, deletedAt });
         break;
       case 'insight':
         if (row.entity_id.startsWith('report-')) {
@@ -67,25 +77,35 @@ export function projectLegacy(db) {
 
 const make = (type, aggregateId, args) => ({ type, aggregateId, arguments: args ?? {} });
 
+// 旧客户端上传的是扁平事件({id, title, start, end, ...});兼容历史 payload 包装。
+const flatPayload = (e) => (e?.payload && typeof e.payload === 'object' ? e.payload : e);
+
+function scheduleOfWire(p) {
+  if (!p?.start) return null;
+  return {
+    startAt: new Date(p.start).toISOString(),
+    endAt: p.end ? new Date(p.end).toISOString() : null,
+  };
+}
+
 export function diffEventsToCommands(state, incoming) {
   const commands = [];
   for (const e of Array.isArray(incoming) ? incoming : []) {
     const id = e?.id;
     if (id == null || id === '') continue;
     const cur = state.tasks[id];
-    const p = e.payload ?? {};
+    const p = flatPayload(e);
     const deleted = Boolean(e.deletedAt);
+    const schedule = scheduleOfWire(p);
 
     if (!cur) {
       commands.push(make('task.create', id, {
         title: typeof p.title === 'string' ? p.title : '',
-        itemType: typeof p.itemType === 'string' ? p.itemType : 'task',
+        itemType: typeof p.itemType === 'string' ? p.itemType : (typeof p.type === 'string' ? p.type : 'task'),
       }));
       if (typeof p.note === 'string' && p.note !== '') commands.push(make('task.setNote', id, { note: p.note }));
       if (p.completed === true) commands.push(make('task.setCompleted', id, { completed: true }));
-      if (p.schedule !== undefined && p.schedule !== null) {
-        commands.push(make('task.setSchedule', id, { schedule: p.schedule }));
-      }
+      if (schedule !== null) commands.push(make('task.setSchedule', id, { schedule }));
       if (deleted) commands.push(make('task.delete', id, {}));
       continue;
     }
@@ -103,11 +123,13 @@ export function diffEventsToCommands(state, incoming) {
     const completed = Boolean(p.completed);
     if (Boolean(cur.completed) !== completed) commands.push(make('task.setCompleted', id, { completed }));
 
-    const itemType = typeof p.itemType === 'string' ? p.itemType : cur.itemType;
+    const itemType = typeof p.itemType === 'string' ? p.itemType : (typeof p.type === 'string' ? p.type : cur.itemType);
     if (itemType && cur.itemType !== itemType) commands.push(make('task.changeType', id, { itemType }));
 
-    if (p.schedule !== undefined && JSON.stringify(cur.schedule) !== JSON.stringify(p.schedule ?? null)) {
-      commands.push(make('task.setSchedule', id, { schedule: p.schedule ?? null }));
+    // 排程比较:旧客户端始终携带 start/end(或 V3 的 schedule),归一化后比较
+    const scheduleRelevant = schedule !== null || cur.schedule !== undefined;
+    if (scheduleRelevant && JSON.stringify(cur.schedule) !== JSON.stringify(schedule)) {
+      commands.push(make('task.setSchedule', id, { schedule }));
     }
   }
   return commands;
@@ -139,7 +161,7 @@ export function diffGoalsToCommands(state, incoming) {
     const id = g?.id;
     if (id == null || id === '') continue;
     const cur = state.goals[id];
-    const p = g.payload ?? {};
+    const p = flatPayload(g);
     const { lifecycle, deletedAt, ...fields } = p;
 
     if (g.deletedAt) {

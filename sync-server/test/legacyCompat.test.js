@@ -58,7 +58,8 @@ test('projection round-trips legacy data with groupId stripped and tombstones in
 
   assert.equal(proj.events.length, 2);
   const t1 = proj.events.find((e) => e.id === 'task-1');
-  assert.equal('groupId' in t1.payload, false);
+  assert.equal(t1.title, '旧标题', 'wire format is flat: business fields at top level');
+  assert.equal('groupId' in t1, false);
   assert.equal(t1.deletedAt, null);
 
   const t2 = proj.events.find((e) => e.id === 'task-2');
@@ -69,6 +70,37 @@ test('projection round-trips legacy data with groupId stripped and tombstones in
   assert.equal(proj.goals.length, 1);
   assert.equal(proj.insights.entries.length, 1);
   assert.equal(proj.insights.reports['2026-08-19'].emotion, 'calm');
+  db.close();
+});
+
+test('flat legacy events with start/end survive import and project back to the same wire', () => {
+  const db = openDatabase(':memory:');
+  const flat = {
+    events: [
+      {
+        id: 'task-flat',
+        title: '速算课程',
+        type: 'task',
+        start: '2026-07-08T01:00:00.000Z',
+        end: '2026-07-08T04:00:00.000Z',
+        note: '',
+        completed: true,
+        groupId: 'g1',
+        updatedAt: 1000,
+        deletedAt: null,
+      },
+    ],
+  };
+  const { entities } = parseLegacyData(flat);
+  importIntoDatabase(db, entities);
+
+  const proj = projectLegacy(db);
+  const t = proj.events[0];
+  assert.equal(t.title, '速算课程');
+  assert.equal(t.start, '2026-07-08T01:00:00.000Z', 'start projects at the wire top level');
+  assert.equal(t.end, '2026-07-08T04:00:00.000Z');
+  assert.equal(t.completed, true);
+  assert.equal(t.type, 'task');
   db.close();
 });
 
@@ -175,7 +207,7 @@ test('putEvents publishes one batch with continuous clientSequence and updates p
   ]);
 
   assert.equal(result.length, 3, 'projection now has three tasks');
-  assert.equal(result.find((e) => e.id === 'task-1').payload.title, '改过的标题');
+  assert.equal(result.find((e) => e.id === 'task-1').title, '改过的标题');
   assert.ok(result.some((e) => e.id === 'task-new'));
   assert.equal(before.length, 2);
 
@@ -267,7 +299,7 @@ test('legacy routes are wired when the adapter is injected', async () => {
     payload: [{ id: 'task-1', payload: { title: '路由写入', note: '', itemType: 'task' }, deletedAt: null }],
   });
   assert.equal(put.statusCode, 200);
-  assert.equal(put.json().find((e) => e.id === 'task-1').payload.title, '路由写入');
+  assert.equal(put.json().find((e) => e.id === 'task-1').title, '路由写入');
 
   const time = await app.inject({ method: 'GET', url: '/tplanner/time' });
   assert.ok(time.json().time > 0);

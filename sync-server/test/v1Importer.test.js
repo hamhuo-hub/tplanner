@@ -56,8 +56,8 @@ test('maps legacy files to V3 entities and strips groupId', () => {
 test('reports duplicate ids and skips them', () => {
   const { entities, issues } = parseLegacyData({
     events: [
-      { id: 'task-1', payload: { title: 'a' } },
-      { id: 'task-1', payload: { title: 'b' } },
+      { id: 'task-1', title: 'a' },
+      { id: 'task-1', title: 'b' },
     ],
   });
 
@@ -65,6 +65,38 @@ test('reports duplicate ids and skips them', () => {
   assert.match(issues[0], /duplicate/);
   assert.equal(entities.length, 1);
   assert.equal(entities[0].payload.title, 'a');
+});
+
+test('flat legacy events (no payload wrapper) keep all business fields', () => {
+  const { entities, issues } = parseLegacyData({
+    events: [
+      {
+        id: 'task-flat',
+        title: '速算课程',
+        type: 'task',
+        start: '2026-07-08T01:00:00.000Z',
+        end: '2026-07-08T04:00:00.000Z',
+        note: 'n',
+        completed: true,
+        groupId: 'g1',
+        updatedAt: 1700000001000,
+        deletedAt: 0,
+      },
+    ],
+  });
+
+  assert.equal(issues.length, 0);
+  const t = entities[0];
+  assert.equal(t.payload.title, '速算课程');
+  assert.equal(t.payload.start, '2026-07-08T01:00:00.000Z');
+  assert.equal(t.payload.end, '2026-07-08T04:00:00.000Z');
+  assert.equal(t.payload.note, 'n');
+  assert.equal(t.payload.completed, true);
+  assert.equal(t.payload.itemType, 'task', 'itemType derived from legacy type');
+  assert.equal('groupId' in t.payload, false);
+  assert.equal('id' in t.payload, false);
+  assert.equal('updatedAt' in t.payload, false);
+  assert.equal(t.lifecycle, 'active');
 });
 
 test('imports into the database in one transaction, idempotently', () => {

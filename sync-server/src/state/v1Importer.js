@@ -39,8 +39,18 @@ export function parseLegacyData({ events = [], journals = {}, goals = [], insigh
     });
   };
 
+  // 旧版磁盘格式是"扁平行"(id/title/start/... 在顶层,无 payload 包装),
+  // 但也兼容历史 {id, payload} 包装形态:两者都归一到业务字段集合。
+  const businessPayload = (row) => {
+    const source = row?.payload && typeof row.payload === 'object' ? row.payload : row;
+    const clean = { ...(source ?? {}) };
+    for (const k of ['id', 'updatedAt', 'deletedAt', 'groupId', 'version']) delete clean[k];
+    if (!clean.itemType) clean.itemType = clean.type ?? 'task';
+    return clean;
+  };
+
   for (const e of Array.isArray(events) ? events : []) {
-    push('task', e?.id, e?.payload, e?.updatedAt, e?.deletedAt);
+    push('task', e?.id, businessPayload(e), e?.updatedAt, e?.deletedAt);
   }
 
   for (const [date, entry] of Object.entries(journals ?? {})) {
@@ -49,14 +59,14 @@ export function parseLegacyData({ events = [], journals = {}, goals = [], insigh
   }
 
   for (const g of Array.isArray(goals) ? goals : []) {
-    push('goal', g?.id, g?.payload, g?.updatedAt, g?.deletedAt);
+    push('goal', g?.id, businessPayload(g), g?.updatedAt, g?.deletedAt);
   }
 
   for (const i of Array.isArray(insights?.entries) ? insights.entries : []) {
-    push('insight', i?.id, i?.payload, i?.updatedAt, i?.deletedAt);
+    push('insight', i?.id, businessPayload(i), i?.updatedAt, i?.deletedAt);
   }
   for (const [date, r] of Object.entries(insights?.reports ?? {})) {
-    push('insight', `report-${date}`, { date, ...(r?.payload ?? r) }, r?.updatedAt, r?.deletedAt);
+    push('insight', `report-${date}`, { date, ...businessPayload(r) }, r?.updatedAt, r?.deletedAt);
   }
 
   return { entities, issues };
