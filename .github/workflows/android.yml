@@ -39,8 +39,7 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: 9.6.1
+        # 不固定版本:跟随仓库 wrapper(自动缓存发行包与依赖,避免每次重新下载)
 
       - name: Run unit tests, lint, and debug builds
         run: gradle testDebugUnitTest lintDebug assembleDebug
@@ -61,8 +60,7 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: 9.6.1   # 与 gradle/wrapper/gradle-wrapper.properties 保持一致
+        # 不固定版本:跟随仓库 wrapper
 
       - name: Setup signing keystore
         env:
