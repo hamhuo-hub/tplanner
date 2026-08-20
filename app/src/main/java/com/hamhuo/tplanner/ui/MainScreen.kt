@@ -794,14 +794,6 @@ fun MainScreen(
                 },
                 onSubmit = submitForExtraction,
                 onConfirmAction = ::confirmAction,
-                onDeclineAction = {
-                    Log.d(LLM_LOG_TAG, "phase=sheet_close reason=proposal_declined")
-                    showScheduleSheet = false
-                    thinking = false
-                    sheetAction = null
-                    sheetRequestId = ""
-                    untangleInput = ""
-                },
             )
         } else {
             MainLayout(
@@ -1009,7 +1001,19 @@ fun MainScreen(
                         onFinished(false)
                     }
                 }
-            }
+            },
+            onCreateList = { name, onCreated ->
+                scope.launch {
+                    val list = try {
+                        eventStore.createUserList(name)
+                    } catch (_: Exception) {
+                        Toast.makeText(context, "无法创建清单，请重试", Toast.LENGTH_LONG).show()
+                        onCreated(null)
+                        return@launch
+                    }
+                    onCreated(list)
+                }
+            },
         )
     }
 

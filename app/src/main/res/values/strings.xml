@@ -1,4 +1,4 @@
-﻿<resources>
+<resources>
     <string name="app_name">tPlanner</string>
     <string name="watch_link_notification">手表连接已开启</string>
 
@@ -34,6 +34,7 @@
     <string name="task_view_today_description">仅显示今天的事项</string>
     <string name="task_view_custom_list_description">按事项的清单归属筛选</string>
     <string name="section_list">所属清单</string>
+    <string name="list_picker_title">选择清单</string>
     <string name="section_time">时间</string>
     <string name="section_recurrence">重复任务</string>
     <string name="section_alarm">系统闹铃</string>

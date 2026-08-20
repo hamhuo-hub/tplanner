@@ -37,6 +37,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -99,6 +100,7 @@ fun ScheduleItemDetailScreen(
     onSave: (ScheduleItem, (Boolean) -> Unit) -> Unit,
     onDelete: ((Boolean) -> Unit) -> Unit,
     onNoteSave: (ScheduleItem, (Boolean) -> Unit) -> Unit,
+    onCreateList: (String, (UserList?) -> Unit) -> Unit,
 ) {
     val initialNote = event.note
     var title     by remember { mutableStateOf(event.title) }
@@ -133,6 +135,9 @@ fun ScheduleItemDetailScreen(
 
     var showTypeSheet by remember { mutableStateOf(false) }
     val typeSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var showListPicker by remember { mutableStateOf(false) }
+    val listPickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var showNewListNameSheet by remember { mutableStateOf(false) }
 
     val zone    = remember { APP_ZONE }
     val dateTimePattern = stringResource(R.string.date_pattern_month_day_time)
@@ -243,7 +248,7 @@ fun ScheduleItemDetailScreen(
             commitResult()
         }
 
-        BackHandler(enabled = !showTypeSheet && !noteEditorOpen) {
+        BackHandler(enabled = !showTypeSheet && !showListPicker && !showNewListNameSheet && !noteEditorOpen) {
             if (imeVisible) {
                 keyboardController?.hide()
             } else {
@@ -404,28 +409,35 @@ fun ScheduleItemDetailScreen(
                     // Empty listId means unclassified. Inbox and Today are filters, not lists.
                     DetailSectionLabel(stringResource(R.string.section_list))
                     Spacer(Modifier.height(10.dp))
+                    val currentList = userLists.firstOrNull { it.id == listId }
                     Row(
-                        modifier = Modifier.horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF1F1F1F), RoundedCornerShape(10.dp))
+                            .border(1.dp, BORDER, RoundedCornerShape(10.dp))
+                            .clickable {
+                                renaming = false
+                                focusManager.clearFocus(force = true)
+                                keyboardController?.hide()
+                                showTypeSheet = false
+                                showListPicker = true
+                            }
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        ListAssignmentChip(
-                            label = stringResource(R.string.list_none),
-                            selected = listId.isBlank(),
-                            onClick = {
-                                listId = ""
-                                persistDraft()
-                            },
+                        Text(
+                            currentList?.name ?: stringResource(R.string.list_none),
+                            color = if (currentList != null) Color(0xFFE0D8C8) else DIM,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
                         )
-                        userLists.forEach { list ->
-                            ListAssignmentChip(
-                                label = list.name,
-                                selected = listId == list.id,
-                                onClick = {
-                                    listId = list.id
-                                    persistDraft()
-                                },
-                            )
-                        }
+                        Icon(
+                            Icons.Default.ArrowDropDown,
+                            contentDescription = null,
+                            tint = DIM,
+                            modifier = Modifier.size(20.dp),
+                        )
                     }
 
                     Spacer(Modifier.height(24.dp))
@@ -754,6 +766,139 @@ fun ScheduleItemDetailScreen(
                         onDismiss = { showTypeSheet = false }
                     )
                 }
+            }
+
+            // 清单选择底部面板——只列出自定义清单；没有清单时复用「新建清单」入口
+            if (showListPicker) {
+                ModalBottomSheet(
+                    onDismissRequest = { showListPicker = false },
+                    sheetState       = listPickerSheetState,
+                    containerColor   = Color(0xFF1A1A1A),
+                    dragHandle       = null,
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 32.dp),
+                    ) {
+                        // 顶部居中的拖拽把手（统一弹窗样式）
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Box(
+                                Modifier
+                                    .width(36.dp)
+                                    .height(4.dp)
+                                    .background(Color(0xFF4A4A4A), RoundedCornerShape(2.dp)),
+                            )
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 20.dp, end = 20.dp, bottom = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                stringResource(R.string.list_picker_title),
+                                color = Color(0xFFE0D8C8), fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.5.sp,
+                            )
+                            Icon(
+                                Icons.Default.Close, contentDescription = "Close", tint = DIM,
+                                modifier = Modifier.size(18.dp).clickable { showListPicker = false },
+                            )
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        userLists.forEach { list ->
+                            val selected = list.id == listId
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (!selected) {
+                                            listId = list.id
+                                            persistDraft()
+                                        }
+                                        showListPicker = false
+                                    }
+                                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    list.name,
+                                    color = if (selected) GOLD else Color(0xFFE0D8C8),
+                                    fontSize = 16.sp,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                if (selected) {
+                                    Icon(
+                                        Icons.Default.Check, contentDescription = null,
+                                        tint = GOLD, modifier = Modifier.size(20.dp),
+                                    )
+                                }
+                            }
+                        }
+                        // 与清单项分隔线隔开，突出「新建清单」操作入口
+                        Box(
+                            Modifier
+                                .padding(horizontal = 20.dp)
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(BORDER),
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        // 新建清单——沿用任务页的命名面板流程
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                showListPicker = false
+                                showNewListNameSheet = true
+                            }.padding(horizontal = 20.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier.size(52.dp)
+                                    .background(Color(0xFF2E2E2E), CircleShape),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null,
+                                    tint = DIM, modifier = Modifier.size(26.dp))
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                Text(
+                                    stringResource(R.string.list_new), color = Color(0xFFE0D8C8),
+                                    fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                                    letterSpacing = 0.8.sp,
+                                )
+                                Text(
+                                    stringResource(R.string.list_new_description),
+                                    color = DIM, fontSize = 13.sp, letterSpacing = 0.3.sp,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (showNewListNameSheet) {
+                NameInputSheet(
+                    type = "task",
+                    entityLabel = stringResource(R.string.list_entity_name),
+                    initialText = "",
+                    onDraftChange = {},
+                    onCancel = { showNewListNameSheet = false },
+                    onConfirm = { name ->
+                        onCreateList(name.trim()) { created ->
+                            showNewListNameSheet = false
+                            if (created != null) {
+                                listId = created.id
+                                persistDraft()
+                            }
+                        }
+                    },
+                )
             }
 
             if (noteEditorOpen) {

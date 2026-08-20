@@ -33,6 +33,7 @@
     <string name="task_view_today_description">Show only today’s items</string>
     <string name="task_view_custom_list_description">Filter by assigned custom list</string>
     <string name="section_list">List</string>
+    <string name="list_picker_title">Choose a List</string>
     <string name="section_time">Time</string>
     <string name="section_recurrence">Repeat task</string>
     <string name="section_alarm">System alarm</string>

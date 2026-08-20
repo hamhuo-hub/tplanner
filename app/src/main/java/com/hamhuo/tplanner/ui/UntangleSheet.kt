@@ -72,7 +72,7 @@ private fun prettyAlarm(enabled: Boolean, offsetMinutes: Int): String = when {
  *
  *   EDIT    — write text describing what you want on your schedule
  *   THINKING — LLM is extracting schedule fields from your text
- *   CONFIRM  — review the extracted schedule and confirm or decline
+ *   CONFIRM  — review the extracted schedule and confirm or dismiss
  *
  * No QA, no clarifying questions — the tool always produces a schedule proposal.
  */
@@ -88,7 +88,6 @@ fun UntangleSheet(
     onDismiss: () -> Unit,
     onSubmit: (text: String) -> Unit,
     onConfirmAction: (DeepSeekAnalysisService.ProposedAction) -> Unit,
-    onDeclineAction: () -> Unit,
 ) {
     var text by remember(requestId) { mutableStateOf(initialText) }
     val focusRequester = remember { FocusRequester() }
@@ -182,9 +181,9 @@ fun UntangleSheet(
                 ) {
                     Box(
                         modifier = Modifier.weight(1f).background(Color(0xFF222222), RoundedCornerShape(12.dp))
-                            .clickable { onDeclineAction() }.padding(vertical = 14.dp),
+                            .clickable { onDismiss() }.padding(vertical = 14.dp),
                         contentAlignment = Alignment.Center,
-                    ) { Text("就当笔记", color = DIM, fontSize = 15.sp) }
+                    ) { Text(stringResource(R.string.action_cancel), color = DIM, fontSize = 15.sp) }
                     Box(
                         modifier = Modifier.weight(1f).background(GOLD, RoundedCornerShape(12.dp))
                             .clickable { onConfirmAction(action) }.padding(vertical = 14.dp),
