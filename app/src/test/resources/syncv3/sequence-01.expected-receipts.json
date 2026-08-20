@@ -1,0 +1,11 @@
+{
+  "receipts": [
+    { "brokerSequence": 501, "status": "APPLIED" },
+    { "brokerSequence": 502, "status": "APPLIED" },
+    { "brokerSequence": 503, "status": "APPLIED" },
+    { "brokerSequence": 504, "status": "APPLIED" },
+    { "brokerSequence": 505, "status": "ENTITY_DELETED" },
+    { "brokerSequence": 506, "status": "APPLIED" },
+    { "brokerSequence": 507, "status": "APPLIED" }
+  ]
+}
