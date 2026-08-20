@@ -135,3 +135,36 @@ test('SEQUENCE_GAP then retransmit completes the sequence (receipt rewritten)', 
   assert.equal(m.getState().tasks.t1.note, 'n');
   db.close();
 });
+
+test('gap slot is not permanently blocked when the retry uses a different commandId', () => {
+  const db = openDatabase(':memory:');
+  const m1 = createMaterializer({ db, applyCommand, serverInstanceId: SERVER_ID });
+
+  // seq3 先到:accepted=0 → 缺口回执落库(占用 (dev-1, 3) 槽位)
+  m1.processIntegrationBatch([
+    entry(1, 'dev-1', cmd('task.create', 't1', { title: 'a' }, 'c1', 1)),
+    entry(2, 'dev-1', cmd('task.setTitle', 't1', { title: 'x' }, 'c3-old', 3)),
+  ]);
+  assert.equal(
+    db.prepare("SELECT status FROM processed_commands WHERE command_id = 'c3-old'").get().status,
+    'SEQUENCE_GAP',
+  );
+
+  // 模拟进程重启(新实例从 device_progress 恢复 accepted=1),
+  // 客户端补齐 seq2 并重传 seq3 —— 但换了新 commandId(防御不规范客户端)
+  const m2 = createMaterializer({ db, applyCommand, serverInstanceId: SERVER_ID });
+  const result = m2.processIntegrationBatch([
+    entry(3, 'dev-1', cmd('task.setNote', 't1', { note: 'n' }, 'c2', 2)),
+    entry(4, 'dev-1', cmd('task.setTitle', 't1', { title: '新标题' }, 'c3-new', 3)),
+  ]);
+
+  assert.equal(result.receipts.find((r) => r.commandId === 'c3-new').status, 'APPLIED');
+  const slot = db
+    .prepare('SELECT command_id, status FROM processed_commands WHERE device_id = ? AND client_sequence = 3')
+    .get('dev-1');
+  assert.equal(slot.command_id, 'c3-new', 'stale GAP row replaced by the retransmitted command');
+  assert.equal(slot.status, 'APPLIED');
+  assert.equal(m2.getState().tasks.t1.title, '新标题');
+  assert.equal(m2.getState().tasks.t1.note, 'n');
+  db.close();
+});

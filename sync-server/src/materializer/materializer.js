@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { emptyState } from './reducer.js';
 import {
   deleteReceipt,
+  deleteReceiptByDeviceSequence,
   findReceipt,
   findReceiptByDeviceSequence,
   insertReceipt,
@@ -161,11 +162,15 @@ export function createMaterializer({
 
       const accepted = acceptedSeq.get(entry.deviceId) ?? 0;
 
+      // 同槽位已有 SEQUENCE_GAP 回执(可能来自另一个 commandId 的历史重传):
+      // 视为客户端补齐重传,事务内先删旧 GAP 行再重裁,绝不让 GAP 行堵死序列槽位。
+      const existingBySeq = findReceiptByDeviceSequence(db, entry.deviceId, command.clientSequence);
+      const seqRetryGap = existingBySeq?.status === 'SEQUENCE_GAP';
+
       // 已接受的序列:客户端重发 → 返回原回执,不重复执行
-      if (command.clientSequence <= accepted) {
-        const prior = findReceiptByDeviceSequence(db, entry.deviceId, command.clientSequence);
-        const receipt = prior ?? { status: 'NOOP', errorCode: 'DUPLICATE_CLIENT_SEQUENCE' };
-        outcomes.push({ entry, receipt, isNew: false, retryGap });
+      if (command.clientSequence <= accepted && !seqRetryGap) {
+        const receipt = existingBySeq ?? { status: 'NOOP', errorCode: 'DUPLICATE_CLIENT_SEQUENCE' };
+        outcomes.push({ entry, receipt, isNew: false, retryGap, seqRetryGap: false });
         continue;
       }
 
@@ -173,13 +178,13 @@ export function createMaterializer({
       if (command.clientSequence > accepted + 1) {
         const receipt = { status: 'SEQUENCE_GAP', errorCode: 'SEQUENCE_GAP' };
         seen.set(command.commandId, receipt);
-        outcomes.push({ entry, receipt, isNew: true, retryGap });
+        outcomes.push({ entry, receipt, isNew: true, retryGap, seqRetryGap });
         continue;
       }
 
       const result = applyCommand(nextState, command, brokerSequence);
       seen.set(command.commandId, result.receipt);
-      outcomes.push({ entry, receipt: result.receipt, isNew: true, retryGap, advanceTo: command.clientSequence });
+      outcomes.push({ entry, receipt: result.receipt, isNew: true, retryGap, seqRetryGap, advanceTo: command.clientSequence });
       acceptedSeq.set(entry.deviceId, command.clientSequence);
       progressUpdates.set(entry.deviceId, command.clientSequence);
       if (result.state !== nextState) {
@@ -204,8 +209,9 @@ export function createMaterializer({
     // 3. 单事务落库:重裁删除 → 回执 → 设备进度 → 实体 diff → 快照 → outbox(§10)
     const before = new Map(acceptedSeq);
     const writeTx = db.transaction(() => {
-      for (const { entry, retryGap } of outcomes) {
+      for (const { entry, retryGap, seqRetryGap } of outcomes) {
         if (retryGap) deleteReceipt(db, entry.command.commandId);
+        if (seqRetryGap) deleteReceiptByDeviceSequence(db, entry.deviceId, entry.command.clientSequence);
       }
       for (const { entry, receipt, isNew } of outcomes) {
         if (!isNew) continue;

@@ -38,6 +38,14 @@ export function deleteReceipt(db, commandId) {
   return db.prepare('DELETE FROM processed_commands WHERE command_id = ?').run(commandId);
 }
 
+// 按序列槽位删除:重传可能换了 commandId(不规范客户端/冒烟场景),
+// 绝不让历史 GAP 行堵死 (device_id, client_sequence) 唯一约束。
+export function deleteReceiptByDeviceSequence(db, deviceId, clientSequence) {
+  return db
+    .prepare('DELETE FROM processed_commands WHERE device_id = ? AND client_sequence = ?')
+    .run(deviceId, clientSequence);
+}
+
 export function insertReceipt(db, r) {
   return db.prepare(`
     INSERT INTO processed_commands (${COLUMNS})
