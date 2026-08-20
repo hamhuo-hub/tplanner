@@ -149,7 +149,9 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
 
         const eventsToSave = [];
 
-        if (initialEvent || recurrenceType === 'none') {
+        const isRecurringTask = !initialEvent && type === EVENT_TYPES.TASK && recurrenceType !== 'none';
+
+        if (!isRecurringTask) {
             // Single Event
             eventsToSave.push({
                 id: initialEvent ? initialEvent.id : crypto.randomUUID(),
@@ -162,8 +164,12 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                 checklist: type === EVENT_TYPES.TASK ? checklist : undefined,
                 completed: initialEvent ? (initialEvent.completed ?? false) : false,
                 colorId,
-                recurrenceType: initialEvent ? initialEvent.recurrenceType : recurrenceType,
-                recurrenceCount: initialEvent ? initialEvent.recurrenceCount : recurrenceCount
+                recurrenceType: type === EVENT_TYPES.TASK
+                    ? (initialEvent ? initialEvent.recurrenceType : recurrenceType)
+                    : 'none',
+                recurrenceCount: type === EVENT_TYPES.TASK
+                    ? (initialEvent ? initialEvent.recurrenceCount : recurrenceCount)
+                    : 1
             });
         } else {
             // Recurring Events
@@ -248,7 +254,8 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                             </ToggleButton>
                         </ToggleButtonGroup>
 
-                        {/* Recurrence Options - Available in both Create and Edit Mode */}
+                        {/* Recurrence Options — tasks only */}
+                        {type === EVENT_TYPES.TASK && (
                         <Box sx={{ border: '1px solid #eee', p: 1, borderRadius: 1 }}>
                             <Stack direction="row" alignItems="center" justifyContent="space-between">
                                 <Typography variant="body2" color="text.secondary">
@@ -283,6 +290,7 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                                 </Stack>
                             )}
                         </Box>
+                        )}
 
                         {/* Title */}
                         <TextField
