@@ -64,7 +64,7 @@ export async function startStateBuilder({
   }
   log.info({ ownerId }, 'state builder lease acquired');
 
-  const nc = await createNatsConnection();
+  const nc = await createNatsConnection({ credsFile: process.env.NATS_CREDS_FILE });
   let closed = false;
   const stop = () => {
     closed = true;
