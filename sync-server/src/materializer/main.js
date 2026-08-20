@@ -74,7 +74,7 @@ export async function startStateBuilder({
   process.once('SIGTERM', stop);
 
   try {
-    const jsm = jetstreamManager(nc);
+    const jsm = await jetstreamManager(nc);
     const js = await ensureStreams(nc);
 
     // 2. durable consumer:显式 ACK,60s 重投窗口,永不进死信(§5:失败必须停下来重试)

@@ -18,7 +18,7 @@ const DB_PATH = process.env.TPLANNER_DB_PATH || '/var/lib/tplanner-sync/state/tp
 
 const db = openDatabase(DB_PATH);
 const nc = await createNatsConnection({ credsFile: CREDS_FILE });
-const jsm = jetstreamManager(nc);
+const jsm = await jetstreamManager(nc);
 const js = await ensureStreams(nc);
 const publisher = createCommandPublisher(js);
 const validateBatch = await loadBatchValidator();
