@@ -466,7 +466,7 @@ function PlannerApp() {
     };
 
     // Soft-delete: stamp deletedAt instead of physically removing,
-    // so the tombstone propagates to peers during the next LAN sync.
+    // so the semantic delete command reaches the central V3 writer.
     const softDelete = async (doc) => {
         const v = (doc.get('version') || 0) + 1;
         await doc.update({ $set: { deletedAt: clockNow(), version: v, updatedAt: clockNow() } });
