@@ -355,6 +355,26 @@ CREATE TABLE change_items (
 
 任一失配 = P0 correctness alert(记 `log.error`,对应 `state_hash_mismatch_total` / `journal_validation_failure_total` 计数),但**不停止 builder**:journal 尚未被客户端消费,snapshot 下行路径不受影响。
 
+### 9.3 opaque signed cursor(同步位置的唯一合法表示)
+
+`state/cursor.js`:`base64url(JSON payload) + "." + base64url(HMAC-SHA256(payload, secret))`。客户端只保存字符串、绝不解析。payload 只落在 **commit 边界**:`{v, serverInstanceId, journalEpoch, snapshotVersion, brokerToSequence, schemaVersion, deltaVersion, principal, issuedAt}` —— 不含任何 commit 内部位置。
+
+签名密钥:`TPLANNER_CURSOR_SECRET` 覆盖;否则 `dbPath.cursor-secret` 一次性随机文件,同部署跨重启稳定。密钥不是认证凭据,认证由外层的 authenticated principal 完成。
+
+校验语义(不猜测、不修补):
+
+| 情况 | HTTP | code |
+|---|---|---|
+| 签名/结构/字段错 | 400 | `CURSOR_INVALID` / `CURSOR_VERSION_UNSUPPORTED` |
+| principal / device scope 不符 | 403 | `FORBIDDEN` |
+| serverInstanceId 变 | 410 | `CURSOR_SERVER_CHANGED`(full bootstrap) |
+| journalEpoch 变 / schema 变 / delta 版本不支持 | 410 | `CURSOR_EPOCH_EXPIRED` / `CURSOR_SCHEMA_CHANGED` / `CURSOR_DELTA_UNSUPPORTED` |
+| `snapshotVersion < min_snapshot_version` | 410 | `CURSOR_EXPIRED` |
+| 超过 head / 超过 maxAge | 410 | `CURSOR_AHEAD_OF_SERVER` / `CURSOR_AGE_EXPIRED` |
+| `brokerToSequence` 与 snapshot 行不符 | 410 | `CURSOR_COVERAGE_MISMATCH` |
+
+所有 410 的统一响应体:`{ error, recovery: "FULL_SNAPSHOT", latestSnapshotVersion }`。
+
 ## 10. 崩溃一致性(inbox/outbox)
 
 消费:`拉取 → BEGIN IMMEDIATE → 查 commandId → reducer → 写 entities/回执/快照/latest/发布outbox → COMMIT → ACK MQ`
