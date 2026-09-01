@@ -15,7 +15,12 @@
         "completed": false,
         "itemType": "task",
         "recurrence": null,
+        "alarm": { "enabled": false, "offsetMinutes": 0 },
+        "colorId": 0,
+        "location": { "lat": null, "lng": null },
+        "extras": {},
         "listId": null,
+        "checklist": [],
         "lifecycle": "active",
         "deletedAt": null
       }

@@ -59,7 +59,7 @@
     },
     "alarm": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "required": ["enabled", "offsetMinutes"],
       "properties": {
         "enabled": { "type": "boolean" },
@@ -68,7 +68,7 @@
     },
     "location": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "required": ["lat", "lng"],
       "properties": {
         "lat": { "type": ["number", "null"] },
@@ -78,12 +78,30 @@
     "task": {
       "type": "object",
       "additionalProperties": false,
+      "required": [
+        "title", "note", "completed", "itemType", "schedule", "recurrence",
+        "alarm", "colorId", "location", "extras", "listId", "checklist",
+        "lifecycle", "deletedAt"
+      ],
       "properties": {
         "title": { "type": "string" },
         "note": { "type": "string" },
         "completed": { "type": "boolean" },
         "itemType": { "type": "string" },
-        "schedule": { "type": ["object", "null"] },
+        "schedule": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["startAt", "endAt"],
+              "properties": {
+                "startAt": { "type": ["string", "null"] },
+                "endAt": { "type": ["string", "null"] }
+              },
+              "additionalProperties": true
+            },
+            { "type": "null" }
+          ]
+        },
         "recurrence": {
           "oneOf": [
             { "$ref": "#/$defs/recurrence" },

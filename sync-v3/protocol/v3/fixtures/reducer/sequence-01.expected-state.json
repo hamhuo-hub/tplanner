@@ -5,6 +5,14 @@
       "note": "恢复后的备注",
       "completed": true,
       "itemType": "task",
+      "schedule": null,
+      "recurrence": null,
+      "alarm": { "enabled": false, "offsetMinutes": 0 },
+      "colorId": 0,
+      "location": { "lat": null, "lng": null },
+      "extras": {},
+      "listId": null,
+      "checklist": [],
       "lifecycle": "active",
       "deletedAt": null
     }
