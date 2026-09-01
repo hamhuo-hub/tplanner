@@ -291,9 +291,9 @@ export function diffJournalsToCommands(mirror, localJournals) {
     return commands;
 }
 
-// ── 投影:V3 展示状态 → 桌面/Web UI 熟悉的形状(本地 UI 缓存,非权威)─────────
+// ── 投影:V3 展示状态 → 桌面/Web UI 形状(本地 UI 缓存,非权威)──────────────
 
-export function toLegacyEvents(state) {
+export function toUiEvents(state) {
     const tasks = state?.tasks ?? {};
     return Object.entries(tasks).map(([id, t]) => {
         const recurrence = t.recurrence ?? null;
@@ -326,7 +326,7 @@ export function toLegacyEvents(state) {
     });
 }
 
-export function toLegacyJournals(state) {
+export function toUiJournals(state) {
     const journals = state?.journals ?? {};
     const out = {};
     for (const [date, j] of Object.entries(journals)) {

@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { applyCommand, emptyState } from './localReducer';
-import { diffEventsToCommands, diffJournalsToCommands, toLegacyEvents, toLegacyJournals } from './commandsFromData';
+import { diffEventsToCommands, diffJournalsToCommands, toUiEvents, toUiJournals } from './commandsFromData';
 
 const mirrorWithTask = (id, patch) => ({
     ...emptyState(),
@@ -8,7 +8,7 @@ const mirrorWithTask = (id, patch) => ({
 });
 
 describe('commandsFromData', () => {
-    test('new legacy event diffs into create + field commands with schedule mapping', () => {
+    test('new UI event diffs into create + field commands with schedule mapping', () => {
         const mirror = emptyState();
         const commands = diffEventsToCommands(mirror, [
             { id: 'e1', title: '开会', note: 'n', completed: true, start: new Date('2026-08-20T01:00:00Z'), end: null },
@@ -52,7 +52,7 @@ describe('commandsFromData', () => {
         expect(diffJournalsToCommands(deletedMirror, { '2026-08-19': { text: '复活' } })).toHaveLength(0);
     });
 
-    test('projections round-trip to legacy UI shapes', () => {
+    test('projections round-trip to UI shapes', () => {
         const state = {
             ...emptyState(),
             tasks: {
@@ -62,7 +62,7 @@ describe('commandsFromData', () => {
             journals: { '2026-08-19': { text: '日记', lifecycle: 'active', deletedAt: null } },
         };
 
-        const events = toLegacyEvents(state);
+        const events = toUiEvents(state);
         expect(events).toHaveLength(2);
         const e1 = events.find((e) => e.id === 'e1');
         expect(e1.start.toISOString()).toBe('2026-08-20T01:00:00.000Z');
@@ -70,7 +70,7 @@ describe('commandsFromData', () => {
         const e2 = events.find((e) => e.id === 'e2');
         expect(e2.deletedAt).toBeInstanceOf(Date);
 
-        expect(toLegacyJournals(state)['2026-08-19'].text).toBe('日记');
+        expect(toUiJournals(state)['2026-08-19'].text).toBe('日记');
     });
 
     test('round-trips every persistent task field through semantic commands', () => {
@@ -108,7 +108,7 @@ describe('commandsFromData', () => {
             state = applyCommand(state, command, index + 1).state;
         }
 
-        const restored = toLegacyEvents(state).find((event) => event.id === source.id);
+        const restored = toUiEvents(state).find((event) => event.id === source.id);
         expect(restored).toMatchObject({
             title: source.title,
             note: source.note,

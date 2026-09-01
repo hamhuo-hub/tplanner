@@ -13,8 +13,8 @@ import { assertJsonResponse } from '../syncV3/httpResponse';
 import {
     diffEventsToCommands,
     diffJournalsToCommands,
-    toLegacyEvents,
-    toLegacyJournals,
+    toUiEvents,
+    toUiJournals,
 } from '../syncV3/commandsFromData';
 
 const AUTH_SESSION_KEY = 'tplanner_web_auth_session';
@@ -125,8 +125,8 @@ async function syncWithLocal({ events, journals } = {}) {
         ?? { tasks: {}, journals: {} };
 
     return {
-        events: toLegacyEvents(display),
-        journals: toLegacyJournals(display),
+        events: toUiEvents(display),
+        journals: toUiJournals(display),
     };
 }
 
