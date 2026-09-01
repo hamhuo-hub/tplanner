@@ -4,6 +4,8 @@
 `mobile_andorid`，中央服务在 `sync_server`；三个分支共用协议目录
 `sync-v3/protocol/v3`，CI 要求其内容逐字节一致。
 
+当前统一发布号：**8.0.0**（Sync V3 全量切换）。
+
 ## 同步架构
 
 客户端只执行单向 V3 流程：本地操作写入 semantic-command outbox，中央单写者排序并生成不可变快照，客户端原子安装 Server Mirror 后重放仍未确认的 pending 命令。客户端不再进行三方合并，也不再读写 V1 dataset 路由。
