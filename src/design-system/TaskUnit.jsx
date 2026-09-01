@@ -48,24 +48,30 @@ export default function TaskUnit({
 
     return (
         <div className="tplanner-task-unit">
-            <div className="tplanner-task-unit__header">
-                {type === 'task' && (
-                    <TaskCheckbox
-                        completed={completed}
-                        disabled={blocked}
-                        title={blocked ? blockedTitle : title}
-                        onToggle={onToggle}
-                    />
-                )}
-                {type !== 'task' && (
-                    <span className="tplanner-task-unit__accent" style={{ backgroundColor: accentColor }} />
-                )}
-                <div className={`tplanner-task-unit__title${completed ? ' tplanner-task-unit__title--completed' : ''}`}>
-                    {title}
+            {/* Summary = the fixed 28px recognition zone (eventSummaryHeight).
+                Title AND note must fit inside; everything below is body and
+                may be covered by the next cascade column. The layout
+                algorithm knows nothing about note — only this one height. */}
+            <div className="tplanner-task-unit__summary">
+                <div className="tplanner-task-unit__header">
+                    {type === 'task' && (
+                        <TaskCheckbox
+                            completed={completed}
+                            disabled={blocked}
+                            title={blocked ? blockedTitle : title}
+                            onToggle={onToggle}
+                        />
+                    )}
+                    {type !== 'task' && (
+                        <span className="tplanner-task-unit__accent" style={{ backgroundColor: accentColor }} />
+                    )}
+                    <div className={`tplanner-task-unit__title${completed ? ' tplanner-task-unit__title--completed' : ''}`}>
+                        {title}
+                    </div>
+                    <TaskProgress done={done} total={total} />
                 </div>
-                <TaskProgress done={done} total={total} />
+                {note && <div className="tplanner-task-unit__note">{note}</div>}
             </div>
-            {note && <div className="tplanner-task-unit__note">{note}</div>}
         </div>
     );
 }

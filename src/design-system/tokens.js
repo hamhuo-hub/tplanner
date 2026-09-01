@@ -149,13 +149,14 @@ export const event = Object.freeze({
  * Timeline layout tokens — the single source for the horizontal day row.
  *
  * Derivation chain (see TaskUnit + index.css):
- *   font-size 15px × line-height 1.2  → title line height 18px
- *   checkbox 15px / progress badge    → never exceed 18px
- *   title vertical breathing room 5px top + 5px bottom, INSIDE the header box
- *   → header box = 5 + 18 + 5 = 28px, anchored at the card's own top (y = 0)
- *   → eventHeaderHeight = overlapReveal: the full title bar an overlaid
- *     column must leave visible. Changing the header design updates this
- *     single constant; the cascade algorithm has no magic numbers of its own.
+ *   title row 15px (15px font × line-height 1, checkbox matches)
+ *   + note row 11px (11px font × line-height 1)
+ *   + 2px gap  → title+note fill the summary exactly: 15 + 2 + 11 = 28px
+ *   title-only summaries center inside the same 28px box.
+ *   → eventSummaryHeight = overlapReveal: the fixed recognition zone an
+ *     overlaid column must leave visible. The cascade algorithm knows ONLY
+ *     this number — whether a note exists is the component's business, and
+ *     content beyond 28px clips instead of growing the box.
  */
 export const timeline = Object.freeze({
     // Status strip — px rows replace the old fixed 15% container whose px
@@ -165,7 +166,7 @@ export const timeline = Object.freeze({
     statusStripGap: 2, // breathing room between strip and event area
 
     // Event cascade — conflict axis (top/height), never the time axis.
-    eventHeaderHeight: 5 + 18 + 5, // full title bar = overlapReveal
+    eventSummaryHeight: 15 + 2 + 11, // 28px fixed recognition zone = overlapReveal
     eventMinHeight: 36, // one column's minimum body (former LANE_HEIGHT_PX)
     eventAreaBaseHeight: 44, // event area with a single column
     eventGap: 2, // vertical inset around a block (former +2px / -4px)
@@ -210,7 +211,7 @@ export function installDesignTokens(root = document.documentElement) {
         // Component layer — event block emphasis + the layout invariant that
         // the cascade algorithm depends on.
         '--event-text': event.text,
-        '--event-header-height': `${timeline.eventHeaderHeight}px`,
+        '--event-summary-height': `${timeline.eventSummaryHeight}px`,
     };
     eventColors.forEach((color, index) => {
         variables[`--clr-event-${index}`] = color;

@@ -597,17 +597,26 @@ input[type="number"] {
     min-width: 0;
 }
 
+.tplanner-task-unit__summary {
+    /* THE 28px recognition zone — eventSummaryHeight. The cascade algorithm
+       only knows this one number; title and note must fit inside it, and
+       anything below is body that the next column may cover. Content clips,
+       never grows the box. */
+    height: var(--event-summary-height, 28px);
+    flex-shrink: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    min-width: 0;
+}
+
 .tplanner-task-unit__header {
     display: flex;
     align-items: center;
     gap: 8px;
     min-width: 0;
-    /* Layout invariant: the header box is EXACTLY eventHeaderHeight. The
-       cascade algorithm (overlapReveal = eventHeaderHeight) depends on this
-       height never growing — titles stay single-line + ellipsis, so content
-       truncates but top/height/rowHeight never change. */
-    height: var(--event-header-height, 28px);
-    overflow: hidden;
     flex-shrink: 0;
 }
 
@@ -618,12 +627,13 @@ input[type="number"] {
     font-weight: 500;
     color: var(--event-text, var(--clr-text));
     /* Single line by design: long titles truncate with ellipsis and must
-       never wrap — a second line would change the header height and break
-       the cascade layout. */
+       never wrap — a second line would change the summary height and break
+       the cascade layout. line-height 1 keeps the row at 15px so a
+       title+note pair fits the 28px summary exactly. */
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    line-height: 1.2;
+    line-height: 1;
 }
 
 .tplanner-task-unit__title--completed {
@@ -640,7 +650,8 @@ input[type="number"] {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    margin-top: 1px;
+    line-height: 1;
+    flex-shrink: 0;
 }
 
 .tplanner-task-checkbox {
@@ -679,7 +690,7 @@ input[type="number"] {
 
 .tplanner-task-unit__accent {
     width: 3px;
-    height: var(--event-header-height, 28px);
+    align-self: stretch; /* fills the 15px header row, never defines its height */
     border-radius: 1px;
     flex-shrink: 0;
 }

@@ -86,7 +86,7 @@ describe('computeCascadeLayout', () => {
         return computeCascadeLayout({ assigned, groups, tokens: timeline });
     };
 
-    it('stagger columns by exactly eventHeaderHeight and bottom-align all of them', () => {
+    it('stagger columns by exactly eventSummaryHeight and bottom-align all of them', () => {
         const events = [t(9, 0, 12, 0), t(9, 0, 12, 0), t(9, 0, 12, 0)];
         const { rows, eventAreaHeight, maxColumns } = geom(events);
 
@@ -94,13 +94,13 @@ describe('computeCascadeLayout', () => {
         expect(eventAreaHeight).toBe(3 * timeline.eventMinHeight);
         expect(rows.map(r => r.topPx)).toEqual([
             timeline.eventGap,
-            timeline.eventGap + timeline.eventHeaderHeight,
-            timeline.eventGap + 2 * timeline.eventHeaderHeight,
+            timeline.eventGap + timeline.eventSummaryHeight,
+            timeline.eventGap + 2 * timeline.eventSummaryHeight,
         ]);
         expect(rows.map(r => r.heightPx)).toEqual([
             eventAreaHeight - 2 * timeline.eventGap,
-            eventAreaHeight - 2 * timeline.eventGap - timeline.eventHeaderHeight,
-            eventAreaHeight - 2 * timeline.eventGap - 2 * timeline.eventHeaderHeight,
+            eventAreaHeight - 2 * timeline.eventGap - timeline.eventSummaryHeight,
+            eventAreaHeight - 2 * timeline.eventGap - 2 * timeline.eventSummaryHeight,
         ]);
         // All columns share the same bottom edge — height = availableHeight - top.
         const bottoms = new Set(rows.map(r => r.topPx + r.heightPx));
@@ -129,15 +129,15 @@ describe('computeCascadeLayout', () => {
         expect(geom([t(9, 0, 10, 0), t(9, 30, 10, 30)]).eventAreaHeight).toBe(2 * timeline.eventMinHeight);
     });
 
-    it('keeps at least a full header of body for the deepest column', () => {
+    it('keeps at least a full summary of body for the deepest column', () => {
         const { rows } = geom([t(9, 0, 12, 0), t(9, 0, 12, 0), t(9, 0, 12, 0)]);
         const deepest = rows[2];
-        expect(deepest.heightPx).toBeGreaterThanOrEqual(timeline.eventHeaderHeight);
+        expect(deepest.heightPx).toBeGreaterThanOrEqual(timeline.eventSummaryHeight);
     });
 
-    it('overlapReveal equals the full header height token', () => {
+    it('overlapReveal equals the full summary height token', () => {
         const { rows } = geom([t(9, 0, 12, 0), t(9, 0, 12, 0), t(9, 0, 12, 0)]);
-        expect(rows[1].topPx - rows[0].topPx).toBe(timeline.eventHeaderHeight);
-        expect(rows[2].topPx - rows[1].topPx).toBe(timeline.eventHeaderHeight);
+        expect(rows[1].topPx - rows[0].topPx).toBe(timeline.eventSummaryHeight);
+        expect(rows[2].topPx - rows[1].topPx).toBe(timeline.eventSummaryHeight);
     });
 });

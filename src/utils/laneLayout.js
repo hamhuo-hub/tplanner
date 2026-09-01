@@ -85,16 +85,18 @@ export function assignOverlapGroupLanes(events) {
  * algorithm). The conflict axis is vertical:
  *
  *   column 0 → top = eventGap
- *   column i → top = eventGap + i × eventHeaderHeight
- *   height   = eventAreaHeight − 2×eventGap − i × eventHeaderHeight
+ *   column i → top = eventGap + i × eventSummaryHeight
+ *   height   = eventAreaHeight − 2×eventGap − i × eventSummaryHeight
  *
  * Every column bottom-aligns to the same edge, so a later column covers the
- * BODY of earlier columns while its full header (overlapReveal) stays
- * visible. The event area grows with the day's maximum column count so the
- * deepest column keeps at least one full header height of body.
+ * BODY of earlier columns while each event's fixed eventSummaryHeight
+ * recognition zone stays visible. The event area grows with the day's
+ * maximum column count so the deepest column keeps at least one full summary
+ * height of body. The algorithm knows nothing about note or content — only
+ * the summary height.
  *
  * @param {{assigned: Array, groups: Array}} layout result of assignOverlapGroupLanes
- * @param {{eventGap: number, eventHeaderHeight: number, eventMinHeight: number,
+ * @param {{eventGap: number, eventSummaryHeight: number, eventMinHeight: number,
  *          eventAreaBaseHeight: number}} tokens timeline tokens
  * @returns {{rows: Array, eventAreaHeight: number, maxColumns: number}}
  *   rows[i] is { event, topPx, heightPx } for the i-th assigned event;
@@ -108,8 +110,8 @@ export function computeCascadeLayout({ assigned, groups, tokens }) {
     );
     const rows = assigned.map(ev => ({
         event: ev,
-        topPx: tokens.eventGap + ev.laneIdx * tokens.eventHeaderHeight,
-        heightPx: eventAreaHeight - 2 * tokens.eventGap - ev.laneIdx * tokens.eventHeaderHeight,
+        topPx: tokens.eventGap + ev.laneIdx * tokens.eventSummaryHeight,
+        heightPx: eventAreaHeight - 2 * tokens.eventGap - ev.laneIdx * tokens.eventSummaryHeight,
     }));
     return { rows, eventAreaHeight, maxColumns };
 }

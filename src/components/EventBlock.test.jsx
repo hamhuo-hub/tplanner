@@ -58,4 +58,17 @@ describe('EventBlock state emphasis comes from design tokens', () => {
         // jsdom normalizes #C0392B to rgb(192, 57, 43)
         expect(el.style.borderColor).toBe('rgb(192, 57, 43)');
     });
+
+    test('note renders INSIDE the fixed summary zone, never below it', () => {
+        const { container } = render(
+            <EventBlock event={{ ...base, note: 'note text', end: new Date(2026, 8, 1, 11, 0) }} onClick={() => {}} />
+        );
+        expect(container.querySelector('.tplanner-task-unit__summary .tplanner-task-unit__note')).toBeTruthy();
+        expect(container.querySelector('.tplanner-task-unit__summary ~ .tplanner-task-unit__note')).toBeNull();
+    });
+
+    test('no note element is rendered without a note', () => {
+        const { container } = render(<EventBlock event={base} onClick={() => {}} />);
+        expect(container.querySelector('.tplanner-task-unit__note')).toBeNull();
+    });
 });

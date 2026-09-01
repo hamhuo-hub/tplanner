@@ -64,11 +64,12 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
 
     // ── Cascade geometry (TPlanner's rotated Google algorithm) ─────────────
     // Columns are LOCAL to overlap groups, and the conflict axis is vertical:
-    // column i starts at i × eventHeaderHeight and bottom-aligns with column 0,
-    // so a later column covers the body of earlier columns while its complete
-    // title bar (overlapReveal = eventHeaderHeight) stays visible. The event
-    // area grows only with the day's maximum column count — an isolated
-    // afternoon event keeps the full height even after a 3-way morning clash.
+    // column i starts at i × eventSummaryHeight and bottom-aligns with column 0,
+    // so a later column covers the body of earlier columns while each event's
+    // fixed 28px summary zone (overlapReveal = eventSummaryHeight) stays
+    // visible. The event area grows only with the day's maximum column count —
+    // an isolated afternoon event keeps the full height even after a 3-way
+    // morning clash.
     const { assigned: activeWithLane, groups: laneGroups } = assignOverlapGroupLanes(activeEvents);
     const { rows: cascadeRows, eventAreaHeight, maxColumns } = computeCascadeLayout({
         assigned: activeWithLane,
@@ -281,7 +282,7 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
 
                 {/* Column boundary lines at each header step (full row width) */}
                 {maxColumns > 1 && Array.from({ length: maxColumns - 1 }).map((_, i) => {
-                    const topPx = statusStripPx + (i + 1) * timeline.eventHeaderHeight;
+                    const topPx = statusStripPx + (i + 1) * timeline.eventSummaryHeight;
                     return (
                         <div key={`lane-sep-${i}`} style={{
                             position: 'absolute', left: 0, right: 0,
@@ -365,7 +366,7 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                             style={{
                                 left: `${(startMins / 1440) * 100}%`,
                                 width: `${((endMins - startMins) / 1440) * 100}%`,
-                                top: `${statusStripPx + timeline.eventGap}px`, height: `${eventAreaHeight - timeline.eventGap - timeline.eventHeaderHeight}px`, zIndex: 50, position: 'absolute',
+                                top: `${statusStripPx + timeline.eventGap}px`, height: `${eventAreaHeight - timeline.eventGap - timeline.eventSummaryHeight}px`, zIndex: 50, position: 'absolute',
                                 opacity: 0.75, border: '2px dashed rgba(201,168,76,0.8)',
                             }}
                         />

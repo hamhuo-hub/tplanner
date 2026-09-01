@@ -66,12 +66,12 @@ describe('design tokens — Type vs State separation', () => {
         expect(set.get('--text-disabled')).toBe(colors.textMuted);
         expect(set.get('--clr-event-0')).toBeTruthy();
         expect(set.get('--event-text')).toBe(semantic.text.primary);
-        expect(set.get('--event-header-height')).toBe(`${timeline.eventHeaderHeight}px`);
+        expect(set.get('--event-summary-height')).toBe(`${timeline.eventSummaryHeight}px`);
     });
 });
 
 describe('design tokens — timeline layout layer stays intact', () => {
-    it('overlapReveal equals the full title-bar height', () => {
-        expect(timeline.eventHeaderHeight).toBe(5 + 18 + 5);
+    it('overlapReveal equals the fixed summary height (title+note)', () => {
+        expect(timeline.eventSummaryHeight).toBe(15 + 2 + 11);
     });
 });
