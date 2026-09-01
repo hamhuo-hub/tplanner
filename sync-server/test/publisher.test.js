@@ -33,6 +33,7 @@ test('publishes the batch to the commands subject with Msg-Id dedupe', async () 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].subject, SUBJECT_COMMANDS);
   assert.equal(calls[0].opts.msgID, batch.batchId);
+  assert.equal(calls[0].opts.timeout, 2000);
   assert.deepEqual(JSON.parse(calls[0].payload), batch);
   assert.deepEqual(result, {
     batchId: batch.batchId,

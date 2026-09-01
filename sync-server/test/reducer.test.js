@@ -45,6 +45,50 @@ test('create then edit different fields keeps both edits', () => {
   assert.equal(state.tasks.t1.completed, true);
 });
 
+test('canonical task field commands preserve unrelated data', () => {
+  let { state } = run('task.create', 't1', { title: '完整任务' });
+  ({ state } = applyCommand(state, cmd('task.setExtras', 't1', {
+    extras: { futureField: { nested: true }, recurrenceType: 'weekly' },
+  }, 2), 2));
+  ({ state } = applyCommand(state, cmd('task.setAlarm', 't1', {
+    enabled: true,
+    offsetMinutes: 15,
+  }, 3), 3));
+  ({ state } = applyCommand(state, cmd('task.setAppearance', 't1', { colorId: 3 }, 4), 4));
+  ({ state } = applyCommand(state, cmd('task.setLocation', 't1', { lat: 31.23, lng: 121.47 }, 5), 5));
+  ({ state } = applyCommand(state, cmd('task.setRecurrence', 't1', {
+    recurrence: { frequency: 'weekly', count: 10, futureRule: 'keep-me' },
+  }, 6), 6));
+  ({ state } = applyCommand(state, cmd('task.setTitle', 't1', { title: '只改标题' }, 7), 7));
+
+  assert.deepEqual(state.tasks.t1.extras, {
+    futureField: { nested: true },
+    recurrenceType: 'weekly',
+  });
+  assert.deepEqual(state.tasks.t1.alarm, { enabled: true, offsetMinutes: 15 });
+  assert.equal(state.tasks.t1.colorId, 3);
+  assert.deepEqual(state.tasks.t1.location, { lat: 31.23, lng: 121.47 });
+  assert.deepEqual(state.tasks.t1.recurrence, {
+    frequency: 'weekly',
+    count: 10,
+    futureRule: 'keep-me',
+  });
+});
+
+test('canonical task field commands reject malformed payloads without mutating state', () => {
+  const { state } = run('task.create', 't1', {});
+  for (const command of [
+    cmd('task.setAlarm', 't1', { enabled: 'yes' }),
+    cmd('task.setLocation', 't1', { lat: '1', lng: null }),
+    cmd('task.setExtras', 't1', { extras: ['not-an-object'] }),
+    cmd('task.setRecurrence', 't1', { recurrence: 'weekly' }),
+  ]) {
+    const result = applyCommand(state, command, 2);
+    assert.equal(result.receipt.status, 'REJECTED');
+    assert.equal(result.state, state);
+  }
+});
+
 test('same value writes produce NOOP and no state change', () => {
   const { state: s1 } = run('task.create', 't1', { title: 'x' });
   const r = applyCommand(s1, cmd('task.setTitle', 't1', { title: 'x' }, 2), 2);
@@ -120,6 +164,38 @@ test('checklist lifecycle: create, complete, reorder by token, delete', () => {
   // 对已删 item 的编辑是 NOOP
   const gone = applyCommand(state, cmd('checklist.setCompleted', 't1', { checklistItemId: 'b', completed: true }, 8), 8);
   assert.equal(gone.receipt.status, 'NOOP');
+});
+
+test('checklist commands accept transitional text but only persist canonical title', () => {
+  let { state } = run('task.create', 't1', {});
+  ({ state } = applyCommand(state, cmd('checklist.createItem', 't1', {
+    checklistItemId: 'old-phone',
+    text: '不能丢失',
+  }, 2), 2));
+  assert.deepEqual(state.tasks.t1.checklist[0], {
+    id: 'old-phone',
+    title: '不能丢失',
+    completed: false,
+  });
+
+  // Simulate an old persisted item reaching the reducer before the one-shot migration.
+  state = {
+    ...state,
+    tasks: {
+      ...state.tasks,
+      t1: { ...state.tasks.t1, checklist: [{ id: 'legacy', text: '旧文本', completed: false }] },
+    },
+  };
+  ({ state } = applyCommand(state, cmd('checklist.setCompleted', 't1', {
+    checklistItemId: 'legacy',
+    completed: true,
+  }, 3), 3));
+  assert.deepEqual(state.tasks.t1.checklist[0], {
+    id: 'legacy',
+    title: '旧文本',
+    completed: true,
+  });
+  assert.equal('text' in state.tasks.t1.checklist[0], false);
 });
 
 test('checklist edit on deleted task is ENTITY_DELETED', () => {

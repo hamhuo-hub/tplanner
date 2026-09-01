@@ -1,6 +1,6 @@
 {
   "name": "tplanner-sync-server",
-  "version": "3.0.0",
+  "version": "8.0.0",
   "private": true,
   "description": "tPlanner Sync V3: NATS JetStream + State Builder + Fastify API",
   "type": "module",
@@ -10,9 +10,11 @@
   "scripts": {
     "start:api": "node src/api/server.js",
     "start:builder": "node src/materializer/main.js",
+    "migrate:canonical-tasks": "node scripts/migrate-canonical-task-fields.mjs",
     "test": "node --test \"test/**/*.test.js\""
   },
   "dependencies": {
+    "@fastify/cors": "^11.3.0",
     "@nats-io/jetstream": "^3.1.0",
     "@nats-io/transport-node": "^3.1.0",
     "ajv": "^8.17.1",

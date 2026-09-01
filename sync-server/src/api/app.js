@@ -1,9 +1,32 @@
 // Fastify 应用工厂:publisher / validateBatch / store 由调用方注入,便于 inject 测试。
 // 端点见 docs/sync-v3.md §11。
 import Fastify from 'fastify';
+import cors from '@fastify/cors';
 
-export function buildServer({ publisher, validateBatch, store, health, legacy }) {
-  const app = Fastify({ logger: false });
+const DEFAULT_NOTIFICATION_WAIT_MS = 25_000;
+const MAX_NOTIFICATION_WAIT_MS = 30_000;
+const CORS_METHODS = ['GET', 'POST', 'OPTIONS'];
+const CORS_ALLOWED_HEADERS = [
+  'Content-Type',
+  'Authorization',
+  'Idempotency-Key',
+  'Cache-Control',
+  'If-None-Match',
+];
+const CORS_EXPOSED_HEADERS = ['ETag', 'X-Snapshot-Version', 'X-State-Hash'];
+
+export function buildServer({ publisher, validateBatch, store, health, logger = false }) {
+  const app = Fastify({ logger });
+
+  app.register(cors, {
+    origin(origin, callback) {
+      callback(null, isAllowedOrigin(origin));
+    },
+    methods: CORS_METHODS,
+    allowedHeaders: CORS_ALLOWED_HEADERS,
+    exposedHeaders: CORS_EXPOSED_HEADERS,
+    maxAge: 86_400,
+  });
 
   // 命令批次入口。BROKER_PERSISTED 只表示"broker 已持久接收",不是全端同步成功。
   app.post('/tplanner/v3/command-batches', async (request, reply) => {
@@ -47,7 +70,7 @@ export function buildServer({ publisher, validateBatch, store, health, legacy })
     };
   });
 
-  // 最新快照:no-store,下载的是 gzip 信封;ETag 条件请求返回 304(§11/§22)
+  // 最新快照:no-store,只返回轻量 manifest;载荷由版本端点下载(§11/§22)
   app.get('/tplanner/v3/snapshots/latest', async (request, reply) => {
     const meta = store.latestSnapshotMeta();
     if (!meta) return reply.code(404).send({ error: 'SNAPSHOT_NOT_FOUND' });
@@ -55,9 +78,7 @@ export function buildServer({ publisher, validateBatch, store, health, legacy })
       return snapshotHeaders(reply, meta, { immutable: false }).code(304).send();
     }
     return snapshotHeaders(reply, meta, { immutable: false })
-      .header('Content-Type', 'application/octet-stream')
-      .header('Content-Encoding', 'gzip')
-      .send(store.snapshotPayload(meta.version));
+      .send(snapshotManifest(meta));
   });
 
   // 指定版本快照:immutable + ETag = compressedHash,支持 304(§11/§22)
@@ -72,9 +93,29 @@ export function buildServer({ publisher, validateBatch, store, health, legacy })
       return snapshotHeaders(reply, meta, { immutable: true }).code(304).send();
     }
     return snapshotHeaders(reply, meta, { immutable: true })
-      .header('Content-Type', 'application/octet-stream')
-      .header('Content-Encoding', 'gzip')
+      // This is a gzip *file*, not HTTP content coding. Setting
+      // Content-Encoding would make browsers transparently decompress it and
+      // invalidate compressedHash verification in the client.
+      .header('Content-Type', 'application/gzip')
       .send(store.snapshotPayload(version));
+  });
+
+  // 快照版本通知:若已有更新立即返回,否则等待 SQLite latest_snapshot 变化或超时。
+  app.get('/tplanner/v3/notifications', async (request, reply) => {
+    const afterVersion = parseNonNegativeInteger(request.query.afterVersion, 0);
+    if (afterVersion === null) {
+      return reply.code(400).send({ error: 'BAD_AFTER_VERSION' });
+    }
+    const waitMs = parseNonNegativeInteger(request.query.wait, DEFAULT_NOTIFICATION_WAIT_MS);
+    if (waitMs === null || waitMs > MAX_NOTIFICATION_WAIT_MS) {
+      return reply.code(400).send({ error: 'BAD_WAIT' });
+    }
+
+    const meta = await store.waitForLatestSnapshot(afterVersion, { waitMs });
+    return {
+      latestVersion: meta?.version ?? 0,
+      stateHash: meta?.stateHash ?? null,
+    };
   });
 
   // 设备快照安装 ACK:更新 device_progress(§11)
@@ -90,51 +131,44 @@ export function buildServer({ publisher, validateBatch, store, health, legacy })
 
   // 存活与就绪(§15)
   app.get('/health/live', async () => ({ status: 'alive' }));
-  app.get('/health/ready', async (request, reply) => {
+  const readiness = async (request, reply) => {
     const r = await health.readiness();
     return reply.code(r.ok ? 200 : 503).send(r);
-  });
+  };
+  app.get('/health/ready', readiness);
+  app.get('/health', readiness);
 
   // 运行指标(§15)
   app.get('/tplanner/v3/status', async () => health.status());
 
-  // ── V1 兼容路由(§21,过渡期专用;legacy 未注入则整个不注册)──
-  if (legacy) {
-    const legacyPut = (fn) => async (request, reply) => {
-      if (legacy.writesDisabled) {
-        return reply.code(410).send({ error: 'V1_WRITES_DISABLED' });
-      }
-      try {
-        return await fn(request);
-      } catch (err) {
-        if (err?.code === 'V1_WRITES_DISABLED') {
-          return reply.code(410).send({ error: 'V1_WRITES_DISABLED' });
-        }
-        throw err;
-      }
-    };
-
-    app.get('/tplanner/events', async () => legacy.getEvents());
-    app.put('/tplanner/events', legacyPut((request) => legacy.putEvents(request.body)));
-    app.get('/tplanner/journals', async () => legacy.getJournals());
-    app.put('/tplanner/journals', legacyPut((request) => legacy.putJournals(request.body)));
-    app.get('/tplanner/goals', async () => legacy.getGoals());
-    app.put('/tplanner/goals', legacyPut((request) => legacy.putGoals(request.body)));
-    app.get('/tplanner/insights', async () => legacy.getInsights());
-    app.put('/tplanner/insights', legacyPut((request) => legacy.putInsights(request.body)));
-    app.get('/tplanner/changes', async (request, reply) => {
-      const since = Number(request.query.since ?? 0);
-      if (!Number.isInteger(since) || since < 0) {
-        return reply.code(400).send({ error: 'BAD_SINCE' });
-      }
-      return legacy.changes({ since });
-    });
-    app.get('/tplanner/time', async () => legacy.serverTime());
-    // V1 健康检查别名(旧客户端与外部探针依赖 /health)
-    app.get('/health', async () => ({ status: 'ok' }));
-  }
-
   return app;
+}
+
+function isAllowedOrigin(origin) {
+  if (origin === undefined || origin === 'null' || origin === 'file://') return true;
+  if (origin === 'https://plan.hamhuo.top') return true;
+  return /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/.test(origin);
+}
+
+function parseNonNegativeInteger(value, fallback) {
+  if (value === undefined) return fallback;
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+function snapshotManifest(meta) {
+  return {
+    snapshotVersion: meta.version,
+    parentVersion: meta.parentVersion,
+    schemaVersion: meta.schemaVersion,
+    stateHash: meta.stateHash,
+    compressedHash: meta.compressedHash,
+    encoding: 'gzip',
+    compressedBytes: meta.compressedBytes,
+    uncompressedBytes: meta.uncompressedBytes,
+    serverInstanceId: meta.serverInstanceId,
+  };
 }
 
 function isNotModified(request, compressedHash) {

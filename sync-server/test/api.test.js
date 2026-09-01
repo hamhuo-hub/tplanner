@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
 import { openDatabase } from '../src/state/database.js';
 import { createMaterializer } from '../src/materializer/materializer.js';
@@ -13,6 +14,10 @@ function buildApi(db) {
     publisher: { publish: async () => ({}) },
     validateBatch: () => null,
     store,
+    health: {
+      readiness: async () => ({ ok: true, status: 'ready' }),
+      status: async () => ({}),
+    },
   });
   return { app, store };
 }
@@ -54,6 +59,7 @@ test('capabilities reports protocol, server, and latest snapshot version', async
   const res = await app.inject({ method: 'GET', url: '/tplanner/v3/capabilities' });
   assert.equal(res.statusCode, 200);
   const body = res.json();
+  assert.equal(body.softwareVersion, '8.0.0');
   assert.equal(body.protocolVersion, 3);
   assert.equal(body.schemaVersion, 3);
   assert.equal(body.serverInstanceId, 'srv-api-test');
@@ -95,21 +101,18 @@ test('receipts endpoint returns results after the cursor', async () => {
   db.close();
 });
 
-test('snapshots/latest serves the gzipped envelope with no-store', async () => {
+test('snapshots/latest serves a JSON manifest with no-store', async () => {
   const db = openDatabase(':memory:');
   const { snapshot } = seedCommands(db);
   const { app } = buildApi(db);
 
   const res = await app.inject({ method: 'GET', url: '/tplanner/v3/snapshots/latest' });
   assert.equal(res.statusCode, 200);
-  assert.equal(res.headers['content-encoding'], 'gzip');
+  assert.match(res.headers['content-type'], /^application\/json/);
+  assert.equal(res.headers['content-encoding'], undefined);
   assert.equal(res.headers['cache-control'], 'no-store');
   assert.equal(res.headers['x-state-hash'], snapshot.manifest.stateHash);
-
-  const envelope = JSON.parse(gunzipSync(res.rawPayload).toString('utf8'));
-  assert.equal(envelope.snapshotVersion, 1);
-  assert.equal(envelope.state.tasks['t-1'].title, '任务');
-  assert.equal(envelope.state.tasks['t-1'].completed, true);
+  assert.deepEqual(res.json(), snapshot.manifest);
   db.close();
 });
 
@@ -124,13 +127,23 @@ test('snapshots/latest returns 404 before the first snapshot', async () => {
 
 test('snapshots/:version serves immutable bytes with ETag; 404 for unknown', async () => {
   const db = openDatabase(':memory:');
-  seedCommands(db);
+  const { snapshot } = seedCommands(db);
   const { app } = buildApi(db);
 
   const res = await app.inject({ method: 'GET', url: '/tplanner/v3/snapshots/1' });
   assert.equal(res.statusCode, 200);
   assert.match(res.headers.etag, /^"sha256:[0-9a-f]{64}"$/);
   assert.equal(res.headers['cache-control'], 'private, max-age=31536000, immutable');
+  assert.equal(res.headers['content-type'], 'application/gzip');
+  assert.equal(res.headers['content-encoding'], undefined);
+  assert.equal(
+    `sha256:${createHash('sha256').update(res.rawPayload).digest('hex')}`,
+    snapshot.manifest.compressedHash,
+  );
+  const envelope = JSON.parse(gunzipSync(res.rawPayload).toString('utf8'));
+  assert.equal(envelope.snapshotVersion, 1);
+  assert.equal(envelope.state.tasks['t-1'].title, '任务');
+  assert.equal(envelope.state.tasks['t-1'].completed, true);
 
   const missing = await app.inject({ method: 'GET', url: '/tplanner/v3/snapshots/99' });
   assert.equal(missing.statusCode, 404);
@@ -139,6 +152,140 @@ test('snapshots/:version serves immutable bytes with ETag; 404 for unknown', asy
   const bad = await app.inject({ method: 'GET', url: '/tplanner/v3/snapshots/abc' });
   assert.equal(bad.statusCode, 400);
   assert.equal(bad.json().error, 'BAD_SNAPSHOT_VERSION');
+  db.close();
+});
+
+test('CORS preflight and responses allow Web, local development, and Electron origins', async () => {
+  const db = openDatabase(':memory:');
+  seedCommands(db);
+  const { app } = buildApi(db);
+
+  const preflight = await app.inject({
+    method: 'OPTIONS',
+    url: '/tplanner/v3/command-batches',
+    headers: {
+      origin: 'https://plan.hamhuo.top',
+      'access-control-request-method': 'POST',
+      'access-control-request-headers': [
+        'content-type', 'authorization', 'idempotency-key', 'cache-control', 'if-none-match',
+      ].join(', '),
+    },
+  });
+  assert.equal(preflight.statusCode, 204);
+  assert.equal(preflight.headers['access-control-allow-origin'], 'https://plan.hamhuo.top');
+  assert.equal(preflight.headers['access-control-allow-methods'], 'GET, POST, OPTIONS');
+  for (const header of ['Authorization', 'Idempotency-Key', 'Cache-Control', 'If-None-Match']) {
+    assert.match(preflight.headers['access-control-allow-headers'], new RegExp(header, 'i'));
+  }
+
+  for (const origin of ['http://localhost:5173', 'https://127.0.0.1:4173', 'null', 'file://']) {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/tplanner/v3/snapshots/latest',
+      headers: { origin },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.headers['access-control-allow-origin'], origin);
+    assert.equal(
+      res.headers['access-control-expose-headers'],
+      'ETag, X-Snapshot-Version, X-State-Hash',
+    );
+  }
+
+  const denied = await app.inject({
+    method: 'GET',
+    url: '/tplanner/v3/snapshots/latest',
+    headers: { origin: 'https://example.invalid' },
+  });
+  assert.equal(denied.headers['access-control-allow-origin'], undefined);
+  db.close();
+});
+
+test('notifications returns the current version and hash after its wait times out', async () => {
+  const db = openDatabase(':memory:');
+  const { snapshot } = seedCommands(db);
+  const { app } = buildApi(db);
+  const startedAt = Date.now();
+
+  const res = await app.inject({
+    method: 'GET',
+    url: '/tplanner/v3/notifications?afterVersion=1&wait=20',
+  });
+  const elapsedMs = Date.now() - startedAt;
+
+  assert.equal(res.statusCode, 200);
+  assert.ok(elapsedMs >= 10, `long poll returned too early (${elapsedMs}ms)`);
+  assert.ok(elapsedMs < 500, `long poll exceeded its deadline (${elapsedMs}ms)`);
+  assert.deepEqual(res.json(), {
+    latestVersion: 1,
+    stateHash: snapshot.manifest.stateHash,
+  });
+  db.close();
+});
+
+test('notifications wakes when SQLite publishes a newer latest snapshot', async () => {
+  const db = openDatabase(':memory:');
+  const { app } = buildApi(db);
+  await app.ready();
+
+  const pending = app.inject({
+    method: 'GET',
+    url: '/tplanner/v3/notifications?afterVersion=0&wait=1000',
+  });
+  await new Promise((resolve) => setTimeout(resolve, 75));
+  const { snapshot } = seedCommands(db);
+  const res = await pending;
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.json(), {
+    latestVersion: 1,
+    stateHash: snapshot.manifest.stateHash,
+  });
+  db.close();
+});
+
+test('notifications rejects invalid cursors and excessive waits', async () => {
+  const db = openDatabase(':memory:');
+  const { app } = buildApi(db);
+
+  const badCursor = await app.inject({
+    method: 'GET',
+    url: '/tplanner/v3/notifications?afterVersion=-1&wait=0',
+  });
+  assert.equal(badCursor.statusCode, 400);
+  assert.equal(badCursor.json().error, 'BAD_AFTER_VERSION');
+
+  const badWait = await app.inject({
+    method: 'GET',
+    url: '/tplanner/v3/notifications?afterVersion=0&wait=30001',
+  });
+  assert.equal(badWait.statusCode, 400);
+  assert.equal(badWait.json().error, 'BAD_WAIT');
+  db.close();
+});
+
+test('V1 dataset routes are retired while /health remains a V3 readiness alias', async () => {
+  const db = openDatabase(':memory:');
+  const { app } = buildApi(db);
+
+  for (const url of [
+    '/tplanner/events',
+    '/tplanner/journals',
+    '/tplanner/goals',
+    '/tplanner/insights',
+    '/tplanner/changes?since=0',
+    '/tplanner/time',
+  ]) {
+    const res = await app.inject({ method: 'GET', url });
+    assert.equal(res.statusCode, 404, `${url} must no longer be registered`);
+  }
+
+  const write = await app.inject({ method: 'PUT', url: '/tplanner/events', payload: [] });
+  assert.equal(write.statusCode, 404);
+
+  const health = await app.inject({ method: 'GET', url: '/health' });
+  assert.equal(health.statusCode, 200);
+  assert.deepEqual(health.json(), { ok: true, status: 'ready' });
   db.close();
 });
 

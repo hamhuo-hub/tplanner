@@ -152,11 +152,12 @@ PC 人工冲突选择不再作为同步机制;可保留历史版本入口,恢复
 
 ```
 收到首条 MQ 消息 → 开始 integration batch
-→ 距最后一条安静 1000ms 结束 | 自首条起 5s 强制结束 | 100 条命令 | 256 KiB
+→ 距最后一条安静 100ms 结束 | 自首条起 5s 强制结束 | 100 条命令 | 256 KiB
 ```
 
-> nats.js v3 的 pull consumer 要求 `expires >= 1000ms`,静默窗口因此定为 1000ms;
-> 单条孤立命令进入新快照的延迟 ≈1s,连续命令仍合入同一批(§6 原 50/200ms 目标受客户端约束放宽)。
+> nats.js v3 的 pull consumer 要求 `expires >= 1000ms`。State Builder 只保持一个
+> 在途 pull，并用本地 100ms timer 截断当前 integration batch；未完成的 pull
+> 复用于下一批，因此不会丢消息或乱序，也不会把孤立命令固定延迟一秒。
 
 然后:按 MQ sequence 排序 → 去重 → 顺序执行 reducer → 单 SQLite 事务写实体/回执/快照/发布 outbox → 提交 → 更新内存缓存 → 发布 `snapshot.ready` → ACK 本批消息。
 
@@ -279,11 +280,11 @@ PRAGMA:`journal_mode = WAL; synchronous = FULL; foreign_keys = ON; busy_timeout 
 
 | 端点 | 说明 |
 |---|---|
-| `GET /tplanner/v3/capabilities` | 协议/schema 版本、serverInstanceId、latestSnapshotVersion、批次上限 |
+| `GET /tplanner/v3/capabilities` | software/protocol/schema 版本、serverInstanceId、latestSnapshotVersion、批次上限 |
 | `POST /tplanner/v3/command-batches` + `Idempotency-Key: batchId` | 返回 `{batchId, brokerSequence, state: BROKER_PERSISTED}` |
 | `GET /tplanner/v3/receipts?afterClientSequence=N` | `{acceptedThrough, results[]}` |
 | `GET /tplanner/v3/snapshots/latest` | `Cache-Control: no-store` |
-| `GET /tplanner/v3/snapshots/{version}` | `ETag: compressedHash`,`immutable`,`Content-Encoding: gzip`;只允许 private cache |
+| `GET /tplanner/v3/snapshots/{version}` | `ETag: compressedHash`,`immutable`,`Content-Type: application/gzip`;不设置 `Content-Encoding`，确保浏览器返回可校验 `compressedHash` 的原始压缩字节；只允许 private cache |
 | `GET /tplanner/v3/notifications?afterVersion=N&wait=25000` | 长轮询,只返回 version+hash |
 | `POST /tplanner/v3/devices/{deviceId}/snapshot-acks` | `{version, stateHash}` |
 
@@ -293,9 +294,9 @@ PRAGMA:`journal_mode = WAL; synchronous = FULL; foreign_keys = ON; busy_timeout 
 
 ### 已定决策(评审结论)
 
-- **设备重置**:deviceId 每次安装新生成,永不随备份恢复;新增 `POST /tplanner/v3/devices/reset` 重置服务器侧序列基准,避免重装后永久 SEQUENCE_GAP。
-- **V1 兼容路由**:`PUT /tplanner/events` 在服务器侧先 diff 当前权威态,只把变化字段转为细粒度命令,禁止旧客户端整库覆盖;`GET /tplanner/events` 从最新快照投影;`GET /tplanner/changes` 生成旧格式通知。
-- **循环任务展开(初始决定,可改)**:State Builder 拥有展开权,实例 ID 确定性(`taskId + 日期`),重复 create 幂等;否则手机/桌面各自展开会产生双份实例。
+- **设备重置**:deviceId 每次安装新生成且永不随备份恢复；服务器不提供 reset 端点，新安装以新 deviceId 从 clientSequence 1 开始。
+- **旧数据集协议已退役**:8.0.0 不再注册 dataset GET/PUT、changes 或兼容 adapter；`/health` 仅作为 V3 readiness 别名保留。
+- **循环任务展开(8.0.0 契约)**:客户端在首次创建时以确定性 ID 展开成独立 `task.create` facts；中央只权威保存每个事实的 recurrence 字段，不再二次展开，避免生成双份实例。
 - **canonical hash**:RFC 8785 (JCS)。
 - **日边界时区**:journal 切日与 watch projection 分桶固定按 Asia/Shanghai 计算,写入 schema 说明。
 - **checklist.reorderItem**:用"移到某 item 之前"的 token 语义,不用绝对下标。
@@ -360,33 +361,35 @@ Caddy: 443 → 127.0.0.1:37401 自动证书;NATS 监听 127.0.0.1:4222,监控 12
 
 ## 17. 迁移、回滚与兼容
 
-### 旧数据迁移
+### 8.0.0 权威字段迁移
 
-1. 部署 V3 组件,不接管端口 → 2. dry-run importer(统计、ID 唯一性、剥 groupId、确认 Inbox/Today 未导入、deleted 生命周期、canonical hash)→ 3. 维护窗口 → 4. 停旧服务 → 5. 四个 JSON 带时间与 SHA-256 只读备份 → 6. 最终导入 → 7. 单事务生成 Snapshot V1 → 8. V1 导出为 legacy JSON 语义比对 → 9. 建 JetStream/consumer/发布流 → 10. 启动 State Builder → 11. 启动 V3 API 接管 37401 → 12. smoke test(上传命令 → ACK → V2 → 下载校验 hash)→ 13. 逐端发布 V3 客户端。
+维护窗口中停止 API 与 State Builder → 生成并校验 SQLite Online Backup →
+等待 writer lease 失效 → 运行 `scripts/migrate-canonical-task-fields.mjs` →
+逐任务把 checklist `text` 归一为 `title`、root `start/end` 提升为
+`schedule {startAt,endAt}`、root `type` 提升为 `itemType`，并把
+recurrence/alarm/location 纳入正式模型；timezone、extras 与未知字段无损保留 →
+同一事务发布新快照 → 按 NATS、Builder、API 顺序启动并 smoke test。
 
-### V1 兼容窗口
-
-V3 API 提供 `GET/PUT /tplanner/events` 与 `GET /tplanner/changes` 兼容路由(PUT 按 §11 的 diff 规则转命令)。新客户端全部上线且连续 7 天无 V1 PUT → 禁用 V1 写入 → 再观察 7 天 → 删除 V1 路由与旧 merge 代码。
+旧数据集兼容窗口已经结束。恢复到会重新开放整库 PUT 的版本不再是受支持的回滚路径。
 
 ### 回滚
 
-- V3 客户端上线前:停 V3,用迁移前 JSON 备份恢复旧服务。
-- V3 客户端上线后:只能回滚到兼容同协议的版本;DB expand-only migration;从 `materializedThroughSequence + 1` 续消费;DB 损坏则恢复 SQLite backup 再从 JetStream 重放;版本号只能前进。客户端获 `BROKER_PERSISTED` 前不删 outbox,正是为此。
+- 只能回滚到兼容 V3 协议、且不会重新开放整库 PUT 的版本。DB migration 必须可重放；从 `materializedThroughSequence + 1` 续消费。DB 损坏则恢复已校验的 SQLite backup 再从 JetStream 重放；版本号只能前进。客户端获 `BROKER_PERSISTED` 前不删 outbox，正是为此。
 
 ## 18. 实施计划(66 提交,里程碑化)
 
-- **M1 sync_server**:A 协议(1–5)+ B 服务器(6–27),含 V1 兼容路由与 smoke test;旧客户端全程不受影响。
+- **M1 sync_server**:A 协议(1–5)+ B 服务器(6–27)已完成；8.0.0 已删除过渡兼容层。
 - **M2 master 桌面/Web**(42–53):改动最小、调试最快,先当小白鼠。
 - **M3 mobile_andorid 手机 + 手表桥接**(28–41, 54–61):一起做,手表走手机。
 - **M4 Web 收尾**:与 Electron 共用协议层。
-- **M5 清理**(62–66):观察期后删 V1。
+- **M5 清理**(62–66):观察期结束，8.0.0 完成旧协议退役。
 
 A. 协议与共享规范:1 `docs(sync-v3)` 架构文档 · 2 command-batch/receipt schema · 3 snapshot schema · 4 跨平台协议 fixtures · 5 确定性 reducer fixtures。
-B. sync_server:6 NATS 配置 · 7 用户与目录规范化 · 8 broker 发布器 · 9 命令入口端点 · 10 SQLite schema/migration · 11 legacy JSON 导入 · 12 幂等回执 · 13 确定性 task reducer · 14 list/journal/goal/insight reducers · 15 有序 materializer · 16 不可变快照生成 · 17 事务发布 outbox · 18 snapshot.ready 发布 · 19 快照与回执 API · 20 设备进度 · 21 V1 兼容适配 · 22 快照缓存与条件下载 · 23 指标与状态端点 · 24 备份工具 · 25 重复投递与崩溃恢复测试 · 26 并发排序测试 · 27 Pi 负载压测。
+B. sync_server:6 NATS 配置 · 7 用户与目录规范化 · 8 broker 发布器 · 9 命令入口端点 · 10 SQLite schema/migration · 11 历史数据一次性导入(已删除 importer) · 12 幂等回执 · 13 确定性 task reducer · 14 list/journal/goal/insight reducers · 15 有序 materializer · 16 不可变快照生成 · 17 事务发布 outbox · 18 snapshot.ready 发布 · 19 快照与回执 API · 20 设备进度 · 21 过渡兼容层(8.0.0 已退役并删除) · 22 快照缓存与条件下载 · 23 指标与状态端点 · 24 备份工具 · 25 重复投递与崩溃恢复测试 · 26 并发排序测试 · 27 Pi 负载压测。
 C. mobile_andorid:28 命令 outbox schema · 29 本地 optimistic reducer · 30 任务写入走命令仓库 · 31 journal/list 写入走命令 · 32 上传批次 · 33 回执与进度持久化 · 34 快照下载校验 · 35 快照原子安装 + pending overlay · 36 版本通知替换数据集监听 · 37 删除操作后 fetchEvents · 38 单一队列泵替换 worker 链 · 39 分级状态与错误码 · 40 快照安装与 pending 重放测试 · 41 离线删除不复活测试。
 D. master:42 IndexedDB outbox 与元数据 · 43 本地 optimistic reducer · 44 写路径走命令仓库 · 45 批次上传 · 46 快照原子安装 · 47 通知与回执持久化 · 48 Web 共用镜像与 outbox · 49 移除三方合并 · 50 移除 save 前 GET 整库 · 51 移除 Promise 全量同步链 · 52 冲突弹窗改历史/拒绝提示 · 53 并发命令与快照替换测试。
 E. 手表与桥接:54 共享命令信封 · 55 每连接批发送 · 56 手机幂等持久化桥接命令 · 57 手表 PHONE_STORED/SNAPSHOT_PUBLISHED 回执 · 58 手机从全局快照构建手表投影 · 59 手表投影原子安装 · 60 双通道去重测试 · 61 断连保 pending 测试。
-F. 部署与清理:62 切换与回滚脚本 · 63 systemd 健康与重启策略 · 64 运维与灾备 runbook · 65 禁用 V1 写入 · 66 删除旧全量合并协议。
+F. 部署与清理:62 独立部署入口 · 63 systemd 健康与重启策略 · 64 运维与灾备 runbook · 65 过渡写入已禁用 · 66 8.0.0 已删除旧全量合并协议、路由与回滚脚本。
 
 ## 19. 故障测试与验收
 

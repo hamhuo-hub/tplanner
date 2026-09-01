@@ -67,6 +67,25 @@ test('health/live always reports alive', async () => {
   db.close();
 });
 
+test('/health is an alias for V3 readiness', async () => {
+  const db = openDatabase(':memory:');
+  const { app } = buildApp(db, { now: () => 1_000_000 });
+
+  const before = await app.inject({ method: 'GET', url: '/health' });
+  assert.equal(before.statusCode, 503);
+  assert.equal(before.json().checks.latestSnapshot, false);
+
+  seedCommands(db);
+  db.prepare('INSERT INTO state_builder_lease (singleton_id, owner_id, lease_expires_at) VALUES (1, ?, ?)').run(
+    'builder-a',
+    1_030_000,
+  );
+  const after = await app.inject({ method: 'GET', url: '/health' });
+  assert.equal(after.statusCode, 200);
+  assert.equal(after.json().ok, true);
+  db.close();
+});
+
 test('status reports latest version, broker sequence, materialized through, and queue lag', async () => {
   const db = openDatabase(':memory:');
   seedCommands(db);
@@ -75,6 +94,7 @@ test('status reports latest version, broker sequence, materialized through, and 
   const res = await app.inject({ method: 'GET', url: '/tplanner/v3/status' });
   assert.equal(res.statusCode, 200);
   const body = res.json();
+  assert.equal(body.softwareVersion, '8.0.0');
   assert.equal(body.serverInstanceId, 'srv-mon-test');
   assert.equal(body.latestSnapshotVersion, 1);
   assert.equal(body.brokerLastSequence, 520);

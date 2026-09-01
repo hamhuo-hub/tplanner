@@ -8,8 +8,9 @@
 //   - 重复设置相同值返回 NOOP,不产生状态变化。
 //
 // 实体规范:task = { title, note, completed, itemType, [schedule], [recurrence],
-//   [listId], [checklist], lifecycle, deletedAt }
+//   [alarm], [colorId], [location], [extras], [listId], [checklist], lifecycle, deletedAt }
 // 字段按需出现(未被命令触及的字段不写入),保证与 fixtures 逐键一致。
+import { canonicalizeChecklistItem } from '../state/canonicalTask.js';
 
 export function emptyState() {
   return { tasks: {}, customLists: {}, journals: {}, goals: {}, insights: {} };
@@ -17,6 +18,9 @@ export function emptyState() {
 
 const REJECTED = (errorCode) => ({ status: 'REJECTED', errorCode });
 const NOOP = (errorCode) => ({ status: 'NOOP', ...(errorCode ? { errorCode } : {}) });
+
+const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
+const jsonEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 function findActive(entity) {
   if (!entity) return { receipt: REJECTED('ENTITY_NOT_FOUND') };
@@ -83,8 +87,52 @@ const TASK = {
 
   'task.setRecurrence'(state, cmd) {
     const recurrence = cmd.arguments?.recurrence ?? null;
+    if (recurrence !== null && (
+      !isObject(recurrence)
+      || typeof recurrence.frequency !== 'string'
+      || recurrence.frequency === ''
+      || !Number.isInteger(recurrence.count)
+      || recurrence.count < 1
+    )) {
+      return { state, receipt: REJECTED('INVALID_RECURRENCE') };
+    }
     return updateTask(state, cmd.aggregateId, (t) =>
-      JSON.stringify(t.recurrence) === JSON.stringify(recurrence) ? t : { ...t, recurrence });
+      jsonEqual(t.recurrence, recurrence) ? t : { ...t, recurrence });
+  },
+
+  'task.setAlarm'(state, cmd) {
+    const { enabled } = cmd.arguments ?? {};
+    const offsetMinutes = Number(cmd.arguments?.offsetMinutes);
+    if (typeof enabled !== 'boolean' || !Number.isInteger(offsetMinutes)) {
+      return { state, receipt: REJECTED('INVALID_ALARM') };
+    }
+    const alarm = { enabled, offsetMinutes };
+    return updateTask(state, cmd.aggregateId, (t) =>
+      jsonEqual(t.alarm, alarm) ? t : { ...t, alarm });
+  },
+
+  'task.setAppearance'(state, cmd) {
+    const colorId = Number(cmd.arguments?.colorId);
+    if (!Number.isInteger(colorId) || colorId < 0) {
+      return { state, receipt: REJECTED('INVALID_COLOR_ID') };
+    }
+    return updateTask(state, cmd.aggregateId, (t) => (t.colorId === colorId ? t : { ...t, colorId }));
+  },
+
+  'task.setLocation'(state, cmd) {
+    const { lat = null, lng = null } = cmd.arguments ?? {};
+    const valid = (value) => value === null || (typeof value === 'number' && Number.isFinite(value));
+    if (!valid(lat) || !valid(lng)) return { state, receipt: REJECTED('INVALID_LOCATION') };
+    const location = { lat, lng };
+    return updateTask(state, cmd.aggregateId, (t) =>
+      jsonEqual(t.location, location) ? t : { ...t, location });
+  },
+
+  'task.setExtras'(state, cmd) {
+    const extras = cmd.arguments?.extras;
+    if (!isObject(extras)) return { state, receipt: REJECTED('INVALID_EXTRAS') };
+    return updateTask(state, cmd.aggregateId, (t) =>
+      jsonEqual(t.extras ?? {}, extras) ? t : { ...t, extras: { ...extras } });
   },
 
   'task.changeType'(state, cmd) {
@@ -141,18 +189,29 @@ const CHECKLIST = {
     if (typeof itemId !== 'string' || itemId === '') return { state, receipt: REJECTED('MISSING_CHECKLIST_ITEM_ID') };
     const checklist = entity.checklist ?? [];
     if (checklist.some((i) => i.id === itemId)) return { state, receipt: NOOP() };
-    const item = { id: itemId, title: typeof args.title === 'string' ? args.title : '', completed: false };
+    const item = {
+      id: itemId,
+      title: typeof args.title === 'string' ? args.title : (typeof args.text === 'string' ? args.text : ''),
+      completed: false,
+    };
     return setField(state, cmd.aggregateId, { checklist: [...checklist, item] });
   },
 
   'checklist.setTitle'(state, cmd) {
-    const title = String(cmd.arguments?.title ?? '');
-    return updateChecklistItem(state, cmd, (item) => (item.title === title ? item : { ...item, title }));
+    // Transitional callers may still send `text`; state is always canonical `title`.
+    const title = String(cmd.arguments?.title ?? cmd.arguments?.text ?? '');
+    return updateChecklistItem(state, cmd, (item) => {
+      const canonical = canonicalizeChecklistItem(item);
+      return canonical.title === title ? canonical : { ...canonical, title };
+    });
   },
 
   'checklist.setCompleted'(state, cmd) {
     const completed = Boolean(cmd.arguments?.completed);
-    return updateChecklistItem(state, cmd, (item) => (item.completed === completed ? item : { ...item, completed }));
+    return updateChecklistItem(state, cmd, (item) => {
+      const canonical = canonicalizeChecklistItem(item);
+      return canonical.completed === completed ? canonical : { ...canonical, completed };
+    });
   },
 
   'checklist.deleteItem'(state, cmd) {
@@ -163,7 +222,7 @@ const CHECKLIST = {
   'checklist.reorderItem'(state, cmd) {
     const { entity, receipt } = findActive(state.tasks[cmd.aggregateId]);
     if (receipt) return { state, receipt };
-    const checklist = [...(entity.checklist ?? [])]; // 拷贝,绝不在旧状态上原地修改
+    const checklist = (entity.checklist ?? []).map(canonicalizeChecklistItem); // 拷贝+迁移旧 text
     const itemId = cmd.arguments?.checklistItemId;
     const beforeId = cmd.arguments?.beforeItemId ?? null;
     const from = checklist.findIndex((i) => i.id === itemId);

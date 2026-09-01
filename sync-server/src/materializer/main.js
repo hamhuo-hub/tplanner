@@ -15,7 +15,7 @@ import { jetstreamManager } from '@nats-io/jetstream';
 import { openDatabase } from '../state/database.js';
 import { createLease } from './lease.js';
 import { createOutboxDriver, SUBJECT_SNAPSHOT_READY } from './outbox.js';
-import { createMaterializer } from './materializer.js';
+import { createMaterializer, ensureBootstrapSnapshot } from './materializer.js';
 import { applyCommand } from './reducer.js';
 import { createNatsConnection } from '../broker/natsConnection.js';
 import { ensureStreams } from '../broker/streams.js';
@@ -26,14 +26,98 @@ const STREAM_COMMANDS = 'TPLANNER_COMMANDS';
 const CONSUMER_NAME = 'state-builder';
 const SUBJECT_COMMANDS = 'tplanner.v3.commands';
 
-// integration batch 边界(§6):nats.js v3 的 pull expires 下限 1000ms,
-// 静默窗口因此取 1000ms(单命令场景快照延迟 ≈1s);强制上限防长流无限合并。
-const LIMITS = {
-  quietMs: 1000, // 距最后一条消息安静 1000ms 结束
+// integration batch 边界(§6)。nats.js v3 要求 pull expires >= 1000ms，
+// 但业务静默窗口不应因此被放大：reader 保留尚未完成的 pull，并用本地
+// 100ms timer 决定当前批次边界；迟到的 pull 结果会成为下一批的首条消息，
+// 不会丢失、越序或产生第二个并发 pull。
+export const LIMITS = {
+  quietMs: 100, // 距最后一条消息安静 100ms 结束
   forcedMs: 5000, // 自首条起 5s 强制结束(兜底)
   maxCommands: 100,
   maxBytes: 256 * 1024,
 };
+
+const MIN_PULL_EXPIRES_MS = 1000;
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * 在 nats.js 的 1s pull 下限之上提供本地静默窗口。
+ *
+ * 同一时刻最多只有一个 consumer.next 在途。quiet/forced timer 先到时，
+ * pending pull 被保留下来并在下一次 nextBatch 复用；因此已经被 broker
+ * 投递、但未进入当前批次的消息不会被遗忘。
+ */
+export function createIntegrationBatchReader(
+  consumer,
+  {
+    limits = LIMITS,
+    now = () => Date.now(),
+    wait = delay,
+  } = {},
+) {
+  let pendingPull = null;
+
+  const beginPull = (expires) => {
+    if (!pendingPull) {
+      pendingPull = consumer.next({ expires: Math.max(MIN_PULL_EXPIRES_MS, expires) }).then(
+        (value) => ({ value }),
+        (error) => ({ error }),
+      );
+    }
+    return pendingPull;
+  };
+
+  const finishPull = async (expires) => {
+    const pull = beginPull(expires);
+    const result = await pull;
+    if (pendingPull === pull) pendingPull = null;
+    if (result.error) throw result.error;
+    return result.value;
+  };
+
+  async function nextBatch() {
+    const first = await finishPull(60_000);
+    if (!first) return null;
+
+    const batchStartMs = now();
+    const messages = [first];
+    let entries = expandMessage(first);
+    let bytes = first.data.length;
+
+    while (entries.length < limits.maxCommands && bytes < limits.maxBytes) {
+      const forcedRemainingMs = limits.forcedMs - (now() - batchStartMs);
+      if (forcedRemainingMs <= 0) break;
+
+      const pull = beginPull(MIN_PULL_EXPIRES_MS);
+      const boundaryMs = Math.min(limits.quietMs, forcedRemainingMs);
+      const outcome = await Promise.race([
+        pull.then((result) => ({ kind: 'pull', result })),
+        wait(boundaryMs).then(() => ({ kind: 'boundary' })),
+      ]);
+
+      if (outcome.kind === 'boundary') {
+        // 保留 pendingPull；下一批会先消费同一个结果。
+        break;
+      }
+
+      if (pendingPull === pull) pendingPull = null;
+      if (outcome.result.error) throw outcome.result.error;
+      const next = outcome.result.value;
+      if (!next) break;
+
+      messages.push(next);
+      entries = [...entries, ...expandMessage(next)];
+      bytes += next.data.length;
+    }
+
+    return { messages, entries };
+  }
+
+  return { nextBatch };
+}
 
 export function expandMessage(msg) {
   const batch = JSON.parse(Buffer.from(msg.data).toString('utf8'));
@@ -65,16 +149,17 @@ export async function startStateBuilder({
   }
   log.info({ ownerId }, 'state builder lease acquired');
 
-  const nc = await createNatsConnection({ credsFile: process.env.NATS_CREDS_FILE });
+  let nc = null;
   let closed = false;
   const stop = () => {
     closed = true;
-    nc.close().catch(() => {});
+    nc?.close().catch(() => {});
   };
   process.once('SIGINT', stop);
   process.once('SIGTERM', stop);
 
   try {
+    nc = await createNatsConnection({ credsFile: process.env.NATS_CREDS_FILE });
     const jsm = await jetstreamManager(nc);
     const js = await ensureStreams(nc);
 
@@ -91,6 +176,10 @@ export async function startStateBuilder({
       });
     }
     const consumer = await js.consumers.get(STREAM_COMMANDS, CONSUMER_NAME);
+    const batchReader = createIntegrationBatchReader(consumer);
+
+    const bootstrap = ensureBootstrapSnapshot(db, { serverInstanceId: instanceId });
+    if (bootstrap) log.info({ snapshotVersion: bootstrap.snapshotVersion }, 'empty bootstrap snapshot committed');
 
     const materializer = createMaterializer({ db, applyCommand, serverInstanceId: instanceId });
     const outbox = createOutboxDriver(db, {
@@ -115,31 +204,15 @@ export async function startStateBuilder({
 
     // 5. 主循环
     while (!closed) {
-      let first;
+      let batch;
       try {
-        first = await consumer.next({ expires: 60_000 }); // 空闲长轮询
+        batch = await batchReader.nextBatch();
       } catch (err) {
         if (closed) break;
         throw err;
       }
-      if (!first) continue;
-
-      const batchStartMs = Date.now();
-      const messages = [first];
-      let entries = expandMessage(first);
-      let bytes = first.data.length;
-
-      while (
-        entries.length < LIMITS.maxCommands &&
-        bytes < LIMITS.maxBytes &&
-        Date.now() - batchStartMs < LIMITS.forcedMs
-      ) {
-        const next = await consumer.next({ expires: LIMITS.quietMs });
-        if (!next) break;
-        messages.push(next);
-        entries = [...entries, ...expandMessage(next)];
-        bytes += next.data.length;
-      }
+      if (!batch) continue;
+      const { messages, entries } = batch;
 
       try {
         const { snapshot } = materializer.processIntegrationBatch(entries);
@@ -163,7 +236,10 @@ export async function startStateBuilder({
       }
     }
   } finally {
-    if (!closed) await nc.close().catch(() => {});
+    process.off('SIGINT', stop);
+    process.off('SIGTERM', stop);
+    if (!closed) await nc?.close().catch(() => {});
+    lease.releaseLease(ownerId);
     db.close();
     log.info('state builder stopped');
   }

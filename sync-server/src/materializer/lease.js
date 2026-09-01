@@ -19,6 +19,11 @@ export function createLease(db, { ttlMs = 30_000 } = {}) {
     SET lease_expires_at = @expiresAt
     WHERE singleton_id = 1 AND owner_id = @ownerId
   `);
+  const release = db.prepare(`
+    UPDATE state_builder_lease
+    SET lease_expires_at = 0
+    WHERE singleton_id = 1 AND owner_id = @ownerId
+  `);
 
   function acquire(ownerId, now = Date.now()) {
     // BEGIN IMMEDIATE:直接拿写锁,避免两个实例同时读到"无主"再同时 INSERT。
@@ -46,5 +51,9 @@ export function createLease(db, { ttlMs = 30_000 } = {}) {
     return result.changes > 0; // false = 已被抢占/接管,应立即停止消费
   }
 
-  return { acquire, renewLease };
+  function releaseLease(ownerId) {
+    return release.run({ ownerId }).changes > 0;
+  }
+
+  return { acquire, renewLease, releaseLease };
 }

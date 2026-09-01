@@ -68,6 +68,23 @@ test('rejects a malformed batch with SCHEMA_UNSUPPORTED', async () => {
   assert.equal(calls.length, 0);
 });
 
+test('transport schema accepts canonical task commands and rejects entity replacement', async () => {
+  const validateBatch = await loadBatchValidator();
+  const batch = await loadValidBatch();
+
+  for (const type of [
+    'task.setAppearance', 'task.setAlarm', 'task.setLocation', 'task.setExtras', 'task.setRecurrence',
+  ]) {
+    const candidate = structuredClone(batch);
+    candidate.commands[0].type = type;
+    assert.equal(validateBatch(candidate), null, `${type} must be part of the V3 protocol`);
+  }
+
+  const replaced = structuredClone(batch);
+  replaced.commands[0].type = 'legacy.entityReplace';
+  assert.ok(validateBatch(replaced), 'whole-entity replacement must be rejected by the transport schema');
+});
+
 test('rejects a mismatched Idempotency-Key', async () => {
   const { publish } = stubPublisher();
   const app = buildServer({ publisher: { publish }, validateBatch: await loadBatchValidator() });

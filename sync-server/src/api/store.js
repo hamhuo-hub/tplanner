@@ -4,10 +4,12 @@
 // "latest" 指针每次直读 SQLite(单行),无需跨进程失效。缓存上限 5 个
 // (§14:最近 3–5 个),重启从 SQLite 恢复。
 import { acceptedThrough, receiptsForDeviceAfter } from '../state/receipts.js';
+import { SOFTWARE_VERSION } from '../version.js';
 
 const MAX_BATCH_COMMANDS = 100;
 const MAX_BATCH_BYTES = 256 * 1024;
 const PAYLOAD_CACHE_MAX = 5;
+const NOTIFICATION_POLL_MS = 50;
 
 export function createStore(db, { serverInstanceId }) {
   const latestRow = () =>
@@ -34,6 +36,7 @@ export function createStore(db, { serverInstanceId }) {
       uncompressedBytes: row.uncompressed_bytes,
       compressedBytes: row.compressed_bytes,
       createdAt: row.created_at,
+      serverInstanceId,
     };
 
   function snapshotMeta(version) {
@@ -62,6 +65,18 @@ export function createStore(db, { serverInstanceId }) {
     return latest ? snapshotMeta(latest.version) : null;
   }
 
+  async function waitForLatestSnapshot(afterVersion, { waitMs, pollMs = NOTIFICATION_POLL_MS }) {
+    const deadline = Date.now() + waitMs;
+    while (true) {
+      const meta = latestSnapshotMeta();
+      if ((meta?.version ?? 0) > afterVersion) return meta;
+
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return meta;
+      await new Promise((resolve) => setTimeout(resolve, Math.min(pollMs, remaining)));
+    }
+  }
+
   const upsertAck = db.prepare(`
     INSERT INTO device_progress
       (device_id, accepted_client_sequence, installed_snapshot_version,
@@ -77,6 +92,7 @@ export function createStore(db, { serverInstanceId }) {
     capabilities() {
       const latest = latestRow();
       return {
+        softwareVersion: SOFTWARE_VERSION,
         protocolVersion: 3,
         schemaVersion: 3,
         serverInstanceId,
@@ -92,6 +108,7 @@ export function createStore(db, { serverInstanceId }) {
       return acceptedThrough(db, deviceId);
     },
     latestSnapshotMeta,
+    waitForLatestSnapshot,
     snapshotMeta,
     snapshotPayload,
     recordSnapshotAck(deviceId, { version, stateHash }, lastSeenAt = Date.now()) {

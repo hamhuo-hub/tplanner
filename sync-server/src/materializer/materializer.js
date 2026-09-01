@@ -20,6 +20,7 @@ import {
   insertReceipt,
 } from '../state/receipts.js';
 import { buildSnapshot } from './snapshot.js';
+import { canonicalizeTaskPayload } from '../state/canonicalTask.js';
 
 // reducer 状态 map 键 → entities 表 entity_type
 const ENTITY_TYPES = {
@@ -44,7 +45,8 @@ export function loadStateFromDb(db) {
   for (const row of rows) {
     const mapKey = Object.keys(ENTITY_TYPES).find((k) => ENTITY_TYPES[k] === row.entity_type);
     if (!mapKey) continue;
-    const payload = JSON.parse(row.payload_json);
+    const rawPayload = JSON.parse(row.payload_json);
+    const payload = row.entity_type === 'task' ? canonicalizeTaskPayload(rawPayload) : rawPayload;
     state[mapKey][row.entity_id] = { ...payload, lifecycle: row.lifecycle, deletedAt: row.deleted_at };
   }
   return state;
@@ -310,25 +312,26 @@ export function createMaterializer({
 }
 
 /**
- * 迁移引导(§17 第 7 步):把已导入 entities 表的旧数据固化成 Snapshot V1,
- * 单事务写入 snapshots / latest_snapshot / publication_outbox。
- * 重复调用幂等:已有任何快照时直接返回 null。
+ * A fresh V3 installation still needs an immutable empty snapshot so readiness
+ * and bootstrap clients have a well-defined starting point. Existing databases
+ * are untouched. The snapshot and publication outbox row share one transaction.
  */
-export function createInitialSnapshot(db, { serverInstanceId, now = Date.now } = {}) {
+export function ensureBootstrapSnapshot(db, { serverInstanceId, now = Date.now } = {}) {
   const existing = db.prepare('SELECT MAX(version) AS v FROM snapshots').get().v;
   if (existing > 0) return null;
+  const createdAt = now();
 
-  const state = loadStateFromDb(db);
   const snapshot = buildSnapshot({
-    state,
+    state: loadStateFromDb(db),
     snapshotVersion: 1,
     parentVersion: 0,
     serverInstanceId,
     brokerFromSequence: 0,
     brokerToSequence: 0,
+    createdAt: new Date(createdAt).toISOString(),
   });
 
-  const write = db.transaction(() => {
+  db.transaction(() => {
     db.prepare(`
       INSERT INTO snapshots
         (version, parent_version, broker_from_sequence, broker_to_sequence, schema_version,
@@ -341,7 +344,7 @@ export function createInitialSnapshot(db, { serverInstanceId, now = Date.now } =
       snapshot.compressed,
       snapshot.manifest.uncompressedBytes,
       snapshot.manifest.compressedBytes,
-      now(),
+      createdAt,
     );
     db.prepare(`
       INSERT INTO latest_snapshot (singleton_id, version, state_hash)
@@ -351,8 +354,8 @@ export function createInitialSnapshot(db, { serverInstanceId, now = Date.now } =
       INSERT INTO publication_outbox
         (publication_id, publication_type, dedupe_key, payload_json, state, attempt_count, next_attempt_at, created_at)
       VALUES (?, 'snapshot.ready', ?, ?, 'pending', 0, 0, ?)
-    `).run(randomUUID(), `snapshot.ready:v1`, JSON.stringify(snapshot.manifest), now());
-  });
-  write();
+    `).run(randomUUID(), 'snapshot.ready:v1', JSON.stringify(snapshot.manifest), createdAt);
+  })();
+
   return snapshot.manifest;
 }

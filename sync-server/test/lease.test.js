@@ -59,3 +59,16 @@ test('owner renews its own lease; takeover invalidates the old owner', () => {
   assert.equal(leaseRow(db).owner_id, 'builder-b');
   db.close();
 });
+
+test('owner releases its lease on graceful shutdown without releasing another owner', () => {
+  const db = openDatabase(':memory:');
+  const lease = createLease(db, { ttlMs: 30_000 });
+  lease.acquire('builder-a', 1_000_000);
+
+  assert.equal(lease.releaseLease('builder-b'), false);
+  assert.equal(leaseRow(db).lease_expires_at, 1_030_000);
+  assert.equal(lease.releaseLease('builder-a'), true);
+  assert.equal(leaseRow(db).lease_expires_at, 0);
+  assert.equal(lease.acquire('builder-b', 1_000_001).acquired, true);
+  db.close();
+});

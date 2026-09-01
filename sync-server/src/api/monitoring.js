@@ -4,6 +4,7 @@
 //   /tplanner/v3/status    运行指标:latestVersion、brokerLastSequence、
 //                          materializedThroughSequence、queueLag
 import { SEQ_MULTIPLIER } from '../sequence.js';
+import { SOFTWARE_VERSION } from '../version.js';
 
 export function createMonitoring({ db, jsm, serverInstanceId, now = Date.now }) {
   const latestVersion = () =>
@@ -24,6 +25,7 @@ export function createMonitoring({ db, jsm, serverInstanceId, now = Date.now }) 
     }
     const materializedThroughSequence = Math.floor(maxBrokerSequence() / SEQ_MULTIPLIER);
     return {
+      softwareVersion: SOFTWARE_VERSION,
       serverInstanceId,
       latestSnapshotVersion: latestVersion(),
       brokerLastSequence,

@@ -9,7 +9,6 @@ import { createNatsConnection } from '../broker/natsConnection.js';
 import { ensureStreams } from '../broker/streams.js';
 import { createCommandPublisher } from '../broker/publisher.js';
 import { loadBatchValidator } from './validation.js';
-import { createLegacyAdapter } from './legacyCompat.js';
 import { resolveServerInstanceId } from '../serverInstance.js';
 
 const PORT = Number(process.env.PORT || 37401);
@@ -25,13 +24,19 @@ const validateBatch = await loadBatchValidator();
 const serverInstanceId = resolveServerInstanceId(DB_PATH);
 const store = createStore(db, { serverInstanceId });
 const health = createMonitoring({ db, jsm, serverInstanceId });
-const legacy = createLegacyAdapter({
-    db,
-    publisher,
-    // 过渡期终点(§21):连续 7 天无 V1 PUT 后由 cutover.sh 置 1,旧客户端写入返回 410
-    writesDisabled: process.env.TPLANNER_DISABLE_V1_WRITES === '1',
-});
 
-const app = buildServer({ publisher, validateBatch, store, health, legacy });
+const app = buildServer({
+  publisher,
+  validateBatch,
+  store,
+  health,
+  logger: {
+    level: process.env.LOG_LEVEL || 'info',
+    redact: {
+      paths: ['req.headers.authorization'],
+      censor: '[REDACTED]',
+    },
+  },
+});
 await app.listen({ port: PORT, host: '127.0.0.1' });
-console.log(`tplanner-sync-api listening on 127.0.0.1:${PORT}`);
+app.log.info({ port: PORT, host: '127.0.0.1' }, 'tplanner-sync-api listening');

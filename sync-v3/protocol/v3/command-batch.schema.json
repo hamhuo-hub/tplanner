@@ -71,6 +71,10 @@
         "task.restore",
         "task.changeType",
         "task.setRecurrence",
+        "task.setAlarm",
+        "task.setAppearance",
+        "task.setLocation",
+        "task.setExtras",
         "task.assignList",
         "task.moveInTimeline",
         "checklist.createItem",
@@ -88,8 +92,7 @@
         "goal.patch",
         "goal.delete",
         "insight.upsert",
-        "insight.delete",
-        "legacy.entityReplace"
+        "insight.delete"
       ]
     }
   }

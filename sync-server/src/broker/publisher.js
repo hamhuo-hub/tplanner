@@ -2,7 +2,10 @@
 // 刻意不 import nats —— js(JetStream 上下文)由调用方注入,便于无依赖单元测试。
 export const SUBJECT_COMMANDS = 'tplanner.v3.commands';
 
-export function createCommandPublisher(js, { publishTimeoutMs = 10_000 } = {}) {
+// NATS is loopback-only in production. A missing JetStream ACK should fail
+// promptly so clients can back off/retry instead of holding an HTTP request for
+// the former fixed ten-second window.
+export function createCommandPublisher(js, { publishTimeoutMs = 2_000 } = {}) {
   return {
     /**
      * 持久发布一个命令批次。

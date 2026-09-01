@@ -1,7 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
+import Ajv2020 from 'ajv/dist/2020.js';
 import { buildSnapshot, canonicalStateHash } from '../src/materializer/snapshot.js';
+
+const snapshotSchema = JSON.parse(readFileSync(
+  new URL('../../sync-v3/protocol/v3/snapshot.schema.json', import.meta.url),
+  'utf8',
+));
+const validateSnapshot = new Ajv2020({ strict: false, formats: { 'date-time': true } })
+  .compile(snapshotSchema);
 
 const STATE_A = {
   tasks: { 'task-1': { title: '甲', completed: false, lifecycle: 'active', deletedAt: null } },
@@ -73,6 +82,44 @@ test('compressed payload gzip-round-trips to the exact envelope', () => {
   assert.deepEqual(envelope, snap.envelope);
   assert.equal(envelope.snapshotSchemaVersion, 3);
   assert.deepEqual(envelope.state, STATE_A);
+});
+
+test('snapshot schema formalizes canonical task/list fields and rejects checklist text', () => {
+  const canonical = buildSnapshot({
+    state: {
+      tasks: {
+        task1: {
+          title: '完整任务',
+          note: '',
+          completed: false,
+          itemType: 'task',
+          recurrence: { frequency: 'weekly', count: 10 },
+          alarm: { enabled: true, offsetMinutes: 15 },
+          colorId: 2,
+          location: { lat: 31.23, lng: 121.47 },
+          extras: { futureField: { preserved: true } },
+          checklist: [{ id: 'check1', title: '检查', completed: false }],
+          listId: 'work',
+          lifecycle: 'active',
+          deletedAt: null,
+        },
+      },
+      customLists: {
+        work: { title: '工作', color: 'gold', lifecycle: 'active', deletedAt: null },
+      },
+      journals: {}, goals: {}, insights: {},
+    },
+    snapshotVersion: 1,
+    parentVersion: 0,
+    serverInstanceId: 'srv-test',
+    brokerFromSequence: 1,
+    brokerToSequence: 1,
+    createdAt: '2026-08-19T00:00:00.000Z',
+  }).envelope;
+
+  assert.equal(validateSnapshot(canonical), true, JSON.stringify(validateSnapshot.errors));
+  canonical.state.tasks.task1.checklist[0] = { id: 'check1', text: '旧字段', completed: false };
+  assert.equal(validateSnapshot(canonical), false);
 });
 
 test('envelope metadata does not affect stateHash (replay determinism)', () => {
