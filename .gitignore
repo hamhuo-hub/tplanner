@@ -61,6 +61,7 @@ src/assets/react.svg
 /release
 /.vscode
 /.claude
+/.agents
 /staging-linux
 /.gradle
 /app
