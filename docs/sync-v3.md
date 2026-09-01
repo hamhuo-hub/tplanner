@@ -375,6 +375,14 @@ CREATE TABLE change_items (
 
 所有 410 的统一响应体:`{ error, recovery: "FULL_SNAPSHOT", latestSnapshotVersion }`。
 
+### 9.4 retention 与 telemetry
+
+journal 是**有限历史**,正确性绝不依赖任何设备 ACK。`pruneJournal` 在每次 `/changes` 请求前执行:cutoff = max(min_snapshot_version, head − keepCommits, 按 keepAgeMs 算出的最老保留版本),删除 cutoff 及更早的 commits(change_items 级联),并把 `min_snapshot_version` 单调推进到 cutoff。老设备由此得到 410 → latest full snapshot。快照行永不因 journal GC 被删。
+
+默认/配置:`TPLANNER_JOURNAL_MAX_COMMITS=100000`、`TPLANNER_JOURNAL_MAX_AGE_DAYS=30`(工程起始值,由生产 telemetry 调优)。
+
+`/tplanner/v3/status` 暴露:`storage.journalHeadVersion / journalMinVersion / journalCommits / journalPayloadBytes / snapshotCount / snapshotBytes`,以及进程内 `metrics.counters`(`delta_requests_total`、`delta_commits_total`、`delta_response_bytes`、`delta_request_ms_total`、`snapshot_fallback_total:{reason}`)与 `metrics.gauges`(`cursor_lag_versions`、`cursor_age_seconds`)。builder 侧的 journal 失配按 P0 记 `log.error`(§9.2)。上量后必须补齐 `state_hash_mismatch_total`、`unknown_delta_type_total`、`nats_redelivery_total`、`tunnel_health` 等长时序。
+
 ## 10. 崩溃一致性(inbox/outbox)
 
 消费:`拉取 → BEGIN IMMEDIATE → 查 commandId → reducer → 写 entities/回执/快照/latest/发布outbox → COMMIT → ACK MQ`
@@ -397,13 +405,14 @@ CREATE TABLE change_items (
 
 | 端点 | 说明 |
 |---|---|
-| `GET /tplanner/v3/capabilities` | software/protocol/schema 版本、serverInstanceId、latestSnapshotVersion、批次上限 |
+| `GET /tplanner/v3/capabilities` | software/protocol/schema 版本、serverInstanceId、latestSnapshotVersion、批次上限、`downlinkModes`(`["snapshot"]` 或 `["snapshot","delta-v1"]`)、`delta` 块(version/maxCommits/journalEpoch/minSnapshotVersion/headSnapshotVersion) |
 | `POST /tplanner/v3/command-batches` + `Idempotency-Key: batchId` | 返回 `{batchId, brokerSequence, state: BROKER_PERSISTED}` |
 | `GET /tplanner/v3/receipts?afterClientSequence=N` | `{acceptedThrough, results[]}` |
 | `GET /tplanner/v3/snapshots/latest` | `Cache-Control: no-store` |
 | `GET /tplanner/v3/snapshots/{version}` | `ETag: compressedHash`,`immutable`,`Content-Type: application/gzip`;不设置 `Content-Encoding`，确保浏览器返回可校验 `compressedHash` 的原始压缩字节；只允许 private cache |
 | `GET /tplanner/v3/notifications?afterVersion=N&wait=25000` | 长轮询,只返回 version+hash |
 | `POST /tplanner/v3/devices/{deviceId}/snapshot-acks` | `{version, stateHash}` |
+| `GET /tplanner/v3/changes?cursor=<opaque>&maxCommits=100` | delta-v1 下行(§9.3/§9.4):按 commit 分页、绝不切页;`changes:[]` 原样返回;`toCursor` 只落在整页最后 commit;无变化时 `toCursor == fromCursor`。400/403/410 语义见 §9.3,410 一律 `{error, recovery:"FULL_SNAPSHOT", latestSnapshotVersion}` |
 
 回执状态:`APPLIED / NOOP / REJECTED / SEQUENCE_GAP / ENTITY_DELETED / ID_ALREADY_EXISTS / SCHEMA_UNSUPPORTED`。
 

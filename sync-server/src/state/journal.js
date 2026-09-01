@@ -179,3 +179,107 @@ export function applyJournalCommit(state, commit) {
   }
   return next;
 }
+
+/**
+ * 批量读取 cursor 之后的连续 commits(含 empty commit,绝不因 changes=[] 过滤)。
+ * 按 snapshotVersion 升序;分页边界永远落在 commit 之间。
+ */
+export function loadJournalCommitRange(db, { fromSnapshotVersion, limit }) {
+  const rows = db
+    .prepare(`
+      SELECT snapshot_version, parent_version, broker_from_sequence, broker_to_sequence,
+             state_hash_after
+        FROM change_commits
+       WHERE snapshot_version > ?
+       ORDER BY snapshot_version
+       LIMIT ?
+    `)
+    .all(fromSnapshotVersion, limit);
+  if (rows.length === 0) return [];
+
+  const itemStmt = db.prepare(`
+    SELECT change_type, entity_type, entity_id, entity_broker_sequence, payload_json
+      FROM change_items
+     WHERE snapshot_version = ?
+     ORDER BY ordinal
+  `);
+  return rows.map((row) => ({
+    snapshotVersion: row.snapshot_version,
+    parentVersion: row.parent_version,
+    brokerFromSequence: row.broker_from_sequence,
+    brokerToSequence: row.broker_to_sequence,
+    stateHashAfter: row.state_hash_after,
+    changes: itemStmt.all(row.snapshot_version).map((item) => ({
+      type: item.change_type,
+      entityType: item.entity_type,
+      entityId: item.entity_id,
+      entityBrokerSequence: item.entity_broker_sequence,
+      value: JSON.parse(item.payload_json),
+    })),
+  }));
+}
+
+/**
+ * wire DTO:去掉内部 entityType 列,只保留客户端安装所需的字段。
+ */
+export function toWireCommit(commit) {
+  return {
+    snapshotVersion: commit.snapshotVersion,
+    parentVersion: commit.parentVersion,
+    brokerFromSequence: commit.brokerFromSequence,
+    brokerToSequence: commit.brokerToSequence,
+    stateHashAfter: commit.stateHashAfter,
+    changes: commit.changes.map(({ type, entityId, entityBrokerSequence, value }) => ({
+      type,
+      entityId,
+      entityBrokerSequence,
+      value,
+    })),
+  };
+}
+
+/**
+ * Journal retention(§9.4):journal 是有限历史,latest full snapshot 永远可以
+ * 重建。剪掉 cutoff 及更早的 commits(change_items 级联),并把
+ * min_snapshot_version 单调推进到 cutoff —— cursor.snapshotVersion < min
+ * 即 410 → full snapshot,绝不为一台旧设备无限保留 journal。
+ *
+ * cutoff = max(min_snapshot_version, head - keepCommits, 按 keepAgeMs 算出的
+ * 最老保留版本),且绝不剪掉 head commit 本身。幂等、单调。
+ */
+export function pruneJournal(db, { keepCommits, keepAgeMs, now = Date.now() }) {
+  if (!Number.isSafeInteger(keepCommits) || keepCommits < 1) {
+    throw new Error('keepCommits must be a positive safe integer');
+  }
+  if (!Number.isSafeInteger(keepAgeMs) || keepAgeMs < 0) {
+    throw new Error('keepAgeMs must be a non-negative safe integer');
+  }
+  const prune = db.transaction(() => {
+    const meta = db
+      .prepare('SELECT min_snapshot_version FROM sync_journal_meta WHERE singleton_id = 1')
+      .get();
+    if (!meta) return { prunedCommits: 0, minSnapshotVersion: 0 };
+    const head = db
+      .prepare('SELECT version FROM latest_snapshot WHERE singleton_id = 1')
+      .get()?.version ?? 0;
+    if (head <= 1) return { prunedCommits: 0, minSnapshotVersion: meta.min_snapshot_version };
+
+    let cutoff = Math.max(meta.min_snapshot_version, head - keepCommits);
+    if (keepAgeMs > 0) {
+      const ageCutoff = db
+        .prepare('SELECT COALESCE(MAX(snapshot_version), 0) AS v FROM change_commits WHERE created_at < ?')
+        .get(now() - keepAgeMs).v;
+      cutoff = Math.max(cutoff, ageCutoff);
+    }
+    if (cutoff >= head) cutoff = head - 1;
+    if (cutoff <= meta.min_snapshot_version) {
+      return { prunedCommits: 0, minSnapshotVersion: meta.min_snapshot_version };
+    }
+
+    const info = db.prepare('DELETE FROM change_commits WHERE snapshot_version <= ?').run(cutoff);
+    db.prepare('UPDATE sync_journal_meta SET min_snapshot_version = ? WHERE singleton_id = 1')
+      .run(cutoff);
+    return { prunedCommits: info.changes, minSnapshotVersion: cutoff };
+  });
+  return prune();
+}

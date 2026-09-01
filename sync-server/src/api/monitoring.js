@@ -6,12 +6,34 @@
 import { SEQ_MULTIPLIER } from '../sequence.js';
 import { SOFTWARE_VERSION } from '../version.js';
 
-export function createMonitoring({ db, jsm, serverInstanceId, now = Date.now }) {
+export function createMonitoring({ db, jsm, serverInstanceId, metrics = null, now = Date.now }) {
   const latestVersion = () =>
     db.prepare('SELECT version FROM latest_snapshot WHERE singleton_id = 1').get()?.version ?? 0;
 
   const maxBrokerSequence = () =>
     db.prepare('SELECT COALESCE(MAX(broker_sequence), 0) AS m FROM processed_commands').get().m;
+
+  // journal/snapshot 存储与覆盖量规(§9.4)。WAL 文件字节不在进程内统计,
+  // 由部署层监控脚本量测。
+  const storageGauges = () => {
+    const meta = db
+      .prepare('SELECT min_snapshot_version FROM sync_journal_meta WHERE singleton_id = 1')
+      .get();
+    const journal = db
+      .prepare('SELECT COUNT(*) AS commits, COALESCE(SUM(payload_bytes), 0) AS payload_bytes FROM change_commits')
+      .get();
+    const snapshots = db
+      .prepare('SELECT COUNT(*) AS count, COALESCE(SUM(compressed_bytes), 0) AS bytes FROM snapshots')
+      .get();
+    return {
+      journalHeadVersion: latestVersion(),
+      journalMinVersion: meta?.min_snapshot_version ?? 0,
+      journalCommits: journal.commits,
+      journalPayloadBytes: journal.payload_bytes,
+      snapshotCount: snapshots.count,
+      snapshotBytes: snapshots.bytes,
+    };
+  };
 
   async function status() {
     let brokerLastSequence = 0;
@@ -32,6 +54,8 @@ export function createMonitoring({ db, jsm, serverInstanceId, now = Date.now }) 
       materializedThroughSequence,
       queueLag: Math.max(0, brokerLastSequence - materializedThroughSequence),
       brokerOk,
+      storage: storageGauges(),
+      ...(metrics ? { metrics: metrics.snapshot() } : {}),
     };
   }
 

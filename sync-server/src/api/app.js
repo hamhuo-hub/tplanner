@@ -15,7 +15,7 @@ const CORS_ALLOWED_HEADERS = [
 ];
 const CORS_EXPOSED_HEADERS = ['ETag', 'X-Snapshot-Version', 'X-State-Hash'];
 
-export function buildServer({ publisher, validateBatch, store, health, logger = false }) {
+export function buildServer({ publisher, validateBatch, store, health, logger = false, changes = null }) {
   const app = Fastify({ logger });
 
   app.register(cors, {
@@ -51,8 +51,30 @@ export function buildServer({ publisher, validateBatch, store, health, logger = 
     }
   });
 
-  // 能力探测:客户端据此判断协议/schema 兼容与批次上限(§11)
-  app.get('/tplanner/v3/capabilities', async () => store.capabilities());
+  // 能力探测:客户端据此判断协议/schema 兼容、下行模式与批次上限(§11)。
+  // delta 未启用或未挂载 changes 服务时,downlinkModes 只有 snapshot —— 一键回滚。
+  app.get('/tplanner/v3/capabilities', async () => {
+    const base = store.capabilities();
+    const delta = changes?.capabilities();
+    if (!delta) return { ...base, downlinkModes: ['snapshot'] };
+    return { ...base, downlinkModes: delta.downlinkModes, delta: delta.delta };
+  });
+
+  // 增量下行(delta-v1,§9.3/§9.4):cursor 校验、按 commit 分页、410 → full snapshot
+  app.get('/tplanner/v3/changes', async (request, reply) => {
+    if (!changes) {
+      return reply.code(410).send({
+        error: 'DELTA_DISABLED',
+        recovery: 'FULL_SNAPSHOT',
+        latestSnapshotVersion: store.latestSnapshotMeta()?.version ?? 0,
+      });
+    }
+    const maxCommits = request.query.maxCommits === undefined
+      ? undefined
+      : Number(request.query.maxCommits);
+    const result = changes.handleChanges(request.query.cursor, maxCommits);
+    return reply.code(result.status).send(result.body);
+  });
 
   // 回执:deviceId 自报身份(query),afterClientSequence 为游标(§11)
   app.get('/tplanner/v3/receipts', async (request, reply) => {
