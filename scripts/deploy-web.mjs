@@ -44,8 +44,9 @@ const caddyTemplate = 'scripts/deploy/tplanner-web.Caddyfile';
 if (!existsSync(join(rootDir, caddyTemplate))) throw new Error(`Missing ${caddyTemplate}`);
 
 console.log('=== Build Web bundle ===');
-const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-run(npx, ['vite', 'build']);
+const viteCli = join(rootDir, 'node_modules', 'vite', 'bin', 'vite.js');
+if (!existsSync(viteCli)) throw new Error('Vite is not installed; run npm ci first');
+run(process.execPath, [viteCli, 'build']);
 if (!existsSync(join(rootDir, 'dist', 'index.html'))) throw new Error('dist/index.html was not built');
 
 console.log('=== Upload release ===');
@@ -69,6 +70,7 @@ fi
 sudo install -d -m 0755 "$RELEASE"
 sudo cp -a "$TEMP/dist/." "$RELEASE/"
 sudo chown -R root:root "$RELEASE"
+sudo chmod -R a+rX "$RELEASE"
 
 AUTH_HASH="$(sudo awk '$1 == "hamhuo" && $2 ~ /^\\$2/ { print $2; exit }' /etc/caddy/Caddyfile)"
 if [ -z "$AUTH_HASH" ]; then
@@ -82,17 +84,17 @@ sudo caddy validate --config /etc/caddy/Caddyfile
 
 sudo ln -sfn "$RELEASE" "$WEB_ROOT/.current-$RELEASE_ID"
 sudo mv -Tf "$WEB_ROOT/.current-$RELEASE_ID" "$WEB_ROOT/current"
-if ! sudo systemctl reload caddy; then
+if ! sudo systemctl restart caddy; then
   sudo cp "$BACKUP" /etc/caddy/Caddyfile
   [ -n "$PREVIOUS" ] && sudo ln -sfn "$PREVIOUS" "$WEB_ROOT/current"
-  sudo systemctl reload caddy || true
+  sudo systemctl restart caddy || true
   exit 1
 fi
 
 if ! curl -fsS --max-time 10 -H 'Host: plan.hamhuo.top' http://127.0.0.1:37400/ >/dev/null; then
   sudo cp "$BACKUP" /etc/caddy/Caddyfile
   [ -n "$PREVIOUS" ] && sudo ln -sfn "$PREVIOUS" "$WEB_ROOT/current"
-  sudo systemctl reload caddy || true
+  sudo systemctl restart caddy || true
   exit 1
 fi
 rm -rf "$TEMP"
