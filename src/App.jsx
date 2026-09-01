@@ -301,15 +301,18 @@ function PlannerApp() {
         };
 
         const loop = async () => {
+            let retryDelay = 2000;
             while (!disposed) {
                 try {
-                    await webApi.waitForServerChange();
+                    const changed = await webApi.waitForServerChange();
                     if (disposed) return;
-                    await refresh();
+                    if (changed) await refresh();
+                    retryDelay = 2000;
                 } catch (error) {
                     if (disposed) return;
                     console.error('Remote change listener failed', error);
-                    await new Promise(r => setTimeout(r, 2000));
+                    await new Promise(r => setTimeout(r, retryDelay));
+                    retryDelay = Math.min(retryDelay * 2, 30_000);
                 }
             }
         };

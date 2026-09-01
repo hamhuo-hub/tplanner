@@ -8,6 +8,7 @@
  */
 import { createSyncEngine } from '../syncV3/createSyncEngine';
 import { appendCommands } from '../syncV3/commandOutbox';
+import { assertJsonResponse } from '../syncV3/httpResponse';
 import {
     diffEventsToCommands,
     diffJournalsToCommands,
@@ -23,7 +24,9 @@ let enginePromise = null;
 
 function readStoredAuth() {
     if (typeof window === 'undefined') return null;
-    return sessionStorage.getItem(AUTH_SESSION_KEY) || localStorage.getItem(AUTH_PERSIST_KEY);
+    return window.sessionStorage?.getItem(AUTH_SESSION_KEY)
+        || window.localStorage?.getItem(AUTH_PERSIST_KEY)
+        || null;
 }
 
 authHeader = readStoredAuth();
@@ -36,9 +39,9 @@ function encodeBasicCredentials(account, password) {
 
 function persistAuth(header, remember) {
     authHeader = header;
-    sessionStorage.removeItem(AUTH_SESSION_KEY);
-    localStorage.removeItem(AUTH_PERSIST_KEY);
-    (remember ? localStorage : sessionStorage).setItem(
+    window.sessionStorage?.removeItem(AUTH_SESSION_KEY);
+    window.localStorage?.removeItem(AUTH_PERSIST_KEY);
+    (remember ? window.localStorage : window.sessionStorage)?.setItem(
         remember ? AUTH_PERSIST_KEY : AUTH_SESSION_KEY,
         header,
     );
@@ -51,8 +54,8 @@ export function hasStoredWebAuth() {
 export function clearWebAuth() {
     authHeader = null;
     if (typeof window === 'undefined') return;
-    sessionStorage.removeItem(AUTH_SESSION_KEY);
-    localStorage.removeItem(AUTH_PERSIST_KEY);
+    window.sessionStorage?.removeItem(AUTH_SESSION_KEY);
+    window.localStorage?.removeItem(AUTH_PERSIST_KEY);
 }
 
 async function apiFetch(input, init = {}, authorization = authHeader) {
@@ -63,8 +66,9 @@ async function apiFetch(input, init = {}, authorization = authHeader) {
 
 async function verifyAuthorization(authorization) {
     const response = await apiFetch('/tplanner/events', { method: 'GET', cache: 'no-store' }, authorization);
-    if (response.status === 401) return false;
+    if (response.status === 401 || response.status === 403) return false;
     if (!response.ok) throw new Error(`认证服务暂时不可用（HTTP ${response.status}）`);
+    assertJsonResponse(response, 'authentication request');
     return true;
 }
 
@@ -89,7 +93,7 @@ export async function restoreWebAuth() {
 
 async function getEngine() {
     if (!enginePromise) {
-        enginePromise = createSyncEngine({ serverUrl: '' });
+        enginePromise = createSyncEngine({ serverUrl: '', fetchFn: apiFetch });
     }
     return enginePromise;
 }
@@ -150,11 +154,11 @@ export async function loadInsights() {
 
 // ── 版本监听与展示刷新 ────────────────────────────────────────────────────
 
-/** 挂起直到服务器发布新版本(长轮询),返回前完成安装。 */
+/** 挂起直到服务器发布新版本(长轮询),由调用方决定何时安装。 */
 export async function waitForServerChange() {
     const engine = await getEngine();
     const { notified } = await engine.notifications.pollOnce();
-    if (notified) await engine.installer.syncToLatest();
+    return notified;
 }
 
 /** 收到通知后调用:先冲刷本地改动,再返回最新展示数据。 */

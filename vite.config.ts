@@ -4,6 +4,13 @@ import electron from 'vite-plugin-electron'
 import { copyFileSync, mkdirSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 
+const syncProxy = {
+  '/tplanner': {
+    target: process.env.TPLANNER_SYNC_PROXY_TARGET || 'https://sync.hamhuo.top',
+    changeOrigin: true,
+  },
+}
+
 /**
  * Copies the today-widget renderer assets (widget.html / widget.js) into
  * dist-electron/ so they sit next to main.cjs at runtime. They don't need
@@ -28,6 +35,10 @@ function copyWidgetAssets(): Plugin {
 
 export default defineConfig({
   base: './',
+
+  // Keep API requests same-origin in the browser while developing locally.
+  server: { proxy: syncProxy },
+  preview: { proxy: syncProxy },
 
   // Force a single copy of these packages — prevents "multiple React instances"
   // and "@emotion/react already loaded" warnings when some deps bundle their own.
