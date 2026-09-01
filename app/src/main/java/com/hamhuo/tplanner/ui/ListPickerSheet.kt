@@ -37,6 +37,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.hamhuo.tplanner.designsystem.TPlannerGeometry
+import com.hamhuo.tplanner.designsystem.TPlannerTypography
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -55,7 +57,7 @@ fun ListPickerSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = listSheetState,
-        containerColor = Color(0xFF1A1A1A),
+        containerColor = SURFACE,
         dragHandle = null,
     ) {
         Column(
@@ -68,7 +70,7 @@ fun ListPickerSheet(
             ) {
                 Box(
                     Modifier.width(36.dp).height(4.dp)
-                        .background(Color(0xFF444444), RoundedCornerShape(2.dp))
+                        .background(DRAG_HANDLE, RoundedCornerShape(TPlannerGeometry.RadiusSmallDp.dp))
                 )
             }
             // 标题行
@@ -79,8 +81,8 @@ fun ListPickerSheet(
             ) {
                 Text(
                     stringResource(R.string.task_view_picker_title),
-                    color = Color(0xFFE0D8C8),
-                    fontSize = 20.sp,
+                    color = TEXT_PRIMARY,
+                    fontSize = TPlannerTypography.PhoneSectionSp.sp,
                     fontWeight = FontWeight.Bold,
                 )
                 Icon(
@@ -97,14 +99,14 @@ fun ListPickerSheet(
                         modifier = Modifier
                             .fillMaxWidth()
                             // The swipe background must never bleed through an idle row.
-                            .background(Color(0xFF1A1A1A))
+                            .background(SURFACE)
                             .clickable { onSelectView(item.key) }
                             .padding(horizontal = 20.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Box(
                             modifier = Modifier.size(52.dp)
-                                .background(if (isSelected) GOLD else Color(0xFF2E2E2E), CircleShape),
+                                .background(if (isSelected) GOLD else CONTROL_STRONG, CircleShape),
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
@@ -114,7 +116,7 @@ fun ListPickerSheet(
                                     is TaskView.CustomList -> Icons.Filled.Inbox
                                 },
                                 contentDescription = null,
-                                tint = if (isSelected) Color(0xFF0E0E0E) else Color(0xFFE0D8C8),
+                                tint = if (isSelected) BG else TEXT_PRIMARY,
                                 modifier = Modifier.size(26.dp),
                             )
                         }
@@ -126,8 +128,8 @@ fun ListPickerSheet(
                                     is TaskView.Inbox -> stringResource(R.string.list_inbox)
                                     is TaskView.CustomList -> item.name
                                 },
-                                color = if (isSelected) GOLD else Color(0xFFE0D8C8),
-                                fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                                color = if (isSelected) GOLD else TEXT_PRIMARY,
+                                fontSize = TPlannerTypography.PhoneBodySp.sp, fontWeight = FontWeight.SemiBold,
                             )
                             Text(
                                 when (item) {
@@ -135,7 +137,7 @@ fun ListPickerSheet(
                                     is TaskView.Inbox -> stringResource(R.string.task_view_inbox_description)
                                     is TaskView.CustomList -> stringResource(R.string.task_view_custom_list_description)
                                 },
-                                color = DIM, fontSize = 13.sp,
+                                color = DIM, fontSize = TPlannerTypography.PhoneMetaSp.sp,
                             )
                         }
                     }
@@ -178,7 +180,7 @@ fun ListPickerSheet(
             Text(
                 stringResource(R.string.task_view_filters),
                 color = DIM,
-                fontSize = 12.sp,
+                fontSize = TPlannerTypography.PhoneCaptionSp.sp,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
             )
@@ -188,7 +190,7 @@ fun ListPickerSheet(
             Text(
                 stringResource(R.string.task_view_custom_lists),
                 color = DIM,
-                fontSize = 12.sp,
+                fontSize = TPlannerTypography.PhoneCaptionSp.sp,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
             )
@@ -205,16 +207,16 @@ fun ListPickerSheet(
             ) {
                 Box(
                     modifier = Modifier.size(52.dp)
-                        .background(Color(0xFF2E2E2E), CircleShape),
+                        .background(CONTROL_STRONG, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(Icons.Filled.Add, contentDescription = null,
                         tint = DIM, modifier = Modifier.size(26.dp))
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(stringResource(R.string.list_new), color = Color(0xFFE0D8C8),
-                        fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                    Text(stringResource(R.string.list_new_description), color = DIM, fontSize = 13.sp)
+                    Text(stringResource(R.string.list_new), color = TEXT_PRIMARY,
+                        fontSize = TPlannerTypography.PhoneBodySp.sp, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.list_new_description), color = DIM, fontSize = TPlannerTypography.PhoneMetaSp.sp)
                 }
             }
         }

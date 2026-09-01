@@ -47,7 +47,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.hamhuo.tplanner.designsystem.TPlannerGeometry
 import com.hamhuo.tplanner.designsystem.TPlannerTaskUnitModel
+import com.hamhuo.tplanner.designsystem.TPlannerTypography
 import com.hamhuo.tplanner.ui.components.TPlannerTaskUnit
 import java.time.Instant
 import java.time.LocalDate
@@ -153,8 +155,8 @@ fun TaskWidget(
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Row(
                     modifier = Modifier
-                        .background(Color(0xFF252525), RoundedCornerShape(50.dp))
-                        .border(1.dp, BORDER, RoundedCornerShape(50.dp))
+                        .background(CONTROL, RoundedCornerShape(TPlannerGeometry.RadiusPillDp.dp))
+                        .border(1.dp, BORDER, RoundedCornerShape(TPlannerGeometry.RadiusPillDp.dp))
                         .clickable(onClick = onViewPickerClick)
                         .padding(start = 10.dp, end = 5.dp, top = 4.dp, bottom = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -163,7 +165,7 @@ fun TaskWidget(
                     Text(
                         viewLabel,
                         color = GOLD,
-                        fontSize = 16.sp,
+                        fontSize = TPlannerTypography.PhoneBodySp.sp,
                         fontWeight = FontWeight.Bold,
                     )
                     Icon(
@@ -175,18 +177,18 @@ fun TaskWidget(
                 }
                 Text(
                     today.format(DateTimeFormatter.ofPattern(stringResource(R.string.date_pattern_month_day_weekday))),
-                    color = DIM, fontSize = 15.sp
+                    color = DIM, fontSize = TPlannerTypography.PhoneTaskTitleSp.sp
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (taskTotal > 0) {
-                    Text("$taskDone/$taskTotal", color = DIM, fontSize = 15.sp, fontFamily = FontFamily.Monospace)
+                    Text("$taskDone/$taskTotal", color = DIM, fontSize = TPlannerTypography.PhoneTaskTitleSp.sp, fontFamily = FontFamily.Monospace)
                 }
                 // 右侧 + 按钮
                 Box(
                     modifier = Modifier
                         .size(34.dp)
-                        .background(Color(0xFF252525), CircleShape)
+                        .background(CONTROL, CircleShape)
                         .border(1.dp, BORDER, CircleShape)
                         .clickable { showTypeSheet = true },
                     contentAlignment = Alignment.Center
@@ -200,7 +202,7 @@ fun TaskWidget(
 
         if (source.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(stringResource(R.string.task_empty), color = Color(0xFF3A342A), fontSize = 16.sp)
+                Text(stringResource(R.string.task_empty), color = EMPTY_STATE, fontSize = TPlannerTypography.PhoneBodySp.sp)
             }
         } else {
             LazyColumn(Modifier.fillMaxSize().padding(vertical = 4.dp)) {
@@ -252,7 +254,7 @@ fun TaskWidget(
         ModalBottomSheet(
             onDismissRequest = { showTypeSheet = false },
             sheetState       = sheetState,
-            containerColor   = Color(0xFF1A1A1A),
+            containerColor   = SURFACE,
             dragHandle       = null,
         ) {
             CreateItemTypeSheet(
@@ -270,7 +272,7 @@ fun TaskWidget(
         ModalBottomSheet(
             onDismissRequest = { typeChangeTarget = null },
             sheetState       = typeChangeSheetState,
-            containerColor   = Color(0xFF1A1A1A),
+            containerColor   = SURFACE,
             dragHandle       = null,
         ) {
             ItemTypeChangeSheet(
@@ -305,15 +307,15 @@ private fun GroupHeader(
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         if (collapsible) {
-            Text(if (expanded) "▾" else "▸", color = Color(0xFF6B5928), fontSize = 13.sp)
+            Text(if (expanded) "▾" else "▸", color = GOLD_DARK, fontSize = TPlannerTypography.PhoneMetaSp.sp)
         }
-        Text(label, color = Color(0xFF6B5928), fontSize = 13.sp, letterSpacing = 0.12.sp)
+        Text(label, color = GOLD_DARK, fontSize = TPlannerTypography.PhoneMetaSp.sp, letterSpacing = 0.12.sp)
         Box(
             Modifier
-                .background(Color(0x1FC9A84C), RoundedCornerShape(2.dp))
+                .background(GOLD_GHOST, RoundedCornerShape(TPlannerGeometry.RadiusSmallDp.dp))
                 .padding(horizontal = 4.dp, vertical = 1.dp)
         ) {
-            Text("$count", color = Color(0xFF6B5928), fontSize = 13.sp)
+            Text("$count", color = GOLD_DARK, fontSize = TPlannerTypography.PhoneMetaSp.sp)
         }
     }
 }
@@ -344,7 +346,7 @@ private fun SwipeableTaskRow(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(TPlannerGeometry.RadiusCardDp.dp))
                     .background(RED),
                 contentAlignment = Alignment.CenterEnd
             ) {
@@ -359,7 +361,7 @@ private fun SwipeableTaskRow(
     ) {
         Box(
             modifier = Modifier
-                .clip(RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(TPlannerGeometry.RadiusCardDp.dp))
                 .background(SURFACE2)
         ) {
             TaskItem(

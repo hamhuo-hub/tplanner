@@ -16,7 +16,7 @@ internal const val WEAR_TEAL = TPlannerColors.Teal
 internal const val WEAR_RED = TPlannerColors.Red
 internal const val WEAR_BORDER = TPlannerColors.Border
 internal const val WEAR_CONTROL_PRESSED = TPlannerColors.GoldGhost
-internal const val WEAR_GOLD_PRESSED = 0xFF9C823A.toInt()
+internal const val WEAR_GOLD_PRESSED = TPlannerColors.GoldPressed
 
 internal val WEAR_REGULAR: Typeface = Typeface.create("sans-serif", Typeface.NORMAL)
 internal val WEAR_MEDIUM: Typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)

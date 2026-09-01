@@ -49,7 +49,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -62,6 +61,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
+import com.hamhuo.tplanner.designsystem.TPlannerGeometry
+import com.hamhuo.tplanner.designsystem.TPlannerTypography
 import kotlinx.coroutines.launch
 import java.time.format.DateTimeFormatter
 import java.time.LocalDate
@@ -79,8 +80,8 @@ fun NotesHeader(date: LocalDate, onPanelToggle: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(stringResource(R.string.tab_journal), color = GOLD, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Text(today, color = DIM, fontSize = 14.sp)
+            Text(stringResource(R.string.tab_journal), color = GOLD, fontSize = TPlannerTypography.PhoneTitleSp.sp, fontWeight = FontWeight.Bold)
+            Text(today, color = DIM, fontSize = TPlannerTypography.PhoneSupportingSp.sp)
         }
         IconButton(onClick = onPanelToggle) {
             Icon(
@@ -107,8 +108,8 @@ fun SyncSettingsPanel(
     }
 
     Card(
-        modifier  = modifier.width(270.dp).shadow(16.dp, RoundedCornerShape(10.dp)),
-        shape     = RoundedCornerShape(10.dp),
+        modifier  = modifier.width(270.dp).shadow(16.dp, RoundedCornerShape(TPlannerGeometry.RadiusPanelDp.dp)),
+        shape     = RoundedCornerShape(TPlannerGeometry.RadiusPanelDp.dp),
         colors    = CardDefaults.cardColors(containerColor = SURFACE2),
         elevation = CardDefaults.cardElevation(0.dp)
     ) {
@@ -116,7 +117,7 @@ fun SyncSettingsPanel(
 
             // 标题行
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.sync_server_title), color = DIM, fontSize = 10.sp, letterSpacing = 0.1.sp)
+                Text(stringResource(R.string.sync_server_title), color = DIM, fontSize = TPlannerTypography.PhoneMicroSp.sp, letterSpacing = 0.1.sp)
                 Icon(Icons.Default.Close, contentDescription = "Close", tint = DIM, modifier = Modifier.size(14.dp).clickable { onClose() })
             }
 
@@ -130,7 +131,7 @@ fun SyncSettingsPanel(
 
             // 状态
             if (syncMsg.isNotBlank()) {
-                Text(syncMsg, color = msgColor, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                Text(syncMsg, color = msgColor, fontSize = TPlannerTypography.PhoneMicroSp.sp, fontFamily = FontFamily.Monospace)
             }
         }
     }
@@ -142,14 +143,14 @@ fun MonoInput(value: String, placeholder: String, onValue: (String) -> Unit, mod
         value         = value,
         onValueChange = onValue,
         singleLine    = true,
-        textStyle     = TextStyle(color = Color(0xFFE0D8C8), fontSize = 11.sp, fontFamily = FontFamily.Monospace),
+        textStyle     = TextStyle(color = TEXT_PRIMARY, fontSize = TPlannerTypography.PhoneBadgeSp.sp, fontFamily = FontFamily.Monospace),
         cursorBrush   = SolidColor(GOLD),
         modifier      = modifier
-            .background(Color(0xFF111111), RoundedCornerShape(4.dp))
-            .border(1.dp, BORDER, RoundedCornerShape(4.dp))
+            .background(INPUT_SURFACE, RoundedCornerShape(TPlannerGeometry.RadiusControlDp.dp))
+            .border(1.dp, BORDER, RoundedCornerShape(TPlannerGeometry.RadiusControlDp.dp))
             .padding(horizontal = 8.dp, vertical = 6.dp),
         decorationBox = { inner ->
-            if (value.isEmpty()) Text(placeholder, color = DIM, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+            if (value.isEmpty()) Text(placeholder, color = DIM, fontSize = TPlannerTypography.PhoneBadgeSp.sp, fontFamily = FontFamily.Monospace)
             inner()
         }
     )
@@ -199,7 +200,7 @@ fun MarkdownViewer(
                 settings.allowContentAccess = false
                 settings.allowFileAccessFromFileURLs = false
                 settings.allowUniversalAccessFromFileURLs = false
-                setBackgroundColor(0x00000000)
+                setBackgroundColor(android.graphics.Color.TRANSPARENT)
                 webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(
                         view: WebView,
@@ -317,7 +318,7 @@ fun MarkdownEditor(
     Column(modifier.background(SURFACE)) {
         if (showToolbar) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -326,19 +327,19 @@ fun MarkdownEditor(
                         Icon(
                             Icons.Default.Close,
                             contentDescription = stringResource(R.string.cd_back),
-                            tint = Color(0xFFE0D8C8),
+                            tint = TEXT_PRIMARY,
                         )
                     }
                     Text(
                         stringResource(R.string.section_note),
-                        color = Color(0xFFE0D8C8),
-                        fontSize = 18.sp,
+                        color = TEXT_PRIMARY,
+                        fontSize = TPlannerTypography.PhoneTitleSp.sp,
                         fontWeight = FontWeight.Bold,
                     )
                 }
                 Box(
                     modifier = Modifier
-                        .background(GOLD, RoundedCornerShape(50.dp))
+                        .background(GOLD, RoundedCornerShape(TPlannerGeometry.RadiusPillDp.dp))
                         .clickable(onClick = {
                             if (imeVisible) {
                                 keyboardController?.hide()
@@ -350,8 +351,8 @@ fun MarkdownEditor(
                 ) {
                     Text(
                         stringResource(R.string.action_done),
-                        color = Color(0xFF0E0E0E),
-                        fontSize = 14.sp,
+                        color = BG,
+                        fontSize = TPlannerTypography.PhoneSupportingSp.sp,
                         fontWeight = FontWeight.Bold,
                     )
                 }
@@ -362,7 +363,11 @@ fun MarkdownEditor(
             value = value,
             onValueChange = onValueChange,
             readOnly = finishRequested,
-            textStyle = TextStyle(color = Color(0xFFE8E0D0), fontSize = 15.sp, lineHeight = 26.sp),
+            textStyle = TextStyle(
+                color = TEXT_EDITOR,
+                fontSize = TPlannerTypography.PhoneTaskTitleSp.sp,
+                lineHeight = TPlannerTypography.PhoneBodyLineHeightSp.sp,
+            ),
             cursorBrush = SolidColor(GOLD),
             modifier = Modifier
                 .weight(1f)
@@ -371,7 +376,12 @@ fun MarkdownEditor(
                 .focusRequester(focusRequester),
             decorationBox = { inner ->
                 if (value.isEmpty()) {
-                    Text(placeholder, color = DIM, fontSize = 15.sp, lineHeight = 26.sp)
+                    Text(
+                        placeholder,
+                        color = DIM,
+                        fontSize = TPlannerTypography.PhoneTaskTitleSp.sp,
+                        lineHeight = TPlannerTypography.PhoneBodyLineHeightSp.sp,
+                    )
                 }
                 inner()
             }

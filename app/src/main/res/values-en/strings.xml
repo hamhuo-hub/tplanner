@@ -86,6 +86,9 @@
     <string name="sync_success_with_name">Synced · %1$s</string>
     <string name="sync_complete">Sync complete</string>
     <string name="sync_failed">Sync failed</string>
+    <string name="sync_saved">Saved</string>
+    <string name="sync_uploading">Uploading</string>
+    <string name="sync_updating">Updating</string>
     <string name="sync_server_title">Sync Server</string>
     <string name="unknown_error">Unknown error</string>
     <string name="schedule_created_toast">Schedule created: %1$s</string>

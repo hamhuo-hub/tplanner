@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 潮汐表盘的 WallpaperService 描述文件。 -->
 <wallpaper xmlns:android="http://schemas.android.com/apk/res/android"
-    android:thumbnail="@drawable/preview_tide"
+    android:thumbnail="@drawable/preview_tide_static"
     android:description="@string/app_name" />

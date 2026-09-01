@@ -65,11 +65,15 @@ internal class RemoteChangeMonitor(
                 revision = notice.revision.takeIf { it > 0L } ?: revision
                 retryDelayMillis = INITIAL_RETRY_MILLIS
 
-                if (SyncDatasets.JOURNALS in notice.datasets) {
-                    manager.syncJournalsOrThrow(serverUrl)
-                }
-                if (SyncDatasets.EVENTS in notice.datasets) {
-                    manager.syncEventsOrThrow(serverUrl)
+                if (notice.datasets.isNotEmpty()) {
+                    // A remote notification is a request, not an animation trigger. It joins any
+                    // active startup/manual transaction and all screens observe that same id.
+                    SyncCoordinator.requestSync(SyncReason.REMOTE_CHANGE) { report ->
+                        // Always install one coherent projection. Dataset-specific pulls can lose
+                        // a second notification when it joins this single-flight transaction.
+                        manager.syncAllOrThrow(serverUrl)
+                        report(SyncPhase.UPDATING)
+                    }
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -79,11 +83,6 @@ internal class RemoteChangeMonitor(
                 retryDelayMillis = (retryDelayMillis * 2).coerceAtMost(MAX_RETRY_MILLIS)
             }
         }
-    }
-
-    private object SyncDatasets {
-        const val EVENTS = "events"
-        const val JOURNALS = "journals"
     }
 
     companion object {

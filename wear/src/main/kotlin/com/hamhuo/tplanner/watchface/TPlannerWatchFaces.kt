@@ -2,6 +2,7 @@ package com.hamhuo.tplanner
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -30,6 +31,10 @@ import androidx.wear.watchface.style.CurrentUserStyleRepository
 
 abstract class TPlannerFaceService : WatchFaceService() {
     @Volatile private var activeRenderer: FaceBase? = null
+    private var marksPreferences: SharedPreferences? = null
+    private val marksListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == WATCH_MARKS_KEY) activeRenderer?.onProjectionInstalled()
+    }
     private val vibrator: Vibrator by lazy { getSystemService(Vibrator::class.java) }
     private val openDashboardIntent: PendingIntent by lazy {
         PendingIntent.getActivity(
@@ -61,6 +66,10 @@ abstract class TPlannerFaceService : WatchFaceService() {
         BluetoothScheduleBridgeService.startIfAllowed(applicationContext)
         val renderer = createRenderer(surfaceHolder, watchState, currentUserStyleRepository)
         activeRenderer = renderer
+        marksPreferences = getSharedPreferences(WATCH_MARKS_PREFS, MODE_PRIVATE).also { prefs ->
+            prefs.unregisterOnSharedPreferenceChangeListener(marksListener)
+            prefs.registerOnSharedPreferenceChangeListener(marksListener)
+        }
         return WatchFace(WatchFaceType.DIGITAL, renderer)
             .setTapListener(object : WatchFace.TapListener {
                 override fun onTapEvent(tapType: Int, tapEvent: TapEvent, complicationSlot: ComplicationSlot?) {
@@ -84,6 +93,8 @@ abstract class TPlannerFaceService : WatchFaceService() {
     }
 
     override fun onDestroy() {
+        marksPreferences?.unregisterOnSharedPreferenceChangeListener(marksListener)
+        marksPreferences = null
         activeRenderer = null
         super.onDestroy()
     }

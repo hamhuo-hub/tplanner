@@ -2,6 +2,7 @@ package com.hamhuo.tplanner
 
 import android.graphics.Paint
 import android.graphics.Typeface
+import com.hamhuo.tplanner.designsystem.TPlannerColors
 
 enum class FaceDesign(val interactiveDelayMs: Long) {
     TIDE(100L),
@@ -15,15 +16,15 @@ enum class FaceDesign(val interactiveDelayMs: Long) {
 
 const val BOOT_MS = 800L
 
-const val BG        = 0xFF0D0D0D.toInt()
-const val GOLD      = 0xFFC9A84C.toInt()
-const val CREAM     = 0xFFE8E0D0.toInt()
-const val DIM       = 0xFF857F6E.toInt()
-const val EVENT_DOT = 0x604A90D0.toInt()  // 日程事件：蓝色半透明小点
-const val TRACK     = 0xFF232323.toInt()
-const val AMB_TEXT  = 0xFF8A857A.toInt()
-const val AMB_GOLD  = 0xFF55503F.toInt()
-const val AMB_TRACK = 0xFF1A1A1A.toInt()
+const val BG        = TPlannerColors.WatchFaceBackground
+const val GOLD      = TPlannerColors.Gold
+const val CREAM     = TPlannerColors.TextEditor
+const val DIM       = TPlannerColors.WatchTextSecondary
+const val EVENT_DOT = TPlannerColors.WatchEventDot // 日程事件：蓝色半透明小点
+const val TRACK     = TPlannerColors.WatchTrack
+const val AMB_TEXT  = TPlannerColors.WatchAmbientText
+const val AMB_GOLD  = TPlannerColors.WatchAmbientGold
+const val AMB_TRACK = TPlannerColors.Surface
 
 // ── Paint 快捷函数 ──────────────────────────────────────────────────────
 // 每个方法先清掉上一次的状态再设置新的，避免 PathEffect / Typeface / textAlign 残留。

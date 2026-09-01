@@ -42,6 +42,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -81,7 +82,6 @@ import java.util.UUID
 
 private const val LLM_LOG_TAG = "TplannerLLM"
 private const val PRIMARY_NAVIGATION_VISIBLE_MILLIS = 2_500L
-private const val SYNC_SPINNER_VISIBLE_MILLIS = 1_500L
 private const val LOCATION_CAPTURE_WAIT_MILLIS = 12_000L
 private const val JOURNAL_DAY_POLL_MILLIS = 30_000L
 
@@ -269,25 +269,11 @@ fun MainScreen(
 
     // ── Sync state ───────────────────────────────────────────────────────
     var serverUrl  by remember { mutableStateOf(initialServerUrl) }
-    var syncStatus by remember { mutableStateOf("idle") }
-    var syncMsg    by remember { mutableStateOf("") }
+    val syncOperation by SyncCoordinator.state.collectAsState()
+    val syncStatus = syncOperation.phase.wireName
     var syncFeedback by remember { mutableStateOf<TPlannerSyncFeedbackPresentation?>(null) }
     var syncFeedbackGeneration by remember { mutableIntStateOf(0) }
-    // 转圈动画与同步结果解耦:固定展示 SYNC_SPINNER_VISIBLE_MILLIS 后收起,
-    // 即使同步迟迟不返回结果也不会一直转。generation 防止旧定时器盖掉新动画。
-    var syncSpinnerVisible by remember { mutableStateOf(false) }
-    var syncSpinnerGeneration by remember { mutableIntStateOf(0) }
-
-    fun showSyncSpinner() {
-        val generation = ++syncSpinnerGeneration
-        syncSpinnerVisible = true
-        scope.launch {
-            delay(SYNC_SPINNER_VISIBLE_MILLIS)
-            if (syncSpinnerGeneration == generation) {
-                syncSpinnerVisible = false
-            }
-        }
-    }
+    var presentedSyncOperationId by rememberSaveable { mutableStateOf<String?>(null) }
     val eventActions = remember(serverUrl) {
         ScheduleItemActions(scope, context, eventStore, eventWriteMutex, { url -> manager.fetchEvents(url) }, { serverUrl })
     }
@@ -296,71 +282,66 @@ fun MainScreen(
     val syncCompleteMessage = stringResource(R.string.sync_complete)
     val syncFailedMessage = stringResource(R.string.sync_failed)
     val unknownSyncError = stringResource(R.string.unknown_error)
+    val syncSavedMessage = stringResource(R.string.sync_saved)
+    val syncUploadingMessage = stringResource(R.string.sync_uploading)
+    val syncUpdatingMessage = stringResource(R.string.sync_updating)
 
     fun serverHost(url: String): String =
         try { java.net.URL(LanSyncManager.normalizeServerUrl(url)).host } catch (_: Exception) { url }
 
-    val onSync: () -> Unit = {
-        if (syncStatus != "syncing") {
-            // Flip the state before launching so rapid taps cannot queue duplicate full syncs.
-            syncStatus = "syncing"
-            syncMsg = ""
-            showSyncSpinner()
-            val requestedServerUrl = serverUrl
-            scope.launch {
-                val result = try {
-                    manager.saveServerUrl(requestedServerUrl)
-                    val savedServerUrl = manager.getServerUrl()
-                    manager.syncAllOrThrow()
-                    Triple(
-                        "success",
-                        syncedTemplate.format(serverHost(savedServerUrl)),
-                        TPlannerSyncFeedbackTone.SUCCESS,
-                    )
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (error: Exception) {
-                    Log.e("TplannerSync", "Manual sync failed", error)
-                    Triple(
-                        "error",
-                        error.message ?: unknownSyncError,
-                        TPlannerSyncFeedbackTone.ERROR,
-                    )
-                } finally {
-                    // Journal sync may have committed before a later event sync failure.
-                    runCatching { refreshJournalRecovery(journalDateKey) }
-                }
-                // 结果拿到即展示,不再等待转圈动画补足时长。
-                syncStatus = result.first
-                syncMsg = result.second
-                syncFeedbackGeneration++
-                syncFeedback = TPlannerSyncFeedbackPresentation(
-                    generation = syncFeedbackGeneration,
-                    message = if (result.first == "success") syncCompleteMessage else syncFailedMessage,
-                    tone = result.third,
-                )
-            }
-        } else {
-            // 同步仍在进行:重亮一次转圈提示,避免下拉后界面毫无反应。
-            showSyncSpinner()
+    val syncMsg = when (syncOperation.phase) {
+        SyncPhase.IDLE -> ""
+        SyncPhase.SAVED -> syncSavedMessage
+        SyncPhase.UPLOADING -> syncUploadingMessage
+        SyncPhase.UPDATING -> syncUpdatingMessage
+        SyncPhase.SUCCESS -> syncedTemplate.format(serverHost(serverUrl))
+        SyncPhase.ERROR -> listOfNotNull(
+            syncOperation.errorCode,
+            syncOperation.detail ?: unknownSyncError,
+        ).joinToString(" · ")
+    }
+
+    fun requestSync(reason: SyncReason) {
+        val requestedServerUrl = serverUrl
+        SyncCoordinator.requestSync(reason) { report ->
+            manager.saveServerUrl(requestedServerUrl)
+            manager.syncAllOrThrow(requestedServerUrl)
+            report(SyncPhase.UPDATING)
         }
     }
 
-    LaunchedEffect(Unit) {
-        syncStatus = "syncing"
-        syncMsg = ""
-        showSyncSpinner()
-        try {
-            manager.syncAllOrThrow(serverUrl)
-            syncStatus = "success"
-            syncMsg = syncedTemplate.format(serverHost(serverUrl))
-        } catch (error: CancellationException) {
-            throw error
-        } catch (_: Exception) {
-            syncStatus = "idle"
-        } finally {
-            runCatching { refreshJournalRecovery(journalDateKey) }
+    val onSync: () -> Unit = { requestSync(SyncReason.USER_GESTURE) }
+
+    LaunchedEffect(manager) {
+        val requestedServerUrl = serverUrl
+        SyncCoordinator.requestStartupSync { report ->
+            manager.saveServerUrl(requestedServerUrl)
+            manager.syncAllOrThrow(requestedServerUrl)
+            report(SyncPhase.UPDATING)
         }
+    }
+
+    LaunchedEffect(syncOperation.operationId, syncOperation.phase) {
+        val operationId = syncOperation.operationId ?: return@LaunchedEffect
+        val terminal = syncOperation.phase == SyncPhase.SUCCESS ||
+            syncOperation.phase == SyncPhase.ERROR
+        if (!terminal || presentedSyncOperationId == operationId) return@LaunchedEffect
+        presentedSyncOperationId = operationId
+        runCatching { refreshJournalRecovery(journalDateKey) }
+        syncFeedbackGeneration++
+        syncFeedback = TPlannerSyncFeedbackPresentation(
+            generation = syncFeedbackGeneration,
+            message = if (syncOperation.phase == SyncPhase.SUCCESS) {
+                syncCompleteMessage
+            } else {
+                syncFailedMessage
+            },
+            tone = if (syncOperation.phase == SyncPhase.SUCCESS) {
+                TPlannerSyncFeedbackTone.SUCCESS
+            } else {
+                TPlannerSyncFeedbackTone.ERROR
+            },
+        )
     }
 
     val isPhone = LocalConfiguration.current.screenWidthDp < 840
@@ -471,13 +452,7 @@ fun MainScreen(
 
     // ── Panel building blocks ────────────────────────────────────────────
     val notesCardContent: @Composable () -> Unit = {
-        TPlannerPullToSync(
-            isSyncing = syncSpinnerVisible,
-            onSync = onSync,
-            enabled = isPhone,
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize()) {
                 Column(Modifier.fillMaxSize()) {
                     NotesHeader(
                         date = journalDate,
@@ -506,7 +481,9 @@ fun MainScreen(
                             saveJournalDraft(text)
                         },
                         onEditingChange = { journalEditing = it },
-                        onPullRefresh = if (isPhone) onSync else null,
+                        // The app-level pull boundary is the only gesture source. The editor must
+                        // never infer a business sync from its own restored visual state.
+                        onPullRefresh = null,
                         placeholder = stringResource(R.string.journal_edit_hint),
                         modifier = Modifier.weight(1f),
                     )
@@ -538,7 +515,6 @@ fun MainScreen(
                         )
                     }
                 }
-            }
         }
     }
 
@@ -610,27 +586,20 @@ fun MainScreen(
     }
 
     val taskCardContent: @Composable () -> Unit = {
-        TPlannerPullToSync(
-            isSyncing = syncSpinnerVisible,
-            onSync = onSync,
-            enabled = isPhone,
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            TaskWidget(
-                events = events,
-                view = selectedView,
-                onAddEvent = ::beginNewItem,
-                onDelete = { eventId ->
-                    eventActions.softDelete(events, eventId) { events = it }
-                },
-                onItemClick = ::openItem,
-                onViewPickerClick = { showListSheet = true },
-                onTypeChange = { eventId, newType ->
-                    eventActions.changeType(events, eventId, newType) { events = it }
-                },
-                onModalVisibilityChange = { taskWidgetModalVisible = it },
-            )
-        }
+        TaskWidget(
+            events = events,
+            view = selectedView,
+            onAddEvent = ::beginNewItem,
+            onDelete = { eventId ->
+                eventActions.softDelete(events, eventId) { events = it }
+            },
+            onItemClick = ::openItem,
+            onViewPickerClick = { showListSheet = true },
+            onTypeChange = { eventId, newType ->
+                eventActions.changeType(events, eventId, newType) { events = it }
+            },
+            onModalVisibilityChange = { taskWidgetModalVisible = it },
+        )
     }
 
     val timelineCardContent: @Composable () -> Unit = {
@@ -773,50 +742,58 @@ fun MainScreen(
 
     // ── Main layout ──────────────────────────────────────────────────────
     Box(Modifier.fillMaxSize().background(BG).windowInsetsPadding(WindowInsets.systemBars)) {
-        if (showScheduleSheet) {
-            UntangleSheet(
-                requestId = sheetRequestId,
-                prefillLocation = prefillLocation,
-                locationLoading = phoneLocationState == PhoneLocationState.LOCATING,
-                initialText = untangleInput,
-                thinking = thinking,
-                action = sheetAction,
-                onTextChange = { text ->
-                    untangleInput = text
-                },
-                onDismiss = {
-                    Log.d(LLM_LOG_TAG, "phase=sheet_close reason=dismissed")
-                    showScheduleSheet = false
-                    thinking = false
-                    sheetAction = null
-                    sheetRequestId = ""
-                    untangleInput = ""
-                },
-                onSubmit = submitForExtraction,
-                onConfirmAction = ::confirmAction,
-            )
-        } else {
-            MainLayout(
-                isPhone = isPhone,
-                phoneTab = phoneTab,
-                onPhoneTabSelected = { selected ->
-                    phoneTab = selected
-                    primaryNavigationGeneration++
-                    chromeMode = ChromeMode.PrimaryNavigation
-                },
-                onListSheetRequest = { showListSheet = true },
-                chromeHidden = chromeHidden,
-                chromeMode = chromeMode,
-                onNavigationRequested = {
-                    if (!chromeHidden) {
+        TPlannerPullToSync(
+            isSyncing = syncOperation.phase.isRunning,
+            operationId = syncOperation.operationId,
+            onSync = onSync,
+            enabled = isPhone && !chromeHidden,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            if (showScheduleSheet) {
+                UntangleSheet(
+                    requestId = sheetRequestId,
+                    prefillLocation = prefillLocation,
+                    locationLoading = phoneLocationState == PhoneLocationState.LOCATING,
+                    initialText = untangleInput,
+                    thinking = thinking,
+                    action = sheetAction,
+                    onTextChange = { text ->
+                        untangleInput = text
+                    },
+                    onDismiss = {
+                        Log.d(LLM_LOG_TAG, "phase=sheet_close reason=dismissed")
+                        showScheduleSheet = false
+                        thinking = false
+                        sheetAction = null
+                        sheetRequestId = ""
+                        untangleInput = ""
+                    },
+                    onSubmit = submitForExtraction,
+                    onConfirmAction = ::confirmAction,
+                )
+            } else {
+                MainLayout(
+                    isPhone = isPhone,
+                    phoneTab = phoneTab,
+                    onPhoneTabSelected = { selected ->
+                        phoneTab = selected
                         primaryNavigationGeneration++
                         chromeMode = ChromeMode.PrimaryNavigation
-                    }
-                },
-                notesCard = notesCardContent,
-                taskCard = taskCardContent,
-                timelineCard = timelineCardContent,
-            )
+                    },
+                    onListSheetRequest = { showListSheet = true },
+                    chromeHidden = chromeHidden,
+                    chromeMode = chromeMode,
+                    onNavigationRequested = {
+                        if (!chromeHidden) {
+                            primaryNavigationGeneration++
+                            chromeMode = ChromeMode.PrimaryNavigation
+                        }
+                    },
+                    notesCard = notesCardContent,
+                    taskCard = taskCardContent,
+                    timelineCard = timelineCardContent,
+                )
+            }
         }
         if (isPhone) {
             syncFeedback?.let { feedback ->

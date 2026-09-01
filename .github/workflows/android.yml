@@ -41,6 +41,10 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         # 不固定版本:跟随仓库 wrapper(自动缓存发行包与依赖,避免每次重新下载)
 
+      - name: Verify shared Android brand assets
+        shell: pwsh
+        run: ./scripts/check-android-brand-assets.ps1
+
       - name: Run unit tests, lint, and debug builds
         run: gradle testDebugUnitTest lintDebug assembleDebug
 

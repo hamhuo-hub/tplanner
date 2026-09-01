@@ -14,6 +14,9 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.hamhuo.tplanner.designsystem.TPlannerColors
+import com.hamhuo.tplanner.designsystem.TPlannerGeometry
+import com.hamhuo.tplanner.designsystem.TPlannerTypography
 import java.time.ZoneId
 
 // ── shared constants ───────────────────────────────────────────────────
@@ -33,16 +36,7 @@ val CREATION_REGULAR = WEAR_REGULAR
 val CREATION_MEDIUM = WEAR_MEDIUM
 val CREATION_BOLD = WEAR_BOLD
 val CREATION_ZONE = ZoneId.of(WatchTaskProtocol.DEFAULT_TIME_ZONE_ID)
-val TASK_COLORS = intArrayOf(
-    0xFF5B8FCC.toInt(),
-    0xFFC9A84C.toInt(),
-    0xFFC0697A.toInt(),
-    0xFF5B9E72.toInt(),
-    0xFF8B6BAE.toInt(),
-    0xFFC87D5A.toInt(),
-    0xFF4A9DA8.toInt(),
-    0xFF8A8A8A.toInt(),
-)
+val TASK_COLORS = TPlannerColors.EventPalette
 
 // ── shared View builders ───────────────────────────────────────────────
 
@@ -85,7 +79,7 @@ fun Context.creationBottomSpacer(): View = View(this).apply {
 fun Context.creationHeading(value: String): TextView = TextView(this).apply {
     text = value
     setTextColor(CREATION_PRIMARY)
-    textSize = 23f
+    textSize = TPlannerTypography.WearHeadingSp
     typeface = CREATION_BOLD
     includeFontPadding = false
     gravity = Gravity.CENTER
@@ -100,13 +94,17 @@ fun Context.creationActionRow(
 ): TextView = TextView(this).apply {
     setText(textRes)
     setTextColor(CREATION_ACCENT)
-    textSize = 17f
+    textSize = TPlannerTypography.WearTaskTitleSp
     typeface = CREATION_BOLD
     includeFontPadding = false
     gravity = Gravity.CENTER
     minimumHeight = dp(54)
     setPadding(dp(18), dp(8), dp(18), dp(8))
-    background = creationRippleRounded(Color.TRANSPARENT, CREATION_CARD_PRESSED, dp(14).toFloat())
+    background = creationRippleRounded(
+        Color.TRANSPARENT,
+        CREATION_CARD_PRESSED,
+        dp(TPlannerGeometry.RadiusFieldDp).toFloat(),
+    )
     isClickable = true
     isFocusable = true
     contentDescription = getString(textRes)
@@ -125,7 +123,11 @@ fun Context.creationTypeButton(
         gravity = Gravity.CENTER_VERTICAL
         minimumHeight = dp(61)
         setPadding(dp(13), dp(7), dp(13), dp(7))
-        background = creationRippleRounded(CREATION_CARD, CREATION_CARD_PRESSED, dp(14).toFloat())
+        background = creationRippleRounded(
+            CREATION_CARD,
+            CREATION_CARD_PRESSED,
+            dp(TPlannerGeometry.RadiusFieldDp).toFloat(),
+        )
         isClickable = true
         isFocusable = true
         contentDescription = getString(R.string.task_create_type_accessibility, title, description)
@@ -137,8 +139,8 @@ fun Context.creationTypeButton(
         addView(LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
-            addView(creationRowText(title, 17f, CREATION_PRIMARY, CREATION_MEDIUM))
-            addView(creationRowText(description, 12f, CREATION_DIM, CREATION_REGULAR))
+            addView(creationRowText(title, TPlannerTypography.WearTaskTitleSp, CREATION_PRIMARY, CREATION_MEDIUM))
+            addView(creationRowText(description, TPlannerTypography.WearCaptionSp, CREATION_DIM, CREATION_REGULAR))
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 
         layoutParams = LinearLayout.LayoutParams(
@@ -158,7 +160,11 @@ fun Context.creationSettingRow(
     gravity = Gravity.CENTER_VERTICAL
     minimumHeight = dp(66)
     setPadding(dp(13), dp(8), dp(12), dp(8))
-    background = creationRippleRounded(CREATION_CARD, CREATION_CARD_PRESSED, dp(14).toFloat())
+    background = creationRippleRounded(
+        CREATION_CARD,
+        CREATION_CARD_PRESSED,
+        dp(TPlannerGeometry.RadiusFieldDp).toFloat(),
+    )
     isClickable = true
     isFocusable = true
     layoutParams = LinearLayout.LayoutParams(
@@ -169,8 +175,8 @@ fun Context.creationSettingRow(
     addView(LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
         gravity = Gravity.CENTER_VERTICAL
-        addView(creationRowText(getString(titleRes), 17f, CREATION_PRIMARY, CREATION_MEDIUM))
-        addView(creationRowText(getString(descriptionRes), 12f, CREATION_DIM, CREATION_REGULAR).apply {
+        addView(creationRowText(getString(titleRes), TPlannerTypography.WearTaskTitleSp, CREATION_PRIMARY, CREATION_MEDIUM))
+        addView(creationRowText(getString(descriptionRes), TPlannerTypography.WearCaptionSp, CREATION_DIM, CREATION_REGULAR).apply {
             tag = TAG_VALUE
         })
     }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))

@@ -7,6 +7,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,6 +24,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
@@ -71,6 +74,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.input.pointer.awaitPointerEvent
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.TextRange
@@ -86,6 +91,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
+import com.hamhuo.tplanner.designsystem.TPlannerGeometry
+import com.hamhuo.tplanner.designsystem.TPlannerTypography
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.util.Calendar
@@ -270,7 +277,7 @@ fun ScheduleItemDetailScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = ::saveAndClose) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back), tint = Color(0xFFE0D8C8))
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back), tint = TEXT_PRIMARY)
                     }
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -278,24 +285,24 @@ fun ScheduleItemDetailScreen(
                     ) {
                         Box(
                             modifier = Modifier
-                                .background(RED, RoundedCornerShape(50.dp))
+                                .background(RED, RoundedCornerShape(TPlannerGeometry.RadiusPillDp.dp))
                                 .clickable(enabled = !saveRequested && !deleteRequested, onClick = ::deleteAndClose)
                                 .padding(horizontal = 14.dp, vertical = 8.dp)
                         ) {
                             Text(
                                 stringResource(R.string.cd_delete),
                                 color = Color.White,
-                                fontSize = 14.sp,
+                                fontSize = TPlannerTypography.PhoneSupportingSp.sp,
                                 fontWeight = FontWeight.Bold,
                             )
                         }
                         Box(
                             modifier = Modifier
-                                .background(GOLD, RoundedCornerShape(50.dp))
+                                .background(GOLD, RoundedCornerShape(TPlannerGeometry.RadiusPillDp.dp))
                                 .clickable(enabled = !saveRequested && !deleteRequested, onClick = ::saveAndClose)
                                 .padding(horizontal = 22.dp, vertical = 8.dp)
                         ) {
-                            Text(stringResource(R.string.action_done), color = Color(0xFF0E0E0E), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.action_done), color = BG, fontSize = TPlannerTypography.PhoneSupportingSp.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -317,7 +324,7 @@ fun ScheduleItemDetailScreen(
                                 .size(56.dp)
                                 .background(
                                     EVENT_COLORS.getOrElse(colorId) { EVENT_COLORS[0] },
-                                    RoundedCornerShape(14.dp)
+                                    RoundedCornerShape(TPlannerGeometry.RadiusFieldDp.dp)
                                 )
                                 .clickable {
                                     renaming = false
@@ -329,7 +336,7 @@ fun ScheduleItemDetailScreen(
                         ) {
                             Icon(
                                 typeIcon(type), contentDescription = null,
-                                tint = Color(0xFF0E0E0E), modifier = Modifier.size(26.dp)
+                                tint = BG, modifier = Modifier.size(26.dp)
                             )
                         }
                         if (renaming) {
@@ -341,7 +348,7 @@ fun ScheduleItemDetailScreen(
                                     persistDraft()
                                 },
                                 textStyle = TextStyle(
-                                    color = Color(0xFFE0D8C8), fontSize = 22.sp, fontWeight = FontWeight.Bold
+                                    color = TEXT_PRIMARY, fontSize = TPlannerTypography.PhoneHeadingSp.sp, fontWeight = FontWeight.Bold
                                 ),
                                 cursorBrush = SolidColor(GOLD),
                                 singleLine  = true,
@@ -356,7 +363,7 @@ fun ScheduleItemDetailScreen(
                         } else {
                             Text(
                                 title.ifBlank { stringResource(R.string.untitled_placeholder) },
-                                color = Color(0xFFE0D8C8), fontSize = 22.sp,
+                                color = TEXT_PRIMARY, fontSize = TPlannerTypography.PhoneHeadingSp.sp,
                                 fontWeight = FontWeight.Bold, maxLines = 1,
                                 modifier = Modifier
                                     .weight(1f)
@@ -373,12 +380,12 @@ fun ScheduleItemDetailScreen(
                                         .size(24.dp)
                                         .background(
                                             if (completed) GOLD else Color.Transparent,
-                                            RoundedCornerShape(5.dp),
+                                            RoundedCornerShape(TPlannerGeometry.RadiusCompactDp.dp),
                                         )
                                         .border(
                                             1.5.dp,
                                             if (completed) GOLD else BORDER,
-                                            RoundedCornerShape(5.dp),
+                                            RoundedCornerShape(TPlannerGeometry.RadiusCompactDp.dp),
                                         ),
                                     contentAlignment = Alignment.Center,
                                 ) {
@@ -386,7 +393,7 @@ fun ScheduleItemDetailScreen(
                                         Icon(
                                             Icons.Default.Check,
                                             contentDescription = stringResource(R.string.cd_mark_incomplete),
-                                            tint = Color(0xFF0E0E0E),
+                                            tint = BG,
                                             modifier = Modifier.size(17.dp),
                                         )
                                     } else {
@@ -413,8 +420,8 @@ fun ScheduleItemDetailScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color(0xFF1F1F1F), RoundedCornerShape(10.dp))
-                            .border(1.dp, BORDER, RoundedCornerShape(10.dp))
+                            .background(SURFACE_LOW, RoundedCornerShape(TPlannerGeometry.RadiusPanelDp.dp))
+                            .border(1.dp, BORDER, RoundedCornerShape(TPlannerGeometry.RadiusPanelDp.dp))
                             .clickable {
                                 renaming = false
                                 focusManager.clearFocus(force = true)
@@ -428,8 +435,8 @@ fun ScheduleItemDetailScreen(
                     ) {
                         Text(
                             currentList?.name ?: stringResource(R.string.list_none),
-                            color = if (currentList != null) Color(0xFFE0D8C8) else DIM,
-                            fontSize = 14.sp,
+                            color = if (currentList != null) TEXT_PRIMARY else DIM,
+                            fontSize = TPlannerTypography.PhoneSupportingSp.sp,
                             fontWeight = FontWeight.SemiBold,
                         )
                         Icon(
@@ -512,42 +519,42 @@ fun ScheduleItemDetailScreen(
                                 Text(
                                     stringResource(R.string.recurrence_count, recurrenceCount),
                                     modifier = Modifier.weight(1f),
-                                    color = Color(0xFFE0D8C8),
-                                    fontSize = 14.sp,
+                                    color = TEXT_PRIMARY,
+                                    fontSize = TPlannerTypography.PhoneSupportingSp.sp,
                                     fontWeight = FontWeight.SemiBold,
                                 )
                                 Box(
                                     modifier = Modifier
                                         .size(34.dp)
-                                        .background(Color(0xFF1F1F1F), RoundedCornerShape(9.dp))
-                                        .border(1.dp, BORDER, RoundedCornerShape(9.dp))
+                                        .background(SURFACE_LOW, RoundedCornerShape(TPlannerGeometry.RadiusMediumDp.dp))
+                                        .border(1.dp, BORDER, RoundedCornerShape(TPlannerGeometry.RadiusMediumDp.dp))
                                         .clickable(enabled = recurrenceCount > 1) {
                                             recurrenceCount--
                                             persistDraft()
                                         },
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    Text("−", color = Color(0xFFE0D8C8), fontSize = 20.sp)
+                                    Text("−", color = TEXT_PRIMARY, fontSize = TPlannerTypography.PhoneSectionSp.sp)
                                 }
                                 Box(
                                     modifier = Modifier
                                         .size(34.dp)
-                                        .background(Color(0xFF1F1F1F), RoundedCornerShape(9.dp))
-                                        .border(1.dp, BORDER, RoundedCornerShape(9.dp))
+                                        .background(SURFACE_LOW, RoundedCornerShape(TPlannerGeometry.RadiusMediumDp.dp))
+                                        .border(1.dp, BORDER, RoundedCornerShape(TPlannerGeometry.RadiusMediumDp.dp))
                                         .clickable(enabled = recurrenceCount < MAX_TASK_RECURRENCE_COUNT) {
                                             recurrenceCount++
                                             persistDraft()
                                         },
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    Text("+", color = Color(0xFFE0D8C8), fontSize = 18.sp)
+                                    Text("+", color = TEXT_PRIMARY, fontSize = TPlannerTypography.PhoneTitleSp.sp)
                                 }
                             }
                             Text(
                                 stringResource(R.string.recurrence_independent_hint),
                                 color = DIM,
-                                fontSize = 12.sp,
-                                lineHeight = 18.sp,
+                                fontSize = TPlannerTypography.PhoneCaptionSp.sp,
+                                lineHeight = TPlannerTypography.PhoneCompactLineHeightSp.sp,
                                 modifier = Modifier.padding(top = 8.dp),
                             )
                         }
@@ -568,15 +575,15 @@ fun ScheduleItemDetailScreen(
                         Column(Modifier.weight(1f)) {
                             Text(
                                 stringResource(R.string.alarm_enabled_title),
-                                color = Color(0xFFE0D8C8),
-                                fontSize = 15.sp,
+                                color = TEXT_PRIMARY,
+                                fontSize = TPlannerTypography.PhoneTaskTitleSp.sp,
                                 fontWeight = FontWeight.SemiBold,
                             )
                             Text(
                                 stringResource(R.string.alarm_enabled_description),
                                 color = DIM,
-                                fontSize = 12.sp,
-                                lineHeight = 18.sp,
+                                fontSize = TPlannerTypography.PhoneCaptionSp.sp,
+                                lineHeight = TPlannerTypography.PhoneCompactLineHeightSp.sp,
                             )
                         }
                         Switch(
@@ -586,10 +593,10 @@ fun ScheduleItemDetailScreen(
                                 persistDraft()
                             },
                             colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color(0xFF0E0E0E),
+                                checkedThumbColor = BG,
                                 checkedTrackColor = GOLD,
                                 uncheckedThumbColor = DIM,
-                                uncheckedTrackColor = Color(0xFF252525),
+                                uncheckedTrackColor = CONTROL,
                             ),
                         )
                     }
@@ -610,10 +617,10 @@ fun ScheduleItemDetailScreen(
                                 Box(
                                     modifier = Modifier
                                         .background(
-                                            if (selected) GOLD else Color(0xFF1F1F1F),
-                                            RoundedCornerShape(20.dp),
+                                            if (selected) GOLD else SURFACE_LOW,
+                                            RoundedCornerShape(TPlannerGeometry.RadiusChipDp.dp),
                                         )
-                                        .border(1.dp, if (selected) GOLD else BORDER, RoundedCornerShape(20.dp))
+                                        .border(1.dp, if (selected) GOLD else BORDER, RoundedCornerShape(TPlannerGeometry.RadiusChipDp.dp))
                                         .clickable {
                                             alarmOffsetMinutes = minutes
                                             persistDraft()
@@ -622,8 +629,8 @@ fun ScheduleItemDetailScreen(
                                 ) {
                                     Text(
                                         alarmOffsetLabel(minutes),
-                                        color = if (selected) Color(0xFF0E0E0E) else Color(0xFFE0D8C8),
-                                        fontSize = 13.sp,
+                                        color = if (selected) BG else TEXT_PRIMARY,
+                                        fontSize = TPlannerTypography.PhoneMetaSp.sp,
                                         fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
                                     )
                                 }
@@ -633,8 +640,8 @@ fun ScheduleItemDetailScreen(
                             Text(
                                 stringResource(R.string.alarm_exact_permission_hint),
                                 color = GOLD,
-                                fontSize = 12.sp,
-                                lineHeight = 18.sp,
+                                fontSize = TPlannerTypography.PhoneCaptionSp.sp,
+                                lineHeight = TPlannerTypography.PhoneCompactLineHeightSp.sp,
                                 modifier = Modifier
                                     .padding(top = 10.dp)
                                     .clickable { TaskAlarmScheduler.requestExactAlarmAccess(context) },
@@ -682,7 +689,7 @@ fun ScheduleItemDetailScreen(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null, tint = DIM, modifier = Modifier.size(16.dp))
-                            Text(stringResource(R.string.action_add_item), color = DIM, fontSize = 14.sp)
+                            Text(stringResource(R.string.action_add_item), color = DIM, fontSize = TPlannerTypography.PhoneSupportingSp.sp)
                         }
                     }
 
@@ -746,7 +753,7 @@ fun ScheduleItemDetailScreen(
                 ModalBottomSheet(
                     onDismissRequest = { showTypeSheet = false },
                     sheetState       = typeSheetState,
-                    containerColor   = Color(0xFF1A1A1A),
+                    containerColor   = SURFACE,
                     dragHandle       = null,
                 ) {
                     ItemTypeChangeSheet(
@@ -773,7 +780,7 @@ fun ScheduleItemDetailScreen(
                 ModalBottomSheet(
                     onDismissRequest = { showListPicker = false },
                     sheetState       = listPickerSheetState,
-                    containerColor   = Color(0xFF1A1A1A),
+                    containerColor   = SURFACE,
                     dragHandle       = null,
                 ) {
                     Column(
@@ -788,7 +795,7 @@ fun ScheduleItemDetailScreen(
                                 Modifier
                                     .width(36.dp)
                                     .height(4.dp)
-                                    .background(Color(0xFF4A4A4A), RoundedCornerShape(2.dp)),
+                                    .background(DIVIDER_STRONG, RoundedCornerShape(TPlannerGeometry.RadiusSmallDp.dp)),
                             )
                         }
                         Row(
@@ -800,7 +807,7 @@ fun ScheduleItemDetailScreen(
                         ) {
                             Text(
                                 stringResource(R.string.list_picker_title),
-                                color = Color(0xFFE0D8C8), fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                                color = TEXT_PRIMARY, fontSize = TPlannerTypography.PhoneSectionSp.sp, fontWeight = FontWeight.Bold,
                                 letterSpacing = 1.5.sp,
                             )
                             Icon(
@@ -826,8 +833,8 @@ fun ScheduleItemDetailScreen(
                             ) {
                                 Text(
                                     list.name,
-                                    color = if (selected) GOLD else Color(0xFFE0D8C8),
-                                    fontSize = 16.sp,
+                                    color = if (selected) GOLD else TEXT_PRIMARY,
+                                    fontSize = TPlannerTypography.PhoneBodySp.sp,
                                     fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
                                     maxLines = 1,
                                     modifier = Modifier.weight(1f),
@@ -860,7 +867,7 @@ fun ScheduleItemDetailScreen(
                         ) {
                             Box(
                                 modifier = Modifier.size(52.dp)
-                                    .background(Color(0xFF2E2E2E), CircleShape),
+                                    .background(CONTROL_STRONG, CircleShape),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Icon(Icons.Default.Add, contentDescription = null,
@@ -868,13 +875,13 @@ fun ScheduleItemDetailScreen(
                             }
                             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                                 Text(
-                                    stringResource(R.string.list_new), color = Color(0xFFE0D8C8),
-                                    fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                                    stringResource(R.string.list_new), color = TEXT_PRIMARY,
+                                    fontSize = TPlannerTypography.PhoneBodySp.sp, fontWeight = FontWeight.SemiBold,
                                     letterSpacing = 0.8.sp,
                                 )
                                 Text(
                                     stringResource(R.string.list_new_description),
-                                    color = DIM, fontSize = 13.sp, letterSpacing = 0.3.sp,
+                                    color = DIM, fontSize = TPlannerTypography.PhoneMetaSp.sp, letterSpacing = 0.3.sp,
                                 )
                             }
                         }
@@ -902,20 +909,47 @@ fun ScheduleItemDetailScreen(
             }
 
             if (noteEditorOpen) {
-                MarkdownEditor(
-                    value = noteEditorDraft,
-                    onValueChange = { text ->
-                        noteEditorDraft = text
-                        persistDraft()
-                    },
-                    placeholder = stringResource(R.string.note_placeholder),
-                    onSaveAndClose = ::closeNoteEditor,
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .zIndex(10f)
                         .imePadding(),
-                    showToolbar = true,
-                )
+                ) {
+                    // The visual fullscreen rectangle is also a modal hit-test rectangle. This
+                    // sibling catches title/padding/blank-area input that no editor child handles,
+                    // so it can never fall through to the detail screen underneath.
+                    Box(
+                        Modifier
+                            .matchParentSize()
+                            .background(SURFACE)
+                            .pointerInput(Unit) {
+                                awaitEachGesture {
+                                    awaitFirstDown(requireUnconsumed = false).consume()
+                                    do {
+                                        val pointerEvent = awaitPointerEvent()
+                                        pointerEvent.changes.forEach { it.consume() }
+                                    } while (pointerEvent.changes.any { it.pressed })
+                                }
+                            },
+                    )
+                    MarkdownEditor(
+                        value = noteEditorDraft,
+                        onValueChange = { text ->
+                            noteEditorDraft = text
+                            persistDraft()
+                        },
+                        placeholder = stringResource(R.string.note_placeholder),
+                        onSaveAndClose = ::closeNoteEditor,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = 20.dp,
+                            end = 20.dp,
+                            top = 8.dp,
+                            bottom = 24.dp,
+                        ),
+                        showToolbar = true,
+                    )
+                }
             }
         }
     }
@@ -923,7 +957,7 @@ fun ScheduleItemDetailScreen(
 
 @Composable
 private fun DetailSectionLabel(text: String) {
-    Text(text, color = Color(0xFF6B5928), fontSize = 13.sp, letterSpacing = 0.12.sp, fontWeight = FontWeight.SemiBold)
+    Text(text, color = GOLD_DARK, fontSize = TPlannerTypography.PhoneMetaSp.sp, letterSpacing = 0.12.sp, fontWeight = FontWeight.SemiBold)
 }
 
 @Composable
@@ -935,17 +969,17 @@ private fun ListAssignmentChip(
     Box(
         modifier = Modifier
             .background(
-                if (selected) GOLD else Color(0xFF1F1F1F),
-                RoundedCornerShape(20.dp),
+                if (selected) GOLD else SURFACE_LOW,
+                RoundedCornerShape(TPlannerGeometry.RadiusChipDp.dp),
             )
-            .border(1.dp, if (selected) GOLD else BORDER, RoundedCornerShape(20.dp))
+            .border(1.dp, if (selected) GOLD else BORDER, RoundedCornerShape(TPlannerGeometry.RadiusChipDp.dp))
             .clickable(enabled = !selected, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp),
     ) {
         Text(
             text = label,
-            color = if (selected) Color(0xFF0E0E0E) else Color(0xFFE0D8C8),
-            fontSize = 13.sp,
+            color = if (selected) BG else TEXT_PRIMARY,
+            fontSize = TPlannerTypography.PhoneMetaSp.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
             maxLines = 1,
         )
@@ -967,14 +1001,14 @@ private fun alarmOffsetLabel(minutes: Int): String = when {
 private fun TimeChip(label: String, value: String, onClick: () -> Unit) {
     Column(
         modifier = Modifier
-            .background(Color(0xFF1F1F1F), RoundedCornerShape(10.dp))
-            .border(1.dp, BORDER, RoundedCornerShape(10.dp))
+            .background(SURFACE_LOW, RoundedCornerShape(TPlannerGeometry.RadiusPanelDp.dp))
+            .border(1.dp, BORDER, RoundedCornerShape(TPlannerGeometry.RadiusPanelDp.dp))
             .clickable { onClick() }
             .padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
-        Text(label, color = DIM, fontSize = 11.sp)
+        Text(label, color = DIM, fontSize = TPlannerTypography.PhoneBadgeSp.sp)
         Spacer(Modifier.height(2.dp))
-        Text(value, color = Color(0xFFE0D8C8), fontSize = 14.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
+        Text(value, color = TEXT_PRIMARY, fontSize = TPlannerTypography.PhoneSupportingSp.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -988,21 +1022,21 @@ private fun ChecklistRow(item: CheckItem, onToggle: () -> Unit, onTextChange: (S
         Box(
             modifier = Modifier
                 .size(20.dp)
-                .background(if (item.completed) GOLD else Color.Transparent, RoundedCornerShape(4.dp))
-                .border(1.5.dp, if (item.completed) GOLD else BORDER, RoundedCornerShape(4.dp))
+                .background(if (item.completed) GOLD else Color.Transparent, RoundedCornerShape(TPlannerGeometry.RadiusControlDp.dp))
+                .border(1.5.dp, if (item.completed) GOLD else BORDER, RoundedCornerShape(TPlannerGeometry.RadiusControlDp.dp))
                 .clickable { onToggle() },
             contentAlignment = Alignment.Center
         ) {
             if (item.completed) {
-                Icon(Icons.Default.Check, contentDescription = null, tint = Color(0xFF0E0E0E), modifier = Modifier.size(14.dp))
+                Icon(Icons.Default.Check, contentDescription = null, tint = BG, modifier = Modifier.size(14.dp))
             }
         }
         BasicTextField(
             value = item.text,
             onValueChange = onTextChange,
             textStyle = TextStyle(
-                color = if (item.completed) DIM else Color(0xFFE0D8C8),
-                fontSize = 15.sp,
+                color = if (item.completed) DIM else TEXT_PRIMARY,
+                fontSize = TPlannerTypography.PhoneTaskTitleSp.sp,
                 textDecoration = if (item.completed) TextDecoration.LineThrough else TextDecoration.None
             ),
             cursorBrush = SolidColor(GOLD),

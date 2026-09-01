@@ -36,8 +36,8 @@ abstract class FaceBase(
     @Volatile protected var bootAlpha  = 0f
 
     // ── 事件刻度 ────────────────────────────────────────────────────────────
-    protected var marks = WatchEventMarks.EMPTY
-    private var marksLoadedAt = 0L
+    @Volatile protected var marks = WatchEventMarks.EMPTY
+    @Volatile private var marksLoadedAt = 0L
 
     // ── 绘图资源 ────────────────────────────────────────────────────────────
     protected val p     = Paint().apply { isAntiAlias = true }
@@ -51,6 +51,13 @@ abstract class FaceBase(
     /** Only faces with an explicit app-entry region opt into tap-to-open behavior. */
     open fun isOnAppLaunchRegion(x: Int, y: Int): Boolean = false
 
+    /** Install the same committed projection observed by the Wear app and repaint immediately. */
+    internal fun onProjectionInstalled() {
+        marks = WatchEventMarks.load(context)
+        marksLoadedAt = System.currentTimeMillis()
+        invalidate()
+    }
+
     // ── 主渲染入口 ──────────────────────────────────────────────────────────
 
     override fun render(canvas: Canvas, bounds: Rect, zonedDateTime: ZonedDateTime, sharedAssets: Assets) {
@@ -62,7 +69,8 @@ abstract class FaceBase(
         if (!ambient && bootStart == 0L) bootStart = now
         bootAlpha  = easeOutCubic(((now - bootStart).coerceIn(0, BOOT_MS) / BOOT_MS.toFloat()))
 
-        // 定期重读同步快照：新备忘会在数秒内出现，时间越过当前事项时也会自动前进。
+        // SharedPreferences commits invalidate immediately. This slow read is only a defensive
+        // fallback for process/platform edge cases, not the normal synchronization mechanism.
         if (marksLoadedAt == 0L || now < marksLoadedAt || now - marksLoadedAt >= MARKS_REFRESH_MS) {
             marksLoadedAt = now
             marks = WatchEventMarks.load(context)
@@ -110,6 +118,6 @@ abstract class FaceBase(
     }
 
     private companion object {
-        const val MARKS_REFRESH_MS = 5_000L
+        const val MARKS_REFRESH_MS = 60_000L
     }
 }
