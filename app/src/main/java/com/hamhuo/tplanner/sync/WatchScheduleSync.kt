@@ -51,6 +51,7 @@ object WatchScheduleSync {
     private const val MAX_TASKS_UTF8_BYTES = 64 * 1024
     private const val PREFS = "tplanner_watch_schedule_sync"
     private const val KEY_LAST_VERSION = "last_version"
+    private const val KEY_LAST_PAYLOAD = "last_v3_projection_payload"
     private const val KEY_PENDING_PAYLOAD = "pending_payload"
     private const val SYNC_JOB_ID = 0x545053
     private const val RFCOMM_CONNECT_TIMEOUT_MS = 10_000L
@@ -99,7 +100,12 @@ object WatchScheduleSync {
     )
 
     /** Queues a durable snapshot and returns the exact payload offered to the watch. */
-    fun push(context: Context, events: List<ScheduleItem>): String? {
+    fun push(
+        context: Context,
+        events: List<ScheduleItem>,
+        sourceSnapshotVersion: Long = 0L,
+        sourceBrokerToSequence: Long = 0L,
+    ): String? {
         val appContext = context.applicationContext
         return try {
             // Build, version, and persist under the same lock. Otherwise an older concurrent
@@ -149,9 +155,11 @@ object WatchScheduleSync {
                     put("schemaVersion", SCHEMA_VERSION)
                     put("version", version)
                     put("generatedAtEpochMs", generatedAt)
+                    // Central provenance, distinct from the phone-local projection version.
+                    // The watch uses it as the final barrier for command outbox completion.
+                    put("sourceSnapshotVersion", sourceSnapshotVersion.coerceAtLeast(0L))
+                    put("sourceBrokerToSequence", sourceBrokerToSequence.coerceAtLeast(0L))
                     put("hash", hash)
-                    // One-release rolling-upgrade bridge: old watch builds read only this field.
-                    put("minutes", JSONArray(days.first().minutes))
                     put("days", JSONArray().apply {
                         days.forEach { day ->
                             put(JSONObject().apply {
@@ -165,6 +173,7 @@ object WatchScheduleSync {
                 }.toString()
                 val committed = prefs.edit()
                     .putLong(KEY_LAST_VERSION, version)
+                    .putString(KEY_LAST_PAYLOAD, payload)
                     .putString(KEY_PENDING_PAYLOAD, payload)
                     .commit()
                 if (committed) {
@@ -177,7 +186,19 @@ object WatchScheduleSync {
                 Log.e(TAG, "push: failed to persist snapshot")
                 return null
             }
-            scheduleJob(appContext)
+            if (!scheduleJob(appContext)) {
+                // The durable payload remains pending, but it has not crossed the phone→Watch
+                // hand-off barrier. Returning null keeps the Room projection marker behind so a
+                // later engine run retries instead of publishing a false SNAPSHOT_PUBLISHED ACK.
+                return null
+            }
+            if (sourceSnapshotVersion > 0L) {
+                WatchCommandBridge.onProjectionQueued(
+                    appContext,
+                    sourceSnapshotVersion,
+                    sourceBrokerToSequence,
+                )
+            }
             Log.d(
                 TAG,
                 "push: queued rangeStart=${queued.rangeStart} days=$SNAPSHOT_DAY_COUNT " +
@@ -189,6 +210,27 @@ object WatchScheduleSync {
             Log.e(TAG, "push: failed to build snapshot", e)
             null
         }
+    }
+
+    /** Requeues the last projection built by SyncV3Runtime; never rebuilds from a V1/local dataset. */
+    fun requeueLatestProjection(context: Context): String? {
+        val appContext = context.applicationContext
+        val payload = synchronized(stateLock) {
+            val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val latest = prefs.getString(KEY_LAST_PAYLOAD, null) ?: return@synchronized null
+            if (!prefs.edit().putString(KEY_PENDING_PAYLOAD, latest).commit()) null else latest
+        } ?: return null
+        return payload.takeIf { scheduleJob(appContext) }
+    }
+
+    /** Reattach the persisted hand-off after reboot, package update, or an OS-lost job. */
+    fun resumePending(context: Context): Boolean {
+        val appContext = context.applicationContext
+        val hasPending = synchronized(stateLock) {
+            appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString(KEY_PENDING_PAYLOAD, null) != null
+        }
+        return !hasPending || scheduleJob(appContext)
     }
 
     /** Returns true when the latest committed snapshot was durably handed off. */
@@ -516,8 +558,8 @@ object WatchScheduleSync {
         return null
     }
 
-    private fun scheduleJob(context: Context) {
-        val scheduler = context.getSystemService(JobScheduler::class.java) ?: return
+    private fun scheduleJob(context: Context): Boolean {
+        val scheduler = context.getSystemService(JobScheduler::class.java) ?: return false
         val job = JobInfo.Builder(
             SYNC_JOB_ID,
             ComponentName(context, WatchScheduleSyncJobService::class.java),
@@ -529,7 +571,9 @@ object WatchScheduleSync {
             .build()
         if (scheduler.schedule(job) != JobScheduler.RESULT_SUCCESS) {
             Log.w(TAG, "scheduleJob: scheduler rejected job")
+            return false
         }
+        return true
     }
 
     /** Hashes every field consumed by the watch face, in a deterministic order. */

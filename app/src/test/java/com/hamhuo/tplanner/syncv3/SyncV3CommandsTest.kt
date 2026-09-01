@@ -66,17 +66,20 @@ class SyncV3CommandsTest {
             JSONObject()
                 .put("commandId", "c1")
                 .put("clientSequence", 1L)
+                .put("brokerSequence", 41L)
                 .put("status", "APPLIED")
                 .put("snapshotVersion", 813L),
         )
         assertEquals("APPLIED", applied.status)
         assertEquals(813L, applied.snapshotVersion)
+        assertEquals(41L, applied.brokerSequence)
         assertEquals(null, applied.errorCode)
 
         val deleted = SyncReceipt.fromWire(
             JSONObject()
                 .put("commandId", "c2")
                 .put("clientSequence", 2L)
+                .put("brokerSequence", 42L)
                 .put("status", "ENTITY_DELETED")
                 .put("errorCode", "ENTITY_DELETED"),
         )

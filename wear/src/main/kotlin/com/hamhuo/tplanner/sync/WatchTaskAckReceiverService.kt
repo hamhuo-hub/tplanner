@@ -5,7 +5,7 @@ import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.WearableListenerService
 
-/** Applies business-level acknowledgements after the phone has durably stored a watch task. */
+/** Applies staged phone receipts; only a matching installed projection may finish pending. */
 class WatchTaskAckReceiverService : WearableListenerService() {
     override fun onDataChanged(dataEvents: DataEventBuffer) {
         for (event in dataEvents) {

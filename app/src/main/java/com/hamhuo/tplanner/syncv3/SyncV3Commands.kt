@@ -17,6 +17,10 @@ enum class SyncCommandType(val wire: String) {
     TASK_RESTORE("task.restore"),
     TASK_CHANGE_TYPE("task.changeType"),
     TASK_SET_RECURRENCE("task.setRecurrence"),
+    TASK_SET_ALARM("task.setAlarm"),
+    TASK_SET_APPEARANCE("task.setAppearance"),
+    TASK_SET_LOCATION("task.setLocation"),
+    TASK_SET_EXTRAS("task.setExtras"),
     TASK_ASSIGN_LIST("task.assignList"),
     TASK_MOVE_IN_TIMELINE("task.moveInTimeline"),
     CHECKLIST_CREATE_ITEM("checklist.createItem"),
@@ -35,6 +39,12 @@ enum class SyncCommandType(val wire: String) {
     GOAL_DELETE("goal.delete"),
     INSIGHT_UPSERT("insight.upsert"),
     INSIGHT_DELETE("insight.delete"),
+    ;
+
+    companion object {
+        fun fromWire(wire: String): SyncCommandType = entries.firstOrNull { it.wire == wire }
+            ?: throw IllegalArgumentException("Unsupported Sync V3 command: $wire")
+    }
 }
 
 data class SyncCommand(
@@ -80,6 +90,7 @@ data class SyncReceipt(
     val status: String,
     val snapshotVersion: Long?,
     val errorCode: String?,
+    val brokerSequence: Long,
 ) {
     companion object {
         fun fromWire(json: JSONObject): SyncReceipt = SyncReceipt(
@@ -90,6 +101,9 @@ data class SyncReceipt(
                 json.getLong("snapshotVersion")
             } else null,
             errorCode = json.optString("errorCode").takeIf { it.isNotEmpty() },
+            brokerSequence = json.getLong("brokerSequence").also {
+                require(it >= 1L) { "Receipt brokerSequence must be positive" }
+            },
         )
     }
 }

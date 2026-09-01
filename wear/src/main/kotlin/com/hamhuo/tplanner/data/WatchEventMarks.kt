@@ -8,31 +8,6 @@ import java.time.ZonedDateTime
 internal const val WATCH_MARKS_PREFS = "tplanner_watch_marks"
 internal const val WATCH_MARKS_KEY = "marks_json"
 
-/** Persisted set of task IDs deleted on the watch. Filters the list instantly. */
-internal object WatchLocalDeletes {
-    private const val PREFS = "tplanner_watch_deletes"
-    private const val KEY = "deleted_task_ids"
-
-    fun all(context: Context): Set<String> = try {
-        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(KEY, null) ?: "[]"
-        val arr = org.json.JSONArray(raw)
-        (0 until arr.length())
-            .mapNotNull { arr.optString(it).takeIf { s -> s.isNotBlank() } }
-            .toSet()
-    } catch (_: Exception) {
-        emptySet()
-    }
-
-    fun markDeleted(context: Context, id: String) {
-        val next = (all(context) + id).toList()
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putString(KEY, org.json.JSONArray(next).toString())
-            .commit()
-    }
-}
-
 // 事件刻度数据：圆点来自有限日期窗口；事项弧带从全部已同步的未完成任务中选择。
 // 手表侧暂无同步通道时为空——表盘退化为纯时间显示，不画假数据。
 object WatchEventMarks {
@@ -53,7 +28,9 @@ object WatchEventMarks {
     val EMPTY = Marks(emptyList(), emptyList())
 
     fun load(context: Context): Marks = try {
-        val deletedIds = WatchLocalDeletes.all(context)
+        // A second local-delete preference would create an unrecoverable two-commit window.
+        // Visibility is therefore derived from the same pending delete that will be uploaded.
+        val deletedIds = WatchTaskOutbox.pendingDeleteTaskIds(context)
         val raw = context.getSharedPreferences(WATCH_MARKS_PREFS, Context.MODE_PRIVATE)
             .getString(WATCH_MARKS_KEY, null)
         val pending = WatchTaskOutbox.pendingTasks(context).map { task ->

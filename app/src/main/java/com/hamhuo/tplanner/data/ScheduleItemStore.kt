@@ -17,6 +17,7 @@ import com.hamhuo.tplanner.persistence.TPlannerDatabase
 import com.hamhuo.tplanner.persistence.VersionedDraft
 import com.hamhuo.tplanner.persistence.WatchTaskCommitResult
 import com.hamhuo.tplanner.persistence.decideDraftRecovery
+import com.hamhuo.tplanner.syncv3.SyncV3CommandRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import org.json.JSONObject
@@ -59,7 +60,10 @@ class ScheduleItemStore(
     database: TPlannerDatabase = TPlannerDatabase.get(context),
 ) {
     private val appContext = context.applicationContext
-    private val repository = RoomEventRepository(database)
+    private val repository = RoomEventRepository(
+        database,
+        SyncV3CommandRepository(appContext, database),
+    )
     private val drafts = RoomDraftRepository(database)
 
     fun observeAll(): Flow<List<ScheduleItem>> = repository.observeAll()
@@ -289,25 +293,6 @@ class ScheduleItemStore(
         return copy
     }
 
-    suspend fun applySync(events: List<ScheduleItem>, captured: Map<String, String>) {
-        DurableWriteQueue.submitAndAwait(EVENT_FACT_QUEUE_KEY) {
-            repository.applySync(events, captured)
-            reconcileAlarms(repository.getAll())
-        }
-    }
-
-    suspend fun baseKeys(): Map<String, String>? =
-        DurableWriteQueue.readAfterPending(EVENT_FACT_QUEUE_KEY) { repository.baseKeys() }
-
-    suspend fun capturedMutations(): Map<String, String> =
-        DurableWriteQueue.readAfterPending(EVENT_FACT_QUEUE_KEY) {
-            repository.capturedMutations()
-        }
-
-    fun fromJson(json: String): List<ScheduleItem> = EventWireMapper.decodeArrayStrict(json)
-
-    fun toJson(events: List<ScheduleItem>): String = EventWireMapper.encodeArray(events)
-
     private fun ScheduleItem?.toNoteRevision(): DraftRevision = this?.let { event ->
         DraftRevision(
             content = event.note,
@@ -325,7 +310,7 @@ class ScheduleItemStore(
 
     /** The Room outbox is authoritative; WorkManager can be started again on the next launch. */
     private fun scheduleSync() {
-        runCatching { SyncOutboxScheduler.enqueue(appContext) }
+        runCatching { SyncV3Scheduler.enqueue(appContext) }
     }
 
     // ── UserList CRUD ──────────────────────────────────────────────────────
@@ -338,19 +323,21 @@ class ScheduleItemStore(
 
     suspend fun createUserList(name: String): UserList {
         val id = java.util.UUID.randomUUID().toString()
-        val sortOrder = userLists.nextSortOrder()
-        userLists.upsert(
-            com.hamhuo.tplanner.persistence.UserListEntity(
-                id = id, name = name.trim(), sortOrder = sortOrder,
-            )
-        )
-        return UserList(id = id, name = name.trim())
+        return DurableWriteQueue.submitAndAwait(EVENT_FACT_QUEUE_KEY) {
+            repository.createUserList(id, name).also { scheduleSync() }
+        }
+    }
+
+    suspend fun renameUserList(id: String, name: String): UserList? {
+        return DurableWriteQueue.submitAndAwait(EVENT_FACT_QUEUE_KEY) {
+            repository.renameUserList(id, name)?.also { scheduleSync() }
+        }
     }
 
     suspend fun deleteUserList(id: String) {
         DurableWriteQueue.submitAndAwait(EVENT_FACT_QUEUE_KEY) {
-            val changedItems = repository.deleteUserListAndUnassignItems(id)
-            if (changedItems > 0) scheduleSync()
+            repository.deleteUserListAndUnassignItems(id)
+            scheduleSync()
         }
     }
 

@@ -22,7 +22,6 @@ class SyncV3SnapshotInstallerTest {
         override fun upsertSyncState(s: SyncStateEntity) { state = s }
         override fun listCommands(state: String, limit: Int): List<SyncCommandEntity> = emptyList()
         override fun markUploaded(sequences: List<Long>) {}
-        override fun deleteThroughSequence(through: Long) {}
         override fun insertReceipts(r: List<SyncReceiptEntity>) { receipts.addAll(r) }
         override fun acceptedThrough(): Long? = null
     }
@@ -93,6 +92,14 @@ class SyncV3SnapshotInstallerTest {
                     .put("note", "")
                     .put("completed", false)
                     .put("itemType", "task")
+                    .put("schedule", JSONObject.NULL)
+                    .put("recurrence", JSONObject.NULL)
+                    .put("alarm", JSONObject().put("enabled", false).put("offsetMinutes", 0))
+                    .put("colorId", 0)
+                    .put("location", JSONObject().put("lat", JSONObject.NULL).put("lng", JSONObject.NULL))
+                    .put("extras", JSONObject())
+                    .put("listId", JSONObject.NULL)
+                    .put("checklist", org.json.JSONArray())
                     .put("lifecycle", "active")
                     .put("deletedAt", JSONObject.NULL),
             ),
@@ -127,9 +134,9 @@ class SyncV3SnapshotInstallerTest {
     @Test
     fun `skips when already installed`() {
         val store = FakeStore()
-        store.state = SyncStateEntity(1, "phone-test", 1, 7, null, "srv-test")
         val http = FakeHttp()
         val (_, manifest) = buildSnapshot(7, stateWith("开会"))
+        store.state = SyncStateEntity(1, "phone-test", 1, 7, manifest.stateHash, "srv-test")
         http.latest = { SyncHttpResponse.text(200, manifestToJson(manifest).toString()) }
         val installer = SyncV3SnapshotInstaller(store, MemoryKv(), http, "https://sync.example")
 
@@ -185,7 +192,7 @@ class SyncV3SnapshotInstallerTest {
             FakeHttp(),
             "https://x",
         ).canonicalStateHash(fixture)
-        assertEquals("sha256:a2fce93fa47c53108b9f5c02e0e1ecccf6df637c56171991dcdf76fa8a1947f6", hash)
+        assertEquals("sha256:a4ee5dc4e6eb30e1691a917211f27f43c3608038913296bd160ab5be5970194a", hash)
     }
 
     private fun manifestToJson(m: SnapshotManifest): JSONObject = JSONObject()

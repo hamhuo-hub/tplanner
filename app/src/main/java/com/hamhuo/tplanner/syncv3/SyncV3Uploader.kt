@@ -1,13 +1,15 @@
 package com.hamhuo.tplanner.syncv3
 
 import org.json.JSONObject
+import java.nio.ByteBuffer
+import java.security.SecureRandom
 import java.util.UUID
 
 /**
  * 批次上传器(见 docs/sync-v3.md §12/§15):
  *   - 前一批未获 BROKER_PERSISTED 不上传下一批(串行排空);
  *   - 202 只表示 broker 已持久接收 → 命令标记 uploaded,仍留在 outbox;
- *   - 回执确认后才删除 outbox 条目(不变量 #10)。
+ *   - 回执只持久化，不在这里删除 outbox；对应权威快照原子安装后才可清理(§8)。
  * 与桌面 src/syncV3/uploader.js 同一套协议行为。
  */
 class SyncV3Uploader(
@@ -22,14 +24,29 @@ class SyncV3Uploader(
     /** 排空一轮:上传一批 pending 命令并收集回执。返回上传条数。 */
     fun pump(maxBatch: Int = 100): Int {
         val meta = store.getSyncState() ?: return 0
-        val pending = store.listCommands("pending", maxBatch)
-        if (pending.isEmpty()) return 0
+        val candidates = store.listCommands("pending", maxBatch)
+        if (candidates.isEmpty()) return 0
+        val persistedBatchId = candidates.first().batchId
+        val pending = if (persistedBatchId.isBlank()) {
+            candidates
+        } else {
+            candidates.takeWhile { it.batchId == persistedBatchId }
+        }
 
-        val batchId = uuidV7()
+        val batchId = persistedBatchId.ifBlank(uuidV7)
         val batch = buildBatch(meta.deviceId, batchId, pending)
         val response = http.post("$serverUrl/tplanner/v3/command-batches", batch.toString(), batchId)
 
         if (response.code == 202) {
+            val acknowledgement = runCatching { response.json() }.getOrElse {
+                throw SyncException("invalid broker acknowledgement", response.code, "INVALID_ACK")
+            }
+            if (acknowledgement.optString("state") != "BROKER_PERSISTED" ||
+                acknowledgement.optString("batchId") != batchId ||
+                acknowledgement.optLong("brokerSequence", 0L) < 1L
+            ) {
+                throw SyncException("invalid broker acknowledgement", response.code, "INVALID_ACK")
+            }
             store.markUploaded(pending.map { it.clientSequence })
         } else {
             val errorCode = runCatching { response.json().optString("error") }.getOrNull()
@@ -38,10 +55,11 @@ class SyncV3Uploader(
         return pending.size
     }
 
-    /** 拉取回执并据此删除已确认的 outbox 条目。 */
-    fun collectReceipts() {
-        val meta = store.getSyncState() ?: return
-        val url = "$serverUrl/tplanner/v3/receipts?deviceId=${encode(meta.deviceId)}&afterClientSequence=0"
+    /** 拉取并持久化回执。Outbox 清理由 Room 快照投影事务完成。 */
+    fun collectReceipts(): Int {
+        val meta = store.getSyncState() ?: return 0
+        val after = store.acceptedThrough() ?: 0L
+        val url = "$serverUrl/tplanner/v3/receipts?deviceId=${encode(meta.deviceId)}&afterClientSequence=$after"
         val response = http.get(url)
         if (!response.isOk) throw SyncException("receipts request failed: ${response.code}", response.code, null)
 
@@ -58,12 +76,13 @@ class SyncV3Uploader(
                         status = r.status,
                         snapshotVersion = r.snapshotVersion,
                         errorCode = r.errorCode,
+                        brokerSequence = r.brokerSequence,
                     ),
                 )
             }
         }
         store.insertReceipts(receipts)
-        store.acceptedThrough()?.let { store.deleteThroughSequence(it) }
+        return receipts.size
     }
 
     /** 手动同步:排空所有 pending 后收受回执(快照安装由安装器接力)。 */
@@ -71,7 +90,9 @@ class SyncV3Uploader(
         while (pump() > 0) {
             // 继续排空
         }
-        collectReceipts()
+        while (collectReceipts() >= RECEIPT_PAGE_SIZE) {
+            // Continue from the persisted cursor; bootstrap can exceed one 200-receipt page.
+        }
     }
 
     private fun buildBatch(deviceId: String, batchId: String, commands: List<SyncCommandEntity>): JSONObject {
@@ -101,14 +122,20 @@ class SyncV3Uploader(
         java.net.URLEncoder.encode(value, "UTF-8")
 
     companion object {
-        /** UUIDv7(协议 schema 要求第 3 组以 7 开头、第 4 组以 8/9/a/b 开头)。 */
+        private const val RECEIPT_PAGE_SIZE = 200
+        private val secureRandom = SecureRandom()
+
+        /** RFC 9562 UUIDv7: 48-bit Unix milliseconds followed by cryptographic random bits. */
         fun uuidV7Default(): String {
-            val raw = UUID.randomUUID().toString().replace("-", "")
-            // 只用最后 8 个十六进制字符(32 位)构造第 3/4 组,避免 64 位溢出
-            val tail = raw.substring(24).toLong(16)
-            val seg3 = (0x7000L or ((tail ushr 16) and 0xFFFL)).toString(16).padStart(4, '0')
-            val seg4 = (0x8000L or (tail and 0x3FFFL)).toString(16).padStart(4, '0')
-            return "${raw.substring(0, 8)}-${raw.substring(8, 12)}-$seg3-$seg4-${raw.substring(20)}"
+            val bytes = ByteArray(16).also(secureRandom::nextBytes)
+            val timestamp = System.currentTimeMillis() and 0xFFFF_FFFF_FFFFL
+            for (index in 0 until 6) {
+                bytes[5 - index] = (timestamp ushr (index * 8)).toByte()
+            }
+            bytes[6] = ((bytes[6].toInt() and 0x0f) or 0x70).toByte()
+            bytes[8] = ((bytes[8].toInt() and 0x3f) or 0x80).toByte()
+            val buffer = ByteBuffer.wrap(bytes)
+            return UUID(buffer.long, buffer.long).toString()
         }
     }
 }

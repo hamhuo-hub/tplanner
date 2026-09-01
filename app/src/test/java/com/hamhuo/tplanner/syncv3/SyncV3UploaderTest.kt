@@ -22,9 +22,6 @@ class SyncV3UploaderTest {
                 if (c.clientSequence in sequences) c.copy(state = "uploaded") else c
             }
         }
-        override fun deleteThroughSequence(through: Long) {
-            commands.removeAll { it.clientSequence <= through }
-        }
         override fun insertReceipts(newReceipts: List<SyncReceiptEntity>) {
             receipts.addAll(newReceipts)
         }
@@ -33,8 +30,12 @@ class SyncV3UploaderTest {
 
     private class FakeHttp : SyncHttpClient {
         val posts = mutableListOf<Triple<String, String, String>>()
-        var postResponse: (String) -> SyncHttpResponse = {
-            SyncHttpResponse.text(202, """{"batchId":"b1","brokerSequence":1,"state":"BROKER_PERSISTED"}""")
+        var postResponse: (String) -> SyncHttpResponse = { body ->
+            val batchId = JSONObject(body).getString("batchId")
+            SyncHttpResponse.text(
+                202,
+                """{"batchId":"$batchId","brokerSequence":1,"state":"BROKER_PERSISTED"}""",
+            )
         }
         var receiptsResponse: () -> SyncHttpResponse = {
             SyncHttpResponse.text(
@@ -121,7 +122,24 @@ class SyncV3UploaderTest {
     }
 
     @Test
-    fun `collectReceipts removes confirmed commands and persists receipts`() {
+    fun `malformed 202 acknowledgement never removes pending state`() {
+        val store = FakeStore(state())
+        store.commands += command(1)
+        val http = FakeHttp()
+        http.postResponse = {
+            SyncHttpResponse.text(202, """{"batchId":"wrong","state":"BROKER_PERSISTED"}""")
+        }
+        val uploader = SyncV3Uploader(store, http, "https://sync.example")
+
+        val error = assertThrows(SyncV3Uploader.SyncException::class.java) { uploader.pump() }
+
+        assertEquals("INVALID_ACK", error.errorCode)
+        assertEquals(1, store.listCommands("pending", 10).size)
+        assertEquals(0, store.listCommands("uploaded", 10).size)
+    }
+
+    @Test
+    fun `collectReceipts persists receipts but keeps overlay until snapshot proves them`() {
         val store = FakeStore(state())
         store.commands += command(1).copy(state = "uploaded")
         store.commands += command(2).copy(state = "uploaded")
@@ -130,8 +148,8 @@ class SyncV3UploaderTest {
             SyncHttpResponse.text(
                 200,
                 """{"acceptedThrough":2,"results":[
-                    {"commandId":"c1","clientSequence":1,"status":"APPLIED","snapshotVersion":9},
-                    {"commandId":"c2","clientSequence":2,"status":"ENTITY_DELETED","errorCode":"ENTITY_DELETED"}
+                    {"commandId":"c1","clientSequence":1,"status":"APPLIED","snapshotVersion":9,"brokerSequence":41},
+                    {"commandId":"c2","clientSequence":2,"status":"ENTITY_DELETED","errorCode":"ENTITY_DELETED","brokerSequence":42}
                 ]}""",
             )
         }
@@ -139,11 +157,13 @@ class SyncV3UploaderTest {
 
         uploader.collectReceipts()
 
-        assertEquals("回执确认后 outbox 清空", 0L, store.commands.size.toLong())
+        assertEquals("只有回执时仍须保留 optimistic overlay", 2L, store.commands.size.toLong())
         assertEquals(2, store.receipts.size)
         assertEquals("APPLIED", store.receipts[0].status)
         assertEquals(9L, store.receipts[0].snapshotVersion)
+        assertEquals(41L, store.receipts[0].brokerSequence)
         assertEquals("ENTITY_DELETED", store.receipts[1].status)
+        assertEquals(42L, store.receipts[1].brokerSequence)
     }
 
     @Test

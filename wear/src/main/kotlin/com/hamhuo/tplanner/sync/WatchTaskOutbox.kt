@@ -23,7 +23,6 @@ import com.google.android.gms.wearable.PutDataRequest
 import com.google.android.gms.wearable.Wearable
 import org.json.JSONArray
 import java.net.SocketTimeoutException
-import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.TimeUnit
@@ -35,7 +34,12 @@ object WatchTaskOutbox {
     private const val PREFS = "tplanner_watch_task_outbox"
     private const val KEY_PENDING = "pending_requests"
     private const val KEY_FAILED = "failed_requests"
+    private const val KEY_PUBLISHED = "snapshot_published_receipts"
+    private const val KEY_INSTALLED_SOURCE_VERSION = "installed_projection_source_version"
+    private const val KEY_PHONE_STORED = "phone_stored_requests"
+    private const val KEY_STORAGE_VERSION = "storage_version"
     private const val KEY_CORRUPT_BACKUP = "corrupt_pending_backup"
+    private const val STORAGE_VERSION = 2
     private const val MAX_PENDING = 32
     private const val JOB_ID = 0x545054
     private const val CONNECT_TIMEOUT_MS = 10_000L
@@ -54,8 +58,8 @@ object WatchTaskOutbox {
 
     fun enqueue(context: Context, draft: WatchTaskDraft): Boolean {
         val now = System.currentTimeMillis()
-        val request = WatchTaskProtocol.Request(
-            requestId = UUID.randomUUID().toString(),
+        val request = WatchTaskProtocol.withSemanticCommands(WatchTaskProtocol.Request(
+            requestId = WatchTaskProtocol.newEnvelopeId(),
             createdAtEpochMs = draft.updatedAtEpochMs.takeIf { it > 0L } ?: now,
             task = WatchTaskProtocol.Task(
                 id = draft.id,
@@ -68,21 +72,47 @@ object WatchTaskOutbox {
                 alarmOffsetMinutes = draft.alarmOffsetMinutes,
             ),
             publishedAtEpochMs = now,
-        )
+        ))
         return enqueueRequest(context, request)
     }
 
-    /** Enqueues a durable delete request. Cancels any still-pending create for the same task. */
+    /**
+     * Enqueues a durable delete. If the task still has a pending create, the delete carries a
+     * persistent dependency and is held until PHONE_STORED proves that the phone owns the create.
+     */
     fun enqueueDelete(context: Context, taskId: String): Boolean {
-        removePendingCreates(context, taskId)
-        val request = WatchTaskProtocol.Request(
-            requestId = UUID.randomUUID().toString(),
-            createdAtEpochMs = System.currentTimeMillis(),
-            task = null,
-            taskId = taskId,
-            publishedAtEpochMs = System.currentTimeMillis(),
-        )
-        return enqueueRequest(context, request)
+        val appContext = context.applicationContext
+        val committed = synchronized(stateLock) {
+            if (!ensureStorageUpgradedLocked(appContext)) return@synchronized false
+            val pending = readArray(appContext, KEY_PENDING)
+            if (pending.length() >= MAX_PENDING) return@synchronized false
+            val predecessor = (0 until pending.length()).mapNotNull { index ->
+                runCatching {
+                    WatchTaskProtocol.decodeRequest(pending.optString(index))
+                }.getOrNull()
+            }.lastOrNull { it.task?.id == taskId }
+            val now = System.currentTimeMillis()
+            val request = WatchTaskProtocol.withSemanticCommands(WatchTaskProtocol.Request(
+                requestId = WatchTaskProtocol.newEnvelopeId(),
+                createdAtEpochMs = now,
+                task = null,
+                taskId = taskId,
+                dependsOnRequestId = predecessor?.requestId,
+                publishedAtEpochMs = now,
+            ))
+            val encoded = runCatching { WatchTaskProtocol.encodeRequest(request) }
+                .onFailure { Log.e(TAG, "enqueueDelete: invalid request", it) }
+                .getOrNull() ?: return@synchronized false
+            pending.put(encoded)
+            appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putString(KEY_PENDING, pending.toString())
+                .putInt(KEY_STORAGE_VERSION, STORAGE_VERSION)
+                .commit()
+        }
+        if (!committed) return false
+        schedulePersistentJob(appContext)
+        flushAsync(appContext)
+        return true
     }
 
     private fun enqueueRequest(context: Context, request: WatchTaskProtocol.Request): Boolean {
@@ -94,6 +124,7 @@ object WatchTaskOutbox {
         }
         val appContext = context.applicationContext
         val committed = synchronized(stateLock) {
+            if (!ensureStorageUpgradedLocked(appContext)) return@synchronized false
             val pending = readArray(appContext, KEY_PENDING)
             if (pending.length() >= MAX_PENDING) return@synchronized false
             pending.put(encoded)
@@ -105,104 +136,150 @@ object WatchTaskOutbox {
         return true
     }
 
-    /** Drops still-pending create entries for [taskId] so they don't race with the delete. */
-    private fun removePendingCreates(context: Context, taskId: String) {
-        synchronized(stateLock) {
-            listOf(KEY_PENDING, KEY_FAILED).forEach { key ->
-                val arr = readArray(context, key)
-                val retained = JSONArray()
-                for (i in 0 until arr.length()) {
-                    val raw = arr.optString(i)
-                    val isMatchingCreate = runCatching {
-                        val r = WatchTaskProtocol.decodeRequest(raw)
-                        r.task?.id == taskId
-                    }.getOrDefault(false)
-                    if (isMatchingCreate) {
-                        runCatching {
-                            WatchTaskProtocol.decodeRequest(raw).requestId
-                        }.getOrNull()?.let { cleanupDataItems(context, it) }
-                    } else if (raw.isNotBlank()) {
-                        retained.put(raw)
-                    }
-                }
-                if (retained.length() != arr.length()) writeArray(context, key, retained)
-            }
-        }
-    }
-
     fun resumePending(context: Context) {
         val appContext = context.applicationContext
+        if (!recoverProjectionWatermark(appContext)) return
+        val upgraded = synchronized(stateLock) { ensureStorageUpgradedLocked(appContext) }
+        if (!upgraded) return
         if (!hasPending(appContext)) return
         schedulePersistentJob(appContext)
         flushAsync(appContext)
     }
 
     /** Pending tasks are merged into the watch list until the phone's refreshed snapshot arrives. */
-    fun pendingTasks(context: Context): List<WatchTaskDraft> = synchronized(stateLock) {
+    fun pendingTasks(context: Context): List<WatchTaskDraft> {
         val appContext = context.applicationContext
-        val queued = listOf(KEY_PENDING, KEY_FAILED).flatMap { key ->
-            val source = readArray(appContext, key)
-            (0 until source.length()).map { index -> source.optString(index) }
+        if (!recoverProjectionWatermark(appContext)) return emptyList()
+        return synchronized(stateLock) {
+            if (!ensureStorageUpgradedLocked(appContext)) return@synchronized emptyList()
+            fun requests(key: String): List<WatchTaskProtocol.Request> {
+                val source = readArray(appContext, key)
+                return (0 until source.length()).map { index -> source.optString(index) }
+                    .mapNotNull { raw ->
+                        raw.takeIf(String::isNotBlank)?.let { value ->
+                            runCatching { WatchTaskProtocol.decodeRequest(value) }.getOrNull()
+                        }
+                    }
+            }
+            val pending = requests(KEY_PENDING)
+            val failed = requests(KEY_FAILED)
+            // A rejected/failed delete is not an optimistic fact. Only the durable pending queue
+            // may supersede a create or hide an authoritative projection.
+            val hiddenCreateIds = WatchTaskProtocol.supersededCreateRequestIds(pending)
+            (pending + failed).mapNotNull { request ->
+                if (request.requestId in hiddenCreateIds) return@mapNotNull null
+                val task = request.task ?: return@mapNotNull null // skip deletes
+                WatchTaskDraft(
+                    id = task.id,
+                    title = task.title,
+                    type = task.type,
+                    startEpochMs = task.startEpochMs,
+                    endEpochMs = task.endEpochMs,
+                    alarmEnabled = task.alarmEnabled,
+                    alarmOffsetMinutes = task.alarmOffsetMinutes,
+                    colorId = task.colorId,
+                    updatedAtEpochMs = request.createdAtEpochMs,
+                )
+            }
         }
-        queued.mapNotNull { raw ->
-            val value = raw.takeIf(String::isNotBlank) ?: return@mapNotNull null
-            val request = runCatching { WatchTaskProtocol.decodeRequest(value) }.getOrNull()
-                ?: return@mapNotNull null
-            val task = request.task ?: return@mapNotNull null // skip deletes
-            WatchTaskDraft(
-                id = task.id,
-                title = task.title,
-                type = task.type,
-                startEpochMs = task.startEpochMs,
-                endEpochMs = task.endEpochMs,
-                alarmEnabled = task.alarmEnabled,
-                alarmOffsetMinutes = task.alarmOffsetMinutes,
-                colorId = task.colorId,
-                updatedAtEpochMs = request.createdAtEpochMs,
-            )
+    }
+
+    /** Single durable source for optimistic delete visibility, including process restart. */
+    fun pendingDeleteTaskIds(context: Context): Set<String> {
+        val appContext = context.applicationContext
+        return synchronized(stateLock) {
+            if (!ensureStorageUpgradedLocked(appContext)) return@synchronized emptySet()
+            val source = readArray(appContext, KEY_PENDING)
+            val requests = (0 until source.length()).mapNotNull { index ->
+                runCatching { WatchTaskProtocol.decodeRequest(source.optString(index)) }.getOrNull()
+            }
+            WatchTaskProtocol.pendingDeleteTaskIds(requests)
         }
     }
 
     internal fun handleResponse(context: Context, response: WatchTaskProtocol.Response) {
-        if (!response.status.terminal) return
         val appContext = context.applicationContext
-        var removed = false
-        synchronized(stateLock) {
-            val pending = readArray(appContext, KEY_PENDING)
-            val retained = JSONArray()
-            var rejectedRaw: String? = null
-            for (index in 0 until pending.length()) {
-                val raw = pending.optString(index)
-                val requestId = runCatching {
-                    WatchTaskProtocol.decodeRequest(raw).requestId
-                }.getOrNull()
-                if (requestId == response.requestId) {
-                    removed = true
-                    if (response.status == WatchTaskProtocol.Status.REJECTED) {
-                        rejectedRaw = raw
-                    }
-                } else if (raw.isNotBlank()) {
-                    retained.put(raw)
+        if (!recoverProjectionWatermark(appContext)) return
+        val request = synchronized(stateLock) {
+            if (!ensureStorageUpgradedLocked(appContext)) null
+            else findPending(appContext, response.requestId)
+        } ?: return
+        val expectedCommands = request.commands.map(WatchTaskProtocol.SemanticCommand::commandId).toSet()
+        if (response.commandIds.isNotEmpty() && response.commandIds.toSet() != expectedCommands) {
+            Log.w(TAG, "Ignoring ACK with mismatched command identity request=${response.requestId}")
+            return
+        }
+
+        when (response.status) {
+            WatchTaskProtocol.Status.PHONE_STORED -> {
+                // PHONE_STORED is deliberately non-terminal. Keep durable pending until the
+                // central snapshot is projected back onto this watch. The durable barrier also
+                // unlocks a dependent delete without relying on volatile callback order.
+                if (synchronized(stateLock) { markPhoneStoredLocked(appContext, response.requestId) }) {
+                    schedulePersistentJob(appContext)
+                    flushAsync(appContext)
                 }
             }
-            if (removed && writeArray(appContext, KEY_PENDING, retained) && rejectedRaw != null) {
-                val failed = readArray(appContext, KEY_FAILED)
-                failed.put(rejectedRaw)
-                writeArray(appContext, KEY_FAILED, failed)
+
+            WatchTaskProtocol.Status.RETRY -> schedulePersistentJob(appContext)
+
+            WatchTaskProtocol.Status.SNAPSHOT_PUBLISHED -> {
+                val snapshotVersion = response.snapshotVersion ?: return
+                val installed = synchronized(stateLock) {
+                    val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                    val receipts = readPublishedReceipts(appContext)
+                    val phoneStored = readPhoneStored(appContext)
+                    receipts.put(response.requestId, WatchTaskProtocol.encodeResponse(response))
+                    phoneStored.put(response.requestId, response.acknowledgedAtEpochMs)
+                    val committed = prefs.edit()
+                        .putString(KEY_PUBLISHED, receipts.toString())
+                        .putString(KEY_PHONE_STORED, phoneStored.toString())
+                        .commit()
+                    if (committed) prefs.getLong(KEY_INSTALLED_SOURCE_VERSION, 0L) else -1L
+                }
+                if (installed < 0L) return
+                if (WatchOutboxCompletion.decide(request, response, installed) ==
+                    WatchOutboxCompletion.Decision.COMPLETE
+                ) finishPublished(appContext, response.requestId)
             }
-        }
-        if (!removed) return
-        cleanupDataItems(appContext, response.requestId)
-        if (hasPending(appContext)) {
-            schedulePersistentJob(appContext)
-            flushAsync(appContext)
-        } else {
-            cancelPersistentJob(appContext)
+
+            WatchTaskProtocol.Status.REJECTED -> {
+                // A terminal central rejection also proves the predecessor reached the phone;
+                // dependent cleanup must not remain blocked forever if PHONE_STORED ACK was lost.
+                if (WatchOutboxCompletion.decide(request, response, 0L) ==
+                    WatchOutboxCompletion.Decision.MOVE_TO_FAILED
+                ) moveToFailed(appContext, response.requestId, provePhoneStored = true)
+            }
         }
     }
 
+    /** Called only after ScheduleStore atomically commits the matching global projection. */
+    internal fun onProjectionInstalled(context: Context, sourceSnapshotVersion: Long) {
+        if (sourceSnapshotVersion <= 0L) return
+        val appContext = context.applicationContext
+        val ready = synchronized(stateLock) {
+            val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val previous = prefs.getLong(KEY_INSTALLED_SOURCE_VERSION, 0L)
+            val installed = maxOf(previous, sourceSnapshotVersion)
+            if (installed > previous && !prefs.edit()
+                    .putLong(KEY_INSTALLED_SOURCE_VERSION, installed)
+                    .commit()
+            ) {
+                return@synchronized emptyList()
+            }
+            val receipts = readPublishedReceipts(appContext)
+            (receipts.keys().asSequence().toList()).filter { requestId ->
+                runCatching {
+                    WatchTaskProtocol.decodeResponse(receipts.getString(requestId))
+                        .snapshotVersion?.let { it <= installed } == true
+                }.getOrDefault(false)
+            }
+        }
+        ready.forEach { finishPublished(appContext, it) }
+    }
+
     internal fun flushFromJob(context: Context): Boolean {
-        synchronized(transportLock) { flushHead(context.applicationContext) }
+        synchronized(transportLock) { flushBatch(context.applicationContext) }
         return hasPending(context.applicationContext)
     }
 
@@ -214,47 +291,62 @@ object WatchTaskOutbox {
 
     private fun flushAsync(context: Context) {
         worker.execute {
-            synchronized(transportLock) { flushHead(context.applicationContext) }
+            synchronized(transportLock) { flushBatch(context.applicationContext) }
         }
     }
 
-    private fun flushHead(context: Context) {
+    private fun flushBatch(context: Context) {
         if (Thread.currentThread().isInterrupted) return
-        val request = prepareHead(context) ?: return
-        publishDataItem(context, request)
-        if (!Thread.currentThread().isInterrupted && isStillPending(context, request.requestId)) {
-            sendViaBluetooth(context, request)
+        if (!recoverProjectionWatermark(context)) return
+        val requests = prepareBatch(context)
+        if (requests.isEmpty()) return
+        // Data Layer remains one durable item per request identity. A connection flushes the
+        // complete queue instead of serially waiting for one head ACK per job run.
+        requests.forEach { request ->
+            if (Thread.currentThread().isInterrupted) return
+            publishDataItem(context, request)
+        }
+        val stillPending = requests.filter { isStillPending(context, it.requestId) }
+        if (!Thread.currentThread().isInterrupted && stillPending.isNotEmpty()) {
+            sendViaBluetooth(context, stillPending)
         }
     }
 
-    private fun prepareHead(context: Context): WatchTaskProtocol.Request? {
-        return synchronized(stateLock) {
-            var prepared: WatchTaskProtocol.Request? = null
-            while (prepared == null) {
-                val pending = readArray(context, KEY_PENDING)
-                val raw = pending.optString(0).takeIf(String::isNotBlank)
-                    ?: return@synchronized null
-                val decoded = runCatching { WatchTaskProtocol.decodeRequest(raw) }
-                    .onFailure { Log.e(TAG, "flushHead: corrupt request", it) }
-                    .getOrNull()
-                if (decoded == null) {
-                    pending.remove(0)
-                    val failed = readArray(context, KEY_FAILED).apply { put(raw) }
-                    if (!writeArray(context, KEY_FAILED, failed) ||
-                        !writeArray(context, KEY_PENDING, pending)
-                    ) {
-                        return@synchronized null
-                    }
-                    continue
-                }
-                val updated = decoded.copy(
-                    attempt = decoded.attempt + 1,
-                    publishedAtEpochMs = System.currentTimeMillis(),
-                )
-                pending.put(0, WatchTaskProtocol.encodeRequest(updated))
-                if (!writeArray(context, KEY_PENDING, pending)) return@synchronized null
-                prepared = updated
+    private fun prepareBatch(context: Context): List<WatchTaskProtocol.Request> = synchronized(stateLock) {
+        if (!ensureStorageUpgradedLocked(context)) return@synchronized emptyList()
+        val pending = readArray(context, KEY_PENDING)
+        val failed = readArray(context, KEY_FAILED)
+        val phoneStored = readPhoneStored(context)
+        val phoneStoredIds = phoneStored.keys().asSequence().toSet()
+        val rewritten = JSONArray()
+        val prepared = mutableListOf<WatchTaskProtocol.Request>()
+        val now = System.currentTimeMillis()
+        for (index in 0 until pending.length()) {
+            val raw = pending.optString(index)
+            val decoded = runCatching { WatchTaskProtocol.decodeRequest(raw) }
+                .onFailure { Log.e(TAG, "prepareBatch: corrupt request", it) }
+                .getOrNull()
+            if (decoded == null) {
+                if (raw.isNotBlank()) failed.put(raw)
+                continue
             }
+            if (!WatchTaskProtocol.dependencySatisfied(decoded, phoneStoredIds)) {
+                // Preserve byte-for-byte and do not increment attempt: this request was not sent.
+                rewritten.put(raw)
+                continue
+            }
+            val updated = decoded.copy(attempt = decoded.attempt + 1, publishedAtEpochMs = now)
+            rewritten.put(WatchTaskProtocol.encodeRequest(updated))
+            prepared += updated
+        }
+        val committed = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_FAILED, failed.toString())
+            .putString(KEY_PENDING, rewritten.toString())
+            .putInt(KEY_STORAGE_VERSION, STORAGE_VERSION)
+            .commit()
+        if (!committed) {
+            emptyList()
+        } else {
             prepared
         }
     }
@@ -274,7 +366,7 @@ object WatchTaskOutbox {
     }
 
     @SuppressLint("MissingPermission")
-    private fun sendViaBluetooth(context: Context, request: WatchTaskProtocol.Request) {
+    private fun sendViaBluetooth(context: Context, requests: List<WatchTaskProtocol.Request>) {
         if (!hasBluetoothConnectPermission(context)) return
         val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter ?: return
         if (!runCatching { adapter.isEnabled }.getOrDefault(false)) return
@@ -288,17 +380,19 @@ object WatchTaskOutbox {
             withSocketWatchdog(connected, CONNECT_TIMEOUT_MS, "connect") { connected.connect() }
             ScheduleRfcommProtocol.writeFrame(
                 connected.outputStream,
-                WatchTaskProtocol.encodeRequest(request).toByteArray(Charsets.UTF_8),
+                WatchTaskProtocol.encodeRequestBatch(
+                    WatchTaskProtocol.RequestBatch(WatchTaskProtocol.newEnvelopeId(), requests),
+                ).toByteArray(Charsets.UTF_8),
             )
             val rawResponse = withSocketWatchdog(connected, RESPONSE_TIMEOUT_MS, "response") {
                 ScheduleRfcommProtocol.readFrame(connected.inputStream)
             }
-            val response = WatchTaskProtocol.decodeResponse(rawResponse)
-            if (response.requestId == request.requestId) {
-                handleResponse(context, response)
+            val responseBatch = WatchTaskProtocol.decodeResponseBatch(rawResponse)
+            responseBatch.responses.forEach { response ->
+                if (requests.any { it.requestId == response.requestId }) handleResponse(context, response)
             }
         } catch (error: Exception) {
-            Log.w(TAG, "Bluetooth send failed request=${request.requestId}", error)
+            Log.w(TAG, "Bluetooth batch send failed count=${requests.size}", error)
         } finally {
             socket?.let(::unregisterActiveSocket)
             runCatching { socket?.close() }
@@ -359,6 +453,108 @@ object WatchTaskOutbox {
         }
     }
 
+    private fun findPending(context: Context, requestId: String): WatchTaskProtocol.Request? {
+        val pending = readArray(context, KEY_PENDING)
+        for (index in 0 until pending.length()) {
+            val request = runCatching {
+                WatchTaskProtocol.decodeRequest(pending.optString(index))
+            }.getOrNull()
+            if (request?.requestId == requestId) return request
+        }
+        return null
+    }
+
+    private fun readPublishedReceipts(context: Context): org.json.JSONObject {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_PUBLISHED, null)?.let { raw ->
+            runCatching { org.json.JSONObject(raw) }
+                .onFailure { Log.e(TAG, "Corrupt published-receipt ledger", it) }
+                .getOrNull()
+        } ?: org.json.JSONObject()
+    }
+
+    private fun readPhoneStored(context: Context): org.json.JSONObject {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_PHONE_STORED, null)?.let { raw ->
+            runCatching { org.json.JSONObject(raw) }
+                .onFailure { Log.e(TAG, "Corrupt PHONE_STORED ledger", it) }
+                .getOrNull()
+        } ?: org.json.JSONObject()
+    }
+
+    private fun markPhoneStoredLocked(context: Context, requestId: String): Boolean {
+        val phoneStored = readPhoneStored(context)
+        phoneStored.put(requestId, System.currentTimeMillis())
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_PHONE_STORED, phoneStored.toString())
+            .commit()
+    }
+
+    private fun finishPublished(context: Context, requestId: String) {
+        val removed = synchronized(stateLock) {
+            val pending = readArray(context, KEY_PENDING)
+            val retained = JSONArray()
+            var found = false
+            for (index in 0 until pending.length()) {
+                val raw = pending.optString(index)
+                val id = runCatching { WatchTaskProtocol.decodeRequest(raw).requestId }.getOrNull()
+                if (id == requestId) found = true else if (raw.isNotBlank()) retained.put(raw)
+            }
+            val receipts = readPublishedReceipts(context).apply { remove(requestId) }
+            val phoneStored = prunedPhoneStored(context, retained)
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val committed = prefs.edit()
+                .putString(KEY_PENDING, retained.toString())
+                .putString(KEY_PUBLISHED, receipts.toString())
+                .putString(KEY_PHONE_STORED, phoneStored.toString())
+                .commit()
+            found && committed
+        }
+        if (removed) cleanupDataItems(context, requestId)
+        if (hasPending(context)) {
+            schedulePersistentJob(context)
+            flushAsync(context)
+        } else {
+            cancelPersistentJob(context)
+        }
+    }
+
+    private fun moveToFailed(
+        context: Context,
+        requestId: String,
+        provePhoneStored: Boolean = false,
+    ) {
+        val removed = synchronized(stateLock) {
+            val pending = readArray(context, KEY_PENDING)
+            val retained = JSONArray()
+            val failed = readArray(context, KEY_FAILED)
+            var found = false
+            for (index in 0 until pending.length()) {
+                val raw = pending.optString(index)
+                val id = runCatching { WatchTaskProtocol.decodeRequest(raw).requestId }.getOrNull()
+                if (id == requestId) {
+                    found = true
+                    failed.put(raw)
+                } else if (raw.isNotBlank()) {
+                    retained.put(raw)
+                }
+            }
+            val phoneStored = prunedPhoneStored(
+                context,
+                retained,
+                provenRequestId = requestId.takeIf { provePhoneStored },
+            )
+            val committed = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putString(KEY_FAILED, failed.toString())
+                .putString(KEY_PENDING, retained.toString())
+                .putString(KEY_PHONE_STORED, phoneStored.toString())
+                .commit()
+            found && committed
+        }
+        if (removed) cleanupDataItems(context, requestId)
+        if (!hasPending(context)) cancelPersistentJob(context)
+    }
+
     private fun isStillPending(context: Context, requestId: String): Boolean = synchronized(stateLock) {
         val pending = readArray(context, KEY_PENDING)
         (0 until pending.length()).any { index ->
@@ -369,7 +565,87 @@ object WatchTaskOutbox {
     }
 
     private fun hasPending(context: Context): Boolean = synchronized(stateLock) {
-        readArray(context, KEY_PENDING).length() > 0
+        ensureStorageUpgradedLocked(context) && readArray(context, KEY_PENDING).length() > 0
+    }
+
+    /**
+     * Converts both v1 arrays in one commit. A failed commit leaves the old arrays and version
+     * marker untouched, so callers stop instead of observing a half-migrated queue.
+     */
+    private fun ensureStorageUpgradedLocked(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (prefs.getInt(KEY_STORAGE_VERSION, 1) >= STORAGE_VERSION) return true
+        fun upgradedArray(key: String): JSONArray? {
+            val rawArray = prefs.getString(key, null)
+            val source = if (rawArray == null) {
+                JSONArray()
+            } else {
+                runCatching { JSONArray(rawArray) }.onFailure { error ->
+                    Log.e(TAG, "Unable to migrate corrupt outbox array key=$key", error)
+                }.getOrNull() ?: return null
+            }
+            val rawValues = (0 until source.length()).map { source.optString(it) }
+                .filter(String::isNotBlank)
+            val decodedByIndex = rawValues.mapIndexed { index, raw ->
+                runCatching { WatchTaskProtocol.decodeCompatibleRequest(raw) }
+                    .onFailure { error ->
+                        Log.e(TAG, "Unable to migrate watch outbox key=$key index=$index", error)
+                    }.getOrNull()
+            }
+            val linked = WatchTaskProtocol.linkPendingCreateDeleteDependencies(
+                decodedByIndex.filterNotNull(),
+            ).iterator()
+            return JSONArray().apply {
+                rawValues.zip(decodedByIndex).forEach { (raw, decoded) ->
+                    // Preserve invalid bytes for the normal corrupt-entry path; never drop them
+                    // as a side effect of a schema migration.
+                    put(if (decoded == null) raw else WatchTaskProtocol.encodeRequest(linked.next()))
+                }
+            }
+        }
+        val pending = upgradedArray(KEY_PENDING) ?: return false
+        val failed = upgradedArray(KEY_FAILED) ?: return false
+        return prefs.edit()
+            .putString(KEY_PENDING, pending.toString())
+            .putString(KEY_FAILED, failed.toString())
+            .putInt(KEY_STORAGE_VERSION, STORAGE_VERSION)
+            .commit()
+    }
+
+    private fun prunedPhoneStored(
+        context: Context,
+        pending: JSONArray,
+        provenRequestId: String? = null,
+    ): org.json.JSONObject {
+        val ledger = readPhoneStored(context)
+        provenRequestId?.let { ledger.put(it, System.currentTimeMillis()) }
+        val requests = (0 until pending.length()).mapNotNull { index ->
+            runCatching { WatchTaskProtocol.decodeRequest(pending.optString(index)) }.getOrNull()
+        }
+        val required = requests.map(WatchTaskProtocol.Request::requestId).toMutableSet().apply {
+            addAll(requests.mapNotNull(WatchTaskProtocol.Request::dependsOnRequestId))
+        }
+        ledger.keys().asSequence().toList()
+            .filterNot(required::contains)
+            .forEach { requestId -> ledger.remove(requestId) }
+        return ledger
+    }
+
+    /** Recovers the outbox watermark from the already-committed schedule after process death. */
+    private fun recoverProjectionWatermark(context: Context): Boolean {
+        val durableVersion = ScheduleStore.installedSourceSnapshotVersion(context)
+        val reconciled = synchronized(stateLock) {
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val cachedVersion = prefs.getLong(KEY_INSTALLED_SOURCE_VERSION, 0L)
+            // The schedule value is the durable source of truth. Its removal or restoration to an
+            // older backup must not leave a cached watermark that can falsely complete receipts.
+            if (durableVersion < cachedVersion) {
+                prefs.edit().putLong(KEY_INSTALLED_SOURCE_VERSION, durableVersion).commit()
+            } else true
+        }
+        if (!reconciled) return false
+        if (durableVersion > 0L) onProjectionInstalled(context, durableVersion)
+        return true
     }
 
     private fun readArray(context: Context, key: String): JSONArray {

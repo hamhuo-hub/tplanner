@@ -86,6 +86,8 @@ class MainActivity : ComponentActivity() {
 
     private suspend fun initializeStorageAndContent() {
         val database = TPlannerDatabase.get(this)
+        // This is a local installation upgrade only: SharedPreferences facts/drafts become Room
+        // rows. It never contacts or reconstructs the retired V1 network protocol.
         val migration = withContext(Dispatchers.IO) {
             LegacyPreferencesImporter(this@MainActivity, database).importIfNeeded()
         }
@@ -97,19 +99,19 @@ class MainActivity : ComponentActivity() {
             Toast.makeText(this, "本地数据迁移失败，原数据未改动：$details", Toast.LENGTH_LONG).show()
             return
         }
-
         val store = JournalStore(this, database)
         eventStore = ScheduleItemStore(this, database)
-        val manager = LanSyncManager(this, store, eventStore)
+        val manager = SyncManager(this)
         val deepseekKey = BuildConfig.DEEPSEEK_API_KEY
         val amapKey = BuildConfig.AMAP_API_KEY
         AmapGeocoder.setApiKey(amapKey)
         val deepseekService = deepseekKey.takeIf { it.isNotBlank() }?.let(::DeepSeekAnalysisService)
         Log.i(
             LLM_LOG_TAG,
-            "phase=init provider=deepseek keyConfigured=${deepseekKey.isNotBlank()} " +
+                "phase=init provider=deepseek keyConfigured=${deepseekKey.isNotBlank()} " +
                 "serviceCreated=${deepseekService != null} " +
-                "locationApiConfigured=${amapKey.isNotBlank()} migration=${migration::class.simpleName}",
+                "locationApiConfigured=${amapKey.isNotBlank()} " +
+                "localMigration=${migration::class.simpleName} syncProtocol=v3",
         )
 
         val initialJournalSession = store.latestDraftRecovery()
@@ -124,7 +126,7 @@ class MainActivity : ComponentActivity() {
         val initialEventRecovery = eventStore.latestEventDraftRecovery()
         val initialEvents = eventStore.getAll()
         val initialServerUrl = manager.getServerUrl()
-        runCatching { SyncOutboxScheduler.enqueue(this) }
+        runCatching { SyncV3Scheduler.enqueue(this) }
             .onFailure { Log.w(TAG, "Unable to start sync outbox worker", it) }
         runCatching { TaskAlarmScheduler.reconcile(this, initialEvents) }
             .onFailure { Log.w(TAG, "Unable to reconcile alarms during startup", it) }

@@ -90,7 +90,6 @@ internal object ScheduleStore {
     private const val MAX_TASK_TITLE_UTF8_BYTES = 256
     private const val MAX_TASK_ID_UTF8_BYTES = 256
     private const val MAX_TASKS_UTF8_BYTES = 64 * 1024
-    private const val SOURCE_LEGACY = "legacy"
     private const val SOURCE_PHONE = "phone"
     internal const val SOURCE_BLUETOOTH = "bluetooth"
 
@@ -133,6 +132,24 @@ internal object ScheduleStore {
     private val whitespace = Regex("\\s+")
     private val sha256 = Regex("[0-9a-f]{64}")
 
+    /**
+     * Reads only the source watermark from the atomically committed projection. This is the
+     * recovery source of truth when the process died after committing WATCH_MARKS_KEY but before
+     * notifying the command outbox.
+     */
+    internal fun installedSourceSnapshotVersion(context: Context): Long {
+        val raw = context.getSharedPreferences(WATCH_MARKS_PREFS, Context.MODE_PRIVATE)
+            .getString(WATCH_MARKS_KEY, null) ?: return 0L
+        return runCatching {
+            val value = JSONObject(raw)
+            if (value.optInt("schemaVersion", -1) != SCHEMA_VERSION) return@runCatching 0L
+            value.optLong("sourceSnapshotVersion", 0L).takeIf { it > 0L } ?: 0L
+        }.getOrElse { error ->
+            Log.e(TAG, "Unable to recover installed projection watermark", error)
+            0L
+        }
+    }
+
     @Synchronized
     fun store(
         context: Context,
@@ -155,118 +172,100 @@ internal object ScheduleStore {
             val existingHash = existing?.optString("hash")
             val existingTasksHash = existing?.optString("tasksHash")
                 ?.takeIf { it.isNotBlank() }
-            val existingWasLegacy = existing != null && (
-                existing.optString("source") == SOURCE_LEGACY ||
-                    existing.optLong("generatedAtEpochMs", 0L) <= 0L
-                )
+            val existingSourceSnapshotVersion = existing?.optLong("sourceSnapshotVersion", 0L) ?: 0L
             val schemaVersion = payload.optInt("schemaVersion", -1)
-            val days: List<DaySnapshot>
-            val version: Long
-            val hash: String
-            val tasks: List<TaskSnapshot>?
-            val taskContentHash: String?
-            val isLegacy: Boolean
-            if (schemaVersion == SCHEMA_VERSION) {
-                isLegacy = false
-                version = payload.optLong("version", -1L)
-                hash = payload.optString("hash")
-                if (version < 0L || hash.isBlank()) {
-                    Log.w(TAG, "storeSchedule: invalid version/hash version=$version")
-                    return StoreResult.REJECTED
-                }
-                val inputDays = payload.optJSONArray("days") ?: run {
-                    Log.w(TAG, "storeSchedule: missing days version=$version")
-                    return StoreResult.REJECTED
-                }
-                if (inputDays.length() !in 1..MAX_SNAPSHOT_DAYS) {
-                    Log.w(TAG, "storeSchedule: invalid day count=${inputDays.length()}")
-                    return StoreResult.REJECTED
-                }
-                val seenDates = mutableSetOf<String>()
-                days = (0 until inputDays.length()).map { index ->
-                    val inputDay = inputDays.optJSONObject(index)
-                        ?: throw IllegalArgumentException("days[$index] is not an object")
-                    val date = LocalDate.parse(inputDay.optString("date")).toString()
-                    if (!seenDates.add(date)) {
-                        throw IllegalArgumentException("duplicate date=$date")
-                    }
-                    DaySnapshot(
-                        date,
-                        normalizedMinutes(inputDay.optJSONArray("minutes"), "days[$index].minutes"),
-                    )
-                }.sortedBy { it.date }
-                if (hash != scheduleHash(days)) {
-                    Log.w(TAG, "storeSchedule: hash mismatch version=$version")
-                    return StoreResult.REJECTED
-                }
-                val taskBundle = normalizedTasks(payload)
-                tasks = taskBundle?.tasks
-                taskContentHash = taskBundle?.hash
-            } else if (!payload.has("schemaVersion") && payload.has("minutes")) {
-                isLegacy = true
-                days = listOf(
-                    DaySnapshot(
-                        java.time.ZonedDateTime.now(APP_ZONE).toLocalDate().toString(),
-                        normalizedMinutes(payload.optJSONArray("minutes"), "minutes"),
-                    )
-                )
-                version = maxOf(System.currentTimeMillis(), existingVersion + 1L)
-                hash = scheduleHash(days)
-                tasks = null
-                taskContentHash = null
-                Log.i(TAG, "storeSchedule: normalized legacy payload version=$version")
-            } else {
+            if (schemaVersion != SCHEMA_VERSION) {
                 Log.w(TAG, "storeSchedule: ignored unsupported schema=$schemaVersion")
                 return StoreResult.REJECTED
             }
+            val sourceSnapshotVersion = payload.optLong("sourceSnapshotVersion", 0L)
+            if (sourceSnapshotVersion <= 0L) {
+                Log.w(TAG, "storeSchedule: invalid sourceSnapshotVersion=$sourceSnapshotVersion")
+                return StoreResult.REJECTED
+            }
+            val version = payload.optLong("version", -1L)
+            val hash = payload.optString("hash")
+            if (version < 0L || hash.isBlank()) {
+                Log.w(TAG, "storeSchedule: invalid version/hash version=$version")
+                return StoreResult.REJECTED
+            }
+            val inputDays = payload.optJSONArray("days") ?: run {
+                Log.w(TAG, "storeSchedule: missing days version=$version")
+                return StoreResult.REJECTED
+            }
+            if (inputDays.length() !in 1..MAX_SNAPSHOT_DAYS) {
+                Log.w(TAG, "storeSchedule: invalid day count=${inputDays.length()}")
+                return StoreResult.REJECTED
+            }
+            val seenDates = mutableSetOf<String>()
+            val days = (0 until inputDays.length()).map { index ->
+                val inputDay = inputDays.optJSONObject(index)
+                    ?: throw IllegalArgumentException("days[$index] is not an object")
+                val date = LocalDate.parse(inputDay.optString("date")).toString()
+                if (!seenDates.add(date)) {
+                    throw IllegalArgumentException("duplicate date=$date")
+                }
+                DaySnapshot(
+                    date,
+                    normalizedMinutes(inputDay.optJSONArray("minutes"), "days[$index].minutes"),
+                )
+            }.sortedBy { it.date }
+            if (hash != scheduleHash(days)) {
+                Log.w(TAG, "storeSchedule: hash mismatch version=$version")
+                return StoreResult.REJECTED
+            }
+            val taskBundle = normalizedTasks(payload)
+            val tasks = taskBundle?.tasks
+            val taskContentHash = taskBundle?.hash
 
-            if (isLegacy && existing != null && !existingWasLegacy) {
-                Log.i(TAG, "storeSchedule: ignored legacy payload after versioned snapshot")
+            if (existingVersion > version) {
+                Log.w(TAG, "storeSchedule: ignored stale version=$version current=$existingVersion")
                 return StoreResult.STALE
             }
-            if (!(existingWasLegacy && !isLegacy)) {
-                if (existingVersion > version) {
-                    Log.w(TAG, "storeSchedule: ignored stale version=$version current=$existingVersion")
-                    return StoreResult.STALE
+            if (existingVersion == version) {
+                if (existingHash != hash) {
+                    Log.e(
+                        TAG,
+                        "storeSchedule: rejected divergent content for version=$version " +
+                            "currentHash=${existingHash?.take(12)} incomingHash=${hash.take(12)}",
+                    )
+                    return StoreResult.REJECTED
                 }
-                if (existingVersion == version) {
-                    if (existingHash != hash) {
+                when {
+                    existingTasksHash == taskContentHash -> {
+                        WatchTaskOutbox.onProjectionInstalled(
+                            context,
+                            maxOf(existingSourceSnapshotVersion, sourceSnapshotVersion),
+                        )
+                        return StoreResult.ALREADY_CURRENT
+                    }
+                    existingTasksHash == null && taskContentHash != null -> {
+                        Log.i(TAG, "storeSchedule: enriching version=$version with task details")
+                    }
+                    existingTasksHash != null && taskContentHash == null -> {
+                        Log.i(TAG, "storeSchedule: ignored task-detail downgrade version=$version")
+                        return StoreResult.STALE
+                    }
+                    else -> {
                         Log.e(
                             TAG,
-                            "storeSchedule: rejected divergent content for version=$version " +
-                                "currentHash=${existingHash?.take(12)} incomingHash=${hash.take(12)}",
+                            "storeSchedule: rejected divergent tasks for version=$version " +
+                                "currentTasksHash=${existingTasksHash?.take(12)} " +
+                                "incomingTasksHash=${taskContentHash?.take(12)}",
                         )
                         return StoreResult.REJECTED
                     }
-                    when {
-                        existingTasksHash == taskContentHash -> return StoreResult.ALREADY_CURRENT
-                        existingTasksHash == null && taskContentHash != null -> {
-                            Log.i(TAG, "storeSchedule: enriching version=$version with task details")
-                        }
-                        existingTasksHash != null && taskContentHash == null -> {
-                            Log.i(TAG, "storeSchedule: ignored task-detail downgrade version=$version")
-                            return StoreResult.STALE
-                        }
-                        else -> {
-                            Log.e(
-                                TAG,
-                                "storeSchedule: rejected divergent tasks for version=$version " +
-                                    "currentTasksHash=${existingTasksHash?.take(12)} " +
-                                    "incomingTasksHash=${taskContentHash?.take(12)}",
-                            )
-                            return StoreResult.REJECTED
-                        }
-                    }
                 }
             }
 
-            val source = sourceOverride ?: if (isLegacy) SOURCE_LEGACY else SOURCE_PHONE
+            val source = sourceOverride ?: SOURCE_PHONE
             val normalizedPayload = JSONObject().apply {
                 put("schemaVersion", SCHEMA_VERSION)
                 put("version", version)
                 put("generatedAtEpochMs", payload.optLong("generatedAtEpochMs", 0L))
                 put("hash", hash)
                 put("source", source)
+                put("sourceSnapshotVersion", sourceSnapshotVersion)
                 put("days", JSONArray().apply {
                     days.forEach { day ->
                         put(JSONObject().apply {
@@ -284,6 +283,9 @@ internal object ScheduleStore {
                 .putString(WATCH_MARKS_KEY, normalizedPayload.toString())
                 .commit()
             if (committed) {
+                // The whole projection is one SharedPreferences value. Only after commit may a
+                // SNAPSHOT_PUBLISHED receipt terminate matching watch outbox entries.
+                WatchTaskOutbox.onProjectionInstalled(context, sourceSnapshotVersion)
                 Log.d(
                     TAG,
                     "storeSchedule: source=$source version=$version " +

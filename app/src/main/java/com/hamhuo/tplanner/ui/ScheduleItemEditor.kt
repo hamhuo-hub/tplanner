@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
-import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
@@ -74,7 +73,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.input.pointer.awaitPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
@@ -189,7 +187,7 @@ fun ScheduleItemDetailScreen(
             colorId   = colorId,
             listId    = listId,
             alarmEnabled = alarmEnabled,
-            alarmOffsetMinutes = alarmOffsetMinutes.coerceIn(0, MAX_ALARM_OFFSET_MINUTES),
+            alarmOffsetMinutes = alarmOffsetMinutes,
             updatedAt = updatedAt,
             extras = nextExtras,
         )
@@ -920,7 +918,7 @@ fun ScheduleItemDetailScreen(
                     // so it can never fall through to the detail screen underneath.
                     Box(
                         Modifier
-                            .matchParentSize()
+                            .fillMaxSize()
                             .background(SURFACE)
                             .pointerInput(Unit) {
                                 awaitEachGesture {

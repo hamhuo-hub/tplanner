@@ -30,6 +30,33 @@ object LocalReducer {
         JSONObject(), JSONObject(), JSONObject(), JSONObject(), JSONObject(),
     )
 
+    fun fromJson(state: JSONObject): SyncState = SyncState(
+        tasks = JSONObject(state.getJSONObject("tasks").toString()),
+        customLists = JSONObject(state.getJSONObject("customLists").toString()),
+        journals = JSONObject(state.getJSONObject("journals").toString()),
+        goals = JSONObject(state.getJSONObject("goals").toString()),
+        insights = JSONObject(state.getJSONObject("insights").toString()),
+    )
+
+    fun toJson(state: SyncState): JSONObject = JSONObject()
+        .put("tasks", state.tasks)
+        .put("customLists", state.customLists)
+        .put("journals", state.journals)
+        .put("goals", state.goals)
+        .put("insights", state.insights)
+
+    fun apply(state: SyncState, entity: SyncCommandEntity): Result = apply(
+        state,
+        SyncCommand(
+            commandId = entity.commandId,
+            clientSequence = entity.clientSequence,
+            type = SyncCommandType.fromWire(entity.commandType),
+            aggregateId = entity.aggregateId,
+            arguments = JSONObject(entity.argumentsJson),
+        ),
+        brokerSequence = entity.clientSequence,
+    )
+
     private fun copy(obj: JSONObject): JSONObject {
         val out = JSONObject()
         obj.keys().forEach { key -> out.put(key, obj.get(key)) }
@@ -107,6 +134,9 @@ object LocalReducer {
     private fun jsonEquals(a: Any?, b: Any?): Boolean =
         (a == null && b == null) || (a != null && b != null && a.toString() == b.toString())
 
+    private fun nullableString(value: JSONObject, key: String): String? =
+        if (!value.has(key) || value.isNull(key)) null else value.optString(key)
+
     fun apply(state: SyncState, command: SyncCommand, brokerSequence: Long): Result {
         return when (command.type) {
             SyncCommandType.TASK_CREATE -> taskCreate(state, command)
@@ -115,6 +145,10 @@ object LocalReducer {
             SyncCommandType.TASK_SET_COMPLETED -> taskSetCompleted(state, command)
             SyncCommandType.TASK_SET_SCHEDULE -> taskSetSchedule(state, command)
             SyncCommandType.TASK_SET_RECURRENCE -> taskSetRecurrence(state, command)
+            SyncCommandType.TASK_SET_ALARM -> taskSetAlarm(state, command)
+            SyncCommandType.TASK_SET_APPEARANCE -> taskSetAppearance(state, command)
+            SyncCommandType.TASK_SET_LOCATION -> taskSetLocation(state, command)
+            SyncCommandType.TASK_SET_EXTRAS -> taskSetExtras(state, command)
             SyncCommandType.TASK_CHANGE_TYPE -> taskChangeType(state, command)
             SyncCommandType.TASK_ASSIGN_LIST -> taskAssignList(state, command)
             SyncCommandType.TASK_MOVE_IN_TIMELINE -> taskMoveInTimeline(state, command)
@@ -155,6 +189,20 @@ object LocalReducer {
             put("note", "")
             put("completed", false)
             put("itemType", args.optString("itemType", "task"))
+            put("schedule", JSONObject.NULL)
+            put("recurrence", JSONObject.NULL)
+            put(
+                "alarm",
+                JSONObject().put("enabled", false).put("offsetMinutes", 0),
+            )
+            put("colorId", 0)
+            put(
+                "location",
+                JSONObject().put("lat", JSONObject.NULL).put("lng", JSONObject.NULL),
+            )
+            put("extras", JSONObject())
+            put("listId", JSONObject.NULL)
+            put("checklist", JSONArray())
             put("lifecycle", "active")
             put("deletedAt", JSONObject.NULL)
         }
@@ -185,14 +233,110 @@ object LocalReducer {
     private fun taskSetSchedule(state: SyncState, cmd: SyncCommand): Result {
         val schedule = cmd.arguments.optJSONObject("schedule")
         return updateTask(state, cmd.aggregateId ?: "") { t ->
+            if (cmd.arguments.optBoolean("ifMissing", false) && !t.isNull("schedule")) {
+                return@updateTask t
+            }
             if (jsonEquals(t.opt("schedule"), schedule)) t else copy(t).apply { put("schedule", schedule ?: JSONObject.NULL) }
         }
     }
 
     private fun taskSetRecurrence(state: SyncState, cmd: SyncCommand): Result {
         val recurrence = cmd.arguments.opt("recurrence")
+        if (recurrence != null && recurrence !== JSONObject.NULL) {
+            val value = recurrence as? JSONObject
+                ?: return Result(state, rejected("INVALID_RECURRENCE"))
+            if (value.optString("frequency").isEmpty() || value.optInt("count", 0) < 1) {
+                return Result(state, rejected("INVALID_RECURRENCE"))
+            }
+        }
         return updateTask(state, cmd.aggregateId ?: "") { t ->
+            if (cmd.arguments.optBoolean("ifMissing", false) && !t.isNull("recurrence")) {
+                return@updateTask t
+            }
             if (jsonEquals(t.opt("recurrence"), recurrence)) t else copy(t).apply { put("recurrence", recurrence ?: JSONObject.NULL) }
+        }
+    }
+
+    private fun taskSetAlarm(state: SyncState, cmd: SyncCommand): Result {
+        if (!cmd.arguments.has("enabled") || !cmd.arguments.has("offsetMinutes")) {
+            return Result(state, rejected("INVALID_ALARM"))
+        }
+        val enabled = cmd.arguments.opt("enabled") as? Boolean
+            ?: return Result(state, rejected("INVALID_ALARM"))
+        val offset = cmd.arguments.opt("offsetMinutes") as? Number
+            ?: return Result(state, rejected("INVALID_ALARM"))
+        val offsetMinutes = offset.toInt()
+        if (offset.toDouble() != offsetMinutes.toDouble()) return Result(state, rejected("INVALID_ALARM"))
+        return updateTask(state, cmd.aggregateId ?: "") { task ->
+            val current = task.optJSONObject("alarm") ?: JSONObject()
+            if (cmd.arguments.optBoolean("ifMissing", false) &&
+                (current.optBoolean("enabled", false) || current.optInt("offsetMinutes", 0) != 0 ||
+                    current.length() > 2)
+            ) return@updateTask task
+            val alarm = JSONObject(current.toString())
+            cmd.arguments.keys().forEach { key ->
+                if (key != "ifMissing") alarm.put(key, cmd.arguments.get(key))
+            }
+            alarm.put("enabled", enabled).put("offsetMinutes", offsetMinutes)
+            if (jsonEquals(task.opt("alarm"), alarm)) task
+            else copy(task).apply { put("alarm", alarm) }
+        }
+    }
+
+    private fun taskSetAppearance(state: SyncState, cmd: SyncCommand): Result {
+        val value = cmd.arguments.opt("colorId") as? Number
+            ?: return Result(state, rejected("INVALID_COLOR_ID"))
+        val colorId = value.toInt()
+        if (colorId < 0 || value.toDouble() != colorId.toDouble()) {
+            return Result(state, rejected("INVALID_COLOR_ID"))
+        }
+        return updateTask(state, cmd.aggregateId ?: "") { task ->
+            if (task.optInt("colorId", -1) == colorId) task
+            else copy(task).apply { put("colorId", colorId) }
+        }
+    }
+
+    private fun taskSetLocation(state: SyncState, cmd: SyncCommand): Result {
+        fun coordinate(key: String): Double? {
+            if (!cmd.arguments.has(key) || cmd.arguments.isNull(key)) return null
+            return (cmd.arguments.opt(key) as? Number)?.toDouble()?.takeIf(Double::isFinite)
+                ?: throw IllegalArgumentException("INVALID_LOCATION")
+        }
+        val coordinates = try {
+            coordinate("lat") to coordinate("lng")
+        } catch (_: IllegalArgumentException) {
+            return Result(state, rejected("INVALID_LOCATION"))
+        }
+        return updateTask(state, cmd.aggregateId ?: "") { task ->
+            val current = task.optJSONObject("location") ?: JSONObject()
+            if (cmd.arguments.optBoolean("ifMissing", false) &&
+                (!current.isNull("lat") || !current.isNull("lng") || current.length() > 2)
+            ) return@updateTask task
+            val location = JSONObject(current.toString())
+            cmd.arguments.keys().forEach { key ->
+                if (key != "ifMissing") location.put(key, cmd.arguments.get(key))
+            }
+            location.put("lat", coordinates.first ?: JSONObject.NULL)
+                .put("lng", coordinates.second ?: JSONObject.NULL)
+            if (jsonEquals(task.opt("location"), location)) task
+            else copy(task).apply { put("location", location) }
+        }
+    }
+
+    private fun taskSetExtras(state: SyncState, cmd: SyncCommand): Result {
+        val extras = cmd.arguments.opt("extras") as? JSONObject
+            ?: return Result(state, rejected("INVALID_EXTRAS"))
+        return updateTask(state, cmd.aggregateId ?: "") { task ->
+            val detached = if (cmd.arguments.optBoolean("mergeMissing", false)) {
+                JSONObject(extras.toString()).apply {
+                    val current = task.optJSONObject("extras") ?: JSONObject()
+                    current.keys().forEach { key -> put(key, current.get(key)) }
+                }
+            } else {
+                JSONObject(extras.toString())
+            }
+            if (jsonEquals(task.opt("extras") ?: JSONObject(), detached)) task
+            else copy(task).apply { put("extras", detached) }
         }
     }
 
@@ -205,7 +349,7 @@ object LocalReducer {
     }
 
     private fun taskAssignList(state: SyncState, cmd: SyncCommand): Result {
-        val listId: String? = if (cmd.arguments.isNull("listId")) null else cmd.arguments.optString("listId", null)
+        val listId = nullableString(cmd.arguments, "listId")
         if (listId != null) {
             val list = state.customLists.optJSONObject(listId)
             if (list == null || list.optString("lifecycle") == "deleted") {
@@ -213,8 +357,11 @@ object LocalReducer {
             }
         }
         return updateTask(state, cmd.aggregateId ?: "") { t ->
+            if (cmd.arguments.optBoolean("ifUnassigned", false) && !t.isNull("listId")) {
+                return@updateTask t
+            }
             if (t.opt("listId") == null && listId == null) t
-            else if (t.optString("listId", null) == listId) t
+            else if (nullableString(t, "listId") == listId) t
             else copy(t).apply { put("listId", listId ?: JSONObject.NULL) }
         }
     }
@@ -261,15 +408,17 @@ object LocalReducer {
 
     // ── checklist ─────────────────────────────────────────────────────────
 
-    private fun checklistItems(t: JSONObject): JSONArray = t.optJSONArray("checklist") ?: JSONArray()
+    private fun checklistItems(t: JSONObject): JSONArray =
+        t.optJSONArray("checklist")?.let { JSONArray(it.toString()) } ?: JSONArray()
 
     private fun checklistSet(state: SyncState, cmd: SyncCommand, items: JSONArray): Result {
-        val (entity, receipt) = findActive(state.tasks.optJSONObject(cmd.aggregateId))
+        val taskId = cmd.aggregateId ?: return Result(state, rejected("ENTITY_NOT_FOUND"))
+        val (entity, receipt) = findActive(state.tasks.optJSONObject(taskId))
         if (receipt != null) return Result(state, receipt)
         val next = copy(entity!!)
         next.put("checklist", items)
         val tasks = copy(state.tasks)
-        tasks.put(cmd.aggregateId, next)
+        tasks.put(taskId, next)
         return Result(state.copy(tasks = tasks), ReducerReceipt("APPLIED"))
     }
 
@@ -289,7 +438,7 @@ object LocalReducer {
         if (checklistItemIndex(items, itemId) >= 0) return Result(state, noop())
         val item = JSONObject().apply {
             put("id", itemId)
-            put("title", cmd.arguments.optString("title", ""))
+            put("title", cmd.arguments.optString("title", cmd.arguments.optString("text", "")))
             put("completed", false)
         }
         items.put(item)
@@ -297,17 +446,30 @@ object LocalReducer {
     }
 
     private fun checklistSetTitle(state: SyncState, cmd: SyncCommand): Result {
-        val title = cmd.arguments.optString("title", "")
+        val title = cmd.arguments.optString("title", cmd.arguments.optString("text", ""))
         return checklistUpdateItem(state, cmd) { item, _ ->
-            if (item.optString("title") == title) item else copy(item).apply { put("title", title) }
+            val canonical = canonicalChecklistItem(item)
+            if (canonical.optString("title") == title) canonical
+            else copy(canonical).apply { put("title", title) }
         }
     }
 
     private fun checklistSetCompleted(state: SyncState, cmd: SyncCommand): Result {
         val completed = cmd.arguments.optBoolean("completed", false)
         return checklistUpdateItem(state, cmd) { item, _ ->
-            if (item.optBoolean("completed", false) == completed) item else copy(item).apply { put("completed", completed) }
+            val canonical = canonicalChecklistItem(item)
+            if (canonical.optBoolean("completed", false) == completed) canonical
+            else copy(canonical).apply { put("completed", completed) }
         }
+    }
+
+    private fun canonicalChecklistItem(item: JSONObject): JSONObject {
+        if (!item.has("text") && item.has("title")) return item
+        val canonical = copy(item)
+        val title = item.optString("title", item.optString("text", ""))
+        canonical.remove("text")
+        canonical.put("title", title)
+        return canonical
     }
 
     private fun checklistDeleteItem(state: SyncState, cmd: SyncCommand): Result {
@@ -326,18 +488,23 @@ object LocalReducer {
         if (receipt != null) return Result(state, receipt)
         val items = checklistItems(entity!!)
         val itemId = cmd.arguments.optString("checklistItemId", "")
-        val beforeId: String? = if (cmd.arguments.isNull("beforeItemId")) null else cmd.arguments.optString("beforeItemId", null)
+        val beforeId = nullableString(cmd.arguments, "beforeItemId")
         val from = checklistItemIndex(items, itemId)
         if (from < 0) return Result(state, noop())
         val moved = items.getJSONObject(from)
-        items.remove(from)
-        val to = if (beforeId == null) items.length() else checklistItemIndex(items, beforeId)
-        if (to < 0) {
-            items.put(from, moved) // 恢复原位,避免破坏状态
-            return Result(state, noop())
+        val remaining = JSONArray().apply {
+            for (index in 0 until items.length()) if (index != from) put(items.getJSONObject(index))
         }
-        items.put(to, moved)
-        return checklistSet(state, cmd, items)
+        val to = if (beforeId == null) remaining.length() else checklistItemIndex(remaining, beforeId)
+        if (to < 0) return Result(state, noop())
+        val reordered = JSONArray().apply {
+            for (index in 0..remaining.length()) {
+                if (index == to) put(moved)
+                if (index < remaining.length()) put(remaining.getJSONObject(index))
+            }
+        }
+        if (reordered.toString() == items.toString()) return Result(state, noop())
+        return checklistSet(state, cmd, reordered)
     }
 
     private fun checklistUpdateItem(
@@ -386,7 +553,7 @@ object LocalReducer {
         val color: String? = if (cmd.arguments.isNull("color")) null else cmd.arguments.optString("color")
         return updateInMap(state, "customLists", cmd.aggregateId ?: "") { l ->
             if (l.opt("color") == null && color == null) l
-            else if (l.optString("color", null) == color) l
+            else if (nullableString(l, "color") == color) l
             else copy(l).apply { put("color", color ?: JSONObject.NULL) }
         }
     }
@@ -398,9 +565,9 @@ object LocalReducer {
         val tasks = copy(before.state.tasks)
         before.state.tasks.keys().forEach { taskId ->
             val t = tasks.getJSONObject(taskId)
-            if (t.optString("listId", null) == id) {
+            if (nullableString(t, "listId") == id) {
                 val next = copy(t)
-                next.remove("listId")
+                next.put("listId", JSONObject.NULL)
                 tasks.put(taskId, next)
             }
         }
@@ -421,6 +588,7 @@ object LocalReducer {
             }
             return Result(state.copy(journals = copy(state.journals).apply { put(id, journal) }), ReducerReceipt("APPLIED"))
         }
+        if (cmd.arguments.optBoolean("ifMissing", false)) return Result(state, noop())
         return updateInMap(state, "journals", id) { j ->
             if (j.optString("text") == text) j else copy(j).apply { put("text", text) }
         }

@@ -10,6 +10,7 @@ import com.hamhuo.tplanner.persistence.JournalWireMapper
 import com.hamhuo.tplanner.persistence.RoomJournalRepository
 import com.hamhuo.tplanner.persistence.RoomDraftRepository
 import com.hamhuo.tplanner.persistence.TPlannerDatabase
+import com.hamhuo.tplanner.syncv3.SyncV3CommandRepository
 import kotlinx.coroutines.flow.Flow
 
 /** `deletedAt == 0` is alive internally; the wire mapper restores JSON null on output. */
@@ -37,7 +38,10 @@ class JournalStore(
     database: TPlannerDatabase = TPlannerDatabase.get(context),
 ) {
     private val appContext = context.applicationContext
-    private val repository = RoomJournalRepository(database)
+    private val repository = RoomJournalRepository(
+        database,
+        SyncV3CommandRepository(appContext, database),
+    )
     private val drafts = RoomDraftRepository(database)
 
     fun observe(date: String): Flow<JournalEntry?> = repository.observe(date)
@@ -185,21 +189,6 @@ class JournalStore(
         return replaced
     }
 
-    suspend fun applySync(
-        journals: Map<String, JournalEntry>,
-        captured: Map<String, String>,
-    ) {
-        repository.applySync(journals, captured)
-    }
-
-    suspend fun baseKeys(): Map<String, String>? = repository.baseKeys()
-
-    suspend fun capturedMutations(): Map<String, String> = repository.capturedMutations()
-
-    fun fromJson(json: String): Map<String, JournalEntry> = JournalWireMapper.decodeMapStrict(json)
-
-    fun toJson(journals: Map<String, JournalEntry>): String = JournalWireMapper.encodeMap(journals)
-
     private fun DraftRecoveryDecision.toJournalRecovery(): JournalDraftRecovery = when (this) {
         is DraftRecoveryDecision.AutoRestore -> JournalDraftRecovery.Recovered(draft.content)
         is DraftRecoveryDecision.Conflict -> JournalDraftRecovery.Conflict(conflict)
@@ -212,7 +201,7 @@ class JournalStore(
 
     /** The durable outbox is already committed; scheduler startup is retryable on next launch. */
     private fun scheduleSync() {
-        runCatching { SyncOutboxScheduler.enqueue(appContext) }
+        runCatching { SyncV3Scheduler.enqueue(appContext) }
     }
 
     private companion object {

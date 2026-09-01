@@ -120,7 +120,7 @@ private fun Throwable.locationForLog(): String {
 fun MainScreen(
     store: JournalStore,
     eventStore: ScheduleItemStore,
-    manager: LanSyncManager,
+    manager: SyncManager,
     deepseekService: DeepSeekAnalysisService?,
     amapApiKey: String,
     initialContent: String,
@@ -223,11 +223,7 @@ fun MainScreen(
 
     LaunchedEffect(eventStore) {
         eventStore.observeAll().collect { storedEvents ->
-            // Room is the source of truth for the watch. This initial emission also queues the
-            // local snapshot when LAN startup sync fails, while later emissions cover every
-            // committed mutation without ever publishing an optimistic UI or draft snapshot.
             events = storedEvents
-            WatchScheduleSync.push(context, storedEvents)
         }
     }
     LaunchedEffect(store, journalDateKey) {
@@ -274,8 +270,8 @@ fun MainScreen(
     var syncFeedback by remember { mutableStateOf<TPlannerSyncFeedbackPresentation?>(null) }
     var syncFeedbackGeneration by remember { mutableIntStateOf(0) }
     var presentedSyncOperationId by rememberSaveable { mutableStateOf<String?>(null) }
-    val eventActions = remember(serverUrl) {
-        ScheduleItemActions(scope, context, eventStore, eventWriteMutex, { url -> manager.fetchEvents(url) }, { serverUrl })
+    val eventActions = remember(eventStore) {
+        ScheduleItemActions(scope, context, eventStore, eventWriteMutex)
     }
 
     val syncedTemplate = stringResource(R.string.sync_success_with_name)
@@ -287,7 +283,7 @@ fun MainScreen(
     val syncUpdatingMessage = stringResource(R.string.sync_updating)
 
     fun serverHost(url: String): String =
-        try { java.net.URL(LanSyncManager.normalizeServerUrl(url)).host } catch (_: Exception) { url }
+        try { java.net.URL(SyncManager.normalizeServerUrl(url)).host } catch (_: Exception) { url }
 
     val syncMsg = when (syncOperation.phase) {
         SyncPhase.IDLE -> ""
@@ -728,8 +724,6 @@ fun MainScreen(
                     }
                     Toast.makeText(context, alarmMsg, Toast.LENGTH_SHORT).show()
                 }
-                runCatching { manager.fetchEvents(serverUrl) }
-                    .onSuccess { refreshed -> events = refreshed }
             } catch (e: Exception) {
                 Log.e(LLM_LOG_TAG, "request=$requestId phase=confirm result=failed", e)
                 if (showScheduleSheet && sheetRequestId == requestId) {

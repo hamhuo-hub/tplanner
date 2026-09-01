@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Keep the Room database: it contains offline user edits and drafts. Transport-only
+         preferences are rebuilt against the restored database and the current server. -->
+    <exclude domain="sharedpref" path="tplanner_watch_command_bridge_v3.xml" />
+    <exclude domain="sharedpref" path="tplanner_watch_schedule_sync.xml" />
+    <exclude domain="sharedpref" path="tplanner_task_alarms.xml" />
+</full-backup-content>

@@ -26,8 +26,8 @@ private val Context.tplannerSettingsDataStore: DataStore<Preferences> by prefere
             SharedPreferencesMigration(
                 context = context,
                 sharedPreferencesName = LEGACY_SYNC_PREFERENCES_NAME,
-                // Restrict cleanup to this key. In particular, sync_base_* stays in the legacy
-                // preferences until the Room sync-shadow migration has been fully rolled out.
+                // Only the user-configurable endpoint survives the one-shot local-data import.
+                // Retired merge bases are deliberately ignored by the V3 command pipeline.
                 keysToMigrate = setOf(SERVER_URL_NAME),
             )
         )

@@ -22,22 +22,14 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.content.ContextCompat
-import com.hamhuo.tplanner.persistence.LegacyImportResult
-import com.hamhuo.tplanner.persistence.LegacyPreferencesImporter
-import com.hamhuo.tplanner.persistence.TPlannerDatabase
-import com.hamhuo.tplanner.persistence.WatchTaskCommitResult
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
-import java.time.Instant
 import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
 /**
- * Phone-side classic Bluetooth server for durable watch -> phone task creation.
+ * Phone-side classic Bluetooth server for durable watch -> V3 semantic-command envelopes.
  *
- * Blocking RFCOMM and Room work stays on the server thread. The service acknowledges only after
- * the event transaction has committed; an ACK lost in transit is harmless because import is
- * idempotent by request id.
+ * Blocking RFCOMM and Room work stays on the server thread. A PHONE_STORED response follows only
+ * the atomic command-outbox transaction; completion waits for the central snapshot projection.
  */
 class WatchTaskImportService : Service() {
     @Volatile
@@ -251,35 +243,45 @@ class WatchTaskImportService : Service() {
             CONNECTION_TIMEOUT_MS,
             TimeUnit.MILLISECONDS,
         )
-        var response = WatchTaskProtocol.Response(
+        var responsePayload = WatchTaskProtocol.encodeResponse(WatchTaskProtocol.Response(
             requestId = WatchTaskProtocol.UNKNOWN_REQUEST_ID,
             status = WatchTaskProtocol.Status.RETRY,
             errorCode = "INCOMPLETE_FRAME",
-        )
+        ))
         var handledScheduleRefresh = false
         try {
             val remote = socket.remoteDevice
             if (remote.bondState != BluetoothDevice.BOND_BONDED) {
-                response = response.copy(
+                responsePayload = WatchTaskProtocol.encodeResponse(WatchTaskProtocol.Response(
+                    requestId = WatchTaskProtocol.UNKNOWN_REQUEST_ID,
                     status = WatchTaskProtocol.Status.REJECTED,
                     errorCode = "UNBONDED_DEVICE",
-                )
+                ))
             } else {
                 val raw = ScheduleRfcommProtocol.readFrame(socket.inputStream)
                 if (WatchScheduleRefreshProtocol.isRefreshRequest(raw)) {
                     handledScheduleRefresh = true
                     handleScheduleRefresh(socket, raw)
                 } else {
-                    response = WatchTaskImporter.importBlocking(
-                        applicationContext,
-                        raw,
-                        fallbackRequestId = null,
-                    )
-                    Log.d(
-                        TAG,
-                        "Handled request=${response.requestId} status=${response.status} " +
-                            "peer=${runCatching { remote.address }.getOrDefault("unknown")}",
-                    )
+                    responsePayload = if (WatchTaskProtocol.isRequestBatch(raw)) {
+                        val batch = WatchTaskProtocol.decodeRequestBatch(raw)
+                        val responses = batch.requests.map { request ->
+                            WatchTaskImporter.importRequestBlocking(applicationContext, request)
+                        }
+                        WatchTaskProtocol.encodeResponseBatch(
+                            WatchTaskProtocol.ResponseBatch(batch.batchId, responses),
+                        )
+                    } else {
+                        // One-release compatibility for a watch that connected before upgrading.
+                        WatchTaskProtocol.encodeResponse(
+                            WatchTaskImporter.importBlocking(
+                                applicationContext,
+                                raw,
+                                fallbackRequestId = null,
+                            ),
+                        )
+                    }
+                    Log.d(TAG, "Handled Watch command frame peer=${runCatching { remote.address }.getOrDefault("unknown")}")
                 }
             }
         } catch (error: Exception) {
@@ -289,7 +291,7 @@ class WatchTaskImportService : Service() {
             if (!handledScheduleRefresh) {
                 runCatching {
                     val payload = ScheduleRfcommProtocol.encodePayload(
-                        WatchTaskProtocol.encodeResponse(response),
+                        responsePayload,
                     )
                     ScheduleRfcommProtocol.writeFrame(socket.outputStream, payload)
                 }.onFailure { error ->
@@ -400,7 +402,7 @@ class WatchTaskImportService : Service() {
     }
 }
 
-/** Shared durable import boundary used by RFCOMM and Wearable Data Layer. */
+/** Shared parser used by both transports; all persistence is delegated to WatchCommandBridge. */
 internal object WatchTaskImporter {
     private const val TAG = "TplannerWatchImporter"
 
@@ -410,7 +412,7 @@ internal object WatchTaskImporter {
         fallbackRequestId: String?,
     ): WatchTaskProtocol.Response {
         val request = try {
-            WatchTaskProtocol.decodeRequest(raw)
+            WatchTaskProtocol.decodeCompatibleRequest(raw)
         } catch (error: WatchTaskProtocol.ProtocolException) {
             val requestId = fallbackRequestId
                 ?: WatchTaskProtocol.bestEffortRequestId(raw)
@@ -438,104 +440,22 @@ internal object WatchTaskImporter {
             )
         }
 
-        return try {
-            runBlocking(Dispatchers.IO) { importRequest(context.applicationContext, request) }
-        } catch (error: Exception) {
+        return importRequestBlocking(context, request)
+    }
+
+    fun importRequestBlocking(
+        context: Context,
+        request: WatchTaskProtocol.Request,
+    ): WatchTaskProtocol.Response = try {
+        WatchCommandBridge.importBlocking(context.applicationContext, request)
+    } catch (error: Exception) {
             Log.e(TAG, "Task import failed request=${request.requestId}", error)
             WatchTaskProtocol.Response(
                 requestId = request.requestId,
                 status = WatchTaskProtocol.Status.RETRY,
+                commandIds = request.commands.map(WatchTaskProtocol.SemanticCommand::commandId),
                 errorCode = "PERSISTENCE_FAILED",
             )
         }
-    }
 
-    private suspend fun importRequest(
-        context: Context,
-        request: WatchTaskProtocol.Request,
-    ): WatchTaskProtocol.Response {
-        val database = TPlannerDatabase.get(context)
-        val migration = LegacyPreferencesImporter(context, database).importIfNeeded()
-        if (migration is LegacyImportResult.Blocked) {
-            Log.e(
-                TAG,
-                "Legacy migration blocked request=${request.requestId}: " +
-                    migration.issues.joinToString { it.message },
-            )
-            return WatchTaskProtocol.Response(
-                requestId = request.requestId,
-                status = WatchTaskProtocol.Status.RETRY,
-                errorCode = "MIGRATION_BLOCKED",
-            )
-        }
-
-        val store = ScheduleItemStore(context, database)
-        return if (request.task != null) {
-            importCreate(context, store, request)
-        } else {
-            importDelete(context, store, request)
-        }
-    }
-
-    private suspend fun importCreate(
-        context: Context,
-        store: ScheduleItemStore,
-        request: WatchTaskProtocol.Request,
-    ): WatchTaskProtocol.Response {
-        val receivedAt = System.currentTimeMillis()
-        val task = request.task!!
-        val event = ScheduleItem(
-            id = task.id,
-            title = task.title,
-            type = task.type,
-            start = Instant.ofEpochMilli(task.startEpochMs),
-            end = Instant.ofEpochMilli(task.endEpochMs),
-            completed = false,
-            checklist = emptyList(),
-            colorId = task.colorId,
-            note = "",
-            deletedAt = 0L,
-            updatedAt = receivedAt,
-            alarmEnabled = task.alarmEnabled,
-            alarmOffsetMinutes = task.alarmOffsetMinutes,
-            extras = linkedMapOf(
-                "timezone" to task.timeZoneId,
-                "origin" to "wear",
-                "watchCreateRequestId" to request.requestId,
-                "watchCreatedAtEpochMs" to request.createdAtEpochMs,
-            ),
-        )
-        val result = store.saveWatchCreated(event, request.requestId)
-        val responseStatus = when (result) {
-            WatchTaskCommitResult.STORED -> WatchTaskProtocol.Status.STORED
-            WatchTaskCommitResult.ALREADY_STORED ->
-                WatchTaskProtocol.Status.ALREADY_STORED
-            WatchTaskCommitResult.ID_CONFLICT -> WatchTaskProtocol.Status.REJECTED
-        }
-        val errorCode = if (result == WatchTaskCommitResult.ID_CONFLICT) "ID_CONFLICT" else null
-
-        if (result != WatchTaskCommitResult.ID_CONFLICT) {
-            WatchScheduleSync.push(context, store.getAll())
-        }
-        return WatchTaskProtocol.Response(
-            requestId = request.requestId,
-            status = responseStatus,
-            errorCode = errorCode,
-        )
-    }
-
-    private suspend fun importDelete(
-        context: Context,
-        store: ScheduleItemStore,
-        request: WatchTaskProtocol.Request,
-    ): WatchTaskProtocol.Response {
-        val changed = store.softDeleteWatchEvent(request.taskId!!)
-        if (changed) {
-            WatchScheduleSync.push(context, store.getAll())
-        }
-        return WatchTaskProtocol.Response(
-            requestId = request.requestId,
-            status = WatchTaskProtocol.Status.DELETED,
-        )
-    }
 }

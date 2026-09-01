@@ -3,7 +3,6 @@ package com.hamhuo.tplanner.persistence
 import com.hamhuo.tplanner.CheckItem
 import com.hamhuo.tplanner.ISO_MS
 import com.hamhuo.tplanner.JournalEntry
-import com.hamhuo.tplanner.MAX_ALARM_OFFSET_MINUTES
 import com.hamhuo.tplanner.ScheduleItem
 import org.json.JSONArray
 import org.json.JSONObject
@@ -87,8 +86,7 @@ object EventWireMapper {
             deletedAt = obj.optLong("deletedAt", 0L),
             updatedAt = obj.optLong("updatedAt", 0L),
             alarmEnabled = obj.optBoolean("alarmEnabled", false),
-            alarmOffsetMinutes = obj.optInt("alarmOffsetMinutes", 0)
-                .coerceIn(0, MAX_ALARM_OFFSET_MINUTES),
+            alarmOffsetMinutes = obj.optInt("alarmOffsetMinutes", 0),
             lat = obj.optDouble("lat", 0.0),
             lng = obj.optDouble("lng", 0.0),
             listId = obj.optString("listId", ""),
@@ -115,10 +113,7 @@ object EventWireMapper {
         put("deletedAt", event.deletedAt)
         put("updatedAt", event.updatedAt)
         put("alarmEnabled", event.alarmEnabled)
-        put(
-            "alarmOffsetMinutes",
-            event.alarmOffsetMinutes.coerceIn(0, MAX_ALARM_OFFSET_MINUTES),
-        )
+        put("alarmOffsetMinutes", event.alarmOffsetMinutes)
         if (event.lat != 0.0) put("lat", event.lat)
         if (event.lng != 0.0) put("lng", event.lng)
         if (event.listId.isNotEmpty()) put("listId", event.listId)
@@ -247,7 +242,7 @@ object PersistenceMapper {
             deletedAt = event.deletedAt,
             updatedAt = event.updatedAt,
             alarmEnabled = event.alarmEnabled,
-            alarmOffsetMinutes = event.alarmOffsetMinutes.coerceIn(0, MAX_ALARM_OFFSET_MINUTES),
+            alarmOffsetMinutes = event.alarmOffsetMinutes,
             lat = event.lat,
             lng = event.lng,
             listId = event.listId,

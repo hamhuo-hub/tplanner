@@ -3,6 +3,8 @@ package com.hamhuo.tplanner.persistence
 import androidx.room.withTransaction
 import com.hamhuo.tplanner.JournalEntry
 import com.hamhuo.tplanner.ScheduleItem
+import com.hamhuo.tplanner.UserList
+import com.hamhuo.tplanner.syncv3.SyncV3CommandRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import org.json.JSONObject
@@ -19,7 +21,10 @@ enum class PendingActionCommitResult { SAVED, ALREADY_HANDLED, INVALID_STATE }
 /** Result of the idempotent watch-create transaction. */
 enum class WatchTaskCommitResult { STORED, ALREADY_STORED, ID_CONFLICT }
 
-class RoomEventRepository(private val db: TPlannerDatabase) {
+class RoomEventRepository(
+    private val db: TPlannerDatabase,
+    private val commands: SyncV3CommandRepository,
+) {
     fun observeAll(): Flow<List<ScheduleItem>> = db.eventDao().observeAll().map { rows ->
         rows.map(PersistenceMapper::eventToDomain)
     }
@@ -94,7 +99,7 @@ class RoomEventRepository(private val db: TPlannerDatabase) {
             val changed = existing == null ||
                 EventWireMapper.contentKey(PersistenceMapper.eventToDomain(existing)) !=
                 EventWireMapper.contentKey(event)
-            if (changed) enqueue(event, now)
+            if (changed) commands.enqueueTaskChange(existing?.let(PersistenceMapper::eventToDomain), event)
             clearDraftKey?.let { db.draftDao().delete(it) }
             clearPendingActionId?.let { db.pendingActionDao().delete(it) }
             PendingActionCommitResult.SAVED
@@ -148,7 +153,7 @@ class RoomEventRepository(private val db: TPlannerDatabase) {
         )
         val sortIndex = db.eventDao().maxSortIndex() + 1L
         db.eventDao().upsert(PersistenceMapper.eventToEntity(stored, sortIndex))
-        enqueue(stored, now)
+        commands.enqueueTaskChange(null, stored)
         db.pendingActionDao().upsert(watchCreateReceipt(requestId, stored.id, now))
         WatchTaskCommitResult.STORED
     }
@@ -189,7 +194,7 @@ class RoomEventRepository(private val db: TPlannerDatabase) {
         )
         val sortIndex = db.eventDao().maxSortIndex() + 1L
         db.eventDao().upsert(PersistenceMapper.eventToEntity(copy, sortIndex))
-        enqueue(copy, now)
+        commands.enqueueTaskChange(null, copy)
         db.draftDao().delete(sourceTarget.storageKey)
         copy
     }
@@ -238,7 +243,7 @@ class RoomEventRepository(private val db: TPlannerDatabase) {
                 val existingSortIndex = currentRow?.sortIndex
                 val sortIndex = existingSortIndex ?: (db.eventDao().maxSortIndex() + 1L)
                 db.eventDao().upsert(PersistenceMapper.eventToEntity(event, sortIndex))
-                enqueue(event, now)
+                commands.enqueueTaskChange(current, event)
                 additionalEvents.forEach { additional ->
                     if (additional.id == event.id) return@forEach
                     val existingAdditional = db.eventDao().get(additional.id)
@@ -247,56 +252,16 @@ class RoomEventRepository(private val db: TPlannerDatabase) {
                     db.eventDao().upsert(
                         PersistenceMapper.eventToEntity(additional, additionalSortIndex),
                     )
-                    enqueue(additional, now)
+                    commands.enqueueTaskChange(
+                        existingAdditional?.let(PersistenceMapper::eventToDomain),
+                        additional,
+                    )
                 }
                 db.draftDao().delete(target.storageKey)
                 DraftCommitResult.Saved
             }
         }
     }
-
-    /**
-     * Applies a successful server round-trip without overwriting edits made while HTTP was in
-     * flight. Shadows always describe the server response; token-guarded acknowledgements consume
-     * only mutations captured before the request.
-     */
-    suspend fun applySync(
-        merged: List<ScheduleItem>,
-        captured: Map<String, String>,
-        syncedAt: Long = System.currentTimeMillis(),
-    ) {
-        db.withTransaction {
-            merged.forEachIndexed { index, event ->
-                val currentOutbox = db.syncDao().outboxEntry(SyncDatasets.EVENTS, event.id)
-                val capturedToken = captured[event.id]
-                val hasNewerLocalMutation = currentOutbox != null &&
-                    (capturedToken == null || currentOutbox.mutationToken != capturedToken)
-                if (!hasNewerLocalMutation) {
-                    db.eventDao().upsert(PersistenceMapper.eventToEntity(event, index.toLong()))
-                }
-                db.syncDao().upsertShadow(
-                    SyncShadowEntity(
-                        dataset = SyncDatasets.EVENTS,
-                        entityId = event.id,
-                        contentKey = EventWireMapper.contentKey(event),
-                        payloadJson = EventWireMapper.encodeObject(event).toString(),
-                        syncedAt = syncedAt,
-                    )
-                )
-                if (capturedToken != null) {
-                    db.syncDao().acknowledge(SyncDatasets.EVENTS, event.id, capturedToken)
-                }
-            }
-        }
-    }
-
-    suspend fun baseKeys(): Map<String, String>? {
-        val rows = db.syncDao().shadows(SyncDatasets.EVENTS)
-        return rows.takeIf { it.isNotEmpty() }?.associate { it.entityId to it.contentKey }
-    }
-
-    suspend fun capturedMutations(): Map<String, String> =
-        db.syncDao().outbox(SyncDatasets.EVENTS).associate { it.entityId to it.mutationToken }
 
     /** Deletes a custom-list definition and atomically returns its active items to no list. */
     suspend fun deleteUserListAndUnassignItems(
@@ -313,28 +278,30 @@ class RoomEventRepository(private val db: TPlannerDatabase) {
                 updatedAt = maxOf(now, event.updatedAt + 1L),
             )
             db.eventDao().upsert(PersistenceMapper.eventToEntity(unassigned, row.sortIndex))
-            enqueue(unassigned, now)
+            commands.enqueueTaskChange(event, unassigned)
             changedItems++
         }
         db.userListDao().delete(listId)
+        commands.enqueueListDelete(listId)
         changedItems
     }
 
-    private suspend fun enqueue(event: ScheduleItem, now: Long) {
-        val existing = db.syncDao().outboxEntry(SyncDatasets.EVENTS, event.id)
-        val payload = EventWireMapper.encodeObject(event).toString()
-        db.syncDao().enqueue(
-            SyncOutboxEntity(
-                dataset = SyncDatasets.EVENTS,
-                entityId = event.id,
-                mutationToken = UUID.randomUUID().toString(),
-                payloadJson = payload,
-                contentKey = EventWireMapper.contentKey(event),
-                isTombstone = event.deletedAt != 0L,
-                updatedAt = event.updatedAt,
-                createdAt = existing?.createdAt ?: now,
-            )
-        )
+    suspend fun createUserList(id: String, name: String): UserList = db.withTransaction {
+        val normalized = name.trim()
+        val sortOrder = db.userListDao().nextSortOrder()
+        db.userListDao().upsert(UserListEntity(id = id, name = normalized, sortOrder = sortOrder))
+        commands.enqueueListCreate(id, normalized)
+        UserList(id = id, name = normalized)
+    }
+
+    suspend fun renameUserList(id: String, name: String): UserList? = db.withTransaction {
+        val current = db.userListDao().get(id) ?: return@withTransaction null
+        val normalized = name.trim()
+        if (current.name != normalized) {
+            db.userListDao().upsert(current.copy(name = normalized))
+            commands.enqueueListRename(id, normalized)
+        }
+        UserList(id = id, name = normalized)
     }
 
     private companion object {
@@ -346,7 +313,10 @@ class RoomEventRepository(private val db: TPlannerDatabase) {
     }
 }
 
-class RoomJournalRepository(private val db: TPlannerDatabase) {
+class RoomJournalRepository(
+    private val db: TPlannerDatabase,
+    private val commands: SyncV3CommandRepository,
+) {
     fun observe(date: String): Flow<JournalEntry?> = db.journalDao().observe(date).map { row ->
         row?.let(PersistenceMapper::journalToDomain)
     }
@@ -577,59 +547,8 @@ class RoomJournalRepository(private val db: TPlannerDatabase) {
         true
     }
 
-    suspend fun applySync(
-        merged: Map<String, JournalEntry>,
-        captured: Map<String, String>,
-        syncedAt: Long = System.currentTimeMillis(),
-    ) {
-        db.withTransaction {
-            merged.forEach { (date, entry) ->
-                val currentOutbox = db.syncDao().outboxEntry(SyncDatasets.JOURNALS, date)
-                val capturedToken = captured[date]
-                val hasNewerLocalMutation = currentOutbox != null &&
-                    (capturedToken == null || currentOutbox.mutationToken != capturedToken)
-                if (!hasNewerLocalMutation) {
-                    db.journalDao().upsert(PersistenceMapper.journalToEntity(date, entry))
-                }
-                db.syncDao().upsertShadow(
-                    SyncShadowEntity(
-                        dataset = SyncDatasets.JOURNALS,
-                        entityId = date,
-                        contentKey = JournalWireMapper.contentKey(entry),
-                        payloadJson = JournalWireMapper.encodeObject(entry).toString(),
-                        syncedAt = syncedAt,
-                    )
-                )
-                if (capturedToken != null) {
-                    db.syncDao().acknowledge(SyncDatasets.JOURNALS, date, capturedToken)
-                }
-            }
-        }
-    }
-
-    suspend fun baseKeys(): Map<String, String>? {
-        val rows = db.syncDao().shadows(SyncDatasets.JOURNALS)
-        return rows.takeIf { it.isNotEmpty() }?.associate { it.entityId to it.contentKey }
-    }
-
-    suspend fun capturedMutations(): Map<String, String> =
-        db.syncDao().outbox(SyncDatasets.JOURNALS).associate { it.entityId to it.mutationToken }
-
-    private suspend fun enqueue(date: String, entry: JournalEntry, now: Long) {
-        val existing = db.syncDao().outboxEntry(SyncDatasets.JOURNALS, date)
-        val payload = JournalWireMapper.encodeObject(entry).toString()
-        db.syncDao().enqueue(
-            SyncOutboxEntity(
-                dataset = SyncDatasets.JOURNALS,
-                entityId = date,
-                mutationToken = UUID.randomUUID().toString(),
-                payloadJson = payload,
-                contentKey = JournalWireMapper.contentKey(entry),
-                isTombstone = entry.deletedAt != 0L,
-                updatedAt = entry.updatedAt,
-                createdAt = existing?.createdAt ?: now,
-            )
-        )
+    private fun enqueue(date: String, entry: JournalEntry, now: Long) {
+        commands.enqueueJournal(date, entry)
     }
 
     private fun newDraft(

@@ -124,7 +124,7 @@ fun SyncSettingsPanel(
             // 服务器地址
             MonoInput(
                 value       = serverUrl,
-                placeholder = LanSyncManager.DEFAULT_SERVER_URL,
+                placeholder = SyncManager.DEFAULT_SERVER_URL,
                 onValue     = onUrlChange,
                 modifier    = Modifier.fillMaxWidth()
             )

@@ -14,8 +14,6 @@ import com.hamhuo.tplanner.syncv3.SyncV3Dao
         ScheduleItemEntity::class,
         JournalEntity::class,
         EditDraftEntity::class,
-        SyncShadowEntity::class,
-        SyncOutboxEntity::class,
         PendingActionEntity::class,
         MigrationMarkerEntity::class,
         UserListEntity::class,
@@ -23,14 +21,13 @@ import com.hamhuo.tplanner.syncv3.SyncV3Dao
         SyncStateEntity::class,
         SyncReceiptEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class TPlannerDatabase : RoomDatabase() {
     abstract fun eventDao(): ScheduleItemDao
     abstract fun journalDao(): JournalDao
     abstract fun draftDao(): DraftDao
-    abstract fun syncDao(): SyncDao
     abstract fun pendingActionDao(): PendingActionDao
     abstract fun migrationDao(): MigrationDao
     abstract fun userListDao(): UserListDao
@@ -46,7 +43,7 @@ abstract class TPlannerDatabase : RoomDatabase() {
                 TPlannerDatabase::class.java,
                 DATABASE_NAME,
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build().also { instance = it }
         }
 
@@ -107,6 +104,51 @@ abstract class TPlannerDatabase : RoomDatabase() {
                     "CREATE INDEX IF NOT EXISTS index_sync_receipts_client_sequence " +
                         "ON sync_receipts(client_sequence)"
                 )
+            }
+        }
+
+        internal val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                // Preserve unsent V1-local intent before retiring its transport tables. The V3
+                // bootstrap converts payload-vs-shadow diffs into semantic commands, then drops
+                // this staging table in the same transaction as its marker.
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS v3_cutover_intents (" +
+                        "dataset TEXT NOT NULL, entity_id TEXT NOT NULL, " +
+                        "payload_json TEXT NOT NULL, is_tombstone INTEGER NOT NULL, " +
+                        "base_payload_json TEXT, created_at INTEGER NOT NULL, " +
+                        "PRIMARY KEY(dataset, entity_id))"
+                )
+                db.execSQL(
+                    "INSERT OR REPLACE INTO v3_cutover_intents " +
+                        "(dataset, entity_id, payload_json, is_tombstone, base_payload_json, created_at) " +
+                        "SELECT o.dataset, o.entity_id, o.payload_json, o.is_tombstone, " +
+                        "s.payload_json, o.created_at FROM sync_outbox o " +
+                        "LEFT JOIN sync_shadows s ON s.dataset = o.dataset AND s.entity_id = o.entity_id"
+                )
+                db.execSQL("DROP TABLE IF EXISTS sync_outbox")
+                db.execSQL("DROP TABLE IF EXISTS sync_shadows")
+                db.execSQL("ALTER TABLE sync_state ADD COLUMN server_mirror_json TEXT")
+                db.execSQL(
+                    "ALTER TABLE sync_state ADD COLUMN " +
+                        "watch_projection_snapshot_version INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "ALTER TABLE sync_state ADD COLUMN sync_phase TEXT NOT NULL DEFAULT 'idle'"
+                )
+                db.execSQL("ALTER TABLE sync_state ADD COLUMN sync_error_code TEXT")
+                db.execSQL(
+                    "ALTER TABLE sync_state ADD COLUMN sync_updated_at INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "ALTER TABLE sync_state ADD COLUMN " +
+                        "installed_broker_to_sequence INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "ALTER TABLE sync_state ADD COLUMN " +
+                        "watch_projection_broker_to_sequence INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL("ALTER TABLE sync_receipts ADD COLUMN broker_sequence INTEGER")
             }
         }
     }

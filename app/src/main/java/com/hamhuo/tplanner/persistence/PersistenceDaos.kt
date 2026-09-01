@@ -87,67 +87,6 @@ interface DraftDao {
 }
 
 @Dao
-interface SyncDao {
-    @Query("SELECT * FROM sync_shadows WHERE dataset = :dataset")
-    suspend fun shadows(dataset: String): List<SyncShadowEntity>
-
-    @Query("SELECT * FROM sync_shadows WHERE dataset = :dataset AND entity_id = :entityId")
-    suspend fun shadow(dataset: String, entityId: String): SyncShadowEntity?
-
-    @Query("SELECT COUNT(*) FROM sync_shadows")
-    suspend fun shadowCount(): Int
-
-    @Upsert
-    suspend fun upsertShadow(row: SyncShadowEntity)
-
-    @Upsert
-    suspend fun upsertShadows(rows: List<SyncShadowEntity>)
-
-    @Query("DELETE FROM sync_shadows WHERE dataset = :dataset AND entity_id = :entityId")
-    suspend fun deleteShadow(dataset: String, entityId: String): Int
-
-    @Upsert
-    suspend fun enqueue(row: SyncOutboxEntity)
-
-    @Query(
-        "SELECT * FROM sync_outbox WHERE next_attempt_at <= :now " +
-            "ORDER BY created_at, dataset, entity_id LIMIT :limit"
-    )
-    suspend fun due(now: Long, limit: Int = 100): List<SyncOutboxEntity>
-
-    @Query("SELECT * FROM sync_outbox WHERE dataset = :dataset AND entity_id = :entityId")
-    suspend fun outboxEntry(dataset: String, entityId: String): SyncOutboxEntity?
-
-    @Query("SELECT * FROM sync_outbox WHERE dataset = :dataset ORDER BY created_at, entity_id")
-    suspend fun outbox(dataset: String): List<SyncOutboxEntity>
-
-    @Query("SELECT COUNT(*) FROM sync_outbox")
-    fun pendingCount(): Flow<Int>
-
-    @Query("SELECT COUNT(*) FROM sync_outbox")
-    suspend fun pendingCountNow(): Int
-
-    @Query(
-        "DELETE FROM sync_outbox WHERE dataset = :dataset AND entity_id = :entityId " +
-            "AND mutation_token = :mutationToken"
-    )
-    suspend fun acknowledge(dataset: String, entityId: String, mutationToken: String): Int
-
-    @Query(
-        "UPDATE sync_outbox SET attempt_count = attempt_count + 1, next_attempt_at = :nextAttemptAt, " +
-            "last_error = :error WHERE dataset = :dataset AND entity_id = :entityId " +
-            "AND mutation_token = :mutationToken"
-    )
-    suspend fun recordFailure(
-        dataset: String,
-        entityId: String,
-        mutationToken: String,
-        nextAttemptAt: Long,
-        error: String,
-    ): Int
-}
-
-@Dao
 interface PendingActionDao {
     @Query("SELECT * FROM pending_actions WHERE request_id = :requestId")
     suspend fun get(requestId: String): PendingActionEntity?

@@ -85,42 +85,6 @@ data class EditDraftEntity(
     @ColumnInfo(name = "format_version") val formatVersion: Int,
 )
 
-@Entity(
-    tableName = "sync_shadows",
-    primaryKeys = ["dataset", "entity_id"],
-)
-data class SyncShadowEntity(
-    val dataset: String,
-    @ColumnInfo(name = "entity_id") val entityId: String,
-    @ColumnInfo(name = "content_key") val contentKey: String,
-    @ColumnInfo(name = "key_format") val keyFormat: Int = 1,
-    @ColumnInfo(name = "payload_json") val payloadJson: String? = null,
-    @ColumnInfo(name = "synced_at") val syncedAt: Long = 0L,
-)
-
-/**
- * One coalesced mutation per entity. A newer local write replaces mutationToken; an old worker can
- * then acknowledge only its own token and can never consume a newer edit.
- */
-@Entity(
-    tableName = "sync_outbox",
-    primaryKeys = ["dataset", "entity_id"],
-    indices = [Index(value = ["next_attempt_at"]), Index(value = ["created_at"])],
-)
-data class SyncOutboxEntity(
-    val dataset: String,
-    @ColumnInfo(name = "entity_id") val entityId: String,
-    @ColumnInfo(name = "mutation_token") val mutationToken: String,
-    @ColumnInfo(name = "payload_json") val payloadJson: String,
-    @ColumnInfo(name = "content_key") val contentKey: String,
-    @ColumnInfo(name = "is_tombstone") val isTombstone: Boolean,
-    @ColumnInfo(name = "updated_at") val updatedAt: Long,
-    @ColumnInfo(name = "created_at") val createdAt: Long,
-    @ColumnInfo(name = "attempt_count") val attemptCount: Int = 0,
-    @ColumnInfo(name = "next_attempt_at") val nextAttemptAt: Long = 0L,
-    @ColumnInfo(name = "last_error") val lastError: String? = null,
-)
-
 /** Durable state for multi-step work such as an AI proposal awaiting confirmation. */
 @Entity(
     tableName = "pending_actions",
@@ -146,8 +110,3 @@ data class MigrationMarkerEntity(
     @ColumnInfo(name = "journal_count") val journalCount: Int,
     @ColumnInfo(name = "draft_count") val draftCount: Int,
 )
-
-object SyncDatasets {
-    const val EVENTS = "EVENTS"
-    const val JOURNALS = "JOURNALS"
-}

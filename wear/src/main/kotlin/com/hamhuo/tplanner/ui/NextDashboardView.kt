@@ -433,7 +433,7 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
     fun setSelectedFilter(filter: WatchListFilter) {
         if (selectedFilter == filter) return
         // Filters are projections of one canonical task snapshot, not independent stores.
-        // Reload first so persisted local deletes are reflected before rebuilding another view.
+        // Reload first so durable pending deletes are reflected before rebuilding another view.
         marks = WatchEventMarks.load(context)
         selectedFilter = filter
         mainScrollY = 0
@@ -716,9 +716,9 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
     }
 
     private fun filteredTasks(filter: WatchListFilter): List<WatchEventMarks.NextTask> {
-        // Keep the local tombstone set authoritative even if another caller updates it between
-        // snapshot reloads. This prevents a stale Marks instance from resurrecting a task.
-        val deletedIds = WatchLocalDeletes.all(context)
+        // Re-read the durable outbox even if another callback changed it between snapshot reloads.
+        // No independent tombstone may outlive a failed delete enqueue.
+        val deletedIds = WatchTaskOutbox.pendingDeleteTaskIds(context)
         val available = if (deletedIds.isEmpty()) {
             marks.items
         } else {

@@ -31,7 +31,7 @@ class SyncCoordinatorTest {
         assertEquals(1, calls.get())
 
         gate.complete(Unit)
-        val terminal = coordinator.state.first { !it.phase.isRunning }
+        val terminal = coordinator.awaitCompletion(operationId)
         assertEquals(operationId, terminal.operationId)
         assertEquals(SyncPhase.SUCCESS, terminal.phase)
     }
@@ -60,6 +60,21 @@ class SyncCoordinatorTest {
 
         gate.complete(Unit)
         assertEquals(SyncPhase.SUCCESS, coordinator.state.first { !it.phase.isRunning }.phase)
+    }
+
+    @Test
+    fun completionSurvivesAImmediatelyFollowingOperation() = runBlocking {
+        val coordinator = testCoordinator()
+        val first = coordinator.requestSync(SyncReason.REMOTE_CHANGE) { }
+        val firstTerminal = coordinator.awaitCompletion(first)
+        val secondGate = CompletableDeferred<Unit>()
+        val second = coordinator.requestSync(SyncReason.USER_GESTURE) { secondGate.await() }
+
+        assertEquals(SyncPhase.SUCCESS, coordinator.awaitCompletion(first).phase)
+        assertTrue(first != second)
+        secondGate.complete(Unit)
+        coordinator.awaitCompletion(second)
+        assertEquals(first, firstTerminal.operationId)
     }
 
     private fun testCoordinator(): SyncTransactionCoordinator = SyncTransactionCoordinator(

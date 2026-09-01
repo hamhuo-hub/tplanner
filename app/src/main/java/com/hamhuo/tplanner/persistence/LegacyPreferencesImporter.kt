@@ -16,7 +16,6 @@ sealed interface LegacyImportResult {
 
     data class Blocked(val issues: List<LegacyIssue>) : LegacyImportResult
 }
-
 data class LegacyIssue(
     val source: String,
     val key: String?,
@@ -29,8 +28,6 @@ data class LegacySnapshot(
     val noteDrafts: Map<String, Any?>,
     val journals: Map<String, Any?>,
     val journalDrafts: Map<String, Any?>,
-    val eventBaseJson: String?,
-    val journalBaseJson: String?,
     val serverUrl: String?,
 )
 
@@ -38,7 +35,6 @@ data class DecodedLegacy(
     val events: List<ScheduleItemEntity>,
     val journals: List<JournalEntity>,
     val drafts: List<EditDraftEntity>,
-    val shadows: List<SyncShadowEntity>,
     val warnings: List<LegacyIssue>,
     val sourceDigest: String,
 )
@@ -82,7 +78,6 @@ class LegacyPreferencesImporter(
             if (decoded.events.isNotEmpty()) db.eventDao().upsertAll(decoded.events)
             if (decoded.journals.isNotEmpty()) db.journalDao().upsertAll(decoded.journals)
             if (decoded.drafts.isNotEmpty()) db.draftDao().upsertAll(decoded.drafts)
-            if (decoded.shadows.isNotEmpty()) db.syncDao().upsertShadows(decoded.shadows)
             db.migrationDao().insertMarker(
                 MigrationMarkerEntity(
                     id = MARKER_ID,
@@ -128,8 +123,6 @@ class LegacyPreferencesImporter(
             noteDrafts = noteDrafts,
             journals = journalPrefs.all.toSortedMap(),
             journalDrafts = journalDrafts,
-            eventBaseJson = syncPrefs.getString(EVENT_BASE_KEY, null),
-            journalBaseJson = syncPrefs.getString(JOURNAL_BASE_KEY, null),
             serverUrl = syncPrefs.getString(SERVER_URL_KEY, null),
         )
     }
@@ -230,66 +223,19 @@ class LegacyPreferencesImporter(
             }
         }
 
-        val shadows = buildList {
-            addAll(decodeBase(snapshot.eventBaseJson, SyncDatasets.EVENTS, issues))
-            addAll(decodeBase(snapshot.journalBaseJson, SyncDatasets.JOURNALS, issues))
-        }
         return DecodedLegacy(
             events = events,
             journals = journals,
             drafts = drafts,
-            shadows = shadows,
             warnings = issues,
             sourceDigest = digest(snapshot),
         )
-    }
-
-    private fun decodeBase(
-        json: String?,
-        dataset: String,
-        issues: MutableList<LegacyIssue>,
-    ): List<SyncShadowEntity> {
-        if (json == null) return emptyList()
-        val obj = try {
-            JSONObject(json)
-        } catch (error: Exception) {
-            issues += LegacyIssue(
-                source = SYNC_PREFS,
-                key = "sync_base_${dataset.lowercase()}",
-                message = "Ignoring malformed sync base: ${error.message}",
-                fatal = false,
-            )
-            return emptyList()
-        }
-        return buildList {
-            obj.keys().forEach { entityId ->
-                val key = obj.opt(entityId)
-                if (key is String) {
-                    add(
-                        SyncShadowEntity(
-                            dataset = dataset,
-                            entityId = entityId,
-                            contentKey = key,
-                        )
-                    )
-                } else {
-                    issues += LegacyIssue(
-                        source = SYNC_PREFS,
-                        key = entityId,
-                        message = "Ignoring non-string sync base key",
-                        fatal = false,
-                    )
-                }
-            }
-        }
     }
 
     private suspend fun databaseIsEmpty(): Boolean =
         db.eventDao().count() == 0 &&
             db.journalDao().count() == 0 &&
             db.draftDao().count() == 0 &&
-            db.syncDao().shadowCount() == 0 &&
-            db.syncDao().pendingCountNow() == 0 &&
             db.pendingActionDao().count() == 0 &&
             db.migrationDao().count() == 0
 
@@ -308,8 +254,6 @@ class LegacyPreferencesImporter(
                     value?.toString().orEmpty(),
                 )
             }
-            appendPart("event-base", snapshot.eventBaseJson.orEmpty())
-            appendPart("journal-base", snapshot.journalBaseJson.orEmpty())
             appendPart("server-url", snapshot.serverUrl.orEmpty())
         }
     )
@@ -327,8 +271,6 @@ class LegacyPreferencesImporter(
         private const val JOURNAL_PREFS = "tplanner_journals"
         private const val JOURNAL_DRAFT_PREFS = "tplanner_journal_drafts"
         private const val SYNC_PREFS = "tplanner_sync_config"
-        private const val EVENT_BASE_KEY = "sync_base_events"
-        private const val JOURNAL_BASE_KEY = "sync_base_journals"
         private const val SERVER_URL_KEY = "serverUrl"
     }
 }

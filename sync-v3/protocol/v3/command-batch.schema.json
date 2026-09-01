@@ -55,7 +55,21 @@
         },
         "arguments": {
           "type": "object",
-          "description": "Command payload. Per-command argument subschemas are enforced by the central reducer; the transport layer only requires well-formed JSON."
+          "description": "Command payload. Per-command argument subschemas are enforced by the central reducer. Bootstrap guard fields are reducer controls and are never persisted in canonical state.",
+          "properties": {
+            "ifMissing": {
+              "type": "boolean",
+              "description": "Compare-and-set guard for task.setSchedule, task.setRecurrence, task.setAlarm, task.setLocation, and journal.setText."
+            },
+            "mergeMissing": {
+              "type": "boolean",
+              "description": "For task.setExtras, fill only keys absent from the current canonical extras object."
+            },
+            "ifUnassigned": {
+              "type": "boolean",
+              "description": "For task.assignList, apply only while the canonical listId is null."
+            }
+          }
         }
       }
     },

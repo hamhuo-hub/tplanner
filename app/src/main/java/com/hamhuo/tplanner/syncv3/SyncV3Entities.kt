@@ -36,6 +36,20 @@ data class SyncStateEntity(
     @ColumnInfo(name = "installed_snapshot_version") val installedSnapshotVersion: Long,
     @ColumnInfo(name = "installed_snapshot_hash") val installedSnapshotHash: String?,
     @ColumnInfo(name = "server_instance_id") val serverInstanceId: String?,
+    /** The canonical server state before local pending commands are replayed. */
+    @ColumnInfo(name = "server_mirror_json") val serverMirrorJson: String? = null,
+    /** Last central snapshot used to build and durably queue the watch projection. */
+    @ColumnInfo(name = "watch_projection_snapshot_version", defaultValue = "0")
+    val watchProjectionSnapshotVersion: Long = 0L,
+    @ColumnInfo(name = "sync_phase", defaultValue = "'idle'") val syncPhase: String = "idle",
+    @ColumnInfo(name = "sync_error_code") val syncErrorCode: String? = null,
+    @ColumnInfo(name = "sync_updated_at", defaultValue = "0") val syncUpdatedAt: Long = 0L,
+    /** Highest central broker sequence covered by [installedSnapshotVersion]. */
+    @ColumnInfo(name = "installed_broker_to_sequence", defaultValue = "0")
+    val installedBrokerToSequence: Long = 0L,
+    /** Broker coverage of the projection durably queued for the Watch. */
+    @ColumnInfo(name = "watch_projection_broker_to_sequence", defaultValue = "0")
+    val watchProjectionBrokerToSequence: Long = 0L,
 )
 
 /** 中央回执:由服务器返回值落库,用于重启后对账与 outbox 清理。 */
@@ -49,4 +63,5 @@ data class SyncReceiptEntity(
     @ColumnInfo(name = "status") val status: String,
     @ColumnInfo(name = "snapshot_version") val snapshotVersion: Long?,
     @ColumnInfo(name = "error_code") val errorCode: String?,
+    @ColumnInfo(name = "broker_sequence") val brokerSequence: Long? = null,
 )

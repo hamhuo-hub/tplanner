@@ -8,6 +8,7 @@
   "required": [
     "commandId",
     "clientSequence",
+    "brokerSequence",
     "status"
   ],
   "properties": {

@@ -1,6 +1,7 @@
 package com.hamhuo.tplanner
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -58,6 +59,7 @@ internal class SyncTransactionCoordinator(
     private val startupRequested = AtomicBoolean(false)
     private val lock = Any()
     private var activeJob: Job? = null
+    private val completions = LinkedHashMap<String, CompletableDeferred<SyncOperationState>>()
 
     private val mutableState = MutableStateFlow(SyncOperationState())
     val state: StateFlow<SyncOperationState> = mutableState.asStateFlow()
@@ -78,6 +80,12 @@ internal class SyncTransactionCoordinator(
         }
 
         val operationId = UUID.randomUUID().toString()
+        val completion = CompletableDeferred<SyncOperationState>()
+        completions[operationId] = completion
+        while (completions.size > MAX_COMPLETION_HISTORY) {
+            val oldest = completions.entries.firstOrNull { it.value.isCompleted } ?: break
+            completions.remove(oldest.key)
+        }
         mutableState.value = SyncOperationState(
             operationId = operationId,
             reason = reason,
@@ -104,11 +112,34 @@ internal class SyncTransactionCoordinator(
                 )
             } finally {
                 synchronized(lock) {
+                    val terminal = mutableState.value.takeIf {
+                        it.operationId == operationId && !it.phase.isRunning
+                    } ?: SyncOperationState(
+                        operationId = operationId,
+                        reason = reason,
+                        phase = SyncPhase.ERROR,
+                        errorCode = "ERROR008",
+                        detail = "Synchronization was cancelled before a terminal state",
+                    )
+                    completion.complete(terminal)
                     if (mutableState.value.operationId == operationId) activeJob = null
                 }
             }
         }
         operationId
+    }
+
+    suspend fun awaitCompletion(operationId: String): SyncOperationState {
+        val completion = synchronized(lock) {
+            completions[operationId] ?: mutableState.value.takeIf { current ->
+                current.operationId == operationId && !current.phase.isRunning
+            }?.let { terminal -> CompletableDeferred(terminal) }
+        } ?: error("Unknown synchronization operation: $operationId")
+        return completion.await()
+    }
+
+    private companion object {
+        const val MAX_COMPLETION_HISTORY = 128
     }
 
     private fun report(operationId: String, phase: SyncPhase) {
@@ -142,6 +173,9 @@ object SyncCoordinator {
         reason: SyncReason,
         operation: suspend (report: (SyncPhase) -> Unit) -> Unit,
     ): String = delegate.requestSync(reason, operation)
+
+    suspend fun awaitCompletion(operationId: String): SyncOperationState =
+        delegate.awaitCompletion(operationId)
 }
 
 private fun Throwable.toSyncErrorCode(): String {

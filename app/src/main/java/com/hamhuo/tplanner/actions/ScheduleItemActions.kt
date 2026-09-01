@@ -17,8 +17,6 @@ class ScheduleItemActions(
     private val context: Context,
     private val eventStore: ScheduleItemStore,
     private val eventWriteMutex: Mutex,
-    private val fetchEvents: suspend (String) -> List<ScheduleItem>,
-    private val serverUrl: () -> String,
 ) {
     fun beginNewItem(
         type: String,
@@ -105,7 +103,6 @@ class ScheduleItemActions(
         nextEvents.firstOrNull { it.id == eventId }?.let { updated ->
             scope.launch {
                 eventWriteMutex.withLock { eventStore.save(updated) }
-                onEventsChanged(fetchEvents(serverUrl()))
             }
         }
     }
@@ -123,7 +120,6 @@ class ScheduleItemActions(
         nextEvents.firstOrNull { it.id == eventId }?.let { updated ->
             scope.launch {
                 eventWriteMutex.withLock { eventStore.save(updated) }
-                onEventsChanged(fetchEvents(serverUrl()))
             }
         }
     }
@@ -177,7 +173,6 @@ class ScheduleItemActions(
         nextEvents.firstOrNull { it.id == eventId }?.let { updated ->
             scope.launch {
                 eventWriteMutex.withLock { eventStore.save(updated) }
-                onEventsChanged(fetchEvents(serverUrl()))
             }
         }
     }

@@ -13,7 +13,6 @@ class SyncV3NotificationClientTest {
         override fun upsertSyncState(s: SyncStateEntity) {}
         override fun listCommands(state: String, limit: Int): List<SyncCommandEntity> = emptyList()
         override fun markUploaded(sequences: List<Long>) {}
-        override fun deleteThroughSequence(through: Long) {}
         override fun insertReceipts(r: List<SyncReceiptEntity>) {}
         override fun acceptedThrough(): Long? = null
     }

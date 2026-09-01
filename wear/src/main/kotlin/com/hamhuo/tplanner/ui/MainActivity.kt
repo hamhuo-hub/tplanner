@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.MotionEvent
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -49,12 +50,17 @@ class MainActivity : ComponentActivity() {
                 startActivity(TaskDetailActivity.createIntent(this@MainActivity, task))
             }
             setTaskDeleteAction { task ->
-                WatchLocalDeletes.markDeleted(this@MainActivity, task.id)
-                // The delete animation removes only the current card. Reload the canonical
-                // snapshot now so switching filters cannot rebuild from the stale in-memory list.
+                // The swipe animation removes the card before this callback. Rebuild in both
+                // branches: a committed pending delete keeps it hidden, while an enqueue failure
+                // immediately restores it from the authoritative projection.
+                val queued = WatchTaskOutbox.enqueueDelete(this@MainActivity, task.id)
                 dashboard.refreshContent(showFeedback = false)
-                dashboard.post {
-                    WatchTaskOutbox.enqueueDelete(this@MainActivity, task.id)
+                if (!queued) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        R.string.task_create_failed,
+                        Toast.LENGTH_SHORT,
+                    ).show()
                 }
             }
             setSyncAction {
