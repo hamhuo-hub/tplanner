@@ -25,10 +25,19 @@ import { createNatsConnection } from '../broker/natsConnection.js';
 import { ensureStreams } from '../broker/streams.js';
 import { resolveServerInstanceId } from '../serverInstance.js';
 import { SEQ_MULTIPLIER } from '../sequence.js';
+import {
+  JournalValidationError,
+  validateJournalHead,
+  validateJournalTail,
+} from '../state/journalValidator.js';
 
 const STREAM_COMMANDS = 'TPLANNER_COMMANDS';
 const CONSUMER_NAME = 'state-builder';
 const SUBJECT_COMMANDS = 'tplanner.v3.commands';
+
+// Shadow validator 节拍(§9.1):启动时从 min_snapshot_version 全链验证一次,
+// 之后每个间隔只验新增尾部(只在 journal 本身失配时 fail closed,绝不修复)。
+const JOURNAL_VALIDATION_INTERVAL_MS = 60_000;
 
 // integration batch 边界(§6)。nats.js v3 要求 pull expires >= 1000ms，
 // 但业务静默窗口不应因此被放大：reader 保留尚未完成的 pull，并用本地
@@ -246,6 +255,48 @@ export async function startStateBuilder({
     }
     assertLease('receipt coverage recovery');
 
+    // Shadow reconstruction validator(§9.1):只证明 journal 可信,绝不修复。
+    // 启动先全链验证;失配按 P0 记日志,不停止 builder(snapshot 路径不受影响)。
+    let journalCheckpoint = null;
+    let lastJournalValidationAt = 0;
+    const runJournalValidation = (label) => {
+      try {
+        if (journalCheckpoint === null) {
+          journalCheckpoint = validateJournalHead(db);
+        } else {
+          const head = db
+            .prepare('SELECT version FROM latest_snapshot WHERE singleton_id = 1')
+            .get()?.version ?? 0;
+          journalCheckpoint = validateJournalTail(db, {
+            fromSnapshotVersion: journalCheckpoint.toSnapshotVersion,
+            toSnapshotVersion: head,
+            baseState: journalCheckpoint.headState,
+          });
+        }
+        if (journalCheckpoint.validatedCommits > 0) {
+          log.info(
+            {
+              validatedCommits: journalCheckpoint.validatedCommits,
+              toSnapshotVersion: journalCheckpoint.toSnapshotVersion,
+            },
+            `journal shadow validation passed (${label})`,
+          );
+        }
+      } catch (err) {
+        journalCheckpoint = null; // 下个节拍回到全链验证
+        if (err instanceof JournalValidationError) {
+          // P0 correctness alert:journal 与 immutable snapshot 失配。
+          log.error(
+            { code: err.code, message: err.message },
+            `journal shadow validation FAILED (${label})`,
+          );
+        } else {
+          log.error({ err }, `journal shadow validation crashed (${label})`);
+        }
+      }
+    };
+    runJournalValidation('startup');
+
     const materializer = createMaterializer({
       db,
       applyCommand,
@@ -272,7 +323,13 @@ export async function startStateBuilder({
         if (closed) break;
         throw err;
       }
-      if (!batch) continue;
+      if (!batch) {
+        if (Date.now() - lastJournalValidationAt >= JOURNAL_VALIDATION_INTERVAL_MS) {
+          lastJournalValidationAt = Date.now();
+          runJournalValidation('interval');
+        }
+        continue;
+      }
       const { messages, entries } = batch;
 
       try {

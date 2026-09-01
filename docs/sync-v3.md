@@ -338,6 +338,23 @@ CREATE TABLE change_items (
 
 对账性质:**Snapshot(N) + Commit(N+1) == Snapshot(N+1)**(JCS stateHash),由 reconstruction property test 与 shadow validator 持续验证。
 
+### 9.2 shadow reconstruction validator(只验证,不修复)
+
+`state/journalValidator.js` 提供 `validateJournalRange(db, {fromSnapshotVersion, toSnapshotVersion})`(从快照 checkpoint 出发全链重建)与 `validateJournalTail`(从已验证 baseState 出发只验新增尾部);`validateJournalHead(db)` 默认 `from = min_snapshot_version`、`to = latest`。State Builder 启动时全链验证一次,之后每个间隔(60s)尾部验证;离线可用 `npm run validate:journal`。
+
+错误码(fail closed,绝不重写/重生成/跳版本):
+
+| 错误码 | 含义 |
+|---|---|
+| `JOURNAL_BASE_SNAPSHOT_MISSING` | checkpoint 快照不存在,链无法出发 |
+| `JOURNAL_COMMIT_MISSING` | 某 snapshotVersion 无 commit(断号) |
+| `JOURNAL_PARENT_MISMATCH` | `parentVersion !== version - 1` |
+| `JOURNAL_HASH_MISMATCH` | `stateHashAfter` ≠ 重建结果 hash |
+| `SNAPSHOT_HASH_MISMATCH` | snapshot 行 `state_hash` ≠ 重建结果 hash |
+| `JOURNAL_CHANGE_INVALID` | 无法安装的 change type |
+
+任一失配 = P0 correctness alert(记 `log.error`,对应 `state_hash_mismatch_total` / `journal_validation_failure_total` 计数),但**不停止 builder**:journal 尚未被客户端消费,snapshot 下行路径不受影响。
+
 ## 10. 崩溃一致性(inbox/outbox)
 
 消费:`拉取 → BEGIN IMMEDIATE → 查 commandId → reducer → 写 entities/回执/快照/latest/发布outbox → COMMIT → ACK MQ`
