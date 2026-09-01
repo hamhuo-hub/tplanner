@@ -551,7 +551,9 @@ input[type="number"] {
     flex: 1;
     position: relative;
     min-width: var(--timeline-axis-min-width);
-    height: 80px;
+    min-height: 80px;
+    height: auto;
+    align-self: stretch;
     cursor: crosshair;
 }
 
