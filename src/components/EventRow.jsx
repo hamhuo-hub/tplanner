@@ -238,7 +238,7 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                                         // Status uses the SAME normal-state surface as task
                                         // blocks: type accent 50% over the raised surface,
                                         // instead of a brighter raw event color.
-                                        backgroundColor: eventTokens.surface(colorVar, 'normal'),
+                                        backgroundColor: eventTokens.surface(colorVar),
                                         left: `${left}%`, width: `${width}%`,
                                         top: `${ev.rowIndex * (timeline.statusRowHeight + timeline.statusRowGap)}px`, height: `${timeline.statusRowHeight}px`,
                                         borderRadius:    2,

@@ -80,38 +80,69 @@ export const semantic = Object.freeze({
  * Component layer — the event block multiplies TYPE (accent hue) by STATE
  * (emphasis). All color-mix / opacity / outline decisions live here; the
  * component only asks for `event.surface(accent, state)` and friends.
+ *
+ * The 50% mixes made every event gray; these numbers are the design system's
+ * single answer for "how much accent per state" — components must not tune
+ * them locally.
  */
+const EVENT_SURFACE_MIX = Object.freeze({
+    selected: 0.82,
+    normal: 0.65,
+    shadow: 0.65,
+    completed: 0.30, // sinks toward the neutral surface (de-saturated)
+});
+const EVENT_BORDER_MIX = Object.freeze({
+    selected: 0.95,
+    normal: 0.85,
+    shadow: 0.85,
+    completed: 0.55,
+});
+const EVENT_OPACITY = Object.freeze({
+    selected: 1,
+    normal: 1,
+    shadow: 0.25,
+    completed: 0.45,
+});
+
 export const event = Object.freeze({
-    // Accent share per state: higher = the accent is more present = more
-    // prominent. completed sinks toward the neutral surface (de-saturated).
-    surfaceAccentMix: Object.freeze({
-        selected: 0.72,
-        normal: 0.50,
-        shadow: 0.50,
-        completed: 0.30,
-    }),
-    borderAccentMix: Object.freeze({
-        selected: 0.90,
-        normal: 0.75,
-        shadow: 0.75,
-        completed: 0.55,
-    }),
-    opacity: Object.freeze({
-        selected: 1,
-        normal: 1,
-        shadow: 0.25,
-        completed: 0.45,
-    }),
+    surfaceAccentMix: EVENT_SURFACE_MIX,
+    borderAccentMix: EVENT_BORDER_MIX,
+    opacity: EVENT_OPACITY,
+    // Named state tokens — the design system's vocabulary; components map a
+    // state to these instead of inventing brightness/contrast values.
+    surface: (accent) =>
+        `color-mix(in srgb, ${accent} ${Math.round(EVENT_SURFACE_MIX.normal * 100)}%, var(--clr-raised))`,
+    selectedSurface: (accent) =>
+        `color-mix(in srgb, ${accent} ${Math.round(EVENT_SURFACE_MIX.selected * 100)}%, var(--clr-raised))`,
+    completedSurface: (accent) =>
+        `color-mix(in srgb, ${accent} ${Math.round(EVENT_SURFACE_MIX.completed * 100)}%, var(--clr-raised))`,
+    border: (accent) =>
+        `color-mix(in srgb, ${accent} ${Math.round(EVENT_BORDER_MIX.normal * 100)}%, rgba(255,255,255,0.18))`,
+    selectedBorder: (accent) =>
+        `color-mix(in srgb, ${accent} ${Math.round(EVENT_BORDER_MIX.selected * 100)}%, rgba(255,255,255,0.18))`,
+    completedBorder: (accent) =>
+        `color-mix(in srgb, ${accent} ${Math.round(EVENT_BORDER_MIX.completed * 100)}%, rgba(255,255,255,0.18))`,
+    text: semantic.text.primary,
+    completedOpacity: EVENT_OPACITY.completed,
+    shadowOpacity: EVENT_OPACITY.shadow,
     completedFilter: 'saturate(0.3)',
     outline: Object.freeze({
         selected: colors.gold,
         selectedWidth: '2px',
         selectedOffset: '1px',
     }),
-    surface: (accent, state = 'normal') =>
-        `color-mix(in srgb, ${accent} ${Math.round(event.surfaceAccentMix[state] * 100)}%, var(--clr-raised))`,
-    border: (accent, state = 'normal') =>
-        `color-mix(in srgb, ${accent} ${Math.round(event.borderAccentMix[state] * 100)}%, rgba(255,255,255,0.18))`,
+    // State dispatch used by EventBlock — values come from the tables above.
+    surfaceFor: (accent, state) => {
+        if (state === 'selected') return event.selectedSurface(accent);
+        if (state === 'completed') return event.completedSurface(accent);
+        return event.surface(accent);
+    },
+    borderFor: (accent, state) => {
+        if (state === 'selected') return event.selectedBorder(accent);
+        if (state === 'completed') return event.completedBorder(accent);
+        return event.border(accent);
+    },
+    opacityFor: (state) => EVENT_OPACITY[state] ?? 1,
 });
 
 /**
@@ -175,6 +206,10 @@ export function installDesignTokens(root = document.documentElement) {
         '--border-default': semantic.border.default,
         '--border-selected': semantic.border.selected,
         '--border-conflict': semantic.border.conflict,
+        // Component layer — event block emphasis + the layout invariant that
+        // the cascade algorithm depends on.
+        '--event-text': event.text,
+        '--event-header-height': `${timeline.eventHeaderHeight}px`,
     };
     eventColors.forEach((color, index) => {
         variables[`--clr-event-${index}`] = color;

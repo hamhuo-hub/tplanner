@@ -28,27 +28,27 @@ function block(props = {}) {
 describe('EventBlock state emphasis comes from design tokens', () => {
     test('normal state uses the token surface and full opacity', () => {
         const el = block();
-        expect(el.style.backgroundColor).toBe(event.surface(accent, 'normal'));
+        expect(el.style.backgroundColor).toBe(event.surface(accent));
         expect(el.style.opacity).toBe('1');
         expect(el.style.filter).toBe('');
     });
 
     test('completed state sinks via token opacity and de-saturation', () => {
         const el = block({ event: { ...base, completed: true } });
-        expect(el.style.opacity).toBe(String(event.opacity.completed));
+        expect(el.style.opacity).toBe(String(event.completedOpacity));
         expect(el.style.filter).toBe(event.completedFilter);
-        expect(el.style.backgroundColor).toBe(event.surface(accent, 'completed'));
+        expect(el.style.backgroundColor).toBe(event.completedSurface(accent));
     });
 
     test('shadow state is dim but keeps the normal surface', () => {
         const el = block({ isShadow: true });
-        expect(el.style.opacity).toBe(String(event.opacity.shadow));
-        expect(el.style.backgroundColor).toBe(event.surface(accent, 'shadow'));
+        expect(el.style.opacity).toBe(String(event.shadowOpacity));
+        expect(el.style.backgroundColor).toBe(event.surface(accent));
     });
 
     test('selected state raises the accent share and draws the token outline', () => {
         const el = block({ isSelected: true });
-        expect(el.style.backgroundColor).toBe(event.surface(accent, 'selected'));
+        expect(el.style.backgroundColor).toBe(event.selectedSurface(accent));
         expect(el.style.outline).toContain(event.outline.selected);
         expect(el.style.outline).toContain(event.outline.selectedWidth);
     });

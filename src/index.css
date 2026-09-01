@@ -598,6 +598,13 @@ input[type="number"] {
     align-items: center;
     gap: 8px;
     min-width: 0;
+    /* Layout invariant: the header box is EXACTLY eventHeaderHeight. The
+       cascade algorithm (overlapReveal = eventHeaderHeight) depends on this
+       height never growing — titles stay single-line + ellipsis, so content
+       truncates but top/height/rowHeight never change. */
+    height: var(--event-header-height, 28px);
+    overflow: hidden;
+    flex-shrink: 0;
 }
 
 .tplanner-task-unit__title {
@@ -605,7 +612,10 @@ input[type="number"] {
     font-family: var(--font-body);
     font-size: var(--task-title-size, 15px);
     font-weight: 500;
-    color: var(--clr-text);
+    color: var(--event-text, var(--clr-text));
+    /* Single line by design: long titles truncate with ellipsis and must
+       never wrap — a second line would change the header height and break
+       the cascade layout. */
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -663,7 +673,7 @@ input[type="number"] {
 
 .tplanner-task-unit__accent {
     width: 3px;
-    height: 28px;
+    height: var(--event-header-height, 28px);
     border-radius: 1px;
     flex-shrink: 0;
 }

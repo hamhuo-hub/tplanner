@@ -28,20 +28,30 @@ describe('design tokens — Type vs State separation', () => {
         expect(normal).toBeGreaterThan(completed);
     });
 
-    it('surface/border mix encode the state weight', () => {
+    it('named surface/border tokens encode the design-system mix values', () => {
         const accent = 'var(--clr-event-0)';
-        expect(event.surface(accent, 'selected')).toContain('72%');
-        expect(event.surface(accent, 'normal')).toContain('50%');
-        expect(event.surface(accent, 'completed')).toContain('30%');
-        expect(event.border(accent, 'selected')).toContain('90%');
-        expect(event.border(accent, 'completed')).toContain('55%');
+        expect(event.surface(accent)).toContain('65%');
+        expect(event.selectedSurface(accent)).toContain('82%');
+        expect(event.completedSurface(accent)).toContain('30%');
+        expect(event.border(accent)).toContain('85%');
+        expect(event.selectedBorder(accent)).toContain('95%');
+        expect(event.completedBorder(accent)).toContain('55%');
+        // Dispatch helpers stay consistent with the named tokens.
+        expect(event.surfaceFor(accent, 'selected')).toBe(event.selectedSurface(accent));
+        expect(event.surfaceFor(accent, 'completed')).toBe(event.completedSurface(accent));
+        expect(event.surfaceFor(accent, 'shadow')).toBe(event.surface(accent));
     });
 
     it('only state decides opacity; normal and selected are fully opaque', () => {
         expect(event.opacity.normal).toBe(1);
         expect(event.opacity.selected).toBe(1);
-        expect(event.opacity.shadow).toBeLessThan(1);
-        expect(event.opacity.completed).toBeLessThan(1);
+        expect(event.shadowOpacity).toBeLessThan(1);
+        expect(event.completedOpacity).toBeLessThan(1);
+        expect(event.opacityFor('completed')).toBe(event.completedOpacity);
+    });
+
+    it('event text is an explicit semantic token', () => {
+        expect(event.text).toBe(semantic.text.primary);
     });
 
     it('installDesignTokens registers semantic vars and no per-component font', () => {
@@ -55,6 +65,8 @@ describe('design tokens — Type vs State separation', () => {
         expect(set.get('--surface-selected')).toBe(colors.control);
         expect(set.get('--text-disabled')).toBe(colors.textMuted);
         expect(set.get('--clr-event-0')).toBeTruthy();
+        expect(set.get('--event-text')).toBe(semantic.text.primary);
+        expect(set.get('--event-header-height')).toBe(`${timeline.eventHeaderHeight}px`);
     });
 });
 

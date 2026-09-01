@@ -48,9 +48,9 @@ export default function EventBlock({ event, onClick, isConflicting, displayTimez
             onContextMenu={e => { e.preventDefault(); e.stopPropagation(); onContextMenu?.(e, event); }}
             className={blockClass}
             style={{
-                backgroundColor: eventTokens.surface(colorVar, state),
-                borderColor: isConflicting ? semantic.border.conflict : eventTokens.border(colorVar, state),
-                opacity: eventTokens.opacity[state],
+                backgroundColor: eventTokens.surfaceFor(colorVar, state),
+                borderColor: isConflicting ? semantic.border.conflict : eventTokens.borderFor(colorVar, state),
+                opacity: eventTokens.opacityFor(state),
                 filter: state === 'completed' ? eventTokens.completedFilter : undefined,
                 left:  `${leftPercent}%`,
                 width: `${widthPercent}%`,
