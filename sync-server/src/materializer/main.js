@@ -59,6 +59,7 @@ export function createIntegrationBatchReader(
   } = {},
 ) {
   let pendingPull = null;
+  let bufferedMessage = null;
 
   const beginPull = (expires) => {
     if (!pendingPull) {
@@ -71,6 +72,11 @@ export function createIntegrationBatchReader(
   };
 
   const finishPull = async (expires) => {
+    if (bufferedMessage) {
+      const value = bufferedMessage;
+      bufferedMessage = null;
+      return value;
+    }
     const pull = beginPull(expires);
     const result = await pull;
     if (pendingPull === pull) pendingPull = null;
@@ -108,8 +114,20 @@ export function createIntegrationBatchReader(
       const next = outcome.result.value;
       if (!next) break;
 
+      const nextEntries = expandMessage(next);
+      // NATS ACKs the whole uploaded message, so it cannot be split across
+      // integration batches. Keep an already-pulled message as the exact first
+      // message of the next batch when adding it would cross either hard cap.
+      if (
+        entries.length + nextEntries.length > limits.maxCommands
+        || bytes + next.data.length > limits.maxBytes
+      ) {
+        bufferedMessage = next;
+        break;
+      }
+
       messages.push(next);
-      entries = [...entries, ...expandMessage(next)];
+      entries = [...entries, ...nextEntries];
       bytes += next.data.length;
     }
 

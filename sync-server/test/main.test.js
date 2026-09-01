@@ -14,6 +14,24 @@ function message(seq, commandId = `c-${seq}`) {
   };
 }
 
+function messageWithCommands(seq, count, padding = '') {
+  return {
+    seq,
+    data: Buffer.from(JSON.stringify({
+      batchId: `b-${seq}`,
+      deviceId: 'dev-1',
+      commands: Array.from({ length: count }, (_, index) => ({
+        commandId: `c-${seq}-${index}`,
+        clientSequence: index + 1,
+        type: 'task.create',
+        aggregateId: `t-${seq}-${index}`,
+        arguments: { padding },
+      })),
+    })),
+    ack() {},
+  };
+}
+
 function deferred() {
   let resolve;
   let reject;
@@ -99,4 +117,46 @@ test('batch reader coalesces messages that arrive inside the quiet window', asyn
   const batch = await reader.nextBatch();
   assert.deepEqual(batch.messages.map((m) => m.seq), [1, 2]);
   assert.deepEqual(batch.entries.map((e) => e.brokerSequence), [1_000_000, 2_000_000]);
+});
+
+test('batch reader buffers a whole pulled message instead of crossing maxCommands', async () => {
+  const never = deferred();
+  const values = [messageWithCommands(1, 60), messageWithCommands(2, 100)];
+  const consumer = {
+    next: () => values.length ? Promise.resolve(values.shift()) : never.promise,
+  };
+  const reader = createIntegrationBatchReader(consumer, {
+    limits: { quietMs: 10, forcedMs: 5000, maxCommands: 100, maxBytes: 1024 * 1024 },
+  });
+
+  const first = await reader.nextBatch();
+  assert.equal(first.entries.length, 60);
+  assert.deepEqual(first.messages.map((m) => m.seq), [1]);
+
+  const second = await reader.nextBatch();
+  assert.equal(second.entries.length, 100);
+  assert.deepEqual(second.messages.map((m) => m.seq), [2]);
+});
+
+test('batch reader buffers a whole pulled message instead of crossing maxBytes', async () => {
+  const never = deferred();
+  const firstMessage = messageWithCommands(1, 1, 'a'.repeat(128));
+  const secondMessage = messageWithCommands(2, 1, 'b'.repeat(128));
+  const values = [firstMessage, secondMessage];
+  const consumer = {
+    next: () => values.length ? Promise.resolve(values.shift()) : never.promise,
+  };
+  const reader = createIntegrationBatchReader(consumer, {
+    limits: {
+      quietMs: 10,
+      forcedMs: 5000,
+      maxCommands: 100,
+      maxBytes: firstMessage.data.length + secondMessage.data.length - 1,
+    },
+  });
+
+  const first = await reader.nextBatch();
+  assert.deepEqual(first.messages.map((m) => m.seq), [1]);
+  const second = await reader.nextBatch();
+  assert.deepEqual(second.messages.map((m) => m.seq), [2]);
 });
