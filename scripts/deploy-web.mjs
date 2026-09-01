@@ -34,6 +34,10 @@ function run(command, args, { capture = false } = {}) {
 }
 
 const gitSha = String(run('git', ['rev-parse', '--short=12', 'HEAD'], { capture: true })).trim();
+const dirty = String(run('git', ['status', '--porcelain'], { capture: true })).trim();
+if (dirty) {
+    throw new Error('Refusing to deploy a dirty worktree; commit the exact Web artifact first');
+}
 const stamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
 const releaseId = process.env.WEB_RELEASE_ID || `${stamp}-${gitSha}`;
 requireSafe(releaseId, /^[A-Za-z0-9._-]+$/, 'WEB_RELEASE_ID');
@@ -59,7 +63,8 @@ set -eu
 WEB_ROOT='${webRoot}'
 RELEASE='${remoteRelease}'
 TEMP='${remoteTemp}'
-BACKUP="/etc/caddy/Caddyfile.tplanner-web.$(date +%Y%m%d%H%M%S).bak"
+BACKUP="/etc/caddy/Caddyfile.tplanner-web.$RELEASE_ID.bak"
+CANDIDATE="/etc/caddy/Caddyfile.tplanner-web.$RELEASE_ID.new"
 PREVIOUS="$(readlink -f "$WEB_ROOT/current" 2>/dev/null || true)"
 
 sudo install -d -m 0755 "$WEB_ROOT/releases"
@@ -78,26 +83,48 @@ if [ -z "$AUTH_HASH" ]; then
   exit 1
 fi
 sed "s|__TPLANNER_BASIC_HASH__|$AUTH_HASH|g" "$TEMP/tplanner-web.Caddyfile" > "$TEMP/Caddyfile"
+# Validate the candidate before touching the live configuration. A validation
+# failure must leave both Caddy and the current release exactly as they were.
+sudo caddy validate --config "$TEMP/Caddyfile"
 sudo cp /etc/caddy/Caddyfile "$BACKUP"
-sudo install -m 0644 "$TEMP/Caddyfile" /etc/caddy/Caddyfile
-sudo caddy validate --config /etc/caddy/Caddyfile
 
-sudo ln -sfn "$RELEASE" "$WEB_ROOT/.current-$RELEASE_ID"
-sudo mv -Tf "$WEB_ROOT/.current-$RELEASE_ID" "$WEB_ROOT/current"
+rollback() {
+  sudo rm -f "$CANDIDATE" || true
+  sudo cp "$BACKUP" /etc/caddy/Caddyfile || true
+  if [ -n "$PREVIOUS" ]; then
+    sudo ln -sfn "$PREVIOUS" "$WEB_ROOT/.rollback-$RELEASE_ID" || true
+    sudo mv -Tf "$WEB_ROOT/.rollback-$RELEASE_ID" "$WEB_ROOT/current" || true
+  else
+    sudo rm -f "$WEB_ROOT/current" || true
+  fi
+  sudo systemctl restart caddy || true
+}
+
+# Keep rollback metadata outside the public release. The caller removes TEMP
+# only after its independent public-origin check succeeds.
+printf '%s\n%s\n' "$PREVIOUS" "$BACKUP" > "$TEMP/deploy-rollback"
+
+if ! sudo install -m 0644 "$TEMP/Caddyfile" "$CANDIDATE" \
+  || ! sudo mv -Tf "$CANDIDATE" /etc/caddy/Caddyfile; then
+  rollback
+  exit 1
+fi
+
+if ! sudo ln -sfn "$RELEASE" "$WEB_ROOT/.current-$RELEASE_ID" \
+  || ! sudo mv -Tf "$WEB_ROOT/.current-$RELEASE_ID" "$WEB_ROOT/current"; then
+  rollback
+  exit 1
+fi
 if ! sudo systemctl restart caddy; then
-  sudo cp "$BACKUP" /etc/caddy/Caddyfile
-  [ -n "$PREVIOUS" ] && sudo ln -sfn "$PREVIOUS" "$WEB_ROOT/current"
-  sudo systemctl restart caddy || true
+  rollback
   exit 1
 fi
 
-if ! curl -fsS --max-time 10 -H 'Host: plan.hamhuo.top' http://127.0.0.1:37400/ >/dev/null; then
-  sudo cp "$BACKUP" /etc/caddy/Caddyfile
-  [ -n "$PREVIOUS" ] && sudo ln -sfn "$PREVIOUS" "$WEB_ROOT/current"
-  sudo systemctl restart caddy || true
+if ! curl -fsS --max-time 10 -H 'Host: plan.hamhuo.top' http://127.0.0.1:37400/ >/dev/null \
+  || ! curl -fsS --max-time 20 https://plan.hamhuo.top/ >/dev/null; then
+  rollback
   exit 1
 fi
-rm -rf "$TEMP"
 echo "previous=$PREVIOUS"
 echo "release=$RELEASE"
 `;
@@ -109,5 +136,51 @@ execFileSync('ssh', [sshTarget, `RELEASE_ID='${releaseId}' sh -s`], {
 });
 
 console.log('=== Verify public site ===');
-run('curl', ['-fsS', '--max-time', '20', 'https://plan.hamhuo.top/'], { capture: true });
+try {
+    run('curl', ['-fsS', '--max-time', '20', 'https://plan.hamhuo.top/'], { capture: true });
+} catch (error) {
+    console.error('Public verification failed; rolling back this release');
+    const rollbackScript = `
+set -eu
+WEB_ROOT='${webRoot}'
+RELEASE='${remoteRelease}'
+TEMP='${remoteTemp}'
+CURRENT="$(readlink -f "$WEB_ROOT/current" 2>/dev/null || true)"
+if [ "$CURRENT" != "$RELEASE" ]; then
+  echo "Refusing rollback because current changed to: $CURRENT" >&2
+  exit 1
+fi
+PREVIOUS="$(sed -n '1p' "$TEMP/deploy-rollback")"
+BACKUP="$(sed -n '2p' "$TEMP/deploy-rollback")"
+case "$PREVIOUS" in
+  "$WEB_ROOT"/releases/*|'') ;;
+  *) echo "Unsafe previous release: $PREVIOUS" >&2; exit 1 ;;
+esac
+case "$BACKUP" in
+  /etc/caddy/Caddyfile.tplanner-web.*.bak) ;;
+  *) echo "Unsafe Caddy backup: $BACKUP" >&2; exit 1 ;;
+esac
+sudo test -f "$BACKUP"
+sudo cp "$BACKUP" /etc/caddy/Caddyfile
+if [ -n "$PREVIOUS" ]; then
+  sudo ln -sfn "$PREVIOUS" "$WEB_ROOT/.rollback-$RELEASE_ID"
+  sudo mv -Tf "$WEB_ROOT/.rollback-$RELEASE_ID" "$WEB_ROOT/current"
+else
+  sudo rm -f "$WEB_ROOT/current"
+fi
+sudo systemctl restart caddy
+rm -rf -- "$TEMP"
+`;
+    try {
+        execFileSync('ssh', [sshTarget, `RELEASE_ID='${releaseId}' sh -s`], {
+            cwd: rootDir,
+            stdio: ['pipe', 'inherit', 'inherit'],
+            input: rollbackScript,
+        });
+    } catch (rollbackError) {
+        console.error('Automatic rollback failed; manual intervention is required', rollbackError);
+    }
+    throw error;
+}
+run('ssh', [sshTarget, `rm -rf -- '${remoteTemp}'`]);
 console.log(`Deployed ${releaseId} to https://plan.hamhuo.top`);
