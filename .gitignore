@@ -89,3 +89,4 @@ tplanner-linux
 package-lock.json
 # 服务器需要锁文件保证可复现安装
 !sync-server/package-lock.json
+/.agents
