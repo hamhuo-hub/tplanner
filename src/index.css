@@ -630,7 +630,9 @@ input[type="number"] {
 .tplanner-task-unit__note {
     font-family: var(--font-mono);
     font-size: var(--task-badge-size, 11px);
-    color: var(--clr-text-dim);
+    /* Title and note share the same light event text token — one reading
+       color for the whole block, emphasis via size/weight only. */
+    color: var(--event-text, var(--clr-text));
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
