@@ -55,4 +55,19 @@ describe('indexedDbKvStore', () => {
             ['sync:meta', { version: 3 }],
         ]);
     });
+
+    test('writes a snapshot key-set in one readwrite transaction', async () => {
+        const { indexedDb, objectStore } = createFakeIndexedDb();
+        vi.stubGlobal('indexedDB', indexedDb);
+        const store = createIndexedDbKvStore({ dbName: 'test', storeName: 'kv' });
+
+        await store.setMany([
+            ['mirror', { tasks: {} }],
+            ['display', { tasks: {} }],
+            ['meta', { installedSnapshotVersion: 9 }],
+        ]);
+
+        expect(objectStore.put).toHaveBeenCalledTimes(3);
+        await expect(store.get('meta')).resolves.toEqual({ installedSnapshotVersion: 9 });
+    });
 });

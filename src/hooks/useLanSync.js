@@ -74,8 +74,7 @@ export default function useLanSync(props = {}) {
                 if (commands.length > 0) await appendCommands(engine.store, commands);
             }
 
-            await engine.uploader.flush();
-            const installed = await engine.installer.syncToLatest();
+            const { installed } = await engine.syncNow();
             const display = (await engine.installer.getDisplayState())
                 ?? (await engine.installer.getServerMirror())
                 ?? { tasks: {}, journals: {} };

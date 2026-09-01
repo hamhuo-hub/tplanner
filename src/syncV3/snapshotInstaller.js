@@ -5,10 +5,10 @@
 //   替换 Server Mirror → 重放仍未收到终态回执的本地命令 → 更新 installed 指针。
 // 任一解码/校验步骤失败:旧镜像完全不动(§7)。hash 校验失败报 ERROR006。
 import canonicalize from 'canonicalize';
-import { loadSyncMeta, updateSyncMeta } from './syncMeta';
+import { loadSyncMeta, META_KEY } from './syncMeta';
 import { listCommands } from './commandOutbox';
 import { applyCommand } from './localReducer';
-import { recordSnapshotInstall } from './history';
+import { appendSnapshotInstall, HISTORY_KEY } from './history';
 import {
     assertJsonResponse,
     getResponseHeader,
@@ -164,16 +164,26 @@ export function createSnapshotInstaller({ store, fetchFn, serverUrl, decompress 
             limit: Number.MAX_SAFE_INTEGER,
         });
         const display = reduceOverlay(envelope.state, unconfirmed);
-        await store.set(MIRROR_KEY, envelope.state);
-        await store.set(DISPLAY_KEY, display);
-
-        await updateSyncMeta(store, {
+        const nextMeta = {
+            ...meta,
             installedSnapshotVersion: envelope.snapshotVersion,
             installedSnapshotHash: stateHash,
             installedSnapshotCompressedHash: compressedHash,
             serverInstanceId: envelope.serverInstanceId,
-        });
-        await recordSnapshotInstall(store, { version: envelope.snapshotVersion, stateHash });
+        };
+        const history = appendSnapshotInstall(
+            (await store.get(HISTORY_KEY)) ?? [],
+            { version: envelope.snapshotVersion, stateHash },
+        );
+        if (typeof store.setMany !== 'function') {
+            throw new Error('snapshot store does not support atomic setMany');
+        }
+        await store.setMany([
+            [MIRROR_KEY, envelope.state],
+            [DISPLAY_KEY, display],
+            [META_KEY, nextMeta],
+            [HISTORY_KEY, history],
+        ]);
 
         if (ackInstalled) {
             const meta2 = await loadSyncMeta(store);
@@ -265,6 +275,18 @@ export function createSnapshotInstaller({ store, fetchFn, serverUrl, decompress 
         },
         async getDisplayState() {
             return store.get(DISPLAY_KEY);
+        },
+
+        async rebaseDisplay() {
+            const mirror = await store.get(MIRROR_KEY);
+            if (!mirror) return null;
+            const unconfirmed = await listCommands(store, {
+                state: ['pending', 'uploaded'],
+                limit: Number.MAX_SAFE_INTEGER,
+            });
+            const display = reduceOverlay(mirror, unconfirmed);
+            await store.set(DISPLAY_KEY, display);
+            return display;
         },
 
         /** 拉最新并安装;若版本相同返回 skipped。 */

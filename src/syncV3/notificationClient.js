@@ -13,6 +13,7 @@ export function createNotificationClient({
     onNewVersion,
     waitMs = 25_000,
     waitFn = wait,
+    randomFn = Math.random,
 }) {
     let snapshotPollingFallback = false;
 
@@ -78,7 +79,8 @@ export function createNotificationClient({
                     const result = await tickOnce();
                     if (!running) break;
                     if (result.error) {
-                        await waitFn(retryDelay);
+                        const jittered = Math.round(retryDelay * (0.8 + randomFn() * 0.4));
+                        await waitFn(jittered);
                         retryDelay = Math.min(retryDelay * 2, 30_000);
                     } else {
                         retryDelay = 2000;

@@ -35,6 +35,11 @@ export function createIndexedDbKvStore({ dbName = 'tplanner-sync-v3', storeName 
         async set(key, value) {
             return tx('readwrite', (s) => s.put({ key, value }, key));
         },
+        async setMany(entries) {
+            return tx('readwrite', (s) => {
+                for (const [key, value] of entries) s.put({ key, value }, key);
+            });
+        },
         async delete(key) {
             return tx('readwrite', (s) => s.delete(key));
         },
@@ -54,6 +59,12 @@ export function createMemoryKvStore() {
         },
         async set(key, value) {
             map.set(key, clone(value));
+        },
+        async setMany(entries) {
+            const staged = new Map(map);
+            for (const [key, value] of entries) staged.set(key, clone(value));
+            map.clear();
+            for (const [key, value] of staged) map.set(key, value);
         },
         async delete(key) {
             map.delete(key);

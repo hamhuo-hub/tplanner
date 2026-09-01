@@ -2,7 +2,7 @@
 // clientSequence 分配器、已安装快照指针、serverInstanceId。
 import { v7 as uuidv7 } from 'uuid';
 
-const META_KEY = 'meta';
+export const META_KEY = 'meta';
 
 export async function loadSyncMeta(store) {
     let meta = await store.get(META_KEY);

@@ -159,6 +159,7 @@ describe('notification client', () => {
             serverUrl: 'https://sync.example',
             fetchFn,
             waitFn,
+            randomFn: () => 0.5,
         });
 
         client.start();

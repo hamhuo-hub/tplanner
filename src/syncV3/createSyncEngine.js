@@ -31,6 +31,7 @@ export async function createSyncEngine({
         /** 手动同步(§16):排空上传 → 收受回执 → 拉最新快照并安装。 */
         async syncNow() {
             await uploader.flush();
+            await installer.rebaseDisplay();
             const installed = await installer.syncToLatest();
             return {
                 pending: (await import('./commandOutbox')).listCommands(store, { state: 'pending' }),
