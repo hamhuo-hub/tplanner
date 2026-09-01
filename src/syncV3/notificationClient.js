@@ -2,17 +2,45 @@
 // 通知只含 version + hash,不含数据片段;收到新版本后由上层触发快照安装。
 // 首版长轮询;桌面/Web 后续可换 SSE(不是当前瓶颈)。
 import { loadSyncMeta } from './syncMeta';
+import { protocolError, readJsonResponse } from './httpResponse';
 
-export function createNotificationClient({ store, fetchFn, serverUrl, onNewVersion, waitMs = 25_000 }) {
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export function createNotificationClient({
+    store,
+    fetchFn,
+    serverUrl,
+    onNewVersion,
+    waitMs = 25_000,
+    waitFn = wait,
+}) {
+    let snapshotPollingFallback = false;
+
     async function pollOnce() {
+        if (snapshotPollingFallback) {
+            await waitFn(waitMs);
+            return { notified: true, body: { fallback: 'snapshot-poll' } };
+        }
+
         const meta = await loadSyncMeta(store);
         const after = meta.installedSnapshotVersion;
         const res = await fetchFn(
             `${serverUrl}/tplanner/v3/notifications?afterVersion=${after}&wait=${waitMs}`,
         );
+        if (res.status === 404) {
+            await readJsonResponse(res, 'snapshot notification request');
+            snapshotPollingFallback = true;
+            return { notified: true, body: { fallback: 'snapshot-poll' } };
+        }
         if (!res.ok) throw new Error(`notifications request failed: ${res.status}`);
-        const body = await res.json();
-        if (Number(body.latestVersion) > after) {
+        const body = await readJsonResponse(res, 'snapshot notification request');
+        const latestVersion = body?.latestVersion;
+        if (typeof latestVersion !== 'number'
+            || !Number.isSafeInteger(latestVersion)
+            || latestVersion < 0) {
+            throw protocolError('snapshot notification request returned an invalid version', res);
+        }
+        if (latestVersion > after) {
             return { notified: true, body };
         }
         return { notified: false, body };
@@ -45,8 +73,16 @@ export function createNotificationClient({ store, fetchFn, serverUrl, onNewVersi
             if (running) return;
             running = true;
             const tick = async () => {
+                let retryDelay = 2000;
                 while (running) {
-                    await tickOnce();
+                    const result = await tickOnce();
+                    if (!running) break;
+                    if (result.error) {
+                        await waitFn(retryDelay);
+                        retryDelay = Math.min(retryDelay * 2, 30_000);
+                    } else {
+                        retryDelay = 2000;
+                    }
                 }
             };
             loop = tick().catch(() => {});

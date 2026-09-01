@@ -30,6 +30,7 @@ class FakeServer {
             const result = applyCommand(this.state, command, this.seq);
             this.state = result.state;
             this.receipts.push({
+                deviceId: batch.deviceId,
                 commandId: command.commandId,
                 clientSequence: command.clientSequence,
                 status: result.receipt.status,
@@ -73,7 +74,16 @@ class FakeServer {
             return { status: 202, ok: true, json: async () => ({ batchId: batch.batchId, brokerSequence: this.seq, state: 'BROKER_PERSISTED', duplicate: false }) };
         }
         if (url.includes('/receipts')) {
-            return { status: 200, ok: true, json: async () => ({ acceptedThrough: this.receipts.length, results: this.receipts }) };
+            const request = new URL(url);
+            const deviceId = request.searchParams.get('deviceId');
+            const after = Number(request.searchParams.get('afterClientSequence'));
+            const deviceReceipts = this.receipts.filter((receipt) => receipt.deviceId === deviceId);
+            const results = deviceReceipts
+                .filter((receipt) => receipt.clientSequence > after)
+                .slice(0, 200)
+                .map(({ deviceId: _deviceId, ...receipt }) => receipt);
+            const acceptedThrough = deviceReceipts.at(-1)?.clientSequence ?? 0;
+            return { status: 200, ok: true, json: async () => ({ acceptedThrough, results }) };
         }
         if (url.includes('/snapshots/latest')) {
             const { manifest } = this.snapshots.get(this.version);

@@ -47,13 +47,34 @@ function makeSnapshot(version) {
 function mockBackend() {
     const snap = makeSnapshot(5);
     const calls = [];
+    const receipts = [];
     const fetchFn = async (url, opts = {}) => {
         calls.push(url);
         if (url.includes('/command-batches')) {
-            return { status: 202, ok: true, json: async () => ({ state: 'BROKER_PERSISTED' }) };
+            const batch = JSON.parse(opts.body);
+            receipts.push(...batch.commands.map((command) => ({
+                deviceId: batch.deviceId,
+                commandId: command.commandId,
+                clientSequence: command.clientSequence,
+                status: 'APPLIED',
+                snapshotVersion: 5,
+            })));
+            return {
+                status: 202,
+                ok: true,
+                json: async () => ({ batchId: batch.batchId, state: 'BROKER_PERSISTED' }),
+            };
         }
         if (url.includes('/receipts')) {
-            return { status: 200, ok: true, json: async () => ({ acceptedThrough: 0, results: [] }) };
+            const request = new URL(url);
+            const deviceId = request.searchParams.get('deviceId');
+            const after = Number(request.searchParams.get('afterClientSequence'));
+            const deviceReceipts = receipts.filter((receipt) => receipt.deviceId === deviceId);
+            const results = deviceReceipts
+                .filter((receipt) => receipt.clientSequence > after)
+                .map(({ deviceId: _deviceId, ...receipt }) => receipt);
+            const acceptedThrough = deviceReceipts.at(-1)?.clientSequence ?? 0;
+            return { status: 200, ok: true, json: async () => ({ acceptedThrough, results }) };
         }
         if (url.includes('/snapshots/latest')) {
             return { status: 200, ok: true, json: async () => snap.manifest };

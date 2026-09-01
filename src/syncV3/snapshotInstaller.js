@@ -2,13 +2,19 @@
 //
 // 客户端流程:拿 manifest → 下载 gzip 载荷 → 校验 compressedHash → 解压 →
 // 校验 canonical stateHash → 校验 schema/版本 → staging 全部通过后:
-//   替换 Server Mirror → 重放仍 pending 的本地命令 → 原子更新 installed 指针。
-// 任一步失败:旧镜像完全不动(§7)。hash 校验失败报 ERROR006。
+//   替换 Server Mirror → 重放仍未收到终态回执的本地命令 → 更新 installed 指针。
+// 任一解码/校验步骤失败:旧镜像完全不动(§7)。hash 校验失败报 ERROR006。
 import canonicalize from 'canonicalize';
 import { loadSyncMeta, updateSyncMeta } from './syncMeta';
 import { listCommands } from './commandOutbox';
 import { applyCommand } from './localReducer';
 import { recordSnapshotInstall } from './history';
+import {
+    assertJsonResponse,
+    getResponseHeader,
+    protocolError,
+    readJsonResponse,
+} from './httpResponse';
 
 export async function sha256Hex(input) {
     const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
@@ -28,7 +34,7 @@ export async function decompressGzip(compressed) {
     return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-// 本地 pending 命令归约到新镜像上(§8 Displayed State)
+// 本地未确认(pending / uploaded)命令归约到新镜像上(§8 Displayed State)
 export function reduceOverlay(mirrorState, pendingCommands) {
     let state = mirrorState;
     for (const command of pendingCommands) {
@@ -40,34 +46,131 @@ export function reduceOverlay(mirrorState, pendingCommands) {
 
 const MIRROR_KEY = 'mirror';
 const DISPLAY_KEY = 'display';
+const SHA256_PATTERN = /^sha256:[0-9a-f]{64}$/i;
+
+function normalizeSha256(value) {
+    if (!value) return null;
+    let normalized = String(value).trim().replace(/^W\//i, '');
+    if (normalized.startsWith('"') && normalized.endsWith('"')) {
+        normalized = normalized.slice(1, -1);
+    }
+    if (/^[0-9a-f]{64}$/i.test(normalized)) normalized = `sha256:${normalized}`;
+    return SHA256_PATTERN.test(normalized) ? normalized.toLowerCase() : null;
+}
+
+function validateManifest(manifest, response) {
+    if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
+        throw protocolError('latest snapshot manifest is not an object', response);
+    }
+    if (!Number.isSafeInteger(manifest.snapshotVersion) || manifest.snapshotVersion < 1) {
+        throw protocolError('latest snapshot manifest has an invalid version', response);
+    }
+    if (!normalizeSha256(manifest.stateHash) || !normalizeSha256(manifest.compressedHash)) {
+        throw protocolError('latest snapshot manifest has invalid hash metadata', response);
+    }
+    return {
+        ...manifest,
+        stateHash: normalizeSha256(manifest.stateHash),
+        compressedHash: normalizeSha256(manifest.compressedHash),
+    };
+}
+
+function isGzip(bytes) {
+    return bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
+}
+
+function isRecord(value) {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function validateEnvelope(envelope, manifest) {
+    const state = envelope?.state;
+    const validState = isRecord(state)
+        && ['tasks', 'customLists', 'journals', 'goals', 'insights'].every((key) => isRecord(state[key]));
+    if (!isRecord(envelope)
+        || envelope.snapshotSchemaVersion !== 3
+        || envelope.snapshotVersion !== manifest.snapshotVersion
+        || typeof envelope.serverInstanceId !== 'string'
+        || envelope.serverInstanceId === ''
+        || !validState) {
+        const err = new Error('snapshot envelope does not match the V3 schema');
+        err.code = 'ERROR006';
+        throw err;
+    }
+}
 
 export function createSnapshotInstaller({ store, fetchFn, serverUrl, decompress = decompressGzip, ackInstalled = true } = {}) {
-    async function fetchLatestMeta() {
-        const res = await fetchFn(`${serverUrl}/tplanner/v3/snapshots/latest`, { headers: { 'cache-control': 'no-store' } });
-        if (res.status === 404) return null; // 服务器还没有任何快照
+    async function fetchLatest(meta) {
+        const headers = { 'cache-control': 'no-store' };
+        const sentValidator = normalizeSha256(meta.installedSnapshotCompressedHash);
+        if (sentValidator) {
+            headers['if-none-match'] = `"${normalizeSha256(meta.installedSnapshotCompressedHash)}"`;
+        }
+        const res = await fetchFn(`${serverUrl}/tplanner/v3/snapshots/latest`, { headers });
+        if (res.status === 304) {
+            if (!sentValidator) throw protocolError('latest snapshot returned 304 without a local validator', res);
+            return { notModified: true };
+        }
+        if (res.status === 404) {
+            assertJsonResponse(res, 'latest snapshot request');
+            return null; // 服务器还没有任何快照
+        }
         if (!res.ok) throw new Error(`latest snapshot request failed: ${res.status}`);
-        return res.json();
+
+        const contentType = getResponseHeader(res, 'content-type')?.toLowerCase() ?? '';
+        const headerlessJsonStub = !contentType
+            && typeof res.json === 'function'
+            && typeof res.arrayBuffer !== 'function';
+        if (contentType.includes('json') || headerlessJsonStub) {
+            const manifest = validateManifest(
+                await readJsonResponse(res, 'latest snapshot manifest request'),
+                res,
+            );
+            return { manifest, payloadResponse: null };
+        }
+
+        if (contentType && !/(?:application\/(?:octet-stream|(?:x-)?gzip))/.test(contentType)) {
+            const hint = contentType.includes('html')
+                ? '; check that /tplanner API routes are proxied before the SPA fallback'
+                : '';
+            throw protocolError(
+                `latest snapshot endpoint returned ${contentType}; expected JSON or snapshot bytes${hint}`,
+                res,
+            );
+        }
+
+        const manifest = validateManifest({
+            snapshotVersion: Number(getResponseHeader(res, 'x-snapshot-version')),
+            stateHash: normalizeSha256(getResponseHeader(res, 'x-state-hash')),
+            compressedHash: normalizeSha256(getResponseHeader(res, 'etag')),
+        }, res);
+        return { manifest, payloadResponse: res };
     }
 
-    async function install(envelope, manifest, stateHash) {
+    async function install(envelope, stateHash, compressedHash) {
         const meta = await loadSyncMeta(store);
-        if (meta.installedSnapshotVersion >= envelope.snapshotVersion) {
-            return { installed: false, skipped: true, version: meta.installedSnapshotVersion };
-        }
         if (meta.serverInstanceId && envelope.serverInstanceId !== meta.serverInstanceId) {
             const err = new Error('server instance changed; client must re-bootstrap');
             err.code = 'ERROR008';
             throw err;
         }
+        if (meta.installedSnapshotVersion >= envelope.snapshotVersion) {
+            return { installed: false, skipped: true, version: meta.installedSnapshotVersion };
+        }
 
         // staging:镜像先在内存完整校验(本函数入口已完成),此处原子落库
+        const unconfirmed = await listCommands(store, {
+            state: ['pending', 'uploaded'],
+            limit: Number.MAX_SAFE_INTEGER,
+        });
+        const display = reduceOverlay(envelope.state, unconfirmed);
         await store.set(MIRROR_KEY, envelope.state);
-        const pending = await listCommands(store, { state: 'pending' });
-        await store.set(DISPLAY_KEY, reduceOverlay(envelope.state, pending));
+        await store.set(DISPLAY_KEY, display);
 
         await updateSyncMeta(store, {
             installedSnapshotVersion: envelope.snapshotVersion,
             installedSnapshotHash: stateHash,
+            installedSnapshotCompressedHash: compressedHash,
             serverInstanceId: envelope.serverInstanceId,
         });
         await recordSnapshotInstall(store, { version: envelope.snapshotVersion, stateHash });
@@ -87,6 +190,75 @@ export function createSnapshotInstaller({ store, fetchFn, serverUrl, decompress 
         return { installed: true, skipped: false, version: envelope.snapshotVersion };
     }
 
+    async function runSyncToLatest() {
+        const meta = await loadSyncMeta(store);
+        const latest = await fetchLatest(meta);
+        if (!latest) return { installed: false, skipped: true, reason: 'no snapshot yet' };
+        if (latest.notModified) {
+            return { installed: false, skipped: true, version: meta.installedSnapshotVersion };
+        }
+
+        const { manifest } = latest;
+        if (manifest.snapshotVersion < meta.installedSnapshotVersion) {
+            throw protocolError('latest snapshot version regressed below the installed version');
+        }
+        if (manifest.snapshotVersion === meta.installedSnapshotVersion) {
+            const sameState = manifest.stateHash === normalizeSha256(meta.installedSnapshotHash);
+            const knownCompressed = normalizeSha256(meta.installedSnapshotCompressedHash);
+            const sameCompressed = !knownCompressed || manifest.compressedHash === knownCompressed;
+            latest.payloadResponse?.body?.cancel?.().catch(() => {});
+            if (!sameState || !sameCompressed) {
+                throw protocolError('latest snapshot metadata conflicts with the installed version');
+            }
+            return { installed: false, skipped: true, version: meta.installedSnapshotVersion };
+        }
+
+        const res = latest.payloadResponse
+            ?? await fetchFn(`${serverUrl}/tplanner/v3/snapshots/${manifest.snapshotVersion}`);
+        if (!res.ok) throw new Error(`snapshot download failed: ${res.status}`);
+        const payloadType = getResponseHeader(res, 'content-type')?.toLowerCase() ?? '';
+        if (payloadType.includes('html')) {
+            throw protocolError(
+                'snapshot download returned HTML; check that /tplanner API routes are proxied before the SPA fallback',
+                res,
+            );
+        }
+
+        const payload = new Uint8Array(await res.arrayBuffer());
+        let bytes = payload;
+        if (isGzip(payload)) {
+            const compressedHash = `sha256:${await sha256Hex(payload)}`;
+            if (compressedHash !== manifest.compressedHash) {
+                const err = new Error(`compressed hash mismatch: ${compressedHash}`);
+                err.code = 'ERROR006';
+                throw err;
+            }
+            bytes = await decompress(payload);
+        }
+
+        let envelope;
+        try {
+            envelope = JSON.parse(new TextDecoder().decode(bytes));
+        } catch (cause) {
+            const err = new Error('snapshot payload is not a valid JSON envelope');
+            err.code = 'ERROR006';
+            err.cause = cause;
+            throw err;
+        }
+        validateEnvelope(envelope, manifest);
+
+        const stateHash = await canonicalStateHash(envelope.state);
+        if (stateHash !== manifest.stateHash) {
+            const err = new Error(`state hash mismatch: ${stateHash}`);
+            err.code = 'ERROR006';
+            throw err;
+        }
+
+        return install(envelope, stateHash, manifest.compressedHash);
+    }
+
+    let syncTail = Promise.resolve();
+
     return {
         async getServerMirror() {
             return store.get(MIRROR_KEY);
@@ -96,44 +268,10 @@ export function createSnapshotInstaller({ store, fetchFn, serverUrl, decompress 
         },
 
         /** 拉最新并安装;若版本相同返回 skipped。 */
-        async syncToLatest() {
-            const manifest = await fetchLatestMeta();
-            if (!manifest) return { installed: false, skipped: true, reason: 'no snapshot yet' };
-
-            const meta = await loadSyncMeta(store);
-            if (manifest.snapshotVersion <= meta.installedSnapshotVersion) {
-                return { installed: false, skipped: true, version: meta.installedSnapshotVersion };
-            }
-
-            const res = await fetchFn(`${serverUrl}/tplanner/v3/snapshots/${manifest.snapshotVersion}`, {
-                headers: { 'if-none-match': `"${manifest.compressedHash}"` },
-            });
-            if (!res.ok) throw new Error(`snapshot download failed: ${res.status}`);
-
-            const compressed = new Uint8Array(await res.arrayBuffer());
-            const compressedHash = `sha256:${await sha256Hex(compressed)}`;
-            if (compressedHash !== manifest.compressedHash) {
-                const err = new Error(`compressed hash mismatch: ${compressedHash}`);
-                err.code = 'ERROR006';
-                throw err;
-            }
-
-            const bytes = await decompress(compressed);
-            const envelope = JSON.parse(new TextDecoder().decode(bytes));
-            if (envelope.snapshotSchemaVersion !== 3 || envelope.snapshotVersion !== manifest.snapshotVersion) {
-                const err = new Error('envelope does not match manifest');
-                err.code = 'ERROR006';
-                throw err;
-            }
-
-            const stateHash = await canonicalStateHash(envelope.state);
-            if (stateHash !== manifest.stateHash) {
-                const err = new Error(`state hash mismatch: ${stateHash}`);
-                err.code = 'ERROR006';
-                throw err;
-            }
-
-            return install(envelope, manifest, stateHash);
+        syncToLatest() {
+            const run = syncTail.then(runSyncToLatest, runSyncToLatest);
+            syncTail = run.catch(() => {});
+            return run;
         },
     };
 }
