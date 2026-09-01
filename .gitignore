@@ -94,3 +94,4 @@ tplanner-linux
 # 保持跟踪(CI 用 npm ci 可复现安装),其余位置的 lockfile 不跟踪。
 package-lock.json
 !sync-server/package-lock.json
+/sync-server
