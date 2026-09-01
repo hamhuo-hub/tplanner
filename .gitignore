@@ -61,12 +61,16 @@ src/assets/react.svg
 /release
 /.vscode
 /.claude
+/.agents
 /staging-linux
 /.gradle
-/app
+/app/build
+/wear/build
+/.kotlin
 /capacitor-cordova-android-plugins
 local.properties
 secrets.properties
+keystore.properties
 *.jks
 *.keystore
 *.log
@@ -82,11 +86,11 @@ captures/
 /wear-widget
 /prototype
 tplanner-linux
-/wear
 /智能手表表盘设计
 手表表盘·全部方案.html
+/_syncserver_stage
 /.vite
+# Lockfile 策略:桌面端根 package-lock.json 与服务器端 sync-server/package-lock.json
+# 保持跟踪(CI 用 npm ci 可复现安装),其余位置的 lockfile 不跟踪。
 package-lock.json
-# 服务器需要锁文件保证可复现安装
 !sync-server/package-lock.json
-/.agents
