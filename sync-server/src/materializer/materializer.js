@@ -72,6 +72,7 @@ export function createMaterializer({
   serverInstanceId,
   now = () => Date.now(),
   buildSnapshotFn = buildSnapshot,
+  assertWriterLease = () => {},
 }) {
   let state = loadStateFromDb(db);
   let snapshotVersion = db.prepare('SELECT COALESCE(MAX(version), 0) AS v FROM snapshots').get().v;
@@ -131,25 +132,25 @@ export function createMaterializer({
   /**
    * 处理一个 integration batch(§6)。
    * 每条 entry = { brokerSequence, deviceId, batchId?, command };按 brokerSequence 升序。
-   * 返回 { receipts, snapshot }:snapshot 为 null 表示整批无状态变化(全部 NOOP/REJECTED)。
+   * 返回 { receipts, snapshot }:snapshot 为 null 表示本批没有新终态回执
+   * (纯 SEQUENCE_GAP 或全部是已处理重投)。新接受的 NOOP/REJECTED 等即使
+   * 不改变 state，也必须发布同 stateHash 的 coverage snapshot，让客户端能以
+   * snapshot brokerToSequence 证明终态回执已经进入不可变历史。
    */
   function processIntegrationBatch(entries) {
     const ordered = [...entries].sort((a, b) => a.brokerSequence - b.brokerSequence);
 
     // 1. 内存 dry-run:去重 + 顺序 apply(纯函数,不进事务)
     let nextState = state;
-    let minSeq = Infinity;
-    let maxSeq = -Infinity;
-    let changed = false;
     const seen = new Map(); // commandId → 首次出现的 receipt
     const outcomes = [];
     const progressUpdates = new Map(); // deviceId → 本批最高 accepted clientSequence
+    // Dry-run 只修改工作副本。reducer/buildSnapshot 抛错时，已提交进度不能被
+    // 内存提前推进，否则同一进程中的重投会被误判成重复序列。
+    const workingAcceptedSeq = new Map(acceptedSeq);
 
     for (const entry of ordered) {
       const { brokerSequence, command } = entry;
-      minSeq = Math.min(minSeq, brokerSequence);
-      maxSeq = Math.max(maxSeq, brokerSequence);
-
       // 曾因缺口被拒(SEQUENCE_GAP):重传 → 重新裁决,旧回执在本批事务内删除重写
       const existing = findReceipt(db, command.commandId);
       const retryGap = existing !== undefined && existing.status === 'SEQUENCE_GAP';
@@ -162,7 +163,7 @@ export function createMaterializer({
         continue;
       }
 
-      const accepted = acceptedSeq.get(entry.deviceId) ?? 0;
+      const accepted = workingAcceptedSeq.get(entry.deviceId) ?? 0;
 
       // 同槽位已有 SEQUENCE_GAP 回执(可能来自另一个 commandId 的历史重传):
       // 视为客户端补齐重传,事务内先删旧 GAP 行再重裁,绝不让 GAP 行堵死序列槽位。
@@ -187,30 +188,43 @@ export function createMaterializer({
       const result = applyCommand(nextState, command, brokerSequence);
       seen.set(command.commandId, result.receipt);
       outcomes.push({ entry, receipt: result.receipt, isNew: true, retryGap, seqRetryGap, advanceTo: command.clientSequence });
-      acceptedSeq.set(entry.deviceId, command.clientSequence);
+      workingAcceptedSeq.set(entry.deviceId, command.clientSequence);
       progressUpdates.set(entry.deviceId, command.clientSequence);
       if (result.state !== nextState) {
         nextState = result.state;
-        changed = true;
       }
     }
 
-    // 2. 有状态变化才生成快照;版本只前进(§6)
-    const newVersion = changed ? snapshotVersion + 1 : snapshotVersion;
-    const snapshot = changed
+    // 2. 每个新终态回执都必须被不可变快照覆盖。SEQUENCE_GAP 是可重裁的
+    // 临时结果；历史 commandId/clientSequence 重投没有新回执，二者均不发布。
+    const coveredOutcomes = outcomes.filter(
+      ({ isNew, receipt }) => isNew && receipt.status !== 'SEQUENCE_GAP',
+    );
+    const publishesCoverage = coveredOutcomes.length > 0;
+    const brokerFromSequence = publishesCoverage
+      ? Math.min(...coveredOutcomes.map(({ entry }) => entry.brokerSequence))
+      : null;
+    const brokerToSequence = publishesCoverage
+      ? Math.max(...coveredOutcomes.map(({ entry }) => entry.brokerSequence))
+      : null;
+    const newVersion = publishesCoverage ? snapshotVersion + 1 : snapshotVersion;
+    const snapshot = publishesCoverage
       ? buildSnapshotFn({
           state: nextState,
           snapshotVersion: newVersion,
           parentVersion: snapshotVersion,
           serverInstanceId,
-          brokerFromSequence: minSeq,
-          brokerToSequence: maxSeq,
+          brokerFromSequence,
+          brokerToSequence,
         })
       : null;
 
     // 3. 单事务落库:重裁删除 → 回执 → 设备进度 → 实体 diff → 快照 → outbox(§10)
-    const before = new Map(acceptedSeq);
     const writeTx = db.transaction(() => {
+      // Fencing happens under the same SQLite write lock as the authoritative commit. If a slow
+      // former owner built this batch after its lease expired, a new owner can change the row
+      // before this transaction, but it cannot race between this check and the writes below.
+      assertWriterLease();
       for (const { entry, retryGap, seqRetryGap } of outcomes) {
         if (retryGap) deleteReceipt(db, entry.command.commandId);
         if (seqRetryGap) deleteReceiptByDeviceSequence(db, entry.deviceId, entry.command.clientSequence);
@@ -228,7 +242,9 @@ export function createMaterializer({
           aggregateId: command.aggregateId ?? null,
           status: receipt.status,
           errorCode: receipt.errorCode ?? null,
-          snapshotVersion: snapshot?.manifest.snapshotVersion ?? null,
+          snapshotVersion: receipt.status === 'SEQUENCE_GAP'
+            ? null
+            : snapshot?.manifest.snapshotVersion ?? null,
           resultJson: null,
           processedAt: now(),
         });
@@ -248,7 +264,7 @@ export function createMaterializer({
               entityId: id,
               lifecycle,
               payloadJson: JSON.stringify(payload),
-              brokerSequence: maxSeq,
+              brokerSequence: brokerToSequence,
               now: now(),
               deletedAt: deletedAt ?? null,
             });
@@ -258,8 +274,8 @@ export function createMaterializer({
         insertSnapshot.run({
           version: snapshot.manifest.snapshotVersion,
           parentVersion: snapshot.manifest.parentVersion,
-          brokerFromSequence: minSeq,
-          brokerToSequence: maxSeq,
+          brokerFromSequence,
+          brokerToSequence,
           stateHash: snapshot.stateHash,
           compressedHash: snapshot.compressedHash,
           compressedPayload: snapshot.compressed,
@@ -280,15 +296,11 @@ export function createMaterializer({
       }
     });
 
-    try {
-      writeTx(); // 事务失败抛错:回滚,内存状态恢复
-    } catch (err) {
-      acceptedSeq.clear();
-      for (const [deviceId, accepted] of before) acceptedSeq.set(deviceId, accepted);
-      throw err;
-    }
+    writeTx(); // 事务失败抛错:DB 与内存均保持已提交状态
 
     if (snapshot) snapshotVersion = newVersion;
+    acceptedSeq.clear();
+    for (const [deviceId, accepted] of workingAcceptedSeq) acceptedSeq.set(deviceId, accepted);
     state = nextState;
 
     return {
@@ -312,11 +324,105 @@ export function createMaterializer({
 }
 
 /**
+ * 修复旧版本留下的“终态回执已提交，但 latest snapshot 的 broker watermark
+ * 尚未覆盖”窗口。只覆盖非 SEQUENCE_GAP 回执；新快照复用当前权威 state，
+ * 因而 stateHash 可与父版本相同。快照、latest、receipt 回填和发布 outbox
+ * 在一个事务中提交，重复启动时 max broker 已被覆盖，返回 null。
+ */
+export function ensureReceiptCoverageSnapshot(
+  db,
+  {
+    serverInstanceId,
+    now = Date.now,
+    buildSnapshotFn = buildSnapshot,
+    assertWriterLease = () => {},
+  } = {},
+) {
+  const latest = db.prepare(`
+    SELECT s.version, s.broker_to_sequence, s.state_hash
+    FROM latest_snapshot l
+    JOIN snapshots s ON s.version = l.version
+    WHERE l.singleton_id = 1
+  `).get();
+  if (!latest) return null;
+
+  const uncovered = db.prepare(`
+    SELECT MIN(broker_sequence) AS min_seq, MAX(broker_sequence) AS max_seq
+    FROM processed_commands
+    WHERE status <> 'SEQUENCE_GAP' AND broker_sequence > ?
+  `).get(latest.broker_to_sequence);
+  if (uncovered.max_seq == null) return null;
+
+  const createdAt = now();
+  const snapshot = buildSnapshotFn({
+    state: loadStateFromDb(db),
+    snapshotVersion: latest.version + 1,
+    parentVersion: latest.version,
+    serverInstanceId,
+    brokerFromSequence: uncovered.min_seq,
+    brokerToSequence: uncovered.max_seq,
+    createdAt: new Date(createdAt).toISOString(),
+  });
+
+  db.transaction(() => {
+    assertWriterLease();
+    db.prepare(`
+      INSERT INTO snapshots
+        (version, parent_version, broker_from_sequence, broker_to_sequence, schema_version,
+         state_hash, compressed_hash, compressed_payload, uncompressed_bytes, compressed_bytes,
+         created_at)
+      VALUES (?, ?, ?, ?, 3, ?, ?, ?, ?, ?, ?)
+    `).run(
+      snapshot.manifest.snapshotVersion,
+      snapshot.manifest.parentVersion,
+      uncovered.min_seq,
+      uncovered.max_seq,
+      snapshot.manifest.stateHash,
+      snapshot.manifest.compressedHash,
+      snapshot.compressed,
+      snapshot.manifest.uncompressedBytes,
+      snapshot.manifest.compressedBytes,
+      createdAt,
+    );
+    db.prepare(`
+      UPDATE processed_commands
+      SET snapshot_version = ?
+      WHERE snapshot_version IS NULL
+        AND status <> 'SEQUENCE_GAP'
+        AND broker_sequence <= ?
+    `).run(snapshot.manifest.snapshotVersion, uncovered.max_seq);
+    db.prepare(`
+      INSERT INTO latest_snapshot (singleton_id, version, state_hash)
+      VALUES (1, ?, ?)
+      ON CONFLICT(singleton_id) DO UPDATE SET
+        version = excluded.version,
+        state_hash = excluded.state_hash
+    `).run(snapshot.manifest.snapshotVersion, snapshot.manifest.stateHash);
+    db.prepare(`
+      INSERT INTO publication_outbox
+        (publication_id, publication_type, dedupe_key, payload_json, state,
+         attempt_count, next_attempt_at, created_at)
+      VALUES (?, 'snapshot.ready', ?, ?, 'pending', 0, 0, ?)
+    `).run(
+      randomUUID(),
+      `snapshot.ready:v${snapshot.manifest.snapshotVersion}`,
+      JSON.stringify(snapshot.manifest),
+      createdAt,
+    );
+  })();
+
+  return snapshot;
+}
+
+/**
  * A fresh V3 installation still needs an immutable empty snapshot so readiness
  * and bootstrap clients have a well-defined starting point. Existing databases
  * are untouched. The snapshot and publication outbox row share one transaction.
  */
-export function ensureBootstrapSnapshot(db, { serverInstanceId, now = Date.now } = {}) {
+export function ensureBootstrapSnapshot(
+  db,
+  { serverInstanceId, now = Date.now, assertWriterLease = () => {} } = {},
+) {
   const existing = db.prepare('SELECT MAX(version) AS v FROM snapshots').get().v;
   if (existing > 0) return null;
   const createdAt = now();
@@ -332,6 +438,7 @@ export function ensureBootstrapSnapshot(db, { serverInstanceId, now = Date.now }
   });
 
   db.transaction(() => {
+    assertWriterLease();
     db.prepare(`
       INSERT INTO snapshots
         (version, parent_version, broker_from_sequence, broker_to_sequence, schema_version,

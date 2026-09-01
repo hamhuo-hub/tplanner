@@ -38,7 +38,7 @@ CREATE TABLE snapshots (
     broker_from_sequence   INTEGER NOT NULL,
     broker_to_sequence     INTEGER NOT NULL,
     schema_version         INTEGER NOT NULL,
-    state_hash             TEXT NOT NULL UNIQUE,
+    state_hash             TEXT NOT NULL,
     compressed_hash        TEXT NOT NULL,
     compressed_payload     BLOB NOT NULL,
     uncompressed_bytes     INTEGER NOT NULL,

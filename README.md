@@ -24,6 +24,17 @@ The State Builder uses the JetStream sequence as the global order and holds a
 SQLite writer lease. It closes an ordinary integration batch after 100 ms of
 quiet, with a five-second forced ceiling for sustained traffic. Snapshot,
 receipts, entity changes, and publication outbox are committed atomically.
+Lease renewal starts immediately after acquisition; startup recovery and every
+authoritative SQLite transaction synchronously fence on the current owner and
+expiry, so an expired process cannot commit after another builder takes over.
+
+A snapshot version also proves immutable receipt coverage. Every newly decided
+terminal receipt publishes a version whose `brokerToSequence` covers it, even
+when the canonical `stateHash` is unchanged; pure `SEQUENCE_GAP` receipts and
+broker redelivery of already processed commands do not create versions. On
+startup, a terminal receipt beyond the latest watermark is repaired by one
+idempotent coverage snapshot and its missing `snapshotVersion` is backfilled in
+the same transaction.
 
 ## HTTP contract
 

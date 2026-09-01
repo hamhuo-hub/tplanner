@@ -88,8 +88,10 @@ const TASK = {
     )) {
       return { state, receipt: REJECTED('INVALID_SCHEDULE') };
     }
-    return updateTask(state, cmd.aggregateId, (t) =>
-      JSON.stringify(t.schedule) === JSON.stringify(schedule) ? t : { ...t, schedule });
+    return updateTask(state, cmd.aggregateId, (t) => {
+      if (cmd.arguments?.ifMissing === true && t.schedule !== null) return t;
+      return JSON.stringify(t.schedule) === JSON.stringify(schedule) ? t : { ...t, schedule };
+    });
   },
 
   'task.setRecurrence'(state, cmd) {
@@ -103,8 +105,10 @@ const TASK = {
     )) {
       return { state, receipt: REJECTED('INVALID_RECURRENCE') };
     }
-    return updateTask(state, cmd.aggregateId, (t) =>
-      jsonEqual(t.recurrence, recurrence) ? t : { ...t, recurrence });
+    return updateTask(state, cmd.aggregateId, (t) => {
+      if (cmd.arguments?.ifMissing === true && t.recurrence !== null) return t;
+      return jsonEqual(t.recurrence, recurrence) ? t : { ...t, recurrence };
+    });
   },
 
   'task.setAlarm'(state, cmd) {
@@ -113,9 +117,17 @@ const TASK = {
     if (typeof enabled !== 'boolean' || !Number.isInteger(offsetMinutes)) {
       return { state, receipt: REJECTED('INVALID_ALARM') };
     }
-    const alarm = { enabled, offsetMinutes };
-    return updateTask(state, cmd.aggregateId, (t) =>
-      jsonEqual(t.alarm, alarm) ? t : { ...t, alarm });
+    // Command arguments are a forward-compatible patch. Canonical known fields win, while
+    // newer fields survive clients that only understand enabled/offsetMinutes.
+    const { ifMissing, ...alarmArguments } = cmd.arguments ?? {};
+    return updateTask(state, cmd.aggregateId, (t) => {
+      const current = t.alarm ?? {};
+      if (ifMissing === true && (
+        current.enabled !== false || current.offsetMinutes !== 0 || Object.keys(current).length > 2
+      )) return t;
+      const alarm = { ...current, ...alarmArguments, enabled, offsetMinutes };
+      return jsonEqual(t.alarm, alarm) ? t : { ...t, alarm };
+    });
   },
 
   'task.setAppearance'(state, cmd) {
@@ -130,16 +142,29 @@ const TASK = {
     const { lat = null, lng = null } = cmd.arguments ?? {};
     const valid = (value) => value === null || (typeof value === 'number' && Number.isFinite(value));
     if (!valid(lat) || !valid(lng)) return { state, receipt: REJECTED('INVALID_LOCATION') };
-    const location = { lat, lng };
-    return updateTask(state, cmd.aggregateId, (t) =>
-      jsonEqual(t.location, location) ? t : { ...t, location });
+    const { ifMissing, ...locationArguments } = cmd.arguments ?? {};
+    return updateTask(state, cmd.aggregateId, (t) => {
+      const current = t.location ?? {};
+      if (ifMissing === true && (
+        current.lat !== null || current.lng !== null || Object.keys(current).length > 2
+      )) return t;
+      const location = { ...current, ...locationArguments, lat, lng };
+      return jsonEqual(t.location, location) ? t : { ...t, location };
+    });
   },
 
   'task.setExtras'(state, cmd) {
     const extras = cmd.arguments?.extras;
     if (!isObject(extras)) return { state, receipt: REJECTED('INVALID_EXTRAS') };
-    return updateTask(state, cmd.aggregateId, (t) =>
-      jsonEqual(t.extras ?? {}, extras) ? t : { ...t, extras: { ...extras } });
+    return updateTask(state, cmd.aggregateId, (t) => {
+      const next = cmd.arguments?.mergeMissing === true
+        ? Object.fromEntries([
+          ...Object.entries(extras),
+          ...Object.entries(t.extras ?? {}),
+        ])
+        : { ...extras };
+      return jsonEqual(t.extras ?? {}, next) ? t : { ...t, extras: next };
+    });
   },
 
   'task.changeType'(state, cmd) {
@@ -154,7 +179,10 @@ const TASK = {
       const list = state.customLists[listId];
       if (!list || list.lifecycle === 'deleted') return { state, receipt: REJECTED('LIST_NOT_FOUND') };
     }
-    return updateTask(state, cmd.aggregateId, (t) => (t.listId === listId ? t : { ...t, listId }));
+    return updateTask(state, cmd.aggregateId, (t) => {
+      if (cmd.arguments?.ifUnassigned === true && t.listId !== null) return t;
+      return t.listId === listId ? t : { ...t, listId };
+    });
   },
 
   'task.moveInTimeline'(state, cmd) {
@@ -332,6 +360,7 @@ const JOURNAL = {
       const journals = { ...state.journals, [id]: { text, lifecycle: 'active', deletedAt: null } };
       return { state: { ...state, journals }, receipt: { status: 'APPLIED' } };
     }
+    if (cmd.arguments?.ifMissing === true) return { state, receipt: NOOP() };
     return updateInMap(state, 'journals', id, (j) => (j.text === text ? j : { ...j, text }));
   },
 

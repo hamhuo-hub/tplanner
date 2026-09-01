@@ -73,26 +73,162 @@ test('canonical task field commands preserve unrelated data', () => {
   ({ state } = applyCommand(state, cmd('task.setAlarm', 't1', {
     enabled: true,
     offsetMinutes: 15,
+    futureSound: { name: 'chime' },
   }, 3), 3));
   ({ state } = applyCommand(state, cmd('task.setAppearance', 't1', { colorId: 3 }, 4), 4));
-  ({ state } = applyCommand(state, cmd('task.setLocation', 't1', { lat: 31.23, lng: 121.47 }, 5), 5));
+  ({ state } = applyCommand(state, cmd('task.setLocation', 't1', {
+    lat: 31.23,
+    lng: 121.47,
+    futureAccuracy: 3,
+  }, 5), 5));
   ({ state } = applyCommand(state, cmd('task.setRecurrence', 't1', {
     recurrence: { frequency: 'weekly', count: 10, futureRule: 'keep-me' },
   }, 6), 6));
+  ({ state } = applyCommand(state, cmd('task.setAlarm', 't1', {
+    enabled: false,
+    offsetMinutes: 5,
+  }, 7), 7));
+  ({ state } = applyCommand(state, cmd('task.setLocation', 't1', {
+    lat: null,
+    lng: null,
+  }, 8), 8));
   ({ state } = applyCommand(state, cmd('task.setTitle', 't1', { title: '只改标题' }, 7), 7));
 
   assert.deepEqual(state.tasks.t1.extras, {
     futureField: { nested: true },
     recurrenceType: 'weekly',
   });
-  assert.deepEqual(state.tasks.t1.alarm, { enabled: true, offsetMinutes: 15 });
+  assert.deepEqual(state.tasks.t1.alarm, {
+    enabled: false,
+    offsetMinutes: 5,
+    futureSound: { name: 'chime' },
+  });
   assert.equal(state.tasks.t1.colorId, 3);
-  assert.deepEqual(state.tasks.t1.location, { lat: 31.23, lng: 121.47 });
+  assert.deepEqual(state.tasks.t1.location, { lat: null, lng: null, futureAccuracy: 3 });
   assert.deepEqual(state.tasks.t1.recurrence, {
     frequency: 'weekly',
     count: 10,
     futureRule: 'keep-me',
   });
+});
+
+test('bootstrap guards never overwrite existing central values', () => {
+  let state = emptyState();
+  let sequence = 0;
+  const apply = (type, aggregateId, args = {}) => {
+    const result = applyCommand(state, cmd(type, aggregateId, args, ++sequence), sequence);
+    state = result.state;
+    return result.receipt;
+  };
+
+  apply('task.create', 't1', { title: 'central' });
+  apply('list.create', 'central-list', { title: 'central' });
+  apply('list.create', 'local-list', { title: 'local' });
+  apply('task.setSchedule', 't1', {
+    schedule: { startAt: '2026-09-01T01:00:00.000Z', endAt: null },
+  });
+  apply('task.setRecurrence', 't1', {
+    recurrence: { frequency: 'weekly', count: 2, futureRule: 'central' },
+  });
+  apply('task.setAlarm', 't1', {
+    enabled: true, offsetMinutes: 30, futureSound: 'central',
+  });
+  apply('task.setLocation', 't1', {
+    lat: 31.23, lng: 121.47, futureAccuracy: 5,
+  });
+  apply('task.setExtras', 't1', {
+    extras: { shared: 'central', remoteOnly: true },
+  });
+  apply('task.assignList', 't1', { listId: 'central-list' });
+  apply('journal.setText', '2026-09-01', { text: 'central journal' });
+
+  assert.equal(apply('task.setSchedule', 't1', {
+    schedule: { startAt: '2026-10-01T01:00:00.000Z', endAt: null },
+    ifMissing: true,
+  }).status, 'NOOP');
+  assert.equal(apply('task.setRecurrence', 't1', {
+    recurrence: { frequency: 'daily', count: 1 },
+    ifMissing: true,
+  }).status, 'NOOP');
+  assert.equal(apply('task.setAlarm', 't1', {
+    enabled: false, offsetMinutes: 0, ifMissing: true,
+  }).status, 'NOOP');
+  assert.equal(apply('task.setLocation', 't1', {
+    lat: 0, lng: 0, ifMissing: true,
+  }).status, 'NOOP');
+  assert.equal(apply('task.assignList', 't1', {
+    listId: 'local-list', ifUnassigned: true,
+  }).status, 'NOOP');
+  assert.equal(apply('journal.setText', '2026-09-01', {
+    text: 'local journal', ifMissing: true,
+  }).status, 'NOOP');
+  assert.equal(apply('task.setExtras', 't1', {
+    extras: { shared: 'local', localOnly: true }, mergeMissing: true,
+  }).status, 'APPLIED');
+
+  assert.deepEqual(state.tasks.t1.schedule, {
+    startAt: '2026-09-01T01:00:00.000Z', endAt: null,
+  });
+  assert.deepEqual(state.tasks.t1.recurrence, {
+    frequency: 'weekly', count: 2, futureRule: 'central',
+  });
+  assert.deepEqual(state.tasks.t1.alarm, {
+    enabled: true, offsetMinutes: 30, futureSound: 'central',
+  });
+  assert.deepEqual(state.tasks.t1.location, {
+    lat: 31.23, lng: 121.47, futureAccuracy: 5,
+  });
+  assert.deepEqual(state.tasks.t1.extras, {
+    localOnly: true, shared: 'central', remoteOnly: true,
+  });
+  assert.equal(state.tasks.t1.listId, 'central-list');
+  assert.equal(state.journals['2026-09-01'].text, 'central journal');
+});
+
+test('bootstrap guards fill missing values without entering canonical state', () => {
+  let state = emptyState();
+  let sequence = 0;
+  const apply = (type, aggregateId, args = {}) => {
+    ({ state } = applyCommand(state, cmd(type, aggregateId, args, ++sequence), sequence));
+  };
+
+  apply('task.create', 't1', { title: 'local-only fields' });
+  apply('list.create', 'local-list', { title: 'local' });
+  apply('task.setSchedule', 't1', {
+    schedule: { startAt: '2026-09-02T01:00:00.000Z', endAt: null },
+    ifMissing: true,
+  });
+  apply('task.setRecurrence', 't1', {
+    recurrence: { frequency: 'daily', count: 1 }, ifMissing: true,
+  });
+  apply('task.setAlarm', 't1', {
+    enabled: true, offsetMinutes: 10, futureSound: 'local', ifMissing: true,
+  });
+  apply('task.setLocation', 't1', {
+    lat: 30.1, lng: 120.2, futureAccuracy: 7, ifMissing: true,
+  });
+  apply('task.setExtras', 't1', {
+    extras: { localOnly: true }, mergeMissing: true,
+  });
+  apply('task.assignList', 't1', { listId: 'local-list', ifUnassigned: true });
+  apply('journal.setText', '2026-09-02', { text: 'local journal', ifMissing: true });
+
+  assert.deepEqual(state.tasks.t1.schedule, {
+    startAt: '2026-09-02T01:00:00.000Z', endAt: null,
+  });
+  assert.deepEqual(state.tasks.t1.recurrence, { frequency: 'daily', count: 1 });
+  assert.deepEqual(state.tasks.t1.alarm, {
+    enabled: true, offsetMinutes: 10, futureSound: 'local',
+  });
+  assert.deepEqual(state.tasks.t1.location, {
+    lat: 30.1, lng: 120.2, futureAccuracy: 7,
+  });
+  assert.deepEqual(state.tasks.t1.extras, { localOnly: true });
+  assert.equal(state.tasks.t1.listId, 'local-list');
+  assert.deepEqual(state.journals['2026-09-02'], {
+    text: 'local journal', lifecycle: 'active', deletedAt: null,
+  });
+  assert.doesNotMatch(JSON.stringify(state), /ifMissing|mergeMissing|ifUnassigned/);
 });
 
 test('canonical task field commands reject malformed payloads without mutating state', () => {

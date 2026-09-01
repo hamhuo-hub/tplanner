@@ -15,7 +15,11 @@ import { jetstreamManager } from '@nats-io/jetstream';
 import { openDatabase } from '../state/database.js';
 import { createLease } from './lease.js';
 import { createOutboxDriver, SUBJECT_SNAPSHOT_READY } from './outbox.js';
-import { createMaterializer, ensureBootstrapSnapshot } from './materializer.js';
+import {
+  createMaterializer,
+  ensureBootstrapSnapshot,
+  ensureReceiptCoverageSnapshot,
+} from './materializer.js';
 import { applyCommand } from './reducer.js';
 import { createNatsConnection } from '../broker/natsConnection.js';
 import { ensureStreams } from '../broker/streams.js';
@@ -169,17 +173,41 @@ export async function startStateBuilder({
 
   let nc = null;
   let closed = false;
+  let leaseLossError = null;
+  let renewTimer = null;
   const stop = () => {
     closed = true;
     nc?.close().catch(() => {});
   };
+  const assertLease = (stage) => {
+    if (leaseLossError || !lease.renewLease(ownerId)) {
+      leaseLossError ??= new Error(`state builder lease lost during ${stage}`);
+      stop();
+      throw leaseLossError;
+    }
+  };
   process.once('SIGINT', stop);
   process.once('SIGTERM', stop);
 
+  // Start renewal immediately after acquisition. NATS setup, startup snapshot recovery and
+  // publication replay are part of the single-writer critical section too; delaying this timer
+  // until after them allowed a slow startup to outlive the original lease.
+  renewTimer = setInterval(() => {
+    if (closed) return;
+    if (!lease.renewLease(ownerId)) {
+      leaseLossError = new Error('state builder lease renewal failed; another builder took over');
+      log.error(leaseLossError.message);
+      stop();
+    }
+  }, Math.max(1_000, Math.floor(leaseTtlMs / 3)));
+  renewTimer.unref?.();
+
   try {
     nc = await createNatsConnection({ credsFile: process.env.NATS_CREDS_FILE });
+    assertLease('NATS connection');
     const jsm = await jetstreamManager(nc);
     const js = await ensureStreams(nc);
+    assertLease('stream initialization');
 
     // 2. durable consumer:显式 ACK,60s 重投窗口,永不进死信(§5:失败必须停下来重试)
     try {
@@ -195,11 +223,35 @@ export async function startStateBuilder({
     }
     const consumer = await js.consumers.get(STREAM_COMMANDS, CONSUMER_NAME);
     const batchReader = createIntegrationBatchReader(consumer);
+    assertLease('consumer attachment');
 
-    const bootstrap = ensureBootstrapSnapshot(db, { serverInstanceId: instanceId });
+    const bootstrap = ensureBootstrapSnapshot(db, {
+      serverInstanceId: instanceId,
+      assertWriterLease: () => assertLease('bootstrap snapshot transaction'),
+    });
     if (bootstrap) log.info({ snapshotVersion: bootstrap.snapshotVersion }, 'empty bootstrap snapshot committed');
+    assertLease('bootstrap snapshot recovery');
+    const coverage = ensureReceiptCoverageSnapshot(db, {
+      serverInstanceId: instanceId,
+      assertWriterLease: () => assertLease('receipt coverage transaction'),
+    });
+    if (coverage) {
+      log.info(
+        {
+          snapshotVersion: coverage.manifest.snapshotVersion,
+          brokerToSequence: coverage.envelope.brokerToSequence,
+        },
+        'recovered terminal receipt coverage snapshot',
+      );
+    }
+    assertLease('receipt coverage recovery');
 
-    const materializer = createMaterializer({ db, applyCommand, serverInstanceId: instanceId });
+    const materializer = createMaterializer({
+      db,
+      applyCommand,
+      serverInstanceId: instanceId,
+      assertWriterLease: () => assertLease('materializer transaction'),
+    });
     const outbox = createOutboxDriver(db, {
       publish: async (_type, payload, dedupeKey) => {
         await js.publish(SUBJECT_SNAPSHOT_READY, JSON.stringify(payload), { msgID: dedupeKey });
@@ -209,18 +261,9 @@ export async function startStateBuilder({
     // 3. 补发崩溃遗留的发布
     const recovered = await outbox.flush();
     if (recovered.length) log.info({ recovered }, 'recovered pending publications');
+    assertLease('publication recovery');
 
-    // 4. 租约续期:丢失即退出(systemd 会重启本单元)
-    const renewTimer = setInterval(() => {
-      if (!lease.renewLease(ownerId)) {
-        log.error('state builder lease renewal failed; another builder took over');
-        stop();
-        process.exit(1);
-      }
-    }, Math.max(1_000, Math.floor(leaseTtlMs / 3)));
-    renewTimer.unref?.();
-
-    // 5. 主循环
+    // 4. 主循环
     while (!closed) {
       let batch;
       try {
@@ -233,8 +276,11 @@ export async function startStateBuilder({
       const { messages, entries } = batch;
 
       try {
+        assertLease('integration batch');
         const { snapshot } = materializer.processIntegrationBatch(entries);
+        assertLease('integration commit');
         await outbox.flush();
+        assertLease('publication flush');
         for (const msg of messages) msg.ack();
         if (snapshot) {
           log.info(
@@ -253,7 +299,9 @@ export async function startStateBuilder({
         await new Promise((resolve) => setTimeout(resolve, 1_000));
       }
     }
+    if (leaseLossError) throw leaseLossError;
   } finally {
+    if (renewTimer) clearInterval(renewTimer);
     process.off('SIGINT', stop);
     process.off('SIGTERM', stop);
     if (!closed) await nc?.close().catch(() => {});

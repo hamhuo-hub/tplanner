@@ -3,8 +3,13 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { openDatabase } from '../src/state/database.js';
-import { createMaterializer, ensureBootstrapSnapshot } from '../src/materializer/materializer.js';
+import {
+  createMaterializer,
+  ensureBootstrapSnapshot,
+  ensureReceiptCoverageSnapshot,
+} from '../src/materializer/materializer.js';
 import { applyCommand } from '../src/materializer/reducer.js';
+import { insertReceipt } from '../src/state/receipts.js';
 
 const SERVER_ID = 'srv-test-deterministic';
 
@@ -35,6 +40,40 @@ test('fresh V3 database gets one idempotent empty bootstrap snapshot', () => {
   assert.equal(db.prepare('SELECT COUNT(*) AS c FROM publication_outbox').get().c, 1);
   assert.equal(ensureBootstrapSnapshot(db, { serverInstanceId: SERVER_ID }), null);
   assert.equal(createMaterializer({ db, applyCommand, serverInstanceId: SERVER_ID }).getSnapshotVersion(), 1);
+  db.close();
+});
+
+test('lease fencing aborts an authoritative batch before any durable write', () => {
+  const db = openDatabase(':memory:');
+  const m = createMaterializer({
+    db,
+    applyCommand,
+    serverInstanceId: SERVER_ID,
+    assertWriterLease: () => {
+      throw new Error('LEASE_LOST');
+    },
+  });
+
+  assert.throws(() => m.processIntegrationBatch([{
+    brokerSequence: 1,
+    deviceId: 'fenced-device',
+    batchId: 'fenced-batch',
+    command: {
+      commandId: 'fenced-command',
+      clientSequence: 1,
+      type: 'task.create',
+      aggregateId: 'fenced-task',
+      arguments: { title: 'must not commit' },
+    },
+  }]), /LEASE_LOST/);
+
+  assert.equal(db.prepare('SELECT COUNT(*) AS c FROM processed_commands').get().c, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS c FROM entities').get().c, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS c FROM snapshots').get().c, 0);
+  assert.equal(m.getSnapshotVersion(), 0);
+  assert.deepEqual(m.getState(), {
+    tasks: {}, customLists: {}, journals: {}, goals: {}, insights: {},
+  });
   db.close();
 });
 
@@ -94,6 +133,149 @@ test('reprocessing the same commands is idempotent and emits no snapshot', async
   }
   assert.equal(db.prepare('SELECT COUNT(*) AS c FROM snapshots').get().c, 1);
   assert.equal(db.prepare('SELECT COUNT(*) AS c FROM processed_commands').get().c, entries.length);
+  db.close();
+});
+
+test('new terminal receipts publish coverage snapshots even when stateHash is unchanged', () => {
+  const db = openDatabase(':memory:');
+  const m = createMaterializer({ db, applyCommand, serverInstanceId: SERVER_ID });
+  const entry = (brokerSequence, clientSequence, commandId, type, args = {}) => ({
+    brokerSequence,
+    deviceId: 'dev-coverage',
+    batchId: `batch-${clientSequence}`,
+    command: {
+      commandId,
+      clientSequence,
+      type,
+      aggregateId: 'task-coverage',
+      arguments: args,
+    },
+  });
+
+  const created = m.processIntegrationBatch([
+    entry(10, 1, 'coverage-create', 'task.create', { title: 'stable' }),
+  ]);
+  const hashBefore = created.snapshot.manifest.stateHash;
+
+  const cases = [
+    ['NOOP', entry(20, 2, 'coverage-noop', 'task.setTitle', { title: 'stable' })],
+    ['ID_ALREADY_EXISTS', entry(30, 3, 'coverage-exists', 'task.create', { title: 'other' })],
+    ['REJECTED', entry(40, 4, 'coverage-schema', 'task.unknownCommand')],
+  ];
+  for (const [expectedStatus, commandEntry] of cases) {
+    const result = m.processIntegrationBatch([commandEntry]);
+    assert.equal(result.receipts[0].status, expectedStatus);
+    assert.ok(result.snapshot, `${expectedStatus} must publish receipt coverage`);
+    assert.equal(result.snapshot.manifest.stateHash, hashBefore);
+    assert.equal(result.snapshot.envelope.brokerToSequence, commandEntry.brokerSequence);
+    const stored = db
+      .prepare('SELECT snapshot_version FROM processed_commands WHERE command_id = ?')
+      .get(commandEntry.command.commandId);
+    assert.equal(stored.snapshot_version, result.snapshot.manifest.snapshotVersion);
+  }
+
+  const deleted = m.processIntegrationBatch([
+    entry(50, 5, 'coverage-delete', 'task.delete'),
+  ]);
+  const deletedHash = deleted.snapshot.manifest.stateHash;
+  const staleEdit = m.processIntegrationBatch([
+    entry(60, 6, 'coverage-deleted-edit', 'task.setNote', { note: 'must not revive' }),
+  ]);
+  assert.equal(staleEdit.receipts[0].status, 'ENTITY_DELETED');
+  assert.equal(staleEdit.snapshot.manifest.stateHash, deletedHash);
+  assert.equal(staleEdit.snapshot.envelope.brokerToSequence, 60);
+
+  // All messages in this redelivery were already terminal before this call.
+  const replay = m.processIntegrationBatch([
+    entry(60, 6, 'coverage-deleted-edit', 'task.setNote', { note: 'must not revive' }),
+  ]);
+  assert.equal(replay.snapshot, null);
+  db.close();
+});
+
+test('SCHEMA_UNSUPPORTED terminal status also receives snapshot coverage', () => {
+  const db = openDatabase(':memory:');
+  const unsupportedReducer = (state) => ({
+    state,
+    receipt: { status: 'SCHEMA_UNSUPPORTED', errorCode: 'SCHEMA_UNSUPPORTED' },
+  });
+  const m = createMaterializer({ db, applyCommand: unsupportedReducer, serverInstanceId: SERVER_ID });
+  const result = m.processIntegrationBatch([{
+    brokerSequence: 70,
+    deviceId: 'dev-schema',
+    batchId: 'batch-schema',
+    command: {
+      commandId: 'coverage-schema-status',
+      clientSequence: 1,
+      type: 'future.command',
+      aggregateId: 'future-1',
+      arguments: {},
+    },
+  }]);
+  assert.equal(result.receipts[0].status, 'SCHEMA_UNSUPPORTED');
+  assert.equal(result.snapshot.envelope.brokerToSequence, 70);
+  db.close();
+});
+
+test('restart creates one idempotent coverage snapshot for legacy null-version receipts', () => {
+  const db = openDatabase(':memory:');
+  const m = createMaterializer({ db, applyCommand, serverInstanceId: SERVER_ID });
+  const first = m.processIntegrationBatch([{
+    brokerSequence: 10,
+    deviceId: 'dev-old',
+    batchId: 'batch-old-1',
+    command: {
+      commandId: 'old-create',
+      clientSequence: 1,
+      type: 'task.create',
+      aggregateId: 'old-task',
+      arguments: { title: 'unchanged across recovery' },
+    },
+  }]);
+  insertReceipt(db, {
+    commandId: 'old-noop',
+    batchId: 'batch-old-2',
+    deviceId: 'dev-old',
+    clientSequence: 2,
+    brokerSequence: 20,
+    commandType: 'task.setTitle',
+    aggregateId: 'old-task',
+    status: 'NOOP',
+    snapshotVersion: null,
+    processedAt: 2,
+  });
+  // A later transient gap is deliberately not part of terminal coverage.
+  insertReceipt(db, {
+    commandId: 'old-gap',
+    batchId: 'batch-old-3',
+    deviceId: 'dev-old',
+    clientSequence: 3,
+    brokerSequence: 30,
+    commandType: 'task.setTitle',
+    aggregateId: 'old-task',
+    status: 'SEQUENCE_GAP',
+    snapshotVersion: null,
+    processedAt: 3,
+  });
+
+  const recovered = ensureReceiptCoverageSnapshot(db, {
+    serverInstanceId: SERVER_ID,
+    now: () => 100,
+  });
+  assert.equal(recovered.manifest.snapshotVersion, 2);
+  assert.equal(recovered.manifest.stateHash, first.snapshot.manifest.stateHash);
+  assert.equal(recovered.envelope.brokerFromSequence, 20);
+  assert.equal(recovered.envelope.brokerToSequence, 20);
+  assert.equal(
+    db.prepare("SELECT snapshot_version FROM processed_commands WHERE command_id = 'old-noop'").get().snapshot_version,
+    2,
+  );
+  assert.equal(
+    db.prepare("SELECT snapshot_version FROM processed_commands WHERE command_id = 'old-gap'").get().snapshot_version,
+    null,
+  );
+  assert.equal(ensureReceiptCoverageSnapshot(db, { serverInstanceId: SERVER_ID }), null);
+  assert.equal(createMaterializer({ db, applyCommand, serverInstanceId: SERVER_ID }).getSnapshotVersion(), 2);
   db.close();
 });
 
@@ -210,6 +392,30 @@ test('sequence gap is rejected with SEQUENCE_GAP until the client retransmits th
   assert.equal(m.getState().tasks['t-1'], undefined);
   assert.equal(m.getAcceptedSequence('dev-g'), 0);
 
+  // 即使同一个 integration batch 因其他设备的终态命令发布了快照，GAP 也不能
+  // 借用那个版本伪装为已覆盖的终态 receipt。
+  const mixed = m.processIntegrationBatch([
+    { ...mk('c2-mixed', 2, 't-mixed'), brokerSequence: 15 },
+    {
+      brokerSequence: 16,
+      deviceId: 'dev-other',
+      batchId: 'b-other',
+      command: {
+        commandId: 'other-create',
+        clientSequence: 1,
+        type: 'task.create',
+        aggregateId: 't-other',
+        arguments: { title: 'other' },
+      },
+    },
+  ]);
+  assert.ok(mixed.snapshot);
+  assert.equal(mixed.snapshot.envelope.brokerToSequence, 16);
+  assert.equal(
+    db.prepare("SELECT snapshot_version FROM processed_commands WHERE command_id = 'c2-mixed'").get().snapshot_version,
+    null,
+  );
+
   // 客户端重传完整批次 1+2(seq 1/2/3):缺口补齐后全部重裁应用
   const retried = m.processIntegrationBatch([
     { ...mk('c1', 1, 't-1'), brokerSequence: 12 },
@@ -220,7 +426,7 @@ test('sequence gap is rejected with SEQUENCE_GAP until the client retransmits th
   assert.ok(m.getState().tasks['t-1']);
   assert.ok(m.getState().tasks['t-2']);
   assert.ok(m.getState().tasks['t-3']);
-  assert.equal(retried.snapshot.manifest.snapshotVersion, 1);
+  assert.equal(retried.snapshot.manifest.snapshotVersion, 2);
   assert.equal(m.getAcceptedSequence('dev-g'), 3);
 
   // 旧 SEQUENCE_GAP 回执已被重写,库中不再残留

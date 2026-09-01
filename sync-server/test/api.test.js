@@ -88,6 +88,13 @@ test('receipts endpoint returns results after the cursor', async () => {
   assert.equal(body.results[0].commandId, 'c-1');
   assert.equal(body.results[0].status, 'APPLIED');
   assert.equal(body.results[1].status, 'APPLIED');
+  assert.deepEqual(Object.keys(body.results[0]).sort(), [
+    'brokerSequence',
+    'clientSequence',
+    'commandId',
+    'snapshotVersion',
+    'status',
+  ]);
 
   const after = await app.inject({
     method: 'GET',
@@ -98,6 +105,39 @@ test('receipts endpoint returns results after the cursor', async () => {
   const missingDevice = await app.inject({ method: 'GET', url: '/tplanner/v3/receipts?afterClientSequence=0' });
   assert.equal(missingDevice.statusCode, 400);
   assert.equal(missingDevice.json().error, 'DEVICE_ID_REQUIRED');
+  db.close();
+});
+
+test('temporary GAP receipt omits null snapshot metadata and internal audit fields', async () => {
+  const db = openDatabase(':memory:');
+  const materializer = createMaterializer({ db, applyCommand, serverInstanceId: 'srv-api-test' });
+  materializer.processIntegrationBatch([{
+    brokerSequence: 7,
+    deviceId: 'dev-gap',
+    batchId: 'b-gap',
+    command: {
+      commandId: 'c-gap',
+      clientSequence: 2,
+      type: 'task.create',
+      aggregateId: 't-gap',
+      arguments: { title: 'gap' },
+    },
+  }]);
+  const { app } = buildApi(db);
+
+  const response = await app.inject({
+    method: 'GET',
+    url: '/tplanner/v3/receipts?deviceId=dev-gap&afterClientSequence=0',
+  });
+  const [receipt] = response.json().results;
+
+  assert.deepEqual(receipt, {
+    commandId: 'c-gap',
+    clientSequence: 2,
+    brokerSequence: 7,
+    status: 'SEQUENCE_GAP',
+    errorCode: 'SEQUENCE_GAP',
+  });
   db.close();
 });
 

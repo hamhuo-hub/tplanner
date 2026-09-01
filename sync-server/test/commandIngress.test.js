@@ -85,6 +85,35 @@ test('transport schema accepts canonical task commands and rejects entity replac
   assert.ok(validateBatch(replaced), 'whole-entity replacement must be rejected by the transport schema');
 });
 
+test('transport schema accepts boolean bootstrap guards and rejects mistyped controls', async () => {
+  const validateBatch = await loadBatchValidator();
+  const batch = await loadValidBatch();
+  const guardedCommands = [
+    ['task.setSchedule', {
+      schedule: { startAt: '2026-09-01T00:00:00.000Z', endAt: null },
+      ifMissing: true,
+    }, 'ifMissing'],
+    ['task.setExtras', {
+      extras: { imported: true },
+      mergeMissing: true,
+    }, 'mergeMissing'],
+    ['task.assignList', {
+      listId: null,
+      ifUnassigned: true,
+    }, 'ifUnassigned'],
+  ];
+
+  for (const [type, arguments_, guard] of guardedCommands) {
+    const candidate = structuredClone(batch);
+    candidate.commands[0].type = type;
+    candidate.commands[0].arguments = arguments_;
+    assert.equal(validateBatch(candidate), null, `${type} must accept its boolean bootstrap guard`);
+
+    candidate.commands[0].arguments[guard] = 'true';
+    assert.ok(validateBatch(candidate), `${guard} must reject non-boolean values`);
+  }
+});
+
 test('rejects a mismatched Idempotency-Key', async () => {
   const { publish } = stubPublisher();
   const app = buildServer({ publisher: { publish }, validateBatch: await loadBatchValidator() });

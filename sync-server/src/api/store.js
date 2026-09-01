@@ -102,7 +102,17 @@ export function createStore(db, { serverInstanceId }) {
       };
     },
     receiptsForDevice(deviceId, afterClientSequence) {
-      return receiptsForDeviceAfter(db, deviceId, afterClientSequence);
+      // The public receipt schema deliberately excludes internal audit columns. Optional values
+      // are omitted rather than serialized as null so strict JSON Schema clients can consume GAP
+      // receipts (which have no immutable snapshot coverage yet).
+      return receiptsForDeviceAfter(db, deviceId, afterClientSequence).map((receipt) => ({
+        commandId: receipt.commandId,
+        clientSequence: receipt.clientSequence,
+        brokerSequence: receipt.brokerSequence,
+        status: receipt.status,
+        ...(receipt.errorCode == null ? {} : { errorCode: receipt.errorCode }),
+        ...(receipt.snapshotVersion == null ? {} : { snapshotVersion: receipt.snapshotVersion }),
+      }));
     },
     acceptedThrough(deviceId) {
       return acceptedThrough(db, deviceId);

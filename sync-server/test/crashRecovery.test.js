@@ -93,6 +93,32 @@ test('reducer throw rolls the whole batch back and leaves memory state intact', 
   assert.equal(db.prepare("SELECT COUNT(*) AS c FROM processed_commands WHERE command_id = 'c2'").get().c, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS c FROM snapshots').get().c, 1);
   assert.equal(m.getSnapshotVersion(), 1);
+  assert.equal(m.getAcceptedSequence('dev-1'), 1, 'failed dry-run must not advance memory progress');
+  db.close();
+});
+
+test('coverage snapshot failure leaves receipt and accepted sequence uncommitted', () => {
+  const db = openDatabase(':memory:');
+  const first = createMaterializer({ db, applyCommand, serverInstanceId: SERVER_ID });
+  first.processIntegrationBatch([
+    entry(1, 'dev-1', cmd('task.create', 't1', { title: 'a' }, 'c1', 1)),
+  ]);
+  const failing = createMaterializer({
+    db,
+    applyCommand,
+    serverInstanceId: SERVER_ID,
+    buildSnapshotFn: () => { throw new Error('simulated coverage build crash'); },
+  });
+
+  assert.throws(() => failing.processIntegrationBatch([
+    entry(2, 'dev-1', cmd('task.setTitle', 't1', { title: 'a' }, 'c2-noop', 2)),
+  ]));
+  assert.equal(failing.getAcceptedSequence('dev-1'), 1);
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS c FROM processed_commands WHERE command_id = 'c2-noop'").get().c,
+    0,
+  );
+  assert.equal(db.prepare('SELECT COUNT(*) AS c FROM snapshots').get().c, 1);
   db.close();
 });
 
