@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { assignOverlapGroupLanes } from './laneLayout';
+import { assignOverlapGroupLanes, computeCascadeLayout } from './laneLayout';
+import { timeline } from '../design-system/tokens';
 
 const t = (startH, startM, endH, endM) => ({
     start: new Date(2026, 8, 1, startH, startM),
@@ -76,5 +77,67 @@ describe('assignOverlapGroupLanes', () => {
         const snapshot = events.map(ev => ({ ...ev, start: new Date(ev.start), end: new Date(ev.end) }));
         assignOverlapGroupLanes(events);
         expect(events).toEqual(snapshot);
+    });
+});
+
+describe('computeCascadeLayout', () => {
+    const geom = (events) => {
+        const { assigned, groups } = assignOverlapGroupLanes(events);
+        return computeCascadeLayout({ assigned, groups, tokens: timeline });
+    };
+
+    it('stagger columns by exactly eventHeaderHeight and bottom-align all of them', () => {
+        const events = [t(9, 0, 12, 0), t(9, 0, 12, 0), t(9, 0, 12, 0)];
+        const { rows, eventAreaHeight, maxColumns } = geom(events);
+
+        expect(maxColumns).toBe(3);
+        expect(eventAreaHeight).toBe(3 * timeline.eventMinHeight);
+        expect(rows.map(r => r.topPx)).toEqual([
+            timeline.eventGap,
+            timeline.eventGap + timeline.eventHeaderHeight,
+            timeline.eventGap + 2 * timeline.eventHeaderHeight,
+        ]);
+        expect(rows.map(r => r.heightPx)).toEqual([
+            eventAreaHeight - 2 * timeline.eventGap,
+            eventAreaHeight - 2 * timeline.eventGap - timeline.eventHeaderHeight,
+            eventAreaHeight - 2 * timeline.eventGap - 2 * timeline.eventHeaderHeight,
+        ]);
+        // All columns share the same bottom edge — height = availableHeight - top.
+        const bottoms = new Set(rows.map(r => r.topPx + r.heightPx));
+        expect(bottoms.size).toBe(1);
+    });
+
+    it('is not equal division: a later column keeps the remaining height', () => {
+        const events = [t(9, 0, 12, 0), t(9, 0, 12, 0), t(9, 0, 12, 0)];
+        const { rows } = geom(events);
+        // Column 0 gets the full area, columns 1/2 cascade — not 1/3 each.
+        expect(rows[0].heightPx).toBeGreaterThan(rows[1].heightPx);
+        expect(rows[1].heightPx).toBeGreaterThan(rows[2].heightPx);
+    });
+
+    it('gives an isolated afternoon event the full area height', () => {
+        const events = [t(9, 0, 12, 0), t(9, 0, 12, 0), t(14, 0, 17, 0)];
+        const { rows, eventAreaHeight } = geom(events);
+        // Afternoon event is column 0 of its group → full height, even though
+        // the day's max column count is 3.
+        expect(rows[2].topPx).toBe(timeline.eventGap);
+        expect(rows[2].heightPx).toBe(eventAreaHeight - 2 * timeline.eventGap);
+    });
+
+    it('grows the event area only with the day max column count', () => {
+        expect(geom([t(9, 0, 10, 0)]).eventAreaHeight).toBe(timeline.eventAreaBaseHeight);
+        expect(geom([t(9, 0, 10, 0), t(9, 30, 10, 30)]).eventAreaHeight).toBe(2 * timeline.eventMinHeight);
+    });
+
+    it('keeps at least a full header of body for the deepest column', () => {
+        const { rows } = geom([t(9, 0, 12, 0), t(9, 0, 12, 0), t(9, 0, 12, 0)]);
+        const deepest = rows[2];
+        expect(deepest.heightPx).toBeGreaterThanOrEqual(timeline.eventHeaderHeight);
+    });
+
+    it('overlapReveal equals the full header height token', () => {
+        const { rows } = geom([t(9, 0, 12, 0), t(9, 0, 12, 0), t(9, 0, 12, 0)]);
+        expect(rows[1].topPx - rows[0].topPx).toBe(timeline.eventHeaderHeight);
+        expect(rows[2].topPx - rows[1].topPx).toBe(timeline.eventHeaderHeight);
     });
 });

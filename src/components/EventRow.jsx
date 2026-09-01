@@ -6,7 +6,8 @@ import { getDateLocale } from '../utils/dateLocale';
 import { MASSEY_COLORS } from '../utils/constants';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { marked } from 'marked';
-import { assignOverlapGroupLanes } from '../utils/laneLayout';
+import { assignOverlapGroupLanes, computeCascadeLayout } from '../utils/laneLayout';
+import { timeline } from '../design-system/tokens';
 
 export default function EventRow({ date, events, onEventClick, onAddEvent, highlight, onDragStart, dragState, clashes, displayTimezone, onToggleTaskComplete, journalText, onContextMenu, selectedIds }) {
     const { t, i18n } = useTranslation();
@@ -62,40 +63,58 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
     const completedTasks  = processedRegularEvents.filter(e =>   e.type === 'task' && e.completed);
     const activeEvents    = processedRegularEvents.filter(e =>   e.type !== 'reminder' && !(e.type === 'task' && e.completed));
 
-    // Lanes are assigned per overlap group, not day-globally: an isolated
-    // afternoon event keeps the full row height even when the morning had a
-    // 3-way clash. `totalLanes` remains the day's maximum lane count and is
-    // still consumed by the row height and separator lines until the layout
-    // follow-up lands.
+    // ── Cascade geometry (TPlanner's rotated Google algorithm) ─────────────
+    // Columns are LOCAL to overlap groups, and the conflict axis is vertical:
+    // column i starts at i × eventHeaderHeight and bottom-aligns with column 0,
+    // so a later column covers the body of earlier columns while its complete
+    // title bar (overlapReveal = eventHeaderHeight) stays visible. The event
+    // area grows only with the day's maximum column count — an isolated
+    // afternoon event keeps the full height even after a 3-way morning clash.
     const { assigned: activeWithLane, groups: laneGroups } = assignOverlapGroupLanes(activeEvents);
-    const totalLanes = laneGroups.reduce((maxLanes, g) => Math.max(maxLanes, g.laneCount), 1);
+    const { rows: cascadeRows, eventAreaHeight, maxColumns } = computeCascadeLayout({
+        assigned: activeWithLane,
+        groups: laneGroups,
+        tokens: timeline,
+    });
+
+    // Status strip is sized by its rows in px. The old fixed 15% container
+    // with px children (16px rows on an 18px pitch) could overflow into the
+    // event area — px row count owns the height now.
+    const statusRowCount = statusRows.length;
+    const statusStripPx = statusRowCount > 0
+        ? statusRowCount * (timeline.statusRowHeight + timeline.statusRowGap) + timeline.statusStripGap
+        : 0;
+    const rowHeightPx = statusStripPx + eventAreaHeight;
 
     const finalRegularEvents = [
-        // Active events (no reminders) in their computed lanes
-        ...activeWithLane.map(ev => ({
-            ...ev,
-            isShadow: false,
-            isConflicting: clashes ? clashes.some(c => c.eventId === ev.id) : false,
-            laneTopPct:    15 + (ev.laneIdx / ev.groupLaneCount) * 85,
-            laneHeightPct: (1 / ev.groupLaneCount) * 85,
-        })),
-        // Completed tasks as shadows — always behind, fixed to base lane position
+        // Active events (no reminders) in their cascade columns
+        ...activeWithLane.map((ev, idx) => {
+            const { topPx, heightPx } = cascadeRows[idx];
+            return {
+                ...ev,
+                isShadow: false,
+                isConflicting: clashes ? clashes.some(c => c.eventId === ev.id) : false,
+                laneTopPx:    statusStripPx + topPx,
+                laneHeightPx: heightPx,
+            };
+        }),
+        // Completed tasks as shadows — always behind, full column 0 geometry
         ...completedTasks.map(ev => ({
             ...ev,
             isShadow: true,
             laneIdx:       0,
             isConflicting: false,
-            laneTopPct:    15,
-            laneHeightPct: 85,
+            laneTopPx:    statusStripPx + timeline.eventGap,
+            laneHeightPx: eventAreaHeight - 2 * timeline.eventGap,
         })),
-        // Reminders — fixed position, never conflicting, never affect lane count
+        // Reminders — fixed position, never conflicting, never affect columns
         ...reminderEvents.map(ev => ({
             ...ev,
             isShadow: false,
             laneIdx:       0,
             isConflicting: false,
-            laneTopPct:    15,
-            laneHeightPct: 85,
+            laneTopPx:    statusStripPx + timeline.eventGap,
+            laneHeightPx: eventAreaHeight - 2 * timeline.eventGap,
         })),
     ];
 
@@ -122,11 +141,6 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
         document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
     }, [journalOpen]);
-    // Row height grows with lane count so events never overlap
-    const ROW_BASE_PX   = 52;
-    const LANE_HEIGHT_PX = 36;
-    const rowHeightPx   = ROW_BASE_PX + (totalLanes - 1) * LANE_HEIGHT_PX;
-
     const handleGridClick = (e) => {
         if (e.target.closest('.event-block')) return;
         const rect = e.currentTarget.getBoundingClientRect();
@@ -200,7 +214,7 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
             <div className="event-row-grid" onClick={handleGridClick}>
                 {/* Status events (top strip) */}
                 {statusEvents.length > 0 && (
-                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '15%', zIndex: 30, pointerEvents: 'none' }}>
+                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: `${statusRowCount * (timeline.statusRowHeight + timeline.statusRowGap)}px`, zIndex: 30, pointerEvents: 'none' }}>
                         {finalStatusEvents.map(ev => {
                             const tzInner = displayTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
                             const toMins = str => { const [h, m] = str.split(':').map(Number); return h * 60 + m; };
@@ -224,7 +238,7 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                                         position:        'absolute',
                                         backgroundColor: colorVar,
                                         left: `${left}%`, width: `${width}%`,
-                                        top: `${ev.rowIndex * 18}px`, height: '16px',
+                                        top: `${ev.rowIndex * (timeline.statusRowHeight + timeline.statusRowGap)}px`, height: `${timeline.statusRowHeight}px`,
                                         borderRadius:    2,
                                         borderLeft:      '3px solid rgba(255,255,255,0.3)',
                                         overflow:        'hidden',
@@ -263,13 +277,13 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                     <div key={i} className="hour-line" style={{ left: `${(i / 24) * 100}%` }} />
                 ))}
 
-                {/* Lane separator lines (subtle) — only when >1 lane */}
-                {totalLanes > 1 && Array.from({ length: totalLanes - 1 }).map((_, i) => {
-                    const topPct = 15 + ((i + 1) / totalLanes) * 85;
+                {/* Column boundary lines at each header step (full row width) */}
+                {maxColumns > 1 && Array.from({ length: maxColumns - 1 }).map((_, i) => {
+                    const topPx = statusStripPx + (i + 1) * timeline.eventHeaderHeight;
                     return (
                         <div key={`lane-sep-${i}`} style={{
                             position: 'absolute', left: 0, right: 0,
-                            top: `${topPct}%`, height: '1px',
+                            top: `${topPx}px`, height: '1px',
                             background: 'rgba(255,255,255,0.04)',
                             pointerEvents: 'none', zIndex: 5,
                         }} />
@@ -290,7 +304,7 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                     const endMins   = (hEnd.getTime()   - dayStart.getTime()) / 60000;
                     return (
                         <div className="highlight-clash"
-                            style={{ position: 'absolute', left: `${(startMins / 1440) * 100}%`, width: `${((endMins - startMins) / 1440) * 100}%`, top: '15%', bottom: 0, background: 'rgba(192,57,43,0.12)', zIndex: 10, pointerEvents: 'none' }}
+                            style={{ position: 'absolute', left: `${(startMins / 1440) * 100}%`, width: `${((endMins - startMins) / 1440) * 100}%`, top: `${statusStripPx}px`, bottom: 0, background: 'rgba(192,57,43,0.12)', zIndex: 10, pointerEvents: 'none' }}
                         />
                     );
                 })()}
@@ -319,8 +333,8 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                             onContextMenu={(e, ev) => onContextMenu?.(e, events.find(o => o.id === ev.id) || ev)}
                             style={{
                                 position: 'absolute',
-                                top:    `calc(${event.laneTopPct}% + 2px)`,
-                                height: `calc(${event.laneHeightPct}% - 4px)`,
+                                top:    `${event.laneTopPx}px`,
+                                height: `${event.laneHeightPx}px`,
                                 zIndex: event.isShadow ? 5 : 10 + event.laneIdx,
                                 opacity: isDragging ? 0 : 1,
                                 pointerEvents: isDragging ? 'none' : 'auto',
@@ -349,7 +363,7 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                             style={{
                                 left: `${(startMins / 1440) * 100}%`,
                                 width: `${((endMins - startMins) / 1440) * 100}%`,
-                                top: '15%', height: '70%', zIndex: 50, position: 'absolute',
+                                top: `${statusStripPx + timeline.eventGap}px`, height: `${eventAreaHeight - timeline.eventGap - timeline.eventHeaderHeight}px`, zIndex: 50, position: 'absolute',
                                 opacity: 0.75, border: '2px dashed rgba(201,168,76,0.8)',
                             }}
                         />

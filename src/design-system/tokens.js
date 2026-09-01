@@ -52,6 +52,31 @@ export const geometry = Object.freeze({
     radiusMedium: '9px',
 });
 
+/**
+ * Timeline layout tokens — the single source for the horizontal day row.
+ *
+ * Derivation chain (see TaskUnit + index.css):
+ *   font-size 15px × line-height 1.2  → title line height 18px
+ *   checkbox 15px / progress badge    → never exceed 18px
+ *   unit padding 5px (top/bottom)     → header box = 5 + 18 + 5 = 28px
+ *   → eventHeaderHeight = overlapReveal: the full title bar an overlaid
+ *     column must leave visible. Changing the header design updates this
+ *     single constant; the cascade algorithm has no magic numbers of its own.
+ */
+export const timeline = Object.freeze({
+    // Status strip — px rows replace the old fixed 15% container whose px
+    // children (16px rows, 18px pitch) could overflow into the event area.
+    statusRowHeight: 16,
+    statusRowGap: 2, // 18px pitch = 16 + 2
+    statusStripGap: 2, // breathing room between strip and event area
+
+    // Event cascade — conflict axis (top/height), never the time axis.
+    eventHeaderHeight: 5 + 18 + 5, // full title bar = overlapReveal
+    eventMinHeight: 36, // one column's minimum body (former LANE_HEIGHT_PX)
+    eventAreaBaseHeight: 44, // event area with a single column
+    eventGap: 2, // vertical inset around a block (former +2px / -4px)
+});
+
 /** Installs the canonical tokens while still allowing .tptheme packages to override them later. */
 export function installDesignTokens(root = document.documentElement) {
     const variables = {

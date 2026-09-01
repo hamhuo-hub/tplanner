@@ -79,3 +79,37 @@ export function assignOverlapGroupLanes(events) {
 
     return { assigned, groups };
 }
+
+/**
+ * Turn per-group columns into cascade geometry (TPlanner's rotated Google
+ * algorithm). The conflict axis is vertical:
+ *
+ *   column 0 → top = eventGap
+ *   column i → top = eventGap + i × eventHeaderHeight
+ *   height   = eventAreaHeight − 2×eventGap − i × eventHeaderHeight
+ *
+ * Every column bottom-aligns to the same edge, so a later column covers the
+ * BODY of earlier columns while its full header (overlapReveal) stays
+ * visible. The event area grows with the day's maximum column count so the
+ * deepest column keeps at least one full header height of body.
+ *
+ * @param {{assigned: Array, groups: Array}} layout result of assignOverlapGroupLanes
+ * @param {{eventGap: number, eventHeaderHeight: number, eventMinHeight: number,
+ *          eventAreaBaseHeight: number}} tokens timeline tokens
+ * @returns {{rows: Array, eventAreaHeight: number, maxColumns: number}}
+ *   rows[i] is { event, topPx, heightPx } for the i-th assigned event;
+ *   topPx is relative to the top of the event area (add the status strip).
+ */
+export function computeCascadeLayout({ assigned, groups, tokens }) {
+    const maxColumns = groups.reduce((maxLanes, g) => Math.max(maxLanes, g.laneCount), 1);
+    const eventAreaHeight = Math.max(
+        tokens.eventAreaBaseHeight,
+        maxColumns * tokens.eventMinHeight,
+    );
+    const rows = assigned.map(ev => ({
+        event: ev,
+        topPx: tokens.eventGap + ev.laneIdx * tokens.eventHeaderHeight,
+        heightPx: eventAreaHeight - 2 * tokens.eventGap - ev.laneIdx * tokens.eventHeaderHeight,
+    }));
+    return { rows, eventAreaHeight, maxColumns };
+}
