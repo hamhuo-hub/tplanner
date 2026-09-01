@@ -1,13 +1,43 @@
 # TPlanner Android brand assets
 
+## Design-system source of truth
+
+`shared/src/main/kotlin/com/hamhuo/tplanner/designsystem/TPlannerDesignTokens.kt` is the only
+Android source file allowed to own product ARGB values. `TPlannerColors`, `TPlannerTypography`,
+and `TPlannerGeometry` are consumed by Phone and Wear business UI. A repeated or brand-semantic
+font size/radius must become a named shared token before it is used; renderers and screens must not
+create a local copy.
+
+Watch-face art is deliberately independent from the product theme, but it is still canonicalized:
+Tide and Next colors live under `TPlannerWatchFacePalette` in that same file. A renderer may derive
+alpha or gradients from the palette, but may not contain its own raw color literal.
+
+Local numeric dimensions are allowed only when they measure layout rather than visual identity:
+padding, spacing, minimum touch targets, icon/viewport size, animation distance, and parametric
+watch-face geometry are examples. The static check intentionally governs raw colors everywhere;
+typography and corner radii are reviewed as semantic tokens. Its only raw-hex source exceptions
+are exact, path-scoped non-color masks documented in the script (UUIDv7 timestamp masks and Tide's
+RGB-channel mask). Do not broaden those exceptions to an entire directory or renderer.
+
+Run this after changing Android UI, tokens, launcher artwork, or watch-face palettes:
+
+```powershell
+pwsh scripts/check-android-brand-assets.ps1
+```
+
+The check rejects raw ARGB/CSS literals outside the canonical token file, validates the token
+objects, and verifies launcher/preview metadata in addition to the asset checks below.
+
+## Launcher and picker assets
+
 The launcher artwork under
 `wear/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png` is the canonical highest-density
 source currently shipped by Android. The lower-density Wear files and the matching Phone files
 are generated mirrors; they must remain byte-identical at each density. Both adaptive icons use
 the shared `#1B1B1D` background and the foreground resource directly.
 
-Run `pwsh scripts/check-android-brand-assets.ps1` after changing launcher artwork. CI rejects a
-Phone/Wear mismatch or an adaptive-icon XML that bypasses the canonical foreground. The old
+Phone/Wear foregrounds must be byte-identical at every density; the checker also requires both
+manifests, adaptive icons, and launcher backgrounds to reference the canonical pair. The old
 `app/src/main/res/mipmap-nodpi/ic_launcher_full.png` remains only as a legacy non-adaptive source
 until the minimum Android version no longer needs migration evidence; it is not referenced by the
 current adaptive icon.

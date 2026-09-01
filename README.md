@@ -53,7 +53,10 @@ snapshot，而不是手机本地时间或旧数据集。
 - 同一 envelope 同时经 Data Layer 与 RFCOMM 到达时，服务器只出现一组 child command；
   手机进程重启后重复发送仍返回同一阶段，不产生第二组命令。
 
-品牌资源说明见 `design-assets/README.md`。修改 launcher 或表盘预览后运行：
+Android 业务 UI 的品牌色、重复语义字号和圆角只能来自 `shared/designsystem`；表盘可以拥有
+独立艺术调色，但色值必须集中在 `TPlannerWatchFacePalette`，不得散落进 Renderer。padding、
+触摸目标、viewport 与参数化表盘几何属于真实布局测量值，可保留在组件本地。完整规则与品牌
+资源说明见 `design-assets/README.md`。修改 UI token、launcher 或表盘预览后运行：
 
 ```powershell
 pwsh scripts/check-android-brand-assets.ps1
