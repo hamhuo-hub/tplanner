@@ -34,6 +34,8 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.hamhuo.tplanner.designsystem.TPlannerColors
+import com.hamhuo.tplanner.designsystem.TPlannerGeometry
 import com.hamhuo.tplanner.designsystem.TPlannerTaskUnitModel
 import com.hamhuo.tplanner.designsystem.TPlannerTaskUnitVariant
 import com.hamhuo.tplanner.designsystem.TPlannerTaskUnitView
@@ -223,8 +225,8 @@ private class FrostedHeaderView(
     private companion object {
         const val BLUR_RADIUS_DP = 7
         const val TINT_FADE_HEIGHT_DP = 54
-        const val TINT_TOP = 0x24000000
-        const val TINT_MIDDLE = 0x16000000
+        const val TINT_TOP = TPlannerColors.WatchDashboardScrimTop
+        const val TINT_MIDDLE = TPlannerColors.WatchDashboardScrimMiddle
     }
 }
 
@@ -248,8 +250,8 @@ private class FrostedHeaderClipView(context: Context) : FrameLayout(context) {
             height.toFloat(),
             intArrayOf(
                 Color.WHITE,
-                0xE6FFFFFF.toInt(),
-                0x66FFFFFF,
+                TPlannerColors.WatchDashboardShineStrong,
+                TPlannerColors.WatchDashboardShineSoft,
                 Color.TRANSPARENT,
             ),
             floatArrayOf(0f, 0.35f, 0.72f, 1f),
@@ -679,9 +681,9 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         minimumHeight = dp(58)
         setPadding(dp(13), dp(10), dp(13), dp(10))
         background = if (onClick == null) {
-            rounded(CARD, dp(13).toFloat())
+            rounded(CARD, dp(TPlannerGeometry.RadiusWearDp).toFloat())
         } else {
-            rippleRounded(CARD, CARD_PRESSED, dp(13).toFloat())
+            rippleRounded(CARD, CARD_PRESSED, dp(TPlannerGeometry.RadiusWearDp).toFloat())
         }
         addView(textView(16f, PRIMARY, MEDIUM).apply { text = title })
         addView(textView(13f, SECONDARY, REGULAR).apply {
@@ -811,7 +813,7 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
             val deleteButton = textView(14f, PRIMARY, MEDIUM).apply {
                 text = context.getString(R.string.task_list_delete)
                 gravity = Gravity.CENTER
-                background = rounded(ERROR, dp(13).toFloat())
+                background = rounded(ERROR, dp(TPlannerGeometry.RadiusWearDp).toFloat())
                 minimumWidth = revealWidth
                 setOnClickListener {
                     if (isDeleting) return@setOnClickListener

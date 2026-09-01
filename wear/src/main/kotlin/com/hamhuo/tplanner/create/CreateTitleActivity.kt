@@ -13,6 +13,8 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.LinearLayout
+import com.hamhuo.tplanner.designsystem.TPlannerGeometry
+import com.hamhuo.tplanner.designsystem.TPlannerTypography
 import java.util.UUID
 
 class CreateTitleActivity : WearPageActivity() {
@@ -34,7 +36,7 @@ class CreateTitleActivity : WearPageActivity() {
             id = View.generateViewId()
             setText(savedInstanceState?.getString(STATE_TITLE).orEmpty())
             setTextColor(CREATION_PRIMARY)
-            textSize = 19f
+            textSize = TPlannerTypography.WearDialogTitleSp
             typeface = CREATION_MEDIUM
             gravity = Gravity.CENTER_VERTICAL
             maxLines = 2
@@ -42,7 +44,10 @@ class CreateTitleActivity : WearPageActivity() {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             imeOptions = EditorInfo.IME_ACTION_NEXT
             setPadding(dp(16), dp(10), dp(16), dp(10))
-            background = creationRounded(CREATION_CARD, dp(14).toFloat())
+            background = creationRounded(
+                CREATION_CARD,
+                dp(TPlannerGeometry.RadiusFieldDp).toFloat(),
+            )
             setOnEditorActionListener { _, actionId, _ ->
                 if (actionId == EditorInfo.IME_ACTION_NEXT) {
                     continueToType()

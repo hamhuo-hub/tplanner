@@ -7,6 +7,7 @@ import android.graphics.PathMeasure
 import android.graphics.RectF
 import android.graphics.Typeface
 import androidx.core.content.res.ResourcesCompat
+import com.hamhuo.tplanner.designsystem.TPlannerWatchFacePalette
 import java.time.Instant
 import java.time.ZonedDateTime
 import kotlin.math.PI
@@ -425,20 +426,20 @@ class FaceNext(
         const val MAX_VISIBLE_TASKS = 3
         const val DIAGONAL_MINUTE_GAP = 0.030f
 
-        const val BLACK = 0xFF000000.toInt()
-        const val PRIMARY = 0xFFF4F1EB.toInt()
-        const val SECONDARY = 0xFF9C9992.toInt()
-        const val WHEEL_LABEL = 0xFFD8D5CE.toInt()
-        const val WHEEL_MAJOR = 0xFFC2BFB8.toInt()
-        const val WHEEL_MINOR = 0xFF65635F.toInt()
-        const val WHEEL_TRACK = 0xFF2D2C2A.toInt()
-        const val TASK_TRACK = 0xFF34312D.toInt()
-        const val FRAME = 0xFF292826.toInt()
-        const val DIVIDER = 0xFF6F665B.toInt()
-        const val ACCENT = 0xFFD9A441.toInt()
-        const val ACCENT_LIGHT = 0xFFF0C96C.toInt()
-        const val AMBIENT_PRIMARY = 0xFFB4B1AA.toInt()
-        const val AMBIENT_TEXT = 0xFF77746E.toInt()
-        const val AMBIENT_STROKE = 0xFF4A4742.toInt()
+        const val BLACK = TPlannerWatchFacePalette.Next.Black
+        const val PRIMARY = TPlannerWatchFacePalette.Next.Primary
+        const val SECONDARY = TPlannerWatchFacePalette.Next.Secondary
+        const val WHEEL_LABEL = TPlannerWatchFacePalette.Next.WheelLabel
+        const val WHEEL_MAJOR = TPlannerWatchFacePalette.Next.WheelMajor
+        const val WHEEL_MINOR = TPlannerWatchFacePalette.Next.WheelMinor
+        const val WHEEL_TRACK = TPlannerWatchFacePalette.Next.WheelTrack
+        const val TASK_TRACK = TPlannerWatchFacePalette.Next.TaskTrack
+        const val FRAME = TPlannerWatchFacePalette.Next.Frame
+        const val DIVIDER = TPlannerWatchFacePalette.Next.Divider
+        const val ACCENT = TPlannerWatchFacePalette.Next.Accent
+        const val ACCENT_LIGHT = TPlannerWatchFacePalette.Next.AccentLight
+        const val AMBIENT_PRIMARY = TPlannerWatchFacePalette.Next.AmbientPrimary
+        const val AMBIENT_TEXT = TPlannerWatchFacePalette.Next.AmbientText
+        const val AMBIENT_STROKE = TPlannerWatchFacePalette.Next.AmbientStroke
     }
 }

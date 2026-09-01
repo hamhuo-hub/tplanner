@@ -5,6 +5,7 @@ import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Shader
+import com.hamhuo.tplanner.designsystem.TPlannerWatchFacePalette
 import java.time.ZonedDateTime
 import kotlin.math.PI
 import kotlin.math.cos
@@ -116,7 +117,7 @@ class FaceTide(
         canvas.drawCircle(tipX, tipY, orbR * 1.6f, p)
         p.setFill(GOLD, boot)
         canvas.drawCircle(tipX, tipY, orbR, p)
-        p.setFill(0xFFEDD890.toInt(), boot * 0.7f)
+        p.setFill(TPlannerWatchFacePalette.Tide.BootHighlight, boot * 0.7f)
         canvas.drawCircle(tipX, tipY, orbR * 0.5f, p)
 
         // ── 时间 & 日期 ────────────────────────────────────────────────────

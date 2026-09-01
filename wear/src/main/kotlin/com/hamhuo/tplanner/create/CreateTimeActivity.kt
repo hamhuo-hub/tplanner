@@ -10,6 +10,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.hamhuo.tplanner.designsystem.TPlannerTypography
 import java.time.LocalTime
 
 /** Third destination: compact, fixed full-screen time selector for round watches. */
@@ -44,7 +45,7 @@ class CreateTimeActivity : WearPageActivity() {
         }
 
         val heading = creationHeading(getString(R.string.task_create_time_page)).apply {
-            textSize = 20f
+            textSize = TPlannerTypography.WearTitleSp
             setPadding(dp(8), 0, dp(8), 0)
         }
         root.addView(
@@ -179,7 +180,7 @@ class CreateTimeActivity : WearPageActivity() {
             )
         }.apply {
             setTextColor(WEAR_BG)
-            textSize = 15f
+            textSize = TPlannerTypography.WearBodySp
             setPadding(0, 0, 0, 0)
             background = creationRippleRounded(
                 CREATION_ACCENT,
@@ -252,7 +253,7 @@ class CreateTimeActivity : WearPageActivity() {
     private fun timeDigit(value: Int): TextView = TextView(this).apply {
         text = "%02d".format(value)
         setTextColor(CREATION_PRIMARY)
-        textSize = 42f
+        textSize = TPlannerTypography.WearTimePrimarySp
         typeface = CREATION_BOLD
         includeFontPadding = false
         gravity = Gravity.CENTER
@@ -263,7 +264,7 @@ class CreateTimeActivity : WearPageActivity() {
     private fun timeColon(): TextView = TextView(this).apply {
         text = ":"
         setTextColor(CREATION_DIM)
-        textSize = 34f
+        textSize = TPlannerTypography.WearTimeSecondarySp
         typeface = CREATION_BOLD
         includeFontPadding = false
         gravity = Gravity.CENTER
@@ -275,7 +276,7 @@ class CreateTimeActivity : WearPageActivity() {
     ): TextView = TextView(this).apply {
         text = label
         setTextColor(CREATION_PRIMARY)
-        textSize = 11.5f
+        textSize = TPlannerTypography.WearMicroSp
         typeface = CREATION_MEDIUM
         includeFontPadding = false
         gravity = Gravity.CENTER
@@ -293,7 +294,7 @@ class CreateTimeActivity : WearPageActivity() {
     ): TextView = TextView(this).apply {
         text = label
         setTextColor(CREATION_PRIMARY)
-        textSize = 20f
+        textSize = TPlannerTypography.WearTitleSp
         typeface = CREATION_BOLD
         includeFontPadding = false
         gravity = Gravity.CENTER

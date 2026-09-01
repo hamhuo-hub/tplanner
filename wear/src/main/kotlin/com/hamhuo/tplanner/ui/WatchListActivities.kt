@@ -21,6 +21,8 @@ import androidx.activity.ComponentActivity
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.hamhuo.tplanner.designsystem.TPlannerGeometry
+import com.hamhuo.tplanner.designsystem.TPlannerTypography
 import java.time.Instant
 import java.time.ZonedDateTime
 
@@ -153,13 +155,17 @@ private class ListSelectionView(
                 minimumHeight = dp(52)
                 setPadding(dp(13), dp(8), dp(13), dp(8))
                 setTextColor(if (filter == selected) ACCENT else PRIMARY)
-                textSize = 18f
+                textSize = TPlannerTypography.WearSectionSp
                 typeface = MEDIUM
                 includeFontPadding = false
                 text = title
                 maxLines = 1
                 ellipsize = TextUtils.TruncateAt.END
-                background = rippleRounded(CARD, CARD_PRESSED, dp(12).toFloat())
+                background = rippleRounded(
+                    CARD,
+                    CARD_PRESSED,
+                    dp(TPlannerGeometry.RadiusCardDp).toFloat(),
+                )
                 isClickable = true
                 isFocusable = true
                 contentDescription = if (filter == selected) {
@@ -260,7 +266,7 @@ private class TaskDetailView(
             orientation = LinearLayout.VERTICAL
             minimumHeight = dp(118)
             setPadding(dp(14), dp(13), dp(14), dp(14))
-            background = rounded(CARD, dp(13).toFloat())
+            background = rounded(CARD, dp(TPlannerGeometry.RadiusWearDp).toFloat())
             contentDescription = context.getString(
                 R.string.task_list_detail_accessibility,
                 title,
@@ -292,7 +298,7 @@ private class TaskDetailView(
                 orientation = LinearLayout.VERTICAL
                 minimumHeight = dp(60)
                 setPadding(dp(14), dp(13), dp(14), dp(14))
-                background = rounded(CARD, dp(13).toFloat())
+                background = rounded(CARD, dp(TPlannerGeometry.RadiusWearDp).toFloat())
             }
             checklistPanel.addView(
                 detailLabel(context.getString(R.string.task_list_checklist_label)),

@@ -10,6 +10,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.hamhuo.tplanner.designsystem.TPlannerTypography
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.TextStyle
@@ -55,7 +56,7 @@ class CreateDateActivity : WearPageActivity() {
         }
 
         val heading = creationHeading("Set date").apply {
-            textSize = 20f
+            textSize = TPlannerTypography.WearTitleSp
             setPadding(dp(8), 0, dp(8), 0)
         }
         root.addView(
@@ -146,7 +147,7 @@ class CreateDateActivity : WearPageActivity() {
         val doneButton = TextView(this).apply {
             text = "Done"
             setTextColor(WEAR_BG)
-            textSize = 15f
+            textSize = TPlannerTypography.WearBodySp
             typeface = CREATION_BOLD
             includeFontPadding = false
             gravity = Gravity.CENTER
@@ -249,7 +250,7 @@ class CreateDateActivity : WearPageActivity() {
         TextView(this).apply {
             text = label
             setTextColor(CREATION_DIM)
-            textSize = 12f
+            textSize = TPlannerTypography.WearCaptionSp
             typeface = CREATION_MEDIUM
             includeFontPadding = false
             gravity = Gravity.CENTER
