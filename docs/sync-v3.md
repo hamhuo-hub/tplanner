@@ -182,6 +182,13 @@ PC 人工冲突选择不再作为同步机制;可保留历史版本入口,恢复
 
 快照不包含:Inbox/Today 实体、`groupId`、UI 展开状态、编辑焦点、设备密钥、AI 密钥、蓝牙信息、各设备 pending command。
 
+每个 task 始终是完整 canonical 实体，即使字段仍为默认值也不得省略：
+`title`、`note`、`completed`、`itemType`、`schedule`、`recurrence`、
+`alarm`、`colorId`、`location`、`extras`、`listId`、`checklist`、
+`lifecycle`、`deletedAt`。未排程/未循环/未分配清单分别明确写为 `null`；
+空 extras/checklist 明确写为 `{}`/`[]`。`list.delete` 将引用设为
+`listId: null`，不得通过删除属性表达同一状态。
+
 manifest 与数据分离:`{ snapshotVersion, parentVersion, stateHash, compressedHash, encoding, compressedBytes, schemaVersion }`。
 
 `stateHash` 只覆盖 canonical 化的 `state` 对象(RFC 8785 JCS);信封元数据(`createdAt`、`serverInstanceId`、broker 序列)不参与,保证同一条命令流重放任意次 hash 一致。实体 payload 不携带墙钟时间戳,排序与"最后修改"以 broker sequence 为准,展示时间由客户端本地覆盖。
