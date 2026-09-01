@@ -133,6 +133,10 @@ async function projectCoveredOutbox(store, mirror, proof) {
     return { display: reduceOverlay(mirror, surviving), deleteKeys };
 }
 
+// 快照与 delta 两个安装路径共用同一套"被终态证明覆盖的 outbox 命令才删除"
+// 规则(§8):delta 更新 mirror 后同样要重放 surviving pending,不能只靠猜测。
+export { projectCoveredOutbox };
+
 export function createSnapshotInstaller({ store, fetchFn, serverUrl, decompress = decompressGzip, ackInstalled = true } = {}) {
     async function fetchLatest(meta) {
         const headers = { 'cache-control': 'no-store' };
@@ -181,7 +185,7 @@ export function createSnapshotInstaller({ store, fetchFn, serverUrl, decompress 
         return { manifest, payloadResponse: res };
     }
 
-    async function install(envelope, stateHash, compressedHash) {
+    async function install(envelope, stateHash, compressedHash, cursor = null) {
         const meta = await loadSyncMeta(store);
         if (meta.serverInstanceId && envelope.serverInstanceId !== meta.serverInstanceId) {
             const err = new Error('server instance changed; client must re-bootstrap');
@@ -207,6 +211,9 @@ export function createSnapshotInstaller({ store, fetchFn, serverUrl, decompress 
             installedSnapshotCompressedHash: compressedHash,
             installedBrokerToSequence: envelope.brokerToSequence,
             serverInstanceId: envelope.serverInstanceId,
+            // 快照安装同时建立 delta 起点(§9.3):manifest 不带 cursor(旧服务器)
+            // 时保持旧值,不凭空清掉。
+            ...(cursor ? { cursor } : {}),
         };
         const history = appendSnapshotInstall(
             (await store.get(HISTORY_KEY)) ?? [],
@@ -304,7 +311,7 @@ export function createSnapshotInstaller({ store, fetchFn, serverUrl, decompress 
             throw err;
         }
 
-        return install(envelope, stateHash, manifest.compressedHash);
+        return install(envelope, stateHash, manifest.compressedHash, manifest.cursor ?? null);
     }
 
     let syncTail = Promise.resolve();

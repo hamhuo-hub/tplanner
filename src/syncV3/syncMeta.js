@@ -15,6 +15,7 @@ export async function loadSyncMeta(store) {
             installedSnapshotCompressedHash: null,
             installedBrokerToSequence: 0,
             serverInstanceId: null,
+            cursor: null,
         };
         await store.set(META_KEY, meta);
     }

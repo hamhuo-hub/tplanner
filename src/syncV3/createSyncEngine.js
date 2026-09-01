@@ -4,6 +4,7 @@
 import { createIndexedDbKvStore } from './kvStore';
 import { createUploader } from './uploader';
 import { createSnapshotInstaller } from './snapshotInstaller';
+import { createDeltaInstaller } from './deltaInstaller';
 import { createNotificationClient } from './notificationClient';
 import { loadSyncMeta } from './syncMeta';
 import { protocolError, readJsonResponse } from './httpResponse';
@@ -39,16 +40,39 @@ export async function createSyncEngine({
     waitMs = 25_000,
     decompress,
     onSnapshotInstalled,
+    deltaEnabled = true,
 } = {}) {
     const uploader = createUploader({ store, fetchFn, serverUrl });
     const installer = createSnapshotInstaller({ store, fetchFn, serverUrl, decompress });
+    const deltaInstaller = createDeltaInstaller({ store, fetchFn, serverUrl, deltaEnabled });
+
+    // 下行统一入口(§9.3):capability + 本地 canary 开关都允许且已有 cursor 时
+    // 走 delta;任何断链/410/未知 type 都退回完整快照逃生舱。快照安装成功会
+    // 用 manifest.cursor 重建 delta 起点,两条路径永远互不冲突。
+    async function syncDownlink(capabilities) {
+        const meta = await loadSyncMeta(store);
+        if (deltaInstaller.shouldUseDelta(capabilities, meta)) {
+            const result = await deltaInstaller.syncByCursor();
+            if (result.mode === 'delta') return result;
+            const installed = await installer.syncToLatest();
+            return {
+                mode: 'snapshot-fallback',
+                fallbackReason: result.fallbackReason,
+                ...installed,
+            };
+        }
+        const installed = await installer.syncToLatest();
+        return { mode: 'snapshot', ...installed };
+    }
+
     const notifications = createNotificationClient({
         store,
         fetchFn,
         serverUrl,
         waitMs,
         onNewVersion: async () => {
-            const result = await installer.syncToLatest();
+            const capabilities = await verifyCapabilities({ store, fetchFn, serverUrl });
+            const result = await syncDownlink(capabilities);
             if (result.installed) await onSnapshotInstalled?.({ result, installer });
             return result;
         },
@@ -58,21 +82,22 @@ export async function createSyncEngine({
         store,
         uploader,
         installer,
+        deltaInstaller,
         notifications,
         verifyCapabilities: () => verifyCapabilities({ store, fetchFn, serverUrl }),
-        /** 手动同步(§16):排空上传 → 收受回执 → 拉最新快照并安装。 */
+        /** 手动同步(§16):排空上传 → 收受回执 → 下行(delta 优先,snapshot 逃生)。 */
         async syncNow() {
             // Stop a stale/mismatched client before the first command reaches another authority.
-            await verifyCapabilities({ store, fetchFn, serverUrl });
+            const capabilities = await verifyCapabilities({ store, fetchFn, serverUrl });
             await uploader.flush();
             await installer.rebaseDisplay();
-            const installed = await installer.syncToLatest();
+            const downlink = await syncDownlink(capabilities);
             return {
+                ...downlink,
                 pending: await (await import('./commandOutbox')).listCommands(
                     store,
                     { state: 'pending' },
                 ),
-                installed,
             };
         },
     };
