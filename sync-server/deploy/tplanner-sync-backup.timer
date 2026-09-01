@@ -1,0 +1,11 @@
+[Unit]
+Description=Run tPlanner Sync V3 backup hourly
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5min
+Persistent=true
+Unit=tplanner-sync-backup.service
+
+[Install]
+WantedBy=timers.target

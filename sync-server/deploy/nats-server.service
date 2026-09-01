@@ -1,6 +1,8 @@
 [Unit]
 Description=NATS JetStream message broker
 After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -8,6 +10,7 @@ User=tplanner
 ExecStart=/opt/tplanner-sync/nats-server -c /opt/tplanner-sync/sync-server/deploy/nats-server.conf
 Restart=always
 RestartSec=5
+TimeoutStopSec=30
 LimitNOFILE=4096
 
 [Install]

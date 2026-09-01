@@ -10,6 +10,7 @@
   "scripts": {
     "start:api": "node src/api/server.js",
     "start:builder": "node src/materializer/main.js",
+    "backup": "node scripts/backup.mjs",
     "migrate:canonical-tasks": "node scripts/migrate-canonical-task-fields.mjs",
     "test": "node --test \"test/**/*.test.js\""
   },

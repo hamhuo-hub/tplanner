@@ -1,0 +1,15 @@
+[Unit]
+Description=tPlanner Sync V3 verified SQLite online backup
+After=tplanner-state-builder.service
+
+[Service]
+Type=oneshot
+User=tplanner
+Group=tplanner
+WorkingDirectory=/opt/tplanner-sync/sync-server
+Environment=TPLANNER_DB_PATH=/var/lib/tplanner-sync/state/tplanner.db
+Environment=TPLANNER_BACKUP_DIR=/var/lib/tplanner-sync/backups
+ExecStart=/opt/tplanner-sync/sync-server/deploy/backup.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

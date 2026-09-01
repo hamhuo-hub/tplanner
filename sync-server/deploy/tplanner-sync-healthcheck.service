@@ -1,0 +1,8 @@
+[Unit]
+Description=tPlanner Sync V3 end-to-end health watchdog
+After=nats-server.service tplanner-state-builder.service tplanner-sync-api.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/tplanner-sync/sync-server/deploy/healthcheck.sh
+TimeoutStartSec=90

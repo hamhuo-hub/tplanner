@@ -2,6 +2,9 @@
 Description=tPlanner Sync V3 State Builder (single writer)
 After=network.target nats-server.service
 Requires=nats-server.service
+# 双实例防护的第一道线;最终保证是 SQLite writer lease(见 docs/sync-v3.md §9)
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -10,9 +13,7 @@ WorkingDirectory=/opt/tplanner-sync/sync-server
 ExecStart=/usr/bin/node /opt/tplanner-sync/sync-server/src/materializer/main.js
 Restart=on-failure
 RestartSec=5
-# 双实例防护的第一道线;最终保证是 SQLite writer lease(见 docs/sync-v3.md §9)
-StartLimitIntervalSec=60
-StartLimitBurst=5
+TimeoutStopSec=30
 Environment=TPLANNER_DB_PATH=/var/lib/tplanner-sync/state/tplanner.db
 Environment=NATS_CREDS_FILE=/opt/tplanner-sync/sync-server/deploy/nats.creds
 

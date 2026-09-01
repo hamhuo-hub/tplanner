@@ -3,6 +3,8 @@ Description=tPlanner Sync V3 API
 After=network.target nats-server.service tplanner-state-builder.service
 Requires=nats-server.service
 Wants=tplanner-state-builder.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -11,6 +13,7 @@ WorkingDirectory=/opt/tplanner-sync/sync-server
 ExecStart=/usr/bin/node /opt/tplanner-sync/sync-server/src/api/server.js
 Restart=on-failure
 RestartSec=5
+TimeoutStopSec=30
 Environment=TPLANNER_DB_PATH=/var/lib/tplanner-sync/state/tplanner.db
 Environment=NATS_CREDS_FILE=/opt/tplanner-sync/sync-server/deploy/nats.creds
 Environment=PORT=37401
