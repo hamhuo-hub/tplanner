@@ -45,6 +45,12 @@ describe('web data adapter', () => {
             status: 200,
             ok: true,
             headers: new Headers({ 'content-type': 'application/json' }),
+            json: async () => ({
+                softwareVersion: '8.0.0',
+                protocolVersion: 3,
+                schemaVersion: 3,
+                serverInstanceId: 'srv-web',
+            }),
         })));
         mocks.createSyncEngine.mockResolvedValue({
             installer: { getServerMirror: async () => ({ insights: {} }) },
@@ -62,5 +68,25 @@ describe('web data adapter', () => {
         const [, init] = fetch.mock.calls.at(-1);
         expect(init.headers.get('authorization')).toMatch(/^Basic /);
         expect(init.headers.get('cache-control')).toBe('no-store');
+    });
+
+    test('does not store credentials for a capability-compatible HTTP response from the wrong release', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => ({
+            status: 200,
+            ok: true,
+            headers: new Headers({ 'content-type': 'application/json' }),
+            json: async () => ({
+                softwareVersion: '7.9.9',
+                protocolVersion: 3,
+                schemaVersion: 3,
+                serverInstanceId: 'srv-web',
+            }),
+        })));
+
+        await expect(webDataAdapter.authenticateWeb('user', 'password')).rejects.toThrow(
+            /TPlanner 8\.0\.0.*Sync V3 schema 3/i,
+        );
+        expect(webDataAdapter.hasStoredWebAuth()).toBe(false);
+        expect(mocks.createSyncEngine).not.toHaveBeenCalled();
     });
 });

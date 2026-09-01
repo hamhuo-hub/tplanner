@@ -9,7 +9,7 @@
  */
 import { createSyncEngine } from '../syncV3/createSyncEngine';
 import { appendCommands } from '../syncV3/commandOutbox';
-import { assertJsonResponse } from '../syncV3/httpResponse';
+import { readJsonResponse } from '../syncV3/httpResponse';
 import {
     diffEventsToCommands,
     diffJournalsToCommands,
@@ -77,7 +77,14 @@ async function verifyAuthorization(authorization) {
     );
     if (response.status === 401 || response.status === 403) return false;
     if (!response.ok) throw new Error(`认证服务暂时不可用（HTTP ${response.status}）`);
-    assertJsonResponse(response, 'authentication request');
+    const capabilities = await readJsonResponse(response, 'authentication request');
+    if (capabilities?.softwareVersion !== '8.0.0'
+        || capabilities?.protocolVersion !== 3
+        || capabilities?.schemaVersion !== 3
+        || typeof capabilities?.serverInstanceId !== 'string'
+        || capabilities.serverInstanceId === '') {
+        throw new Error('同步服务版本不兼容：需要 TPlanner 8.0.0 / Sync V3 schema 3');
+    }
     return true;
 }
 

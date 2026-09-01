@@ -10,6 +10,11 @@
 
 客户端只执行单向 V3 流程：本地操作写入 semantic-command outbox，中央单写者排序并生成不可变快照，客户端原子安装 Server Mirror 后重放仍未确认的 pending 命令。客户端不再进行三方合并，也不再读写 V1 dataset 路由。
 
+桌面/Web 的冷启动、长轮询通知和手动同步共用同一个安装回调：新快照先完成
+哈希校验与原子持久化，再把同一个 displayed mirror 写入 Electron/Web 数据适配器并刷新
+当前 UI；远端通知不能只更新 IndexedDB 而留下屏幕旧数据。终态 receipt 只有在其
+`brokerSequence` 已被对应快照覆盖后才会从 pending overlay 移除。
+
 生产地址：
 
 - Web：`https://plan.hamhuo.top`

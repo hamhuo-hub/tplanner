@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { createIndexedDbKvStore } from './kvStore';
+import { createIndexedDbKvStore, createMemoryKvStore } from './kvStore';
 
 function createFakeIndexedDb() {
     const rows = new Map();
@@ -33,7 +33,7 @@ function createFakeIndexedDb() {
         }),
     };
 
-    return { indexedDb, objectStore };
+    return { indexedDb, db, objectStore };
 }
 
 describe('indexedDbKvStore', () => {
@@ -69,5 +69,46 @@ describe('indexedDbKvStore', () => {
 
         expect(objectStore.put).toHaveBeenCalledTimes(3);
         await expect(store.get('meta')).resolves.toEqual({ installedSnapshotVersion: 9 });
+    });
+
+    test('deletes covered commands and writes display in the same readwrite transaction', async () => {
+        const { indexedDb, db, objectStore } = createFakeIndexedDb();
+        vi.stubGlobal('indexedDB', indexedDb);
+        const store = createIndexedDbKvStore({ dbName: 'test', storeName: 'kv' });
+        await store.set('cmd:1', { commandId: 'c1' });
+        db.transaction.mockClear();
+        objectStore.put.mockClear();
+        objectStore.delete.mockClear();
+
+        await store.mutateMany({
+            deleteKeys: ['cmd:1'],
+            setEntries: [['display', { tasks: {} }]],
+        });
+
+        expect(db.transaction).toHaveBeenCalledTimes(1);
+        expect(db.transaction).toHaveBeenCalledWith('kv', 'readwrite');
+        expect(objectStore.delete).toHaveBeenCalledWith('cmd:1');
+        expect(objectStore.put).toHaveBeenCalledWith(
+            { key: 'display', value: { tasks: {} } },
+            'display',
+        );
+        await expect(store.get('cmd:1')).resolves.toBeUndefined();
+        await expect(store.get('display')).resolves.toEqual({ tasks: {} });
+    });
+});
+
+describe('memoryKvStore', () => {
+    test('stages mutateMany so a clone failure cannot expose a partial delete', async () => {
+        const store = createMemoryKvStore();
+        await store.set('cmd:1', { commandId: 'c1' });
+        await store.set('display', { tasks: { local: true } });
+
+        await expect(store.mutateMany({
+            deleteKeys: ['cmd:1'],
+            setEntries: [['display', () => 'not cloneable']],
+        })).rejects.toThrow();
+
+        await expect(store.get('cmd:1')).resolves.toEqual({ commandId: 'c1' });
+        await expect(store.get('display')).resolves.toEqual({ tasks: { local: true } });
     });
 });

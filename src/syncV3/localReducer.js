@@ -11,6 +11,35 @@ export function emptyState() {
 
 const REJECTED = (errorCode) => ({ status: 'REJECTED', errorCode });
 const NOOP = (errorCode) => ({ status: 'NOOP', ...(errorCode ? { errorCode } : {}) });
+const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
+const jsonEqual = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+
+function createCanonicalTaskDefaults() {
+    return {
+        title: '',
+        note: '',
+        completed: false,
+        itemType: 'task',
+        schedule: null,
+        recurrence: null,
+        alarm: { enabled: false, offsetMinutes: 0 },
+        colorId: 0,
+        location: { lat: null, lng: null },
+        extras: {},
+        listId: null,
+        checklist: [],
+    };
+}
+
+function canonicalizeChecklistItem(item) {
+    if (!isObject(item)) return item;
+    if (!Object.hasOwn(item, 'text') && typeof item.title === 'string') return item;
+    const { text, ...rest } = item;
+    return {
+        ...rest,
+        title: typeof item.title === 'string' ? item.title : (typeof text === 'string' ? text : ''),
+    };
+}
 
 function findActive(entity) {
     if (!entity) return { receipt: REJECTED('ENTITY_NOT_FOUND') };
@@ -41,10 +70,9 @@ const TASK = {
         const tasks = {
             ...state.tasks,
             [id]: {
+                ...createCanonicalTaskDefaults(),
                 title: typeof args.title === 'string' ? args.title : '',
-                note: '',
-                completed: false,
-                itemType: args.itemType ?? 'task',
+                itemType: typeof args.itemType === 'string' ? args.itemType : 'task',
                 lifecycle: 'active',
                 deletedAt: null,
             },
@@ -69,14 +97,35 @@ const TASK = {
 
     'task.setSchedule'(state, cmd) {
         const schedule = cmd.arguments?.schedule ?? null;
-        return updateTask(state, cmd.aggregateId, (t) =>
-            JSON.stringify(t.schedule) === JSON.stringify(schedule) ? t : { ...t, schedule });
+        if (schedule !== null && (
+            !isObject(schedule)
+            || !Object.hasOwn(schedule, 'startAt')
+            || !Object.hasOwn(schedule, 'endAt')
+            || ![schedule.startAt, schedule.endAt].every((value) => value === null || typeof value === 'string')
+        )) {
+            return { state, receipt: REJECTED('INVALID_SCHEDULE') };
+        }
+        return updateTask(state, cmd.aggregateId, (t) => {
+            if (cmd.arguments?.ifMissing === true && t.schedule !== null) return t;
+            return JSON.stringify(t.schedule) === JSON.stringify(schedule) ? t : { ...t, schedule };
+        });
     },
 
     'task.setRecurrence'(state, cmd) {
         const recurrence = cmd.arguments?.recurrence ?? null;
-        return updateTask(state, cmd.aggregateId, (t) =>
-            JSON.stringify(t.recurrence) === JSON.stringify(recurrence) ? t : { ...t, recurrence });
+        if (recurrence !== null && (
+            !isObject(recurrence)
+            || typeof recurrence.frequency !== 'string'
+            || recurrence.frequency === ''
+            || !Number.isInteger(recurrence.count)
+            || recurrence.count < 1
+        )) {
+            return { state, receipt: REJECTED('INVALID_RECURRENCE') };
+        }
+        return updateTask(state, cmd.aggregateId, (t) => {
+            if (cmd.arguments?.ifMissing === true && t.recurrence !== null) return t;
+            return jsonEqual(t.recurrence, recurrence) ? t : { ...t, recurrence };
+        });
     },
 
     'task.setAppearance'(state, cmd) {
@@ -93,9 +142,15 @@ const TASK = {
         if (typeof enabled !== 'boolean' || !Number.isInteger(offsetMinutes)) {
             return { state, receipt: REJECTED('INVALID_ALARM') };
         }
-        const alarm = { enabled, offsetMinutes };
-        return updateTask(state, cmd.aggregateId, (t) =>
-            JSON.stringify(t.alarm) === JSON.stringify(alarm) ? t : { ...t, alarm });
+        const { ifMissing, ...alarmArguments } = cmd.arguments ?? {};
+        return updateTask(state, cmd.aggregateId, (t) => {
+            const current = t.alarm ?? {};
+            if (ifMissing === true && (
+                current.enabled !== false || current.offsetMinutes !== 0 || Object.keys(current).length > 2
+            )) return t;
+            const alarm = { ...current, ...alarmArguments, enabled, offsetMinutes };
+            return JSON.stringify(t.alarm) === JSON.stringify(alarm) ? t : { ...t, alarm };
+        });
     },
 
     'task.setLocation'(state, cmd) {
@@ -103,9 +158,15 @@ const TASK = {
         const lng = cmd.arguments?.lng ?? null;
         const valid = (value) => value === null || (typeof value === 'number' && Number.isFinite(value));
         if (!valid(lat) || !valid(lng)) return { state, receipt: REJECTED('INVALID_LOCATION') };
-        const location = { lat, lng };
-        return updateTask(state, cmd.aggregateId, (t) =>
-            JSON.stringify(t.location) === JSON.stringify(location) ? t : { ...t, location });
+        const { ifMissing, ...locationArguments } = cmd.arguments ?? {};
+        return updateTask(state, cmd.aggregateId, (t) => {
+            const current = t.location ?? {};
+            if (ifMissing === true && (
+                current.lat !== null || current.lng !== null || Object.keys(current).length > 2
+            )) return t;
+            const location = { ...current, ...locationArguments, lat, lng };
+            return JSON.stringify(t.location) === JSON.stringify(location) ? t : { ...t, location };
+        });
     },
 
     'task.setExtras'(state, cmd) {
@@ -113,8 +174,12 @@ const TASK = {
         if (!extras || typeof extras !== 'object' || Array.isArray(extras)) {
             return { state, receipt: REJECTED('INVALID_EXTRAS') };
         }
-        return updateTask(state, cmd.aggregateId, (t) =>
-            JSON.stringify(t.extras ?? {}) === JSON.stringify(extras) ? t : { ...t, extras: { ...extras } });
+        return updateTask(state, cmd.aggregateId, (t) => {
+            const next = cmd.arguments?.mergeMissing === true
+                ? Object.fromEntries([...Object.entries(extras), ...Object.entries(t.extras ?? {})])
+                : { ...extras };
+            return JSON.stringify(t.extras ?? {}) === JSON.stringify(next) ? t : { ...t, extras: next };
+        });
     },
 
     'task.changeType'(state, cmd) {
@@ -129,7 +194,10 @@ const TASK = {
             const list = state.customLists[listId];
             if (!list || list.lifecycle === 'deleted') return { state, receipt: REJECTED('LIST_NOT_FOUND') };
         }
-        return updateTask(state, cmd.aggregateId, (t) => (t.listId === listId ? t : { ...t, listId }));
+        return updateTask(state, cmd.aggregateId, (t) => {
+            if (cmd.arguments?.ifUnassigned === true && t.listId !== null) return t;
+            return t.listId === listId ? t : { ...t, listId };
+        });
     },
 
     'task.moveInTimeline'(state, cmd) {
@@ -175,18 +243,28 @@ const CHECKLIST = {
         if (typeof itemId !== 'string' || itemId === '') return { state, receipt: REJECTED('MISSING_CHECKLIST_ITEM_ID') };
         const checklist = entity.checklist ?? [];
         if (checklist.some((i) => i.id === itemId)) return { state, receipt: NOOP() };
-        const item = { id: itemId, title: typeof args.title === 'string' ? args.title : '', completed: false };
+        const item = {
+            id: itemId,
+            title: typeof args.title === 'string' ? args.title : (typeof args.text === 'string' ? args.text : ''),
+            completed: false,
+        };
         return setField(state, cmd.aggregateId, { checklist: [...checklist, item] });
     },
 
     'checklist.setTitle'(state, cmd) {
-        const title = String(cmd.arguments?.title ?? '');
-        return updateChecklistItem(state, cmd, (item) => (item.title === title ? item : { ...item, title }));
+        const title = String(cmd.arguments?.title ?? cmd.arguments?.text ?? '');
+        return updateChecklistItem(state, cmd, (item) => {
+            const canonical = canonicalizeChecklistItem(item);
+            return canonical.title === title ? canonical : { ...canonical, title };
+        });
     },
 
     'checklist.setCompleted'(state, cmd) {
         const completed = Boolean(cmd.arguments?.completed);
-        return updateChecklistItem(state, cmd, (item) => (item.completed === completed ? item : { ...item, completed }));
+        return updateChecklistItem(state, cmd, (item) => {
+            const canonical = canonicalizeChecklistItem(item);
+            return canonical.completed === completed ? canonical : { ...canonical, completed };
+        });
     },
 
     'checklist.deleteItem'(state, cmd) {
@@ -196,7 +274,7 @@ const CHECKLIST = {
     'checklist.reorderItem'(state, cmd) {
         const { entity, receipt } = findActive(state.tasks[cmd.aggregateId]);
         if (receipt) return { state, receipt };
-        const checklist = [...(entity.checklist ?? [])];
+        const checklist = (entity.checklist ?? []).map(canonicalizeChecklistItem);
         const itemId = cmd.arguments?.checklistItemId;
         const beforeId = cmd.arguments?.beforeItemId ?? null;
         const from = checklist.findIndex((i) => i.id === itemId);
@@ -279,8 +357,7 @@ const LIST = {
         const tasks = {};
         for (const [taskId, t] of Object.entries(before.state.tasks)) {
             if (t.listId === id) {
-                const { listId, ...rest } = t;
-                tasks[taskId] = rest;
+                tasks[taskId] = { ...t, listId: null };
             } else {
                 tasks[taskId] = t;
             }
@@ -299,6 +376,7 @@ const JOURNAL = {
             const journals = { ...state.journals, [id]: { text, lifecycle: 'active', deletedAt: null } };
             return { state: { ...state, journals }, receipt: { status: 'APPLIED' } };
         }
+        if (cmd.arguments?.ifMissing === true) return { state, receipt: NOOP() };
         return updateInMap(state, 'journals', id, (j) => (j.text === text ? j : { ...j, text }));
     },
 

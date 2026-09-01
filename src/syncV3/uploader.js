@@ -1,7 +1,7 @@
 // 批次上传器(见 docs/sync-v3.md §12/§16):
 //   - 前一批未获 BROKER_PERSISTED 不上传下一批(串行排空);
 //   - 202 只表示 broker 已持久接收 → 命令标记 uploaded,仍留在 outbox;
-//   - 回执确认后才删除 outbox 条目(不变量 #10)。
+//   - 回执先持久化；覆盖该回执的中央快照安装后才原子删除 outbox(不变量 #10)。
 import { v7 as uuidv7 } from 'uuid';
 import { loadSyncMeta } from './syncMeta';
 import { listCommands, markUploaded, applyReceipts } from './commandOutbox';
@@ -61,7 +61,7 @@ export function createUploader({ store, fetchFn, serverUrl }) {
             return { uploaded: pending.length };
         },
 
-        /** 拉取回执并据此删除已确认的 outbox 条目。 */
+        /** 拉取并持久化回执；outbox 仅由覆盖它的快照安装/重基事务删除。 */
         async collectReceipts() {
             const meta = await loadSyncMeta(store);
             let after = 0;
@@ -86,7 +86,12 @@ export function createUploader({ store, fetchFn, serverUrl }) {
                         || receipt.clientSequence > body.acceptedThrough
                         || typeof receipt.commandId !== 'string'
                         || receipt.commandId === ''
-                        || !RECEIPT_STATUSES.has(receipt.status)) {
+                        || !RECEIPT_STATUSES.has(receipt.status)
+                        || !Number.isSafeInteger(receipt.brokerSequence)
+                        || receipt.brokerSequence < 1
+                        || (receipt.snapshotVersion != null
+                            && (!Number.isSafeInteger(receipt.snapshotVersion)
+                                || receipt.snapshotVersion < 1))) {
                         throw protocolError('command receipts request returned an invalid receipt', res);
                     }
                     const command = await store.get(`cmd:${receipt.clientSequence}`);

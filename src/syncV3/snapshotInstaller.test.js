@@ -1,19 +1,19 @@
-import { describe, test, expect } from 'vitest';
+import { describe, test, expect, vi } from 'vitest';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import canonicalize from 'canonicalize';
 import { createMemoryKvStore } from './kvStore';
-import { appendCommands, markUploaded } from './commandOutbox';
+import { applyReceipts, appendCommands, listCommands, markUploaded } from './commandOutbox';
 import { loadSyncMeta } from './syncMeta';
 import { createSnapshotInstaller, sha256Hex } from './snapshotInstaller';
 
-function buildSnapshot({ version = 7, parent = 6, state }) {
+function buildSnapshot({ version = 7, parent = 6, brokerToSequence = 2, state }) {
     const envelope = {
         snapshotSchemaVersion: 3,
         snapshotVersion: version,
         parentVersion: parent,
         serverInstanceId: 'srv-test',
         brokerFromSequence: 1,
-        brokerToSequence: 2,
+        brokerToSequence,
         createdAt: '2026-08-19T00:00:00.000Z',
         state,
     };
@@ -251,6 +251,160 @@ describe('snapshot installer', () => {
 
         expect((await installer.getDisplayState()).tasks['task-1'].title).toBe('已上传未确认');
         expect(await installer.getServerMirror()).toEqual(STATE_A);
+    });
+
+    test('one atomic mutation removes commands covered by either snapshot or broker proof and rebuilds display', async () => {
+        const store = createMemoryKvStore();
+        const commands = await appendCommands(store, [
+            { type: 'task.setTitle', aggregateId: 'task-1', arguments: { title: 'snapshot-covered' } },
+            { type: 'task.setNote', aggregateId: 'task-1', arguments: { note: 'broker-covered' } },
+        ]);
+        await markUploaded(store, commands.map((command) => command.clientSequence));
+        await applyReceipts(store, [
+            {
+                commandId: commands[0].commandId,
+                clientSequence: commands[0].clientSequence,
+                brokerSequence: 99,
+                status: 'APPLIED',
+                snapshotVersion: 7,
+            },
+            {
+                commandId: commands[1].commandId,
+                clientSequence: commands[1].clientSequence,
+                brokerSequence: 2,
+                status: 'NOOP',
+                snapshotVersion: 99,
+            },
+        ]);
+        const mutateMany = vi.spyOn(store, 'mutateMany');
+        const snap = buildSnapshot({ version: 7, brokerToSequence: 2, state: STATE_A });
+        const installer = createSnapshotInstaller({
+            store,
+            fetchFn: stubFetch(snap).fetchFn,
+            serverUrl: 'https://sync.example',
+            decompress: nodeDecompress,
+            ackInstalled: false,
+        });
+
+        await installer.syncToLatest();
+
+        expect(await listCommands(store, { state: ['pending', 'uploaded'] })).toEqual([]);
+        expect(await installer.getDisplayState()).toEqual(STATE_A);
+        expect(mutateMany).toHaveBeenCalledTimes(1);
+        expect(mutateMany).toHaveBeenCalledWith(expect.objectContaining({
+            deleteKeys: ['cmd:1', 'cmd:2'],
+            setEntries: expect.arrayContaining([['display', STATE_A]]),
+        }));
+        expect((await loadSyncMeta(store)).installedBrokerToSequence).toBe(2);
+    });
+
+    test('a terminal receipt arriving after the same snapshot rebases and cleans its overlay', async () => {
+        const store = createMemoryKvStore();
+        const [command] = await appendCommands(store, [
+            { type: 'task.setTitle', aggregateId: 'task-1', arguments: { title: 'optimistic' } },
+        ]);
+        await markUploaded(store, [command.clientSequence]);
+        const snap = buildSnapshot({ version: 7, brokerToSequence: 2, state: STATE_A });
+        const installer = createSnapshotInstaller({
+            store,
+            fetchFn: stubFetch(snap).fetchFn,
+            serverUrl: 'https://sync.example',
+            decompress: nodeDecompress,
+            ackInstalled: false,
+        });
+        await installer.syncToLatest();
+        expect((await installer.getDisplayState()).tasks['task-1'].title).toBe('optimistic');
+        expect(await listCommands(store, { state: 'uploaded' })).toHaveLength(1);
+
+        await applyReceipts(store, [{
+            commandId: command.commandId,
+            clientSequence: command.clientSequence,
+            brokerSequence: 2,
+            status: 'APPLIED',
+            snapshotVersion: 7,
+        }]);
+        expect(await listCommands(store, { state: 'uploaded' })).toHaveLength(1);
+        const mutateMany = vi.spyOn(store, 'mutateMany');
+
+        await installer.rebaseDisplay();
+
+        expect(await listCommands(store, { state: 'uploaded' })).toEqual([]);
+        expect(await installer.getDisplayState()).toEqual(STATE_A);
+        expect(mutateMany).toHaveBeenCalledWith({
+            deleteKeys: ['cmd:1'],
+            setEntries: [['display', STATE_A]],
+        });
+    });
+
+    test('uncovered receipts and receipts without either proof never delete their overlays', async () => {
+        const store = createMemoryKvStore();
+        const commands = await appendCommands(store, [
+            { type: 'task.setTitle', aggregateId: 'task-1', arguments: { title: 'future proof' } },
+            { type: 'task.setNote', aggregateId: 'task-1', arguments: { note: 'no proof' } },
+        ]);
+        await markUploaded(store, commands.map((command) => command.clientSequence));
+        await applyReceipts(store, [
+            {
+                commandId: commands[0].commandId,
+                clientSequence: commands[0].clientSequence,
+                brokerSequence: 3,
+                status: 'APPLIED',
+                snapshotVersion: 8,
+            },
+            {
+                commandId: commands[1].commandId,
+                clientSequence: commands[1].clientSequence,
+                status: 'NOOP',
+            },
+        ]);
+        const snap = buildSnapshot({ version: 7, brokerToSequence: 2, state: STATE_A });
+        const installer = createSnapshotInstaller({
+            store,
+            fetchFn: stubFetch(snap).fetchFn,
+            serverUrl: 'https://sync.example',
+            decompress: nodeDecompress,
+            ackInstalled: false,
+        });
+
+        await installer.syncToLatest();
+        await installer.rebaseDisplay();
+
+        expect(await listCommands(store, { state: 'uploaded' })).toHaveLength(2);
+        expect((await installer.getDisplayState()).tasks['task-1']).toMatchObject({
+            title: 'future proof',
+            note: 'no proof',
+        });
+    });
+
+    test('a failed atomic mutation leaves mirror, display, metadata, and covered command untouched', async () => {
+        const store = createMemoryKvStore();
+        const [command] = await appendCommands(store, [
+            { type: 'task.setTitle', aggregateId: 'task-1', arguments: { title: 'optimistic' } },
+        ]);
+        await markUploaded(store, [command.clientSequence]);
+        await applyReceipts(store, [{
+            commandId: command.commandId,
+            clientSequence: command.clientSequence,
+            brokerSequence: 2,
+            status: 'APPLIED',
+            snapshotVersion: 7,
+        }]);
+        store.mutateMany = vi.fn(async () => { throw new Error('simulated transaction abort'); });
+        const snap = buildSnapshot({ version: 7, brokerToSequence: 2, state: STATE_A });
+        const installer = createSnapshotInstaller({
+            store,
+            fetchFn: stubFetch(snap).fetchFn,
+            serverUrl: 'https://sync.example',
+            decompress: nodeDecompress,
+            ackInstalled: false,
+        });
+
+        await expect(installer.syncToLatest()).rejects.toThrow('simulated transaction abort');
+
+        expect(await listCommands(store, { state: 'uploaded' })).toHaveLength(1);
+        await expect(installer.getServerMirror()).resolves.toBeUndefined();
+        await expect(installer.getDisplayState()).resolves.toBeUndefined();
+        expect((await loadSyncMeta(store)).installedSnapshotVersion).toBe(0);
     });
 
     test('rejects an unexpected 304 when no local snapshot validator was sent', async () => {

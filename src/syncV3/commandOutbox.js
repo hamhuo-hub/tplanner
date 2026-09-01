@@ -49,23 +49,24 @@ export async function markUploaded(store, clientSequences) {
     }
 }
 
-// 回执确认后删除 outbox 条目并持久化回执(供重启后对账)
+// 回执只持久化。命令必须继续参与 optimistic overlay，直到安装的中央快照以
+// snapshotVersion 或 brokerSequence 明确覆盖该回执；删除由快照安装事务完成。
 export async function applyReceipts(store, receipts) {
     let through = 0;
     for (const r of receipts ?? []) {
         await store.set(`${RECEIPT_PREFIX}${r.clientSequence}`, r);
         const commandKey = `${CMD_PREFIX}${r.clientSequence}`;
         const command = await store.get(commandKey);
-        if (command?.commandId === r.commandId) {
-            if (r.status === 'SEQUENCE_GAP') {
-                await store.set(commandKey, { ...command, state: 'pending' });
-            } else if (TERMINAL_RECEIPT_STATUSES.has(r.status)) {
-                await store.delete(commandKey);
-            }
+        if (command?.commandId === r.commandId && r.status === 'SEQUENCE_GAP') {
+            await store.set(commandKey, { ...command, state: 'pending' });
         }
         if (r.clientSequence > through) through = r.clientSequence;
     }
     return through;
+}
+
+export function isTerminalReceipt(status) {
+    return TERMINAL_RECEIPT_STATUSES.has(status);
 }
 
 export async function getReceipt(store, clientSequence) {

@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { createMemoryKvStore } from './kvStore';
-import { appendCommands, listCommands, markUploaded } from './commandOutbox';
+import { appendCommands, getReceipt, listCommands, markUploaded } from './commandOutbox';
 import { createUploader } from './uploader';
 
 function jsonResponse(status, body) {
@@ -121,10 +121,11 @@ describe('uploader', () => {
         expect(await listCommands(store, { state: 'pending' })).toHaveLength(1, 'pending command survives a failed upload');
     });
 
-    test('collectReceipts removes confirmed commands and persists receipts', async () => {
+    test('collectReceipts persists terminal receipts without deleting uploaded commands', async () => {
         const store = createMemoryKvStore();
         const [c1] = await appendCommands(store, [{ type: 'task.create', aggregateId: 't1' }]);
         const [c2] = await appendCommands(store, [{ type: 'task.setTitle', aggregateId: 't1' }]);
+        await markUploaded(store, [c1.clientSequence, c2.clientSequence]);
 
         const uploader = createUploader({
             store,
@@ -132,16 +133,33 @@ describe('uploader', () => {
             fetchFn: async () => jsonResponse(200, {
                 acceptedThrough: 2,
                 results: [
-                    { commandId: c1.commandId, clientSequence: 1, status: 'APPLIED', snapshotVersion: 9 },
-                    { commandId: c2.commandId, clientSequence: 2, status: 'APPLIED', snapshotVersion: 9 },
+                    {
+                        commandId: c1.commandId,
+                        clientSequence: 1,
+                        brokerSequence: 101,
+                        status: 'APPLIED',
+                        snapshotVersion: 9,
+                    },
+                    {
+                        commandId: c2.commandId,
+                        clientSequence: 2,
+                        brokerSequence: 102,
+                        status: 'APPLIED',
+                        snapshotVersion: 9,
+                    },
                 ],
             }),
         });
 
         const { acceptedThrough } = await uploader.collectReceipts();
         expect(acceptedThrough).toBe(2);
-        expect(await listCommands(store, { state: 'uploaded' })).toHaveLength(0);
+        expect(await listCommands(store, { state: 'uploaded' })).toHaveLength(2);
         expect(await listCommands(store, { state: 'pending' })).toHaveLength(0);
+        expect(await getReceipt(store, 2)).toMatchObject({
+            commandId: c2.commandId,
+            brokerSequence: 102,
+            snapshotVersion: 9,
+        });
     });
 
     test('collectReceipts follows pagination beyond the 200-result server page size', async () => {
@@ -154,6 +172,7 @@ describe('uploader', () => {
         const receipts = commands.map((command) => ({
             commandId: command.commandId,
             clientSequence: command.clientSequence,
+            brokerSequence: command.clientSequence,
             status: 'APPLIED',
             snapshotVersion: 9,
         }));
@@ -173,7 +192,7 @@ describe('uploader', () => {
 
         await expect(uploader.collectReceipts()).resolves.toEqual({ acceptedThrough: 201, applied: 201 });
         expect(requestedAfter).toEqual([0, 200]);
-        expect(await listCommands(store, { state: 'uploaded', limit: 500 })).toHaveLength(0);
+        expect(await listCommands(store, { state: 'uploaded', limit: 500 })).toHaveLength(201);
     });
 
     test('collectReceipts rejects receipt statuses outside the protocol enum', async () => {
@@ -187,6 +206,7 @@ describe('uploader', () => {
                 results: [{
                     commandId: command.commandId,
                     clientSequence: command.clientSequence,
+                    brokerSequence: 1,
                     status: 'UNKNOWN',
                 }],
             }),

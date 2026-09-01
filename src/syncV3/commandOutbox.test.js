@@ -22,7 +22,7 @@ describe('command outbox', () => {
         expect(pending.every((c) => c.state === 'pending')).toBe(true);
     });
 
-    test('uploaded commands stay in outbox until receipts confirm', async () => {
+    test('terminal receipts are persisted without immediately deleting overlay commands', async () => {
         const store = createMemoryKvStore();
         const commands = await appendCommands(store, [
             { type: 'task.create', aggregateId: 't1' },
@@ -33,12 +33,29 @@ describe('command outbox', () => {
         expect(await listCommands(store)).toHaveLength(1, 'uploaded command is no longer pending');
         expect(await listCommands(store, { state: 'uploaded' })).toHaveLength(1);
 
-        // 回执确认后:删除条目、留存回执
+        // A receipt proves reducer completion, not that this client has installed its effect.
         await applyReceipts(store, [
-            { commandId: commands[0].commandId, clientSequence: 1, status: 'APPLIED', snapshotVersion: 7 },
-            { commandId: commands[1].commandId, clientSequence: 2, status: 'APPLIED', snapshotVersion: 7 },
+            {
+                commandId: commands[0].commandId,
+                clientSequence: 1,
+                brokerSequence: 41,
+                status: 'APPLIED',
+                snapshotVersion: 7,
+            },
+            {
+                commandId: commands[1].commandId,
+                clientSequence: 2,
+                brokerSequence: 42,
+                status: 'APPLIED',
+                snapshotVersion: 7,
+            },
         ]);
-        expect(await listCommands(store, { state: 'uploaded' })).toHaveLength(0);
+        expect(await listCommands(store, { state: 'uploaded' })).toEqual([
+            expect.objectContaining({ commandId: commands[0].commandId }),
+        ]);
+        expect(await listCommands(store, { state: 'pending' })).toEqual([
+            expect.objectContaining({ commandId: commands[1].commandId }),
+        ]);
         expect(await getReceipt(store, 2)).toMatchObject({ status: 'APPLIED', snapshotVersion: 7 });
     });
 
@@ -50,8 +67,8 @@ describe('command outbox', () => {
         await applyReceipts(store, [{
             commandId: command.commandId,
             clientSequence: command.clientSequence,
+            brokerSequence: 7,
             status: 'SEQUENCE_GAP',
-            snapshotVersion: 7,
         }]);
 
         expect(await listCommands(store, { state: 'uploaded' })).toHaveLength(0);

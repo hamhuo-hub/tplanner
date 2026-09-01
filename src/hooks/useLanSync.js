@@ -8,7 +8,19 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { DEFAULT_CONFIG, normalizeServerUrl } from '../utils/syncLogic';
 import { createSyncEngine } from '../syncV3/createSyncEngine';
 import { appendCommands } from '../syncV3/commandOutbox';
-import { diffEventsToCommands, diffJournalsToCommands, toLegacyEvents, toLegacyJournals } from '../syncV3/commandsFromData';
+import { diffEventsToCommands, diffJournalsToCommands, toUiEvents, toUiJournals } from '../syncV3/commandsFromData';
+
+async function writeDisplayToAdapters(installer, adapters) {
+    const display = (await installer.getDisplayState())
+        ?? (await installer.getServerMirror())
+        ?? { tasks: {}, journals: {} };
+    for (const adapter of adapters) {
+        if (!adapter._writeLocal) continue;
+        if (adapter.type === 'journals') await adapter._writeLocal(toUiJournals(display));
+        else await adapter._writeLocal(toUiEvents(display));
+    }
+    return display;
+}
 
 export default function useLanSync(props = {}) {
     const adapters = props.adapters ?? [];
@@ -38,12 +50,24 @@ export default function useLanSync(props = {}) {
         if (!base) return;
         let disposed = false;
 
-        createSyncEngine({ serverUrl: base }).then((engine) => {
+        createSyncEngine({
+            serverUrl: base,
+            onSnapshotInstalled: async ({ result, installer }) => {
+                if (disposed) return;
+                await writeDisplayToAdapters(installer, adaptersRef.current);
+                setLastVersion(result.version);
+            },
+        }).then((engine) => {
             if (disposed) return;
             engineRef.current = engine;
             engine.notifications.start();
-            engine.installer.syncToLatest()
-                .then((r) => { if (r.installed) setLastVersion(r.version); })
+            engine.verifyCapabilities()
+                .then(() => engine.installer.syncToLatest())
+                .then(async (result) => {
+                    if (disposed || !result.installed) return;
+                    await writeDisplayToAdapters(engine.installer, adaptersRef.current);
+                    setLastVersion(result.version);
+                })
                 .catch(() => { /* 首次拉取失败由下次通知/手动同步补偿 */ });
         });
 
@@ -75,15 +99,7 @@ export default function useLanSync(props = {}) {
             }
 
             const { installed } = await engine.syncNow();
-            const display = (await engine.installer.getDisplayState())
-                ?? (await engine.installer.getServerMirror())
-                ?? { tasks: {}, journals: {} };
-
-            for (const a of adaptersRef.current) {
-                if (!a._writeLocal) continue;
-                if (a.type === 'journals') await a._writeLocal(toLegacyJournals(display));
-                else await a._writeLocal(toLegacyEvents(display));
-            }
+            await writeDisplayToAdapters(engine.installer, adaptersRef.current);
 
             setLastVersion(installed.version);
             setStatus('success');

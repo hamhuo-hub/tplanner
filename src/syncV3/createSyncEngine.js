@@ -5,6 +5,32 @@ import { createIndexedDbKvStore } from './kvStore';
 import { createUploader } from './uploader';
 import { createSnapshotInstaller } from './snapshotInstaller';
 import { createNotificationClient } from './notificationClient';
+import { loadSyncMeta } from './syncMeta';
+import { protocolError, readJsonResponse } from './httpResponse';
+
+const EXPECTED_SOFTWARE_VERSION = '8.0.0';
+
+async function verifyCapabilities({ store, fetchFn, serverUrl }) {
+    const response = await fetchFn(`${serverUrl}/tplanner/v3/capabilities`, {
+        headers: { 'cache-control': 'no-store' },
+    });
+    if (!response.ok) throw new Error(`capabilities request failed: ${response.status}`);
+    const body = await readJsonResponse(response, 'capabilities request');
+    if (body?.softwareVersion !== EXPECTED_SOFTWARE_VERSION
+        || body?.protocolVersion !== 3
+        || body?.schemaVersion !== 3
+        || typeof body?.serverInstanceId !== 'string'
+        || body.serverInstanceId === '') {
+        throw protocolError('server capabilities do not match the TPlanner 8.0.0 V3 contract', response);
+    }
+    const meta = await loadSyncMeta(store);
+    if (meta.serverInstanceId && meta.serverInstanceId !== body.serverInstanceId) {
+        const error = new Error('server instance changed; re-bootstrap is required before upload');
+        error.code = 'ERROR008';
+        throw error;
+    }
+    return body;
+}
 
 export async function createSyncEngine({
     serverUrl,
@@ -12,6 +38,7 @@ export async function createSyncEngine({
     store = createIndexedDbKvStore(),
     waitMs = 25_000,
     decompress,
+    onSnapshotInstalled,
 } = {}) {
     const uploader = createUploader({ store, fetchFn, serverUrl });
     const installer = createSnapshotInstaller({ store, fetchFn, serverUrl, decompress });
@@ -20,7 +47,11 @@ export async function createSyncEngine({
         fetchFn,
         serverUrl,
         waitMs,
-        onNewVersion: () => installer.syncToLatest(),
+        onNewVersion: async () => {
+            const result = await installer.syncToLatest();
+            if (result.installed) await onSnapshotInstalled?.({ result, installer });
+            return result;
+        },
     });
 
     return {
@@ -28,13 +59,19 @@ export async function createSyncEngine({
         uploader,
         installer,
         notifications,
+        verifyCapabilities: () => verifyCapabilities({ store, fetchFn, serverUrl }),
         /** 手动同步(§16):排空上传 → 收受回执 → 拉最新快照并安装。 */
         async syncNow() {
+            // Stop a stale/mismatched client before the first command reaches another authority.
+            await verifyCapabilities({ store, fetchFn, serverUrl });
             await uploader.flush();
             await installer.rebaseDisplay();
             const installed = await installer.syncToLatest();
             return {
-                pending: (await import('./commandOutbox')).listCommands(store, { state: 'pending' }),
+                pending: await (await import('./commandOutbox')).listCommands(
+                    store,
+                    { state: 'pending' },
+                ),
                 installed,
             };
         },

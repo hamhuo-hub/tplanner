@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import canonicalize from 'canonicalize';
 import { createMemoryKvStore } from './kvStore';
 import { createSyncEngine } from './createSyncEngine';
-import { appendCommands } from './commandOutbox';
+import { appendCommands, listCommands } from './commandOutbox';
 
 const nodeDecompress = (compressed) => new Uint8Array(gunzipSync(Buffer.from(compressed)));
 
@@ -50,19 +50,36 @@ function mockBackend() {
     const receipts = [];
     const fetchFn = async (url, opts = {}) => {
         calls.push(url);
+        if (url.includes('/capabilities')) {
+            return {
+                status: 200,
+                ok: true,
+                json: async () => ({
+                    softwareVersion: '8.0.0',
+                    protocolVersion: 3,
+                    schemaVersion: 3,
+                    serverInstanceId: 'srv-test',
+                }),
+            };
+        }
         if (url.includes('/command-batches')) {
             const batch = JSON.parse(opts.body);
             receipts.push(...batch.commands.map((command) => ({
                 deviceId: batch.deviceId,
                 commandId: command.commandId,
                 clientSequence: command.clientSequence,
+                brokerSequence: command.clientSequence,
                 status: 'APPLIED',
                 snapshotVersion: 5,
             })));
             return {
                 status: 202,
                 ok: true,
-                json: async () => ({ batchId: batch.batchId, state: 'BROKER_PERSISTED' }),
+                json: async () => ({
+                    batchId: batch.batchId,
+                    brokerSequence: batch.commands.at(-1).clientSequence,
+                    state: 'BROKER_PERSISTED',
+                }),
             };
         }
         if (url.includes('/receipts')) {
@@ -76,6 +93,16 @@ function mockBackend() {
             const acceptedThrough = deviceReceipts.at(-1)?.clientSequence ?? 0;
             return { status: 200, ok: true, json: async () => ({ acceptedThrough, results }) };
         }
+        if (url.includes('/notifications')) {
+            return {
+                status: 200,
+                ok: true,
+                json: async () => ({
+                    latestVersion: snap.manifest.snapshotVersion,
+                    stateHash: snap.manifest.stateHash,
+                }),
+            };
+        }
         if (url.includes('/snapshots/latest')) {
             return { status: 200, ok: true, json: async () => snap.manifest };
         }
@@ -87,21 +114,78 @@ function mockBackend() {
         }
         throw new Error(`unexpected: ${url}`);
     };
-    return { snap, fetchFn };
+    return { calls, snap, fetchFn };
 }
 
 describe('sync engine (shared by desktop and web)', () => {
     test('syncNow uploads commands and installs the snapshot', async () => {
         const store = createMemoryKvStore();
-        const { fetchFn } = mockBackend();
+        const { calls, fetchFn } = mockBackend();
         const engine = await createSyncEngine({ store, serverUrl: 'https://sync.example', fetchFn, decompress: nodeDecompress });
 
         await appendCommands(store, [{ type: 'task.create', aggregateId: 'task-9', arguments: { title: 'x' } }]);
-        await engine.syncNow();
+        const result = await engine.syncNow();
 
         expect(await engine.installer.getServerMirror()).toEqual(STATE);
         const meta = await import('./syncMeta').then((m) => m.loadSyncMeta(store));
         expect(meta.installedSnapshotVersion).toBe(5);
+        expect(meta.installedBrokerToSequence).toBe(1);
+        expect(await listCommands(store, { state: ['pending', 'uploaded'] })).toEqual([]);
+        expect(result.pending).toEqual([]);
+        expect(calls.indexOf('https://sync.example/tplanner/v3/capabilities')).toBeLessThan(
+            calls.findIndex((url) => url.includes('/command-batches')),
+        );
+    });
+
+    test('an incompatible capability response blocks every command upload', async () => {
+        const store = createMemoryKvStore();
+        const calls = [];
+        const engine = await createSyncEngine({
+            store,
+            serverUrl: 'https://sync.example',
+            fetchFn: async (url) => {
+                calls.push(url);
+                return {
+                    status: 200,
+                    ok: true,
+                    json: async () => ({
+                        softwareVersion: '7.9.9',
+                        protocolVersion: 3,
+                        schemaVersion: 3,
+                        serverInstanceId: 'srv-test',
+                    }),
+                };
+            },
+            decompress: nodeDecompress,
+        });
+        await appendCommands(store, [
+            { type: 'task.create', aggregateId: 'task-9', arguments: { title: 'must stay local' } },
+        ]);
+
+        await expect(engine.syncNow()).rejects.toMatchObject({ code: 'ERROR008' });
+
+        expect(calls).toEqual(['https://sync.example/tplanner/v3/capabilities']);
+        expect(await listCommands(store, { state: 'pending' })).toHaveLength(1);
+    });
+
+    test('a remote version notification installs once and publishes the display callback', async () => {
+        const store = createMemoryKvStore();
+        const { fetchFn } = mockBackend();
+        const installed = [];
+        const engine = await createSyncEngine({
+            store,
+            serverUrl: 'https://sync.example',
+            fetchFn,
+            decompress: nodeDecompress,
+            onSnapshotInstalled: (event) => installed.push(event),
+        });
+
+        const tick = await engine.notifications.tickOnce();
+
+        expect(tick).toEqual({ notified: true, error: null });
+        expect(installed).toHaveLength(1);
+        expect(installed[0].result).toMatchObject({ installed: true, version: 5 });
+        expect(await installed[0].installer.getDisplayState()).toEqual(STATE);
     });
 
     test('engine works identically when constructed with the browser IndexedDB factory (same interface)', async () => {

@@ -33,6 +33,7 @@ class FakeServer {
                 deviceId: batch.deviceId,
                 commandId: command.commandId,
                 clientSequence: command.clientSequence,
+                brokerSequence: this.seq,
                 status: result.receipt.status,
                 errorCode: result.receipt.errorCode ?? null,
                 snapshotVersion: this.version + 1,
@@ -68,6 +69,19 @@ class FakeServer {
     }
 
     async fetch(url, opts = {}) {
+        if (url.includes('/capabilities')) {
+            return {
+                status: 200,
+                ok: true,
+                json: async () => ({
+                    softwareVersion: '8.0.0',
+                    protocolVersion: 3,
+                    schemaVersion: 3,
+                    serverInstanceId: 'srv-e2e',
+                    latestSnapshotVersion: this.version,
+                }),
+            };
+        }
         if (url.includes('/command-batches')) {
             const batch = JSON.parse(opts.body);
             this.receiveBatch(batch);

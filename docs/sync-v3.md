@@ -125,6 +125,20 @@ goal.create / patch / delete
 insight.upsert / delete
 ```
 
+一次性 bootstrap 修复可携带以下条件控制字段；中央 reducer 在命令对应的
+`brokerSequence` 位置判断条件，因此基线下载之后发生的中央编辑仍然优先：
+
+| 控制字段 | 允许的命令 | 条件语义 |
+|---|---|---|
+| `ifMissing: true` | `task.setSchedule` / `task.setRecurrence` | 仅当前字段为 `null` 时设置 |
+| `ifMissing: true` | `task.setAlarm` / `task.setLocation` | 仅当前对象仍是 canonical 默认值且没有未来扩展字段时设置 |
+| `ifMissing: true` | `journal.setText` | 仅对应日期尚无中央条目时创建 |
+| `mergeMissing: true` | `task.setExtras` | 仅补中央 `extras` 尚无的键；同名键始终保留中央值 |
+| `ifUnassigned: true` | `task.assignList` | 仅当前 `listId` 为 `null` 时分配 |
+
+这些字段只控制 reducer，不属于实体 payload；不得进入 snapshot、canonical hash 或
+pending overlay 的实体状态。普通用户编辑不携带这些字段，仍按 broker 顺序后写胜出。
+
 `task.changeType` 的字段保留规则只存在于中央 reducer。
 
 ## 5. 全局排序与中央裁决
@@ -136,7 +150,7 @@ State Builder 以 MQ stream sequence 为唯一全局顺序。裁决规则:
 | 两端改不同字段 | 按 broker 顺序分别应用,都保留 |
 | 两端改同一字段 | broker sequence 更后者为最终值 |
 | 重复 commandId | 返回原回执,不重复执行 |
-| 重复设置相同值 | `NOOP`,不生成新快照 |
+| 重复设置相同值 | `NOOP`;首次终态裁决生成同 `stateHash` 的 coverage snapshot |
 | 普通编辑命中已删实体 | `ENTITY_DELETED`,不复活 |
 | 两端同时删除 | 第一个删除,第二个 `NOOP_ALREADY_DELETED` |
 | 创建相同实体 ID | 相同 create 为重复;不同 create 为 `ID_ALREADY_EXISTS` |
@@ -160,6 +174,15 @@ PC 人工冲突选择不再作为同步机制;可保留历史版本入口,恢复
 > 复用于下一批，因此不会丢消息或乱序，也不会把孤立命令固定延迟一秒。
 
 然后:按 MQ sequence 排序 → 去重 → 顺序执行 reducer → 单 SQLite 事务写实体/回执/快照/发布 outbox → 提交 → 更新内存缓存 → 发布 `snapshot.ready` → ACK 本批消息。
+
+快照版本不仅表示“业务 state 改变”，也表示“终态 receipt 已被不可变历史覆盖”。
+只要本批产生新的 `APPLIED / NOOP / REJECTED / ENTITY_DELETED /
+ID_ALREADY_EXISTS / SCHEMA_UNSUPPORTED` 终态回执，就发布一个新版本；若 state
+未改变，新版本与父版本允许拥有相同 `stateHash`，但会推进信封中的
+`brokerToSequence`。纯 `SEQUENCE_GAP`（可重裁临时回执）和全是已处理命令的
+broker 重投不制造新版本。State Builder 启动时若发现历史终态回执的最大
+`broker_sequence` 高于 latest snapshot watermark，会原子发布一次幂等 coverage
+snapshot，并回填尚为空的 `snapshot_version`，防止崩溃窗口永久悬挂。
 
 客户端可跳过中间版本:V815 是完整快照,收到 V813 后紧跟 V815 只装 V815。
 
@@ -234,7 +257,7 @@ CREATE TABLE entities (
 CREATE TABLE snapshots (
     version INTEGER PRIMARY KEY, parent_version INTEGER,
     broker_from_sequence INTEGER NOT NULL, broker_to_sequence INTEGER NOT NULL,
-    schema_version INTEGER NOT NULL, state_hash TEXT NOT NULL UNIQUE,
+    schema_version INTEGER NOT NULL, state_hash TEXT NOT NULL,
     compressed_hash TEXT NOT NULL, compressed_payload BLOB NOT NULL,
     uncompressed_bytes INTEGER NOT NULL, compressed_bytes INTEGER NOT NULL,
     created_at INTEGER NOT NULL
@@ -278,6 +301,7 @@ PRAGMA:`journal_mode = WAL; synchronous = FULL; foreign_keys = ON; busy_timeout 
 | ACK 后 | 已提交,不丢 |
 | 快照提交后、ready 前 | publication_outbox 重启后补发 |
 | ready 后、outbox 标记前 | 重复发布,MQ 与客户端按版本去重 |
+| 旧版本已提交终态 receipt、未推进 watermark | 启动时生成同 stateHash 的 coverage snapshot,幂等补发 |
 | 客户端下载后、安装前 | 保留旧镜像,重启重下 |
 | 安装后、ACK 前 | 重启补发 ACK |
 

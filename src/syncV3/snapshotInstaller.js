@@ -6,7 +6,7 @@
 // 任一解码/校验步骤失败:旧镜像完全不动(§7)。hash 校验失败报 ERROR006。
 import canonicalize from 'canonicalize';
 import { loadSyncMeta, META_KEY } from './syncMeta';
-import { listCommands } from './commandOutbox';
+import { listCommands, isTerminalReceipt } from './commandOutbox';
 import { applyCommand } from './localReducer';
 import { appendSnapshotInstall, HISTORY_KEY } from './history';
 import {
@@ -92,11 +92,45 @@ function validateEnvelope(envelope, manifest) {
         || envelope.snapshotVersion !== manifest.snapshotVersion
         || typeof envelope.serverInstanceId !== 'string'
         || envelope.serverInstanceId === ''
+        || !Number.isSafeInteger(envelope.brokerToSequence)
+        || envelope.brokerToSequence < 0
         || !validState) {
         const err = new Error('snapshot envelope does not match the V3 schema');
         err.code = 'ERROR006';
         throw err;
     }
+}
+
+function receiptCovered(receipt, proof) {
+    if (!receipt || !isTerminalReceipt(receipt.status)) return false;
+    const coveredBySnapshot = Number.isSafeInteger(receipt.snapshotVersion)
+        && Number.isSafeInteger(proof.snapshotVersion)
+        && receipt.snapshotVersion <= proof.snapshotVersion;
+    const coveredByBroker = Number.isSafeInteger(receipt.brokerSequence)
+        && Number.isSafeInteger(proof.brokerToSequence)
+        && receipt.brokerSequence <= proof.brokerToSequence;
+    return coveredBySnapshot || coveredByBroker;
+}
+
+async function projectCoveredOutbox(store, mirror, proof) {
+    const commands = await listCommands(store, {
+        state: ['pending', 'uploaded'],
+        limit: Number.MAX_SAFE_INTEGER,
+    });
+    const receipts = new Map(
+        (await store.entries('receipt:')).map(([, receipt]) => [receipt.clientSequence, receipt]),
+    );
+    const surviving = [];
+    const deleteKeys = [];
+    for (const command of commands) {
+        const receipt = receipts.get(command.clientSequence);
+        if (receipt?.commandId === command.commandId && receiptCovered(receipt, proof)) {
+            deleteKeys.push(`cmd:${command.clientSequence}`);
+        } else {
+            surviving.push(command);
+        }
+    }
+    return { display: reduceOverlay(mirror, surviving), deleteKeys };
 }
 
 export function createSnapshotInstaller({ store, fetchFn, serverUrl, decompress = decompressGzip, ackInstalled = true } = {}) {
@@ -158,32 +192,38 @@ export function createSnapshotInstaller({ store, fetchFn, serverUrl, decompress 
             return { installed: false, skipped: true, version: meta.installedSnapshotVersion };
         }
 
-        // staging:镜像先在内存完整校验(本函数入口已完成),此处原子落库
-        const unconfirmed = await listCommands(store, {
-            state: ['pending', 'uploaded'],
-            limit: Number.MAX_SAFE_INTEGER,
-        });
-        const display = reduceOverlay(envelope.state, unconfirmed);
+        // Receipt cleanup, mirror replacement, pending replay and pointer advance share one
+        // IndexedDB transaction. A crash can expose neither an old mirror without its overlay
+        // nor a new mirror with commands deleted before their proof snapshot.
+        const proof = {
+            snapshotVersion: envelope.snapshotVersion,
+            brokerToSequence: envelope.brokerToSequence,
+        };
+        const { display, deleteKeys } = await projectCoveredOutbox(store, envelope.state, proof);
         const nextMeta = {
             ...meta,
             installedSnapshotVersion: envelope.snapshotVersion,
             installedSnapshotHash: stateHash,
             installedSnapshotCompressedHash: compressedHash,
+            installedBrokerToSequence: envelope.brokerToSequence,
             serverInstanceId: envelope.serverInstanceId,
         };
         const history = appendSnapshotInstall(
             (await store.get(HISTORY_KEY)) ?? [],
             { version: envelope.snapshotVersion, stateHash },
         );
-        if (typeof store.setMany !== 'function') {
-            throw new Error('snapshot store does not support atomic setMany');
+        if (typeof store.mutateMany !== 'function') {
+            throw new Error('snapshot store does not support atomic mutateMany');
         }
-        await store.setMany([
-            [MIRROR_KEY, envelope.state],
-            [DISPLAY_KEY, display],
-            [META_KEY, nextMeta],
-            [HISTORY_KEY, history],
-        ]);
+        await store.mutateMany({
+            deleteKeys,
+            setEntries: [
+                [MIRROR_KEY, envelope.state],
+                [DISPLAY_KEY, display],
+                [META_KEY, nextMeta],
+                [HISTORY_KEY, history],
+            ],
+        });
 
         if (ackInstalled) {
             const meta2 = await loadSyncMeta(store);
@@ -280,12 +320,18 @@ export function createSnapshotInstaller({ store, fetchFn, serverUrl, decompress 
         async rebaseDisplay() {
             const mirror = await store.get(MIRROR_KEY);
             if (!mirror) return null;
-            const unconfirmed = await listCommands(store, {
-                state: ['pending', 'uploaded'],
-                limit: Number.MAX_SAFE_INTEGER,
+            const meta = await loadSyncMeta(store);
+            const { display, deleteKeys } = await projectCoveredOutbox(store, mirror, {
+                snapshotVersion: meta.installedSnapshotVersion,
+                brokerToSequence: meta.installedBrokerToSequence ?? 0,
             });
-            const display = reduceOverlay(mirror, unconfirmed);
-            await store.set(DISPLAY_KEY, display);
+            if (typeof store.mutateMany !== 'function') {
+                throw new Error('snapshot store does not support atomic mutateMany');
+            }
+            await store.mutateMany({
+                deleteKeys,
+                setEntries: [[DISPLAY_KEY, display]],
+            });
             return display;
         },
 
