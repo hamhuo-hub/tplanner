@@ -151,7 +151,8 @@ export const event = Object.freeze({
  * Derivation chain (see TaskUnit + index.css):
  *   font-size 15px × line-height 1.2  → title line height 18px
  *   checkbox 15px / progress badge    → never exceed 18px
- *   unit padding 5px (top/bottom)     → header box = 5 + 18 + 5 = 28px
+ *   title vertical breathing room 5px top + 5px bottom, INSIDE the header box
+ *   → header box = 5 + 18 + 5 = 28px, anchored at the card's own top (y = 0)
  *   → eventHeaderHeight = overlapReveal: the full title bar an overlaid
  *     column must leave visible. Changing the header design updates this
  *     single constant; the cascade algorithm has no magic numbers of its own.
