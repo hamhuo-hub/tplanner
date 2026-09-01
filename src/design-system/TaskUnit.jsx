@@ -39,7 +39,7 @@ export default function TaskUnit({
     checklist = [],
     accentColor,
     blockedTitle,
-    note,
+    time,
     onToggle,
 }) {
     const done = checklist.filter((item) => item.completed).length;
@@ -48,10 +48,11 @@ export default function TaskUnit({
 
     return (
         <div className="tplanner-task-unit">
-            {/* Summary = the fixed 28px recognition zone (eventSummaryHeight).
-                Title AND note must fit inside; everything below is body and
+            {/* Summary = the fixed eventSummaryHeight recognition zone.
+                Title AND time must fit inside; everything below is body and
                 may be covered by the next cascade column. The layout
-                algorithm knows nothing about note — only this one height. */}
+                algorithm knows nothing about the content — only this one
+                height. */}
             <div className="tplanner-task-unit__summary">
                 <div className="tplanner-task-unit__header">
                     {type === 'task' && (
@@ -70,7 +71,7 @@ export default function TaskUnit({
                     </div>
                     <TaskProgress done={done} total={total} />
                 </div>
-                {note && <div className="tplanner-task-unit__note">{note}</div>}
+                {time && <div className="tplanner-task-unit__time">{time}</div>}
             </div>
         </div>
     );

@@ -41,7 +41,8 @@ export const typography = Object.freeze({
     display: "'Oswald', 'Arial Narrow', sans-serif",
     mono: "'IBM Plex Mono', 'Courier New', monospace",
     body: "'IBM Plex Mono', monospace",
-    taskTitle: '15px',
+    taskTitle: '25px',
+    taskTime: '10px',
     taskBadge: '11px',
 });
 
@@ -149,14 +150,12 @@ export const event = Object.freeze({
  * Timeline layout tokens — the single source for the horizontal day row.
  *
  * Derivation chain (see TaskUnit + index.css):
- *   title row 15px (15px font × line-height 1, checkbox matches)
- *   + note row 11px (11px font × line-height 1)
- *   + 2px gap  → title+note fill the summary exactly: 15 + 2 + 11 = 28px
- *   title-only summaries center inside the same 28px box.
+ *   title row 25px (25px font × line-height 1, checkbox 15px stays smaller)
+ *   + time row 10px (10px font × line-height 1)
+ *   + 2px gap  → title+time fill the summary exactly: 25 + 2 + 10 = 37px
  *   → eventSummaryHeight = overlapReveal: the fixed recognition zone an
  *     overlaid column must leave visible. The cascade algorithm knows ONLY
- *     this number — whether a note exists is the component's business, and
- *     content beyond 28px clips instead of growing the box.
+ *     this number — content beyond 37px clips instead of growing the box.
  */
 export const timeline = Object.freeze({
     // Status strip — px rows replace the old fixed 15% container whose px
@@ -166,8 +165,8 @@ export const timeline = Object.freeze({
     statusStripGap: 2, // breathing room between strip and event area
 
     // Event cascade — conflict axis (top/height), never the time axis.
-    eventSummaryHeight: 15 + 2 + 11, // 28px fixed recognition zone = overlapReveal
-    eventMinHeight: 36, // one column's minimum body (former LANE_HEIGHT_PX)
+    eventSummaryHeight: 25 + 2 + 10, // 37px fixed recognition zone = overlapReveal
+    eventMinHeight: 44, // one column's minimum height (≥ summary + a small body)
     eventAreaBaseHeight: 44, // event area with a single column
     eventGap: 2, // vertical inset around a block (former +2px / -4px)
 });
@@ -195,6 +194,7 @@ export function installDesignTokens(root = document.documentElement) {
         '--font-mono': typography.mono,
         '--font-body': typography.body,
         '--task-title-size': typography.taskTitle,
+        '--task-time-size': typography.taskTime,
         '--task-badge-size': typography.taskBadge,
         '--radius-sm': geometry.radiusSmall,
         // Semantic layer — state emphasis for CSS-side rules (glow, hover…)

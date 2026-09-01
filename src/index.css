@@ -598,11 +598,11 @@ input[type="number"] {
 }
 
 .tplanner-task-unit__summary {
-    /* THE 28px recognition zone — eventSummaryHeight. The cascade algorithm
-       only knows this one number; title and note must fit inside it, and
-       anything below is body that the next column may cover. Content clips,
-       never grows the box. */
-    height: var(--event-summary-height, 28px);
+    /* THE fixed recognition zone — eventSummaryHeight (37px = 25px title +
+       2px gap + 10px time). The cascade algorithm only knows this one
+       number; title and time must fit inside it, and anything below is body
+       that the next column may cover. Content clips, never grows the box. */
+    height: var(--event-summary-height, 37px);
     flex-shrink: 0;
     overflow: hidden;
     display: flex;
@@ -628,8 +628,8 @@ input[type="number"] {
     color: var(--event-text, var(--clr-text));
     /* Single line by design: long titles truncate with ellipsis and must
        never wrap — a second line would change the summary height and break
-       the cascade layout. line-height 1 keeps the row at 15px so a
-       title+note pair fits the 28px summary exactly. */
+       the cascade layout. line-height 1 keeps the row at the font size so a
+       title+time pair fills the summary exactly. */
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -641,10 +641,10 @@ input[type="number"] {
     color: var(--clr-text-dim);
 }
 
-.tplanner-task-unit__note {
+.tplanner-task-unit__time {
     font-family: var(--font-mono);
-    font-size: var(--task-badge-size, 11px);
-    /* Title and note share the same light event text token — one reading
+    font-size: var(--task-time-size, 10px);
+    /* Title and time share the same light event text token — one reading
        color for the whole block, emphasis via size/weight only. */
     color: var(--event-text, var(--clr-text));
     white-space: nowrap;

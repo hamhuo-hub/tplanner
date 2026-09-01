@@ -25,6 +25,7 @@ export default function EventBlock({ event, onClick, isConflicting, displayTimez
     const isCompleted  = event.completed === true;
     const colorIdx = event.colorId ?? 0;
     const colorVar = `var(--clr-event-${colorIdx}, ${eventColors[colorIdx] ?? eventColors[0]})`;
+    const timeLabel = `${formatInTimeZone(event.start, tz, 'HH:mm')} – ${formatInTimeZone(event.end, tz, 'HH:mm')}`;
 
     // TYPE provides the accent hue above; STATE owns every emphasis decision
     // (surface mix, opacity, outline, conflict border) via design tokens.
@@ -58,7 +59,7 @@ export default function EventBlock({ event, onClick, isConflicting, displayTimez
                 ...(style || { top: '4px', bottom: '4px' }),
                 ...(isSelected ? { outline: `${eventTokens.outline.selectedWidth} solid ${eventTokens.outline.selected}`, outlineOffset: eventTokens.outline.selectedOffset } : null),
             }}
-            title={`${event.title} (${formatInTimeZone(event.start, tz, 'HH:mm')} – ${formatInTimeZone(event.end, tz, 'HH:mm')})`}
+            title={`${event.title} (${timeLabel})`}
         >
             <TaskUnit
                 title={event.title}
@@ -67,7 +68,7 @@ export default function EventBlock({ event, onClick, isConflicting, displayTimez
                 completed={isCompleted}
                 checklist={checklist}
                 blockedTitle={t('event.subtaskBlocked', { done: doneCount, total: checklist.length })}
-                note={durationMins > 45 ? event.note : undefined}
+                time={timeLabel}
                 onToggle={(nextCompleted) => onToggleTaskComplete?.(event.id, nextCompleted)}
             />
         </div>

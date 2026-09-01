@@ -10,7 +10,7 @@ import {
 
 describe('design tokens — Type vs State separation', () => {
     it('typography keeps only the three shared faces (no per-component font)', () => {
-        expect(Object.keys(typography).sort()).toEqual(['body', 'display', 'mono', 'taskBadge', 'taskTitle']);
+        expect(Object.keys(typography).sort()).toEqual(['body', 'display', 'mono', 'taskBadge', 'taskTime', 'taskTitle']);
         expect(typography).not.toHaveProperty('task');
     });
 
@@ -71,7 +71,7 @@ describe('design tokens — Type vs State separation', () => {
 });
 
 describe('design tokens — timeline layout layer stays intact', () => {
-    it('overlapReveal equals the fixed summary height (title+note)', () => {
-        expect(timeline.eventSummaryHeight).toBe(15 + 2 + 11);
+    it('overlapReveal equals the fixed summary height (title+time)', () => {
+        expect(timeline.eventSummaryHeight).toBe(25 + 2 + 10);
     });
 });
