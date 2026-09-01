@@ -21,17 +21,18 @@ test('creates the full V3 schema on first open', () => {
     'device_progress',
     'publication_outbox',
     'state_builder_lease',
+    'materializer_progress',
   ]) {
     assert.ok(tables.includes(t), `missing table ${t}`);
   }
-  assert.equal(db.pragma('user_version', { simple: true }), 2);
+  assert.equal(db.pragma('user_version', { simple: true }), 3);
   db.close();
 });
 
 test('re-running migrate is idempotent', () => {
   const db = openDatabase(':memory:');
   migrate(db); // second run
-  assert.equal(db.pragma('user_version', { simple: true }), 2);
+  assert.equal(db.pragma('user_version', { simple: true }), 3);
   db.close();
 });
 
@@ -72,7 +73,7 @@ test('migration 002 preserves existing snapshots while removing state_hash uniqu
   `);
 
   migrate(db);
-  assert.equal(db.pragma('user_version', { simple: true }), 2);
+  assert.equal(db.pragma('user_version', { simple: true }), 3);
   assert.equal(db.prepare('SELECT broker_to_sequence FROM snapshots WHERE version = 7').get().broker_to_sequence, 110);
   db.prepare(`
     INSERT INTO snapshots VALUES

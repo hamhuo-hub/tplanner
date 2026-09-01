@@ -8,8 +8,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../src/state/database.js';
 import { insertReceipt } from '../src/state/receipts.js';
+import { ensureBootstrapSnapshot } from '../src/materializer/materializer.js';
+import { initializeMaterializerProgress } from '../src/state/materializerProgress.js';
 import {
-  backupDatabase, pruneBackups, verifyBackup, writeCompressedBackup,
+  backupDatabase,
+  pruneBackups,
+  verifyAndStageCompressedBackup,
+  verifyBackup,
+  writeCompressedBackup,
 } from '../src/state/backup.js';
 
 test('online backup produces a consistent, openable copy', async () => {
@@ -36,7 +42,7 @@ test('online backup produces a consistent, openable copy', async () => {
     assert.ok(existsSync(dest));
 
     const check = verifyBackup(dest);
-    assert.equal(check.version, 2);
+    assert.equal(check.version, 3);
     assert.equal(check.integrity, 'ok');
     assert.ok(check.tables >= 7);
 
@@ -91,13 +97,68 @@ test('compressed backup is verified and accompanied by a SHA-256 manifest', asyn
   const dir = mkdtempSync(join(tmpdir(), 'tplanner-backup-'));
   try {
     const db = openDatabase(':memory:');
+    ensureBootstrapSnapshot(db, { serverInstanceId: 'srv-backup-test', now: () => 1 });
+    initializeMaterializerProgress(db, { durableAckFloor: 5 });
+    insertReceipt(db, {
+      commandId: 'cmd-watermark',
+      batchId: 'batch-watermark',
+      deviceId: 'dev-watermark',
+      clientSequence: 1,
+      brokerSequence: 5_000_003,
+      commandType: 'task.create',
+      aggregateId: 'task-watermark',
+      status: 'SEQUENCE_GAP',
+      errorCode: 'SEQUENCE_GAP',
+      snapshotVersion: null,
+      resultJson: null,
+      processedAt: 2,
+    });
     const result = await writeCompressedBackup(db, dir, { now: () => 1_800_000_000_000 });
     assert.ok(existsSync(result.gzipPath));
     assert.ok(existsSync(result.manifestPath));
     assert.equal(result.manifest.sqliteIntegrity, 'ok');
+    assert.equal(result.manifest.latestSnapshotVersion, 1);
+    assert.equal(result.manifest.brokerToSequence, 0);
+    assert.equal(result.manifest.materializedThroughSequence, 5);
     const bytes = readFileSync(result.gzipPath);
     assert.equal(result.manifest.sha256, createHash('sha256').update(bytes).digest('hex'));
     assert.deepEqual(JSON.parse(readFileSync(result.manifestPath, 'utf8')), result.manifest);
+
+    const stagedDbPath = join(dir, 'staged.db');
+    const staged = await verifyAndStageCompressedBackup({
+      gzipPath: result.gzipPath,
+      manifestPath: result.manifestPath,
+      stagedDbPath,
+    });
+    assert.equal(staged.verification.latestSnapshotVersion, 1);
+    assert.equal(staged.verification.brokerToSequence, 0);
+    assert.equal(staged.verification.materializedThroughSequence, 5);
+    assert.ok(existsSync(stagedDbPath));
+    db.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('staging rejects a manifest watermark that does not describe the backed-up DB', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tplanner-backup-'));
+  try {
+    const db = openDatabase(':memory:');
+    ensureBootstrapSnapshot(db, { serverInstanceId: 'srv-backup-test', now: () => 1 });
+    const result = await writeCompressedBackup(db, dir, { now: () => 1_800_000_000_000 });
+    const tampered = { ...result.manifest, latestSnapshotVersion: 999 };
+    writeFileSync(result.manifestPath, `${JSON.stringify(tampered)}\n`);
+    const stagedDbPath = join(dir, 'must-not-survive.db');
+
+    await assert.rejects(
+      verifyAndStageCompressedBackup({
+        gzipPath: result.gzipPath,
+        manifestPath: result.manifestPath,
+        stagedDbPath,
+      }),
+      /latestSnapshotVersion mismatch/,
+    );
+    assert.equal(existsSync(stagedDbPath), false);
     db.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });

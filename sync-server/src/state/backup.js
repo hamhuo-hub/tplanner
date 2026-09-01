@@ -12,9 +12,9 @@ import {
   unlink,
   writeFile,
 } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import { createGzip } from 'node:zlib';
+import { createGunzip, createGzip } from 'node:zlib';
 import Database from 'better-sqlite3';
 
 export async function backupDatabase(db, destPath) {
@@ -32,9 +32,142 @@ export function verifyBackup(destPath) {
     const tables = backup
       .prepare("SELECT COUNT(*) AS c FROM sqlite_master WHERE type = 'table'")
       .get().c;
-    return { version, integrity, tables };
+    return {
+      version,
+      integrity,
+      tables,
+      ...readRecoveryWatermarks(backup),
+    };
   } finally {
     backup.close();
+  }
+}
+
+function hasTable(db, name) {
+  return Boolean(db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get(name));
+}
+
+/**
+ * Return the recovery boundaries recorded by this exact SQLite image. Older
+ * pre-V3 databases may not have these tables; null is deliberately different
+ * from an empty V3 database whose materialized MQ watermark is zero.
+ */
+export function readRecoveryWatermarks(db) {
+  const hasLatest = hasTable(db, 'latest_snapshot');
+  const hasSnapshots = hasTable(db, 'snapshots');
+  const hasProgress = hasTable(db, 'materializer_progress');
+
+  let latestSnapshotVersion = null;
+  let brokerToSequence = null;
+  if (hasLatest && hasSnapshots) {
+    const latest = db.prepare(`
+      SELECT l.version, s.broker_to_sequence
+        FROM latest_snapshot l
+        JOIN snapshots s ON s.version = l.version
+       WHERE l.singleton_id = 1
+    `).get();
+    if (latest) {
+      latestSnapshotVersion = Number(latest.version);
+      brokerToSequence = Number(latest.broker_to_sequence);
+    }
+  }
+
+  let materializedThroughSequence = null;
+  if (hasProgress) {
+    const progress = db.prepare(`
+      SELECT materialized_through_sequence AS sequence
+        FROM materializer_progress
+       WHERE singleton_id = 1
+    `).get();
+    materializedThroughSequence = progress?.sequence == null ? null : Number(progress.sequence);
+  }
+
+  return { latestSnapshotVersion, brokerToSequence, materializedThroughSequence };
+}
+
+async function sha256File(path) {
+  const hash = createHash('sha256');
+  for await (const chunk of createReadStream(path)) hash.update(chunk);
+  return hash.digest('hex');
+}
+
+function requireManifestRecoveryFields(manifest) {
+  for (const field of [
+    'latestSnapshotVersion',
+    'brokerToSequence',
+    'materializedThroughSequence',
+  ]) {
+    if (!Object.hasOwn(manifest, field)) {
+      throw new Error(`backup manifest is missing recovery field: ${field}`);
+    }
+  }
+}
+
+/**
+ * Verify a completed gzip + manifest pair and expand it into a new, exclusive
+ * staging path. The live database is never opened or modified here.
+ */
+export async function verifyAndStageCompressedBackup({
+  gzipPath,
+  manifestPath,
+  stagedDbPath,
+}) {
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+  requireManifestRecoveryFields(manifest);
+  if (manifest.file !== basename(gzipPath)) {
+    throw new Error(`backup manifest file mismatch: expected ${manifest.file}`);
+  }
+  if (!/^[a-f0-9]{64}$/u.test(manifest.sha256 ?? '')) {
+    throw new Error('backup manifest has an invalid SHA-256');
+  }
+
+  const archiveStat = await stat(gzipPath);
+  if (archiveStat.size !== manifest.compressedBytes) {
+    throw new Error(
+      `compressed byte count mismatch: expected ${manifest.compressedBytes}, got ${archiveStat.size}`,
+    );
+  }
+  const actualSha = await sha256File(gzipPath);
+  if (actualSha !== manifest.sha256) {
+    throw new Error(`backup SHA-256 mismatch: expected ${manifest.sha256}, got ${actualSha}`);
+  }
+
+  try {
+    await pipeline(
+      createReadStream(gzipPath),
+      createGunzip(),
+      createWriteStream(stagedDbPath, { flags: 'wx', mode: 0o600 }),
+    );
+    const verification = verifyBackup(stagedDbPath);
+    if (verification.integrity !== 'ok') {
+      throw new Error(`SQLite backup integrity check failed: ${verification.integrity}`);
+    }
+
+    const expected = {
+      version: manifest.sqliteUserVersion,
+      integrity: manifest.sqliteIntegrity,
+      tables: manifest.sqliteTables,
+      latestSnapshotVersion: manifest.latestSnapshotVersion,
+      brokerToSequence: manifest.brokerToSequence,
+      materializedThroughSequence: manifest.materializedThroughSequence,
+    };
+    for (const [field, value] of Object.entries(expected)) {
+      if (verification[field] !== value) {
+        throw new Error(
+          `staged SQLite ${field} mismatch: manifest=${value}, database=${verification[field]}`,
+        );
+      }
+    }
+    return { manifest, verification, stagedDbPath };
+  } catch (error) {
+    for (const path of [stagedDbPath, `${stagedDbPath}-wal`, `${stagedDbPath}-shm`]) {
+      await unlink(path).catch((unlinkError) => {
+        if (unlinkError.code !== 'ENOENT') throw unlinkError;
+      });
+    }
+    throw error;
   }
 }
 
@@ -82,6 +215,9 @@ export async function writeCompressedBackup(
       sqliteUserVersion: verification.version,
       sqliteIntegrity: verification.integrity,
       sqliteTables: verification.tables,
+      latestSnapshotVersion: verification.latestSnapshotVersion,
+      brokerToSequence: verification.brokerToSequence,
+      materializedThroughSequence: verification.materializedThroughSequence,
     };
     await writeFile(tempManifest, `${JSON.stringify(manifest)}\n`, { mode: 0o600 });
 
