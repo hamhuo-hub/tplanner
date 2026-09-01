@@ -82,6 +82,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.hamhuo.tplanner.designsystem.TPlannerGeometry
+import com.hamhuo.tplanner.designsystem.TPlannerTypography
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
@@ -121,7 +123,7 @@ fun CreateItemTypeSheet(onSelect: (String) -> Unit, onDismiss: () -> Unit) {
             Box(
                 Modifier
                     .width(36.dp).height(4.dp)
-                    .background(Color(0xFF444444), RoundedCornerShape(2.dp))
+                    .background(DRAG_HANDLE, RoundedCornerShape(TPlannerGeometry.RadiusSmallDp.dp))
             )
         }
 
@@ -132,7 +134,12 @@ fun CreateItemTypeSheet(onSelect: (String) -> Unit, onDismiss: () -> Unit) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(stringResource(R.string.label_new), color = Color(0xFFE0D8C8), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text(
+                stringResource(R.string.label_new),
+                color = TEXT_PRIMARY,
+                fontSize = TPlannerTypography.PhoneSectionSp.sp,
+                fontWeight = FontWeight.Bold,
+            )
             Icon(Icons.Default.Close, contentDescription = "Close", tint = DIM, modifier = Modifier.size(18.dp).clickable { onDismiss() })
         }
 
@@ -172,14 +179,14 @@ private fun AddTypeItem(icon: ImageVector, title: String, desc: String, onClick:
         Box(
             modifier = Modifier
                 .size(52.dp)
-                .background(Color(0xFF2E2E2E), CircleShape),
+                .background(CONTROL_STRONG, CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, contentDescription = null, tint = Color(0xFFE0D8C8), modifier = Modifier.size(26.dp))
+            Icon(icon, contentDescription = null, tint = TEXT_PRIMARY, modifier = Modifier.size(26.dp))
         }
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(title, color = Color(0xFFE0D8C8), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-            Text(desc, color = DIM, fontSize = 13.sp)
+            Text(title, color = TEXT_PRIMARY, fontSize = TPlannerTypography.PhoneBodySp.sp, fontWeight = FontWeight.SemiBold)
+            Text(desc, color = DIM, fontSize = TPlannerTypography.PhoneMetaSp.sp)
         }
     }
 }
@@ -200,7 +207,7 @@ fun ItemTypeChangeSheet(currentType: String, onSelect: (String) -> Unit, onDismi
             Box(
                 Modifier
                     .width(36.dp).height(4.dp)
-                    .background(Color(0xFF444444), RoundedCornerShape(2.dp))
+                    .background(DRAG_HANDLE, RoundedCornerShape(TPlannerGeometry.RadiusSmallDp.dp))
             )
         }
 
@@ -213,7 +220,9 @@ fun ItemTypeChangeSheet(currentType: String, onSelect: (String) -> Unit, onDismi
         ) {
             Text(
                 stringResource(R.string.change_type_title),
-                color = Color(0xFFE0D8C8), fontSize = 20.sp, fontWeight = FontWeight.Bold
+                color = TEXT_PRIMARY,
+                fontSize = TPlannerTypography.PhoneSectionSp.sp,
+                fontWeight = FontWeight.Bold,
             )
             Icon(
                 Icons.Default.Close, contentDescription = "Close",
@@ -238,14 +247,14 @@ fun ItemTypeChangeSheet(currentType: String, onSelect: (String) -> Unit, onDismi
                     modifier = Modifier
                         .size(52.dp)
                         .background(
-                            if (isCurrent) GOLD else Color(0xFF2E2E2E),
+                            if (isCurrent) GOLD else CONTROL_STRONG,
                             CircleShape
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         typeIcon(type), contentDescription = null,
-                        tint = if (isCurrent) Color(0xFF0E0E0E) else Color(0xFFE0D8C8),
+                        tint = if (isCurrent) BG else TEXT_PRIMARY,
                         modifier = Modifier.size(26.dp)
                     )
                 }
@@ -259,20 +268,20 @@ fun ItemTypeChangeSheet(currentType: String, onSelect: (String) -> Unit, onDismi
                     ) {
                         Text(
                             typeLabel(type),
-                            color = Color(0xFFE0D8C8),
-                            fontSize = 16.sp,
+                            color = TEXT_PRIMARY,
+                            fontSize = TPlannerTypography.PhoneBodySp.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                         if (isCurrent) {
                             Box(
                                 Modifier
-                                    .background(GOLD, RoundedCornerShape(3.dp))
+                                    .background(GOLD, RoundedCornerShape(TPlannerGeometry.RadiusAccentMarkerDp.dp))
                                     .padding(horizontal = 6.dp, vertical = 1.dp)
                             ) {
                                 Text(
                                     stringResource(R.string.current_label),
-                                    color = Color(0xFF0E0E0E),
-                                    fontSize = 11.sp,
+                                    color = BG,
+                                    fontSize = TPlannerTypography.PhoneBadgeSp.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -285,7 +294,7 @@ fun ItemTypeChangeSheet(currentType: String, onSelect: (String) -> Unit, onDismi
                             "task"   -> stringResource(R.string.desc_task)
                             else     -> ""
                         },
-                        color = DIM, fontSize = 13.sp
+                        color = DIM, fontSize = TPlannerTypography.PhoneMetaSp.sp
                     )
                 }
             }
@@ -315,7 +324,7 @@ fun NameInputSheet(
     ModalBottomSheet(
         onDismissRequest = onCancel,
         sheetState       = sheetState,
-        containerColor   = Color(0xFF1A1A1A),
+        containerColor   = SURFACE,
         dragHandle       = null,
     ) {
         Column(
@@ -327,8 +336,8 @@ fun NameInputSheet(
         ) {
             Text(
                 stringResource(R.string.name_prompt_template, label),
-                color      = Color(0xFFE0D8C8),
-                fontSize   = 19.sp,
+                color      = TEXT_PRIMARY,
+                fontSize   = TPlannerTypography.PhoneModalTitleSp.sp,
                 fontWeight = FontWeight.Bold,
                 textAlign  = TextAlign.Center
             )
@@ -341,7 +350,7 @@ fun NameInputSheet(
                 },
                 textStyle     = TextStyle(
                     color      = GOLD,
-                    fontSize   = 26.sp,
+                    fontSize   = TPlannerTypography.PhoneDisplaySp.sp,
                     fontWeight = FontWeight.Bold,
                     textAlign  = TextAlign.Center
                 ),
@@ -367,16 +376,16 @@ fun NameInputSheet(
 private fun PillButton(label: String, filled: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .background(if (filled) GOLD else Color.Transparent, RoundedCornerShape(50.dp))
-            .border(1.dp, if (filled) GOLD else BORDER, RoundedCornerShape(50.dp))
+            .background(if (filled) GOLD else Color.Transparent, RoundedCornerShape(TPlannerGeometry.RadiusPillDp.dp))
+            .border(1.dp, if (filled) GOLD else BORDER, RoundedCornerShape(TPlannerGeometry.RadiusPillDp.dp))
             .clickable { onClick() }
             .padding(horizontal = 30.dp, vertical = 12.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             label,
-            color      = if (filled) Color(0xFF0E0E0E) else Color(0xFFE0D8C8),
-            fontSize   = 15.sp,
+            color      = if (filled) BG else TEXT_PRIMARY,
+            fontSize   = TPlannerTypography.PhoneTaskTitleSp.sp,
             fontWeight = FontWeight.Bold
         )
     }

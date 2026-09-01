@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hamhuo.tplanner.RED
+import com.hamhuo.tplanner.designsystem.TPlannerTypography
 
 @Composable
 internal fun ConflictBadge(
@@ -48,8 +49,8 @@ internal fun ConflictBadge(
         Text(
             text = count.toString(),
             color = Color.White,
-            fontSize = 8.sp,
-            lineHeight = 8.sp,
+            fontSize = TPlannerTypography.TimelineTimeSp.sp,
+            lineHeight = TPlannerTypography.TimelineTimeSp.sp,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.offset(y = 2.dp),
         )

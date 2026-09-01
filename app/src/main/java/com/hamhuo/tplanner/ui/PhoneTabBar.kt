@@ -38,6 +38,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.hamhuo.tplanner.designsystem.TPlannerGeometry
+import com.hamhuo.tplanner.designsystem.TPlannerTypography
 
 /**
  * Lets the screen coordinate the primary navigation with other transient chrome.
@@ -115,7 +117,7 @@ private fun NavigationIsland(
     selected: Int,
     onSelect: (Int) -> Unit,
 ) {
-    val islandShape = RoundedCornerShape(28.dp)
+    val islandShape = RoundedCornerShape(TPlannerGeometry.RadiusNavigationContainerDp.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth(0.9f)
@@ -135,7 +137,7 @@ private fun NavigationIsland(
     ) {
         labels.forEachIndexed { index, label ->
             val isSelected = index == selected
-            val itemShape = RoundedCornerShape(22.dp)
+            val itemShape = RoundedCornerShape(TPlannerGeometry.RadiusNavigationItemDp.dp)
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -159,7 +161,7 @@ private fun NavigationIsland(
                 Text(
                     text = label,
                     color = if (isSelected) BG else DIM,
-                    fontSize = 13.sp,
+                    fontSize = TPlannerTypography.PhoneMetaSp.sp,
                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
                     letterSpacing = 0.2.sp,
                     maxLines = 1,

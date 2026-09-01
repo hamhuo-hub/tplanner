@@ -157,7 +157,7 @@ class TPlannerTaskUnitView(context: Context) : LinearLayout(context) {
         leading.layoutParams = params
         if (model.isTask) {
             leading.text = if (model.completed) "\u2713" else ""
-            leading.textSize = 10f
+            leading.textSize = TPlannerTypography.PhoneMicroSp
             leading.typeface = medium
             leading.setTextColor(Color.BLACK)
             leading.background = roundedBackground(

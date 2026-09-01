@@ -12,9 +12,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.hamhuo.tplanner.BG
 import com.hamhuo.tplanner.GOLD
 import com.hamhuo.tplanner.R
 
@@ -34,7 +34,7 @@ internal fun TimelineAddButton(
         Icon(
             Icons.Default.Add,
             contentDescription = stringResource(R.string.cd_add_event),
-            tint = Color(0xFF0E0E0E),
+            tint = BG,
             modifier = Modifier.size(26.dp),
         )
     }

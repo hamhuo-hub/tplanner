@@ -31,13 +31,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.hamhuo.tplanner.designsystem.TPlannerGeometry
+import com.hamhuo.tplanner.designsystem.TPlannerTypography
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -109,11 +110,13 @@ fun UntangleSheet(
                     thinking -> "识别中…"
                     else -> "写日程"
                 },
-                color = GOLD, fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                color = GOLD,
+                fontSize = TPlannerTypography.PhoneTitleSp.sp,
+                fontWeight = FontWeight.Bold,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (showEditor) {
-                    Text("提取", color = if (text.isNotBlank()) GOLD else DIM, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                    Text("提取", color = if (text.isNotBlank()) GOLD else DIM, fontSize = TPlannerTypography.PhoneBodySp.sp, fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.clickable { if (text.isNotBlank()) onSubmit(text) })
                 }
                 Icon(Icons.Default.Close, contentDescription = "Close", tint = DIM,
@@ -130,7 +133,7 @@ fun UntangleSheet(
                     else -> stringResource(R.string.location_unavailable)
                 },
                 color = if (prefillLocation.isNotBlank()) GOLD else DIM,
-                fontSize = 13.sp,
+                fontSize = TPlannerTypography.PhoneMetaSp.sp,
                 modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
             )
         }
@@ -141,7 +144,7 @@ fun UntangleSheet(
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         CircularProgressIndicator(color = GOLD, strokeWidth = 2.dp, modifier = Modifier.size(28.dp))
-                        Text("识别日程信息…", color = DIM, fontSize = 14.sp)
+                        Text("识别日程信息…", color = DIM, fontSize = TPlannerTypography.PhoneSupportingSp.sp)
                     }
                 }
             }
@@ -153,25 +156,46 @@ fun UntangleSheet(
                     "status" -> "状态"
                     else -> "任务"
                 }
-                Text("提取到以下日程，确认创建吗？", color = DIM, fontSize = 14.sp, modifier = Modifier.padding(bottom = 16.dp))
+                Text(
+                    "提取到以下日程，确认创建吗？",
+                    color = DIM,
+                    fontSize = TPlannerTypography.PhoneSupportingSp.sp,
+                    modifier = Modifier.padding(bottom = 16.dp),
+                )
                 Column(
                     modifier = Modifier.fillMaxWidth()
-                        .background(SURFACE, RoundedCornerShape(12.dp))
-                        .border(1.dp, GOLD.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .background(SURFACE, RoundedCornerShape(TPlannerGeometry.RadiusCardDp.dp))
+                        .border(1.dp, GOLD.copy(alpha = 0.5f), RoundedCornerShape(TPlannerGeometry.RadiusCardDp.dp))
                         .padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Text(action.title, color = Color(0xFFE8E0D0), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, lineHeight = 26.sp)
-                    Text("$typeLabel · ${prettyWhen(action.startIso, action.endIso)}", color = GOLD, fontSize = 14.sp)
-                    Text("颜色 ${action.colorId + 1}", color = DIM, fontSize = 13.sp)
+                    Text(
+                        action.title,
+                        color = TEXT_EDITOR,
+                        fontSize = TPlannerTypography.PhoneTitleSp.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        lineHeight = TPlannerTypography.PhoneBodyLineHeightSp.sp,
+                    )
+                    Text("$typeLabel · ${prettyWhen(action.startIso, action.endIso)}", color = GOLD, fontSize = TPlannerTypography.PhoneSupportingSp.sp)
+                    Text("颜色 ${action.colorId + 1}", color = DIM, fontSize = TPlannerTypography.PhoneMetaSp.sp)
                     Text(
                         prettyAlarm(action.alarmEnabled, action.alarmOffsetMinutes),
                         color = if (action.alarmEnabled) GOLD else DIM,
-                        fontSize = 13.sp,
+                        fontSize = TPlannerTypography.PhoneMetaSp.sp,
                     )
-                    if (action.note.isNotBlank()) Text(action.note, color = DIM, fontSize = 13.sp, lineHeight = 20.sp)
+                    if (action.note.isNotBlank()) Text(
+                        action.note,
+                        color = DIM,
+                        fontSize = TPlannerTypography.PhoneMetaSp.sp,
+                        lineHeight = TPlannerTypography.PhoneSupportingLineHeightSp.sp,
+                    )
                     if (action.checklist.isNotEmpty()) {
-                        Text("清单 · ${action.checklist.joinToString("、")}", color = DIM, fontSize = 13.sp, lineHeight = 20.sp)
+                        Text(
+                            "清单 · ${action.checklist.joinToString("、")}",
+                            color = DIM,
+                            fontSize = TPlannerTypography.PhoneMetaSp.sp,
+                            lineHeight = TPlannerTypography.PhoneSupportingLineHeightSp.sp,
+                        )
                     }
                 }
                 Spacer(Modifier.weight(1f))
@@ -180,15 +204,15 @@ fun UntangleSheet(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Box(
-                        modifier = Modifier.weight(1f).background(Color(0xFF222222), RoundedCornerShape(12.dp))
+                        modifier = Modifier.weight(1f).background(SURFACE2, RoundedCornerShape(TPlannerGeometry.RadiusCardDp.dp))
                             .clickable { onDismiss() }.padding(vertical = 14.dp),
                         contentAlignment = Alignment.Center,
-                    ) { Text(stringResource(R.string.action_cancel), color = DIM, fontSize = 15.sp) }
+                    ) { Text(stringResource(R.string.action_cancel), color = DIM, fontSize = TPlannerTypography.PhoneTaskTitleSp.sp) }
                     Box(
-                        modifier = Modifier.weight(1f).background(GOLD, RoundedCornerShape(12.dp))
+                        modifier = Modifier.weight(1f).background(GOLD, RoundedCornerShape(TPlannerGeometry.RadiusCardDp.dp))
                             .clickable { onConfirmAction(action) }.padding(vertical = 14.dp),
                         contentAlignment = Alignment.Center,
-                    ) { Text("加入日程", color = Color.Black, fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
+                    ) { Text("加入日程", color = BG, fontSize = TPlannerTypography.PhoneTaskTitleSp.sp, fontWeight = FontWeight.SemiBold) }
                 }
             }
 
@@ -196,8 +220,8 @@ fun UntangleSheet(
             else -> {
                 Box(
                     modifier = Modifier.weight(1f).fillMaxWidth()
-                        .background(SURFACE, RoundedCornerShape(12.dp))
-                        .border(1.dp, BORDER, RoundedCornerShape(12.dp))
+                        .background(SURFACE, RoundedCornerShape(TPlannerGeometry.RadiusCardDp.dp))
+                        .border(1.dp, BORDER, RoundedCornerShape(TPlannerGeometry.RadiusCardDp.dp))
                         .padding(16.dp)
                 ) {
                     BasicTextField(
@@ -206,7 +230,11 @@ fun UntangleSheet(
                             text = it
                             onTextChange(it)
                         },
-                        textStyle = TextStyle(color = Color(0xFFE8E0D0), fontSize = 17.sp, lineHeight = 28.sp),
+                        textStyle = TextStyle(
+                            color = TEXT_EDITOR,
+                            fontSize = TPlannerTypography.PhoneEditorSp.sp,
+                            lineHeight = TPlannerTypography.PhoneEditorLineHeightSp.sp,
+                        ),
                         cursorBrush = SolidColor(GOLD),
                         modifier = Modifier.fillMaxSize().focusRequester(focusRequester),
                         decorationBox = { inner -> inner() }

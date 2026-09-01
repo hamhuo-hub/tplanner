@@ -51,6 +51,8 @@ import com.hamhuo.tplanner.GOLD
 import com.hamhuo.tplanner.R
 import com.hamhuo.tplanner.RED
 import com.hamhuo.tplanner.ScheduleItem
+import com.hamhuo.tplanner.designsystem.TPlannerGeometry
+import com.hamhuo.tplanner.designsystem.TPlannerTypography
 import com.hamhuo.tplanner.timeline.calculateTimelineSnappedMove
 import com.hamhuo.tplanner.timeline.hasTimelineRecurrenceMarker
 import kotlinx.coroutines.delay
@@ -192,7 +194,7 @@ private fun DraggableTimelineEvent(
     val background = EVENT_COLORS
         .getOrElse(event.colorId) { EVENT_COLORS[0] }
         .copy(alpha = backgroundAlpha)
-    val shape = RoundedCornerShape(9.dp)
+    val shape = RoundedCornerShape(TPlannerGeometry.RadiusMediumDp.dp)
 
     fun resetDragState() {
         val notifyDragEnded = dragging
@@ -362,8 +364,16 @@ private fun TimelineItemCardContent(
             Text(
                 text = event.title.ifBlank { stringResource(R.string.untitled_event) },
                 color = Color.White,
-                fontSize = if (isCompact) 9.sp else 11.sp,
-                lineHeight = if (isCompact) 10.sp else 13.sp,
+                fontSize = if (isCompact) {
+                    TPlannerTypography.TimelineCompactSp.sp
+                } else {
+                    TPlannerTypography.TimelineBodySp.sp
+                },
+                lineHeight = if (isCompact) {
+                    TPlannerTypography.TimelineCompactLineHeightSp.sp
+                } else {
+                    TPlannerTypography.TimelineBodyLineHeightSp.sp
+                },
                 fontWeight = FontWeight.SemiBold,
                 maxLines = if (isCompact) 1 else 2,
                 overflow = TextOverflow.Ellipsis,
@@ -395,14 +405,14 @@ private fun TimelineItemCardContent(
                 text = "$startTime–$endTime",
                 color = Color.White.copy(alpha = 0.78f),
                 fontFamily = FontFamily.Monospace,
-                fontSize = 8.sp,
+                fontSize = TPlannerTypography.TimelineTimeSp.sp,
                 maxLines = 1,
             )
             if (durationMinutes >= 60 && event.note.isNotBlank()) {
                 Text(
                     text = event.note,
                     color = Color.White.copy(alpha = 0.68f),
-                    fontSize = 8.sp,
+                    fontSize = TPlannerTypography.TimelineTimeSp.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

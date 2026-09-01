@@ -23,6 +23,7 @@ import androidx.compose.ui.zIndex
 import com.hamhuo.tplanner.BG
 import com.hamhuo.tplanner.RED
 import com.hamhuo.tplanner.ScheduleItem
+import com.hamhuo.tplanner.designsystem.TPlannerGeometry
 import com.hamhuo.tplanner.timeline.ConflictHighlight
 import com.hamhuo.tplanner.timeline.DayPlacement
 import com.hamhuo.tplanner.timeline.TimelineGeometry
@@ -165,7 +166,7 @@ private fun TimelineConflictHighlight(
     val height = (
         TimelineGeometry.hourHeight * ((endMinutes - startMinutes) / 60f)
         ).coerceAtLeast(4.dp)
-    val shape = RoundedCornerShape(8.dp)
+    val shape = RoundedCornerShape(TPlannerGeometry.RadiusTimelineCanvasDp.dp)
 
     Box(
         Modifier

@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.sp
 import com.hamhuo.tplanner.BORDER
 import com.hamhuo.tplanner.DIM
 import com.hamhuo.tplanner.GOLD
+import com.hamhuo.tplanner.designsystem.TPlannerTypography
 import com.hamhuo.tplanner.timeline.TimelineGeometry
 import java.time.LocalDate
 import java.time.ZonedDateTime
@@ -76,7 +77,7 @@ internal fun TimelineGrid(
             text = String.format(Locale.US, "%02d:00", hour),
             color = DIM,
             fontFamily = FontFamily.Monospace,
-            fontSize = 8.sp,
+            fontSize = TPlannerTypography.TimelineTimeSp.sp,
             modifier = Modifier
                 .offset(y = TimelineGeometry.hourHeight * hour + 3.dp)
                 .width(TimelineGeometry.timeGutterWidth)

@@ -15,6 +15,7 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.hamhuo.tplanner.designsystem.TPlannerGeometry
 
 @Composable
 internal fun MainLayout(
@@ -36,7 +37,7 @@ internal fun MainLayout(
                     .fillMaxSize()
                     .padding(horizontal = 10.dp)
                     .padding(bottom = 10.dp),
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(TPlannerGeometry.RadiusAppFrameDp.dp),
                 colors = CardDefaults.cardColors(containerColor = SURFACE),
                 elevation = CardDefaults.cardElevation(0.dp),
             ) {
@@ -72,14 +73,14 @@ internal fun MainLayout(
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Card(
                     modifier = Modifier.weight(1.618f).fillMaxHeight(),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = RoundedCornerShape(TPlannerGeometry.RadiusAppFrameDp.dp),
                     colors = CardDefaults.cardColors(containerColor = SURFACE),
                     elevation = CardDefaults.cardElevation(0.dp),
                 ) { notesCard() }
 
                 Card(
                     modifier = Modifier.weight(1.0f).fillMaxHeight(),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = RoundedCornerShape(TPlannerGeometry.RadiusAppFrameDp.dp),
                     colors = CardDefaults.cardColors(containerColor = SURFACE),
                     elevation = CardDefaults.cardElevation(0.dp),
                 ) { taskCard() }

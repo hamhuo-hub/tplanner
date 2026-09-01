@@ -35,10 +35,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hamhuo.tplanner.BORDER
+import com.hamhuo.tplanner.BG
 import com.hamhuo.tplanner.DIM
 import com.hamhuo.tplanner.GOLD
 import com.hamhuo.tplanner.R
 import com.hamhuo.tplanner.SURFACE2
+import com.hamhuo.tplanner.TEXT_EDITOR
+import com.hamhuo.tplanner.designsystem.TPlannerGeometry
+import com.hamhuo.tplanner.designsystem.TPlannerTypography
 import com.hamhuo.tplanner.timeline.TIMELINE_DATE_WINDOW_CENTER
 import com.hamhuo.tplanner.timeline.TIMELINE_DATE_WINDOW_COUNT
 import com.hamhuo.tplanner.timeline.TimelineGeometry
@@ -162,8 +166,8 @@ private fun CalendarAnchor(
         Text(
             text = selectedDay.format(monthFormatter).uppercase(Locale.getDefault()),
             color = GOLD,
-            fontSize = 8.sp,
-            lineHeight = 9.sp,
+            fontSize = TPlannerTypography.TimelineTimeSp.sp,
+            lineHeight = TPlannerTypography.TimelineHourLineHeightSp.sp,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -171,8 +175,8 @@ private fun CalendarAnchor(
         Text(
             text = todayLabel.uppercase(Locale.getDefault()),
             color = DIM,
-            fontSize = 6.5.sp,
-            lineHeight = 8.sp,
+            fontSize = TPlannerTypography.TimelineWeekdaySp.sp,
+            lineHeight = TPlannerTypography.TimelineTimeSp.sp,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
         )
@@ -188,11 +192,11 @@ private fun TimelineDateCell(
     locale: Locale,
     onClick: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(14.dp)
+    val shape = RoundedCornerShape(TPlannerGeometry.RadiusFieldDp.dp)
     val foreground = when {
-        selected -> Color(0xFF0E0E0E)
+        selected -> BG
         today -> GOLD
-        else -> Color(0xFFE8E0D0)
+        else -> TEXT_EDITOR
     }
 
     Column(
@@ -217,16 +221,16 @@ private fun TimelineDateCell(
         Text(
             text = day.format(weekdayFormatter).uppercase(locale),
             color = foreground.copy(alpha = if (selected) 0.72f else 0.78f),
-            fontSize = 7.5.sp,
-            lineHeight = 8.sp,
+            fontSize = TPlannerTypography.TimelineMonthSp.sp,
+            lineHeight = TPlannerTypography.TimelineTimeSp.sp,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
         )
         Text(
             text = day.dayOfMonth.toString(),
             color = foreground,
-            fontSize = 14.sp,
-            lineHeight = 16.sp,
+            fontSize = TPlannerTypography.TimelineDaySp.sp,
+            lineHeight = TPlannerTypography.TimelineDayLineHeightSp.sp,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
         )

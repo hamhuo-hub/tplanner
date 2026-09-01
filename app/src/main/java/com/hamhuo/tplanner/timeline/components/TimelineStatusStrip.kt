@@ -28,6 +28,8 @@ import com.hamhuo.tplanner.GOLD
 import com.hamhuo.tplanner.R
 import com.hamhuo.tplanner.ScheduleItem
 import com.hamhuo.tplanner.SURFACE2
+import com.hamhuo.tplanner.designsystem.TPlannerGeometry
+import com.hamhuo.tplanner.designsystem.TPlannerTypography
 import com.hamhuo.tplanner.timeline.TimelineGeometry
 import java.time.LocalDate
 import java.time.ZoneId
@@ -74,7 +76,7 @@ internal fun TimelineStatusStrip(
                     modifier = Modifier
                         .weight(1f)
                         .padding(end = 4.dp)
-                        .background(accent, RoundedCornerShape(4.dp))
+                        .background(accent, RoundedCornerShape(TPlannerGeometry.RadiusControlDp.dp))
                         .clickable(role = Role.Button) { onEventClick(status) }
                         .padding(horizontal = 9.dp, vertical = 5.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -84,8 +86,8 @@ internal fun TimelineStatusStrip(
                         text = status.title.ifBlank { untitledLabel },
                         modifier = Modifier.weight(1f),
                         color = Color.White,
-                        fontSize = 11.sp,
-                        lineHeight = 13.sp,
+                        fontSize = TPlannerTypography.TimelineBodySp.sp,
+                        lineHeight = TPlannerTypography.TimelineBodyLineHeightSp.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -93,8 +95,8 @@ internal fun TimelineStatusStrip(
                     Text(
                         text = "${status.start.atZone(zone).format(timeFormatter)}–${status.end.atZone(zone).format(timeFormatter)}",
                         color = Color.White.copy(alpha = 0.82f),
-                        fontSize = 9.sp,
-                        lineHeight = 11.sp,
+                        fontSize = TPlannerTypography.TimelineCompactSp.sp,
+                        lineHeight = TPlannerTypography.TimelineBodySp.sp,
                         maxLines = 1,
                     )
                 }
