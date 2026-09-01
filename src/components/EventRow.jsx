@@ -6,6 +6,7 @@ import { getDateLocale } from '../utils/dateLocale';
 import { MASSEY_COLORS } from '../utils/constants';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { marked } from 'marked';
+import { assignOverlapGroupLanes } from '../utils/laneLayout';
 
 export default function EventRow({ date, events, onEventClick, onAddEvent, highlight, onDragStart, dragState, clashes, displayTimezone, onToggleTaskComplete, journalText, onContextMenu, selectedIds }) {
     const { t, i18n } = useTranslation();
@@ -61,26 +62,13 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
     const completedTasks  = processedRegularEvents.filter(e =>   e.type === 'task' && e.completed);
     const activeEvents    = processedRegularEvents.filter(e =>   e.type !== 'reminder' && !(e.type === 'task' && e.completed));
 
-    const lanes = [];
-    const activeWithLane = activeEvents.map(ev => {
-        let laneIdx = 0;
-        while (true) {
-            const lane = lanes[laneIdx];
-            if (!lane) { lanes[laneIdx] = [ev]; break; }
-            const hasConflict = lane.some(existing =>
-                areIntervalsOverlapping(
-                    { start: existing.start, end: existing.end },
-                    { start: ev.start,       end: ev.end },
-                    { inclusive: false }
-                )
-            );
-            if (!hasConflict) { lane.push(ev); break; }
-            laneIdx++;
-        }
-        return { ...ev, laneIdx };
-    });
-
-    const totalLanes = lanes.length || 1;
+    // Lanes are assigned per overlap group, not day-globally: an isolated
+    // afternoon event keeps the full row height even when the morning had a
+    // 3-way clash. `totalLanes` remains the day's maximum lane count and is
+    // still consumed by the row height and separator lines until the layout
+    // follow-up lands.
+    const { assigned: activeWithLane, groups: laneGroups } = assignOverlapGroupLanes(activeEvents);
+    const totalLanes = laneGroups.reduce((maxLanes, g) => Math.max(maxLanes, g.laneCount), 1);
 
     const finalRegularEvents = [
         // Active events (no reminders) in their computed lanes
@@ -88,8 +76,8 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
             ...ev,
             isShadow: false,
             isConflicting: clashes ? clashes.some(c => c.eventId === ev.id) : false,
-            laneTopPct:    15 + (ev.laneIdx / totalLanes) * 85,
-            laneHeightPct: (1 / totalLanes) * 85,
+            laneTopPct:    15 + (ev.laneIdx / ev.groupLaneCount) * 85,
+            laneHeightPct: (1 / ev.groupLaneCount) * 85,
         })),
         // Completed tasks as shadows — always behind, fixed to base lane position
         ...completedTasks.map(ev => ({
