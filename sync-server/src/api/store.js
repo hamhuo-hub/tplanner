@@ -17,7 +17,7 @@ export function createStore(db, { serverInstanceId }) {
 
   const metaByVersion = db.prepare(`
     SELECT version, parent_version, schema_version, state_hash, compressed_hash,
-           uncompressed_bytes, compressed_bytes, created_at
+           uncompressed_bytes, compressed_bytes, broker_to_sequence, created_at
     FROM snapshots WHERE version = ?
   `);
 
@@ -35,6 +35,7 @@ export function createStore(db, { serverInstanceId }) {
       compressedHash: row.compressed_hash,
       uncompressedBytes: row.uncompressed_bytes,
       compressedBytes: row.compressed_bytes,
+      brokerToSequence: row.broker_to_sequence,
       createdAt: row.created_at,
       serverInstanceId,
     };

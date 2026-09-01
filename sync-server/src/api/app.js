@@ -92,15 +92,22 @@ export function buildServer({ publisher, validateBatch, store, health, logger = 
     };
   });
 
-  // 最新快照:no-store,只返回轻量 manifest;载荷由版本端点下载(§11/§22)
+  // 最新快照:no-store,只返回轻量 manifest;载荷由版本端点下载(§11/§22)。
+  // manifest 附带 delta-v1 起点 cursor(§9.3):旧客户端忽略未知字段。
   app.get('/tplanner/v3/snapshots/latest', async (request, reply) => {
     const meta = store.latestSnapshotMeta();
     if (!meta) return reply.code(404).send({ error: 'SNAPSHOT_NOT_FOUND' });
     if (isNotModified(request, meta.compressedHash)) {
       return snapshotHeaders(reply, meta, { immutable: false }).code(304).send();
     }
-    return snapshotHeaders(reply, meta, { immutable: false })
-      .send(snapshotManifest(meta));
+    const manifest = snapshotManifest(meta);
+    if (changes) {
+      manifest.cursor = changes.issueCursorAt({
+        snapshotVersion: meta.version,
+        brokerToSequence: meta.brokerToSequence,
+      });
+    }
+    return snapshotHeaders(reply, meta, { immutable: false }).send(manifest);
   });
 
   // 指定版本快照:immutable + ETag = compressedHash,支持 304(§11/§22)

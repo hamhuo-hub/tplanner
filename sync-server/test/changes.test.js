@@ -295,8 +295,29 @@ test('disabling delta flips capabilities to snapshot-only and /changes to 410', 
   db.close();
 });
 
-test('a buildServer without a changes service serves snapshot-only capabilities', async () => {
+test('latest snapshot manifest carries a delta-v1 bootstrap cursor', async () => {
   const db = openDatabase(':memory:');
+  seedHistory(db);
+  const { app } = buildApi(db);
+
+  const res = await app.inject({ method: 'GET', url: '/tplanner/v3/snapshots/latest' });
+  assert.equal(res.statusCode, 200);
+  const body = res.json();
+  assert.ok(typeof body.cursor === 'string' && body.cursor.length > 0, 'manifest must carry a cursor');
+  const decoded = JSON.parse(Buffer.from(body.cursor.split('.')[0], 'base64url').toString('utf8'));
+  assert.equal(decoded.snapshotVersion, 6);
+  assert.equal(decoded.brokerToSequence, 6);
+  assert.equal(decoded.serverInstanceId, SERVER_ID);
+
+  // 该 cursor 立即可用于 /changes(无变化时 cursor 稳定回传)
+  const changes = await getChanges(app, body.cursor);
+  assert.equal(changes.statusCode, 200);
+  assert.equal(changes.json().toCursor, body.cursor);
+  assert.deepEqual(changes.json().commits, []);
+  db.close();
+});
+
+test('a buildServer without a changes service serves snapshot-only capabilities', async () => {  const db = openDatabase(':memory:');
   const store = createStore(db, { serverInstanceId: SERVER_ID });
   const app = buildServer({
     publisher: { publish: async () => ({}) },
