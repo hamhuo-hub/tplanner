@@ -42,7 +42,7 @@ test('online backup produces a consistent, openable copy', async () => {
     assert.ok(existsSync(dest));
 
     const check = verifyBackup(dest);
-    assert.equal(check.version, 3);
+    assert.equal(check.version, 4);
     assert.equal(check.integrity, 'ok');
     assert.ok(check.tables >= 7);
 

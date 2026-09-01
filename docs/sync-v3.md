@@ -290,6 +290,54 @@ PRAGMA:`journal_mode = WAL; synchronous = FULL; foreign_keys = ON; busy_timeout 
 
 `state_builder_lease` 单行表:`BEGIN IMMEDIATE` 抢占成功**之后**才 attach NATS durable consumer;systemd 单实例 + 文件锁兜底。第二个实例因 lease 失败退出,绝不允许两个消费者同时消费命令流。
 
+### 9.1 change journal(V4 增量下行的服务端一半)
+
+journal commit identity **就是** `snapshotVersion`,不另造 journal sequence。每次产生新快照的同一 SQLite transaction 同时写一个 journal commit:
+
+```sql
+CREATE TABLE sync_journal_meta (
+    singleton_id         INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+    journal_epoch        TEXT NOT NULL,
+    min_snapshot_version INTEGER NOT NULL,
+    created_at           INTEGER NOT NULL
+);
+
+CREATE TABLE change_commits (
+    snapshot_version      INTEGER PRIMARY KEY,
+    parent_version        INTEGER NOT NULL,
+    broker_from_sequence  INTEGER NOT NULL,
+    broker_to_sequence    INTEGER NOT NULL,
+    schema_version        INTEGER NOT NULL,
+    state_hash_after      TEXT NOT NULL,
+    change_count          INTEGER NOT NULL,
+    payload_bytes         INTEGER NOT NULL DEFAULT 0,
+    created_at            INTEGER NOT NULL,
+    FOREIGN KEY (snapshot_version) REFERENCES snapshots(version)
+);
+
+CREATE TABLE change_items (
+    snapshot_version       INTEGER NOT NULL,
+    ordinal                INTEGER NOT NULL,
+    change_type            TEXT NOT NULL,
+    entity_type            TEXT NOT NULL,
+    entity_id              TEXT NOT NULL,
+    entity_broker_sequence INTEGER NOT NULL,
+    payload_json           TEXT NOT NULL,
+    PRIMARY KEY (snapshot_version, ordinal),
+    FOREIGN KEY (snapshot_version) REFERENCES change_commits(snapshot_version) ON DELETE CASCADE
+);
+```
+
+不变量:
+
+- **每个 snapshot 版本恰有一个 commit**;NOOP/REJECTED coverage 的 `changes=[]` 空 commit 不得省略,version 覆盖必须连续。SEQUENCE_GAP 与已处理重投不产生 snapshot,也不产生 commit。
+- **每条 change 是完整 canonical entity**(`task.put` / `customList.put` / `journal.put` / `goal.put` / `insight.put`),State Builder 已裁决后的权威值,含 `lifecycle/deletedAt`;V3 无物理删除,reducer 若令实体消失立即抛错。
+- **journal 与 snapshot 同事务**;transaction 失败两者一起回滚,绝不事后补写。
+- **不回填历史**:迁移当刻 head 即 `min_snapshot_version`,更早版本没有 commit;后续 cursor 早于该点一律走完整快照。
+- 所有 snapshot 生产者(bootstrap、receipt coverage、恢复 checkpoint、canonical 迁移、正常整合)都必须 dual-write,无一例外。
+
+对账性质:**Snapshot(N) + Commit(N+1) == Snapshot(N+1)**(JCS stateHash),由 reconstruction property test 与 shadow validator 持续验证。
+
 ## 10. 崩溃一致性(inbox/outbox)
 
 消费:`拉取 → BEGIN IMMEDIATE → 查 commandId → reducer → 写 entities/回执/快照/latest/发布outbox → COMMIT → ACK MQ`
@@ -302,6 +350,7 @@ PRAGMA:`journal_mode = WAL; synchronous = FULL; foreign_keys = ON; busy_timeout 
 | 快照提交后、ready 前 | publication_outbox 重启后补发 |
 | ready 后、outbox 标记前 | 重复发布,MQ 与客户端按版本去重 |
 | 旧版本已提交终态 receipt、未推进 watermark | 启动时生成同 stateHash 的 coverage snapshot,幂等补发 |
+| journal 行写失败 | 与快照同一事务整体回滚,快照不落库,重投重放 |
 | 客户端下载后、安装前 | 保留旧镜像,重启重下 |
 | 安装后、ACK 前 | 重启补发 ACK |
 
@@ -406,6 +455,10 @@ recurrence/alarm/location 纳入正式模型；timezone、extras 与未知字段
 ### 回滚
 
 - 只能回滚到兼容 V3 协议、且不会重新开放整库 PUT 的版本。DB migration 必须可重放；从 `materializedThroughSequence + 1` 续消费。DB 损坏则恢复已校验的 SQLite backup 再从 JetStream 重放；版本号只能前进。客户端获 `BROKER_PERSISTED` 前不删 outbox，正是为此。
+
+### V4 change journal(expand-only)
+
+migration 004 新增 `sync_journal_meta / change_commits / change_items`,不回填历史、无 down migration。旧版 State Builder 不认识这些表,继续只写 snapshot——因此**降级后不得再直接升回并启用 delta**,须先 bump journalEpoch(或保持 delta 关闭),否则 journal 中间有 gap。客户端在 delta capability 打开前继续走 snapshot,不受影响。
 
 ## 18. 实施计划(66 提交,里程碑化)
 
