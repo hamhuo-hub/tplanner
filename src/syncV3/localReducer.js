@@ -79,6 +79,44 @@ const TASK = {
             JSON.stringify(t.recurrence) === JSON.stringify(recurrence) ? t : { ...t, recurrence });
     },
 
+    'task.setAppearance'(state, cmd) {
+        const colorId = Number(cmd.arguments?.colorId);
+        if (!Number.isInteger(colorId) || colorId < 0) {
+            return { state, receipt: REJECTED('INVALID_COLOR_ID') };
+        }
+        return updateTask(state, cmd.aggregateId, (t) => (t.colorId === colorId ? t : { ...t, colorId }));
+    },
+
+    'task.setAlarm'(state, cmd) {
+        const enabled = cmd.arguments?.enabled;
+        const offsetMinutes = Number(cmd.arguments?.offsetMinutes);
+        if (typeof enabled !== 'boolean' || !Number.isInteger(offsetMinutes)) {
+            return { state, receipt: REJECTED('INVALID_ALARM') };
+        }
+        const alarm = { enabled, offsetMinutes };
+        return updateTask(state, cmd.aggregateId, (t) =>
+            JSON.stringify(t.alarm) === JSON.stringify(alarm) ? t : { ...t, alarm });
+    },
+
+    'task.setLocation'(state, cmd) {
+        const lat = cmd.arguments?.lat ?? null;
+        const lng = cmd.arguments?.lng ?? null;
+        const valid = (value) => value === null || (typeof value === 'number' && Number.isFinite(value));
+        if (!valid(lat) || !valid(lng)) return { state, receipt: REJECTED('INVALID_LOCATION') };
+        const location = { lat, lng };
+        return updateTask(state, cmd.aggregateId, (t) =>
+            JSON.stringify(t.location) === JSON.stringify(location) ? t : { ...t, location });
+    },
+
+    'task.setExtras'(state, cmd) {
+        const extras = cmd.arguments?.extras;
+        if (!extras || typeof extras !== 'object' || Array.isArray(extras)) {
+            return { state, receipt: REJECTED('INVALID_EXTRAS') };
+        }
+        return updateTask(state, cmd.aggregateId, (t) =>
+            JSON.stringify(t.extras ?? {}) === JSON.stringify(extras) ? t : { ...t, extras: { ...extras } });
+    },
+
     'task.changeType'(state, cmd) {
         const itemType = cmd.arguments?.itemType;
         if (typeof itemType !== 'string') return { state, receipt: REJECTED('MISSING_ITEM_TYPE') };

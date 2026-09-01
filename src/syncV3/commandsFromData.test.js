@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { emptyState } from './localReducer';
+import { applyCommand, emptyState } from './localReducer';
 import { diffEventsToCommands, diffJournalsToCommands, toLegacyEvents, toLegacyJournals } from './commandsFromData';
 
 const mirrorWithTask = (id, patch) => ({
@@ -71,5 +71,58 @@ describe('commandsFromData', () => {
         expect(e2.deletedAt).toBeInstanceOf(Date);
 
         expect(toLegacyJournals(state)['2026-08-19'].text).toBe('日记');
+    });
+
+    test('round-trips every persistent task field through semantic commands', () => {
+        let state = {
+            ...emptyState(),
+            customLists: {
+                work: { title: '工作', color: null, lifecycle: 'active', deletedAt: null },
+            },
+        };
+        const source = {
+            id: 'full-task',
+            title: '完整任务',
+            type: 'task',
+            note: '正文',
+            completed: false,
+            start: new Date('2026-09-01T01:00:00.000Z'),
+            end: new Date('2026-09-01T02:00:00.000Z'),
+            checklist: [
+                { id: 'c1', text: '第一项', completed: true },
+                { id: 'c2', text: '第二项', completed: false },
+            ],
+            listId: 'work',
+            recurrenceType: 'weekly',
+            recurrenceCount: 10,
+            colorId: 4,
+            alarmEnabled: true,
+            alarmOffsetMinutes: -15,
+            lat: 31.2304,
+            lng: 121.4737,
+            extras: { futureField: { nested: true } },
+        };
+
+        const commands = diffEventsToCommands(state, [source]);
+        for (const [index, command] of commands.entries()) {
+            state = applyCommand(state, command, index + 1).state;
+        }
+
+        const restored = toLegacyEvents(state).find((event) => event.id === source.id);
+        expect(restored).toMatchObject({
+            title: source.title,
+            note: source.note,
+            type: 'task',
+            listId: 'work',
+            recurrenceType: 'weekly',
+            recurrenceCount: 10,
+            colorId: 4,
+            alarmEnabled: true,
+            alarmOffsetMinutes: -15,
+            lat: source.lat,
+            lng: source.lng,
+            extras: source.extras,
+            checklist: source.checklist,
+        });
     });
 });
