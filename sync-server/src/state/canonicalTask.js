@@ -23,6 +23,23 @@ const CANONICAL_TASK_FIELDS = new Set([
   'checklist',
 ]);
 
+export function createCanonicalTaskDefaults() {
+  return {
+    title: '',
+    note: '',
+    completed: false,
+    itemType: 'task',
+    schedule: null,
+    recurrence: null,
+    alarm: { enabled: false, offsetMinutes: 0 },
+    colorId: 0,
+    location: { lat: null, lng: null },
+    extras: {},
+    listId: null,
+    checklist: [],
+  };
+}
+
 export function canonicalizeChecklistItem(item) {
   if (!isObject(item)) return item;
   if (!Object.hasOwn(item, 'text') && typeof item.title === 'string') return item;
@@ -105,7 +122,18 @@ export function canonicalizeTaskPayload(payload) {
   }
   if (Object.keys(extras).length > 0 || Object.hasOwn(payload, 'extras')) next.extras = extras;
 
-  return next;
+  const defaults = createCanonicalTaskDefaults();
+  const canonical = { ...defaults, ...next };
+  if (isObject(canonical.schedule)) {
+    canonical.schedule = { startAt: null, endAt: null, ...canonical.schedule };
+  }
+  if (isObject(canonical.alarm)) {
+    canonical.alarm = { ...defaults.alarm, ...canonical.alarm };
+  }
+  if (isObject(canonical.location)) {
+    canonical.location = { ...defaults.location, ...canonical.location };
+  }
+  return canonical;
 }
 
 export function taskPayloadNeedsCanonicalization(payload) {

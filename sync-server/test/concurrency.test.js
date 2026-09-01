@@ -95,7 +95,7 @@ test('list delete vs assignList: assigning to a deleted list is rejected', () =>
   ]);
   assert.equal(result.receipts[3].status, 'REJECTED');
   assert.equal(result.receipts[3].errorCode, 'LIST_NOT_FOUND');
-  assert.equal('listId' in m.getState().tasks.t1, false);
+  assert.equal(m.getState().tasks.t1.listId, null);
   db.close();
 });
 

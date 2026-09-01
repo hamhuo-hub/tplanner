@@ -20,7 +20,7 @@ test('list lifecycle: create, rename, color, delete with task reassignment', () 
 
   ({ state } = run(state, 'list.delete', 'list-1', {}, 5));
   assert.equal(state.customLists['list-1'].lifecycle, 'deleted');
-  assert.equal('listId' in state.tasks.t1, false, 'deleted list must unassign its tasks');
+  assert.equal(state.tasks.t1.listId, null, 'deleted list must canonically unassign its tasks');
 
   const edit = run(state, 'list.rename', 'list-1', { title: 'x' }, 6);
   assert.equal(edit.receipt.status, 'ENTITY_DELETED');

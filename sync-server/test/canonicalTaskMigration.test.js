@@ -86,6 +86,7 @@ test('canonical task normalizer preserves extras and unknown fields while liftin
   assert.deepEqual(canonical.alarm, { enabled: true, offsetMinutes: 30 });
   assert.equal(canonical.colorId, 3);
   assert.deepEqual(canonical.location, { lat: 31.23, lng: 121.47 });
+  assert.equal(canonical.listId, null);
   assert.deepEqual(canonical.extras, {
     ...LEGACY_PAYLOAD.extras,
     timezone: 'Asia/Shanghai',
@@ -100,6 +101,35 @@ test('canonical task normalizer preserves extras and unknown fields while liftin
   }
 });
 
+test('canonical task normalizer fills every missing field without overwriting existing nested data', () => {
+  const canonical = canonicalizeTaskPayload({
+    title: '最小历史任务',
+    schedule: { startAt: '2026-09-01T00:00:00.000Z', timezone: 'Asia/Shanghai' },
+    alarm: { enabled: true, futureAlarmField: 'keep' },
+    location: { lat: 31.23, futureLocationField: 'keep' },
+    futureRootField: 7,
+  });
+
+  assert.deepEqual(canonical, {
+    title: '最小历史任务',
+    note: '',
+    completed: false,
+    itemType: 'task',
+    schedule: {
+      startAt: '2026-09-01T00:00:00.000Z',
+      endAt: null,
+      timezone: 'Asia/Shanghai',
+    },
+    recurrence: null,
+    alarm: { enabled: true, offsetMinutes: 0, futureAlarmField: 'keep' },
+    colorId: 0,
+    location: { lat: 31.23, lng: null, futureLocationField: 'keep' },
+    extras: { futureRootField: 7 },
+    listId: null,
+    checklist: [],
+  });
+});
+
 test('database migration atomically publishes a canonical snapshot and is idempotent', () => {
   const db = openDatabase(':memory:');
   seedLegacyDatabase(db);
@@ -112,6 +142,12 @@ test('database migration atomically publishes a canonical snapshot and is idempo
   assert.equal(first.snapshotVersion, 2);
 
   const stored = JSON.parse(db.prepare("SELECT payload_json FROM entities WHERE entity_id = 'task-1'").get().payload_json);
+  for (const field of [
+    'title', 'note', 'completed', 'itemType', 'schedule', 'recurrence', 'alarm',
+    'colorId', 'location', 'extras', 'listId', 'checklist',
+  ]) {
+    assert.equal(Object.hasOwn(stored, field), true, `migration must materialize ${field}`);
+  }
   assert.equal(stored.checklist[0].title, '保留这段文字');
   assert.equal('text' in stored.checklist[0], false);
   assert.deepEqual(stored.extras, {

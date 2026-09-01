@@ -11,6 +11,10 @@ const snapshotSchema = JSON.parse(readFileSync(
 ));
 const validateSnapshot = new Ajv2020({ strict: false, formats: { 'date-time': true } })
   .compile(snapshotSchema);
+const snapshotFixture = JSON.parse(readFileSync(
+  new URL('../../sync-v3/protocol/v3/fixtures/snapshot.v813.json', import.meta.url),
+  'utf8',
+));
 
 const STATE_A = {
   tasks: { 'task-1': { title: '甲', completed: false, lifecycle: 'active', deletedAt: null } },
@@ -93,6 +97,7 @@ test('snapshot schema formalizes canonical task/list fields and rejects checklis
           note: '',
           completed: false,
           itemType: 'task',
+          schedule: { startAt: '2026-09-01T00:00:00.000Z', endAt: null },
           recurrence: { frequency: 'weekly', count: 10 },
           alarm: { enabled: true, offsetMinutes: 15 },
           colorId: 2,
@@ -118,8 +123,18 @@ test('snapshot schema formalizes canonical task/list fields and rejects checklis
   }).envelope;
 
   assert.equal(validateSnapshot(canonical), true, JSON.stringify(validateSnapshot.errors));
+  const incomplete = structuredClone(canonical);
+  delete incomplete.state.tasks.task1.listId;
+  assert.equal(validateSnapshot(incomplete), false, 'canonical task fields may not be omitted');
+  const incompleteSchedule = structuredClone(canonical);
+  delete incompleteSchedule.state.tasks.task1.schedule.endAt;
+  assert.equal(validateSnapshot(incompleteSchedule), false, 'schedule endpoints may not be omitted');
   canonical.state.tasks.task1.checklist[0] = { id: 'check1', text: '旧字段', completed: false };
   assert.equal(validateSnapshot(canonical), false);
+});
+
+test('published snapshot fixture satisfies the complete canonical entity contract', () => {
+  assert.equal(validateSnapshot(snapshotFixture), true, JSON.stringify(validateSnapshot.errors));
 });
 
 test('envelope metadata does not affect stateHash (replay determinism)', () => {

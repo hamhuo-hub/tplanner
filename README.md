@@ -58,6 +58,9 @@ task.setExtras      task.setRecurrence  task.assignList
 checklist.*         list.create/rename/setColor/delete
 ```
 
+Every task snapshot contains the complete canonical field set; default/null/
+empty values are explicit rather than represented by an absent property.
+
 The one-shot migration converts stored checklist `text` to `title`, root
 `start/end` to `schedule {startAt,endAt}`, root `type` to `itemType`, and lifts
 historical recurrence/alarm/location fields. Timezone, every unknown field and

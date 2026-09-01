@@ -7,10 +7,10 @@
 //   - 删除是生命周期:普通编辑命中已删实体返回 ENTITY_DELETED,只有 restore 能恢复。
 //   - 重复设置相同值返回 NOOP,不产生状态变化。
 //
-// 实体规范:task = { title, note, completed, itemType, [schedule], [recurrence],
-//   [alarm], [colorId], [location], [extras], [listId], [checklist], lifecycle, deletedAt }
-// 字段按需出现(未被命令触及的字段不写入),保证与 fixtures 逐键一致。
-import { canonicalizeChecklistItem } from '../state/canonicalTask.js';
+// 实体规范:task 始终包含 title/note/completed/itemType/schedule/recurrence/
+// alarm/colorId/location/extras/listId/checklist/lifecycle/deletedAt；未设置的
+// 字段保留显式 canonical 默认值，禁止用“属性缺失”表达业务状态。
+import { canonicalizeChecklistItem, createCanonicalTaskDefaults } from '../state/canonicalTask.js';
 
 export function emptyState() {
   return { tasks: {}, customLists: {}, journals: {}, goals: {}, insights: {} };
@@ -53,10 +53,9 @@ const TASK = {
     const tasks = {
       ...state.tasks,
       [id]: {
+        ...createCanonicalTaskDefaults(),
         title: typeof args.title === 'string' ? args.title : '',
-        note: '',
-        completed: false,
-        itemType: args.itemType ?? 'task',
+        itemType: typeof args.itemType === 'string' ? args.itemType : 'task',
         lifecycle: 'active',
         deletedAt: null,
       },
@@ -81,6 +80,14 @@ const TASK = {
 
   'task.setSchedule'(state, cmd) {
     const schedule = cmd.arguments?.schedule ?? null;
+    if (schedule !== null && (
+      !isObject(schedule)
+      || !Object.hasOwn(schedule, 'startAt')
+      || !Object.hasOwn(schedule, 'endAt')
+      || ![schedule.startAt, schedule.endAt].every((value) => value === null || typeof value === 'string')
+    )) {
+      return { state, receipt: REJECTED('INVALID_SCHEDULE') };
+    }
     return updateTask(state, cmd.aggregateId, (t) =>
       JSON.stringify(t.schedule) === JSON.stringify(schedule) ? t : { ...t, schedule });
   },
@@ -306,8 +313,7 @@ const LIST = {
     const tasks = {};
     for (const [taskId, t] of Object.entries(before.state.tasks)) {
       if (t.listId === id) {
-        const { listId, ...rest } = t;
-        tasks[taskId] = rest;
+        tasks[taskId] = { ...t, listId: null };
       } else {
         tasks[taskId] = t;
       }

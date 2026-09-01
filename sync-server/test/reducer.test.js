@@ -37,6 +37,26 @@ function run(type, aggregateId, args, seq = 1) {
   return applyCommand(emptyState(), cmd(type, aggregateId, args, seq), seq);
 }
 
+test('task.create always produces the complete canonical entity shape', () => {
+  const { state } = run('task.create', 't1', { title: '新任务', itemType: 'note' });
+  assert.deepEqual(state.tasks.t1, {
+    title: '新任务',
+    note: '',
+    completed: false,
+    itemType: 'note',
+    schedule: null,
+    recurrence: null,
+    alarm: { enabled: false, offsetMinutes: 0 },
+    colorId: 0,
+    location: { lat: null, lng: null },
+    extras: {},
+    listId: null,
+    checklist: [],
+    lifecycle: 'active',
+    deletedAt: null,
+  });
+});
+
 test('create then edit different fields keeps both edits', () => {
   let { state } = run('task.create', 't1', { title: '旧' });
   ({ state } = applyCommand(state, cmd('task.setTitle', 't1', { title: '新' }, 2), 2));
@@ -82,6 +102,7 @@ test('canonical task field commands reject malformed payloads without mutating s
     cmd('task.setLocation', 't1', { lat: '1', lng: null }),
     cmd('task.setExtras', 't1', { extras: ['not-an-object'] }),
     cmd('task.setRecurrence', 't1', { recurrence: 'weekly' }),
+    cmd('task.setSchedule', 't1', { schedule: { startAt: '2026-09-01T00:00:00.000Z' } }),
   ]) {
     const result = applyCommand(state, command, 2);
     assert.equal(result.receipt.status, 'REJECTED');
