@@ -6,6 +6,14 @@ import { loadSyncMeta, updateSyncMeta } from './syncMeta';
 
 const CMD_PREFIX = 'cmd:';
 const RECEIPT_PREFIX = 'receipt:';
+const TERMINAL_RECEIPT_STATUSES = new Set([
+    'APPLIED',
+    'NOOP',
+    'REJECTED',
+    'ENTITY_DELETED',
+    'ID_ALREADY_EXISTS',
+    'SCHEMA_UNSUPPORTED',
+]);
 
 export async function appendCommands(store, commands) {
     const meta = await loadSyncMeta(store);
@@ -25,9 +33,10 @@ export async function appendCommands(store, commands) {
 
 export async function listCommands(store, { state = 'pending', limit = 100 } = {}) {
     const rows = await store.entries(CMD_PREFIX);
+    const states = new Set(Array.isArray(state) ? state : [state]);
     return rows
         .map(([, c]) => c)
-        .filter((c) => c.state === state)
+        .filter((c) => states.has(c.state))
         .sort((a, b) => a.clientSequence - b.clientSequence)
         .slice(0, limit);
 }
@@ -45,13 +54,16 @@ export async function applyReceipts(store, receipts) {
     let through = 0;
     for (const r of receipts ?? []) {
         await store.set(`${RECEIPT_PREFIX}${r.clientSequence}`, r);
-        if (r.clientSequence > through) through = r.clientSequence;
-    }
-    if (through > 0) {
-        const rows = await store.entries(CMD_PREFIX);
-        for (const [key, c] of rows) {
-            if (c.clientSequence <= through) await store.delete(key);
+        const commandKey = `${CMD_PREFIX}${r.clientSequence}`;
+        const command = await store.get(commandKey);
+        if (command?.commandId === r.commandId) {
+            if (r.status === 'SEQUENCE_GAP') {
+                await store.set(commandKey, { ...command, state: 'pending' });
+            } else if (TERMINAL_RECEIPT_STATUSES.has(r.status)) {
+                await store.delete(commandKey);
+            }
         }
+        if (r.clientSequence > through) through = r.clientSequence;
     }
     return through;
 }

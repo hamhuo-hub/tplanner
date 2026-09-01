@@ -33,7 +33,7 @@ export function createIndexedDbKvStore({ dbName = 'tplanner-sync-v3', storeName 
             return row?.value;
         },
         async set(key, value) {
-            return tx('readwrite', (s) => s.put({ key, value }));
+            return tx('readwrite', (s) => s.put({ key, value }, key));
         },
         async delete(key) {
             return tx('readwrite', (s) => s.delete(key));

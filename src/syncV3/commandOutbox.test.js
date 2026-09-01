@@ -24,7 +24,10 @@ describe('command outbox', () => {
 
     test('uploaded commands stay in outbox until receipts confirm', async () => {
         const store = createMemoryKvStore();
-        await appendCommands(store, [{ type: 'task.create', aggregateId: 't1' }, { type: 'task.setTitle', aggregateId: 't1' }]);
+        const commands = await appendCommands(store, [
+            { type: 'task.create', aggregateId: 't1' },
+            { type: 'task.setTitle', aggregateId: 't1' },
+        ]);
 
         await markUploaded(store, [1]);
         expect(await listCommands(store)).toHaveLength(1, 'uploaded command is no longer pending');
@@ -32,11 +35,30 @@ describe('command outbox', () => {
 
         // 回执确认后:删除条目、留存回执
         await applyReceipts(store, [
-            { commandId: 'c1', clientSequence: 1, status: 'APPLIED', snapshotVersion: 7 },
-            { commandId: 'c2', clientSequence: 2, status: 'APPLIED', snapshotVersion: 7 },
+            { commandId: commands[0].commandId, clientSequence: 1, status: 'APPLIED', snapshotVersion: 7 },
+            { commandId: commands[1].commandId, clientSequence: 2, status: 'APPLIED', snapshotVersion: 7 },
         ]);
         expect(await listCommands(store, { state: 'uploaded' })).toHaveLength(0);
         expect(await getReceipt(store, 2)).toMatchObject({ status: 'APPLIED', snapshotVersion: 7 });
+    });
+
+    test('SEQUENCE_GAP requeues the matching uploaded command', async () => {
+        const store = createMemoryKvStore();
+        const [command] = await appendCommands(store, [{ type: 'task.create', aggregateId: 't1' }]);
+        await markUploaded(store, [command.clientSequence]);
+
+        await applyReceipts(store, [{
+            commandId: command.commandId,
+            clientSequence: command.clientSequence,
+            status: 'SEQUENCE_GAP',
+            snapshotVersion: 7,
+        }]);
+
+        expect(await listCommands(store, { state: 'uploaded' })).toHaveLength(0);
+        expect(await listCommands(store, { state: 'pending' })).toEqual([
+            expect.objectContaining({ commandId: command.commandId, clientSequence: 1 }),
+        ]);
+        expect(await getReceipt(store, 1)).toMatchObject({ status: 'SEQUENCE_GAP' });
     });
 
     test('deviceId is stable across loads and sequences restart-safe via meta', async () => {
