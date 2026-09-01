@@ -4,7 +4,8 @@
  *
  * Web 不再把树莓派 REST 数据当直接状态,也不再 GET 整库后再 PUT 整库:
  * 本地改动先 diff 成语义命令上传,展示数据永远是"中央镜像 + 本地 pending"的投影。
- * 认证仍走 V1 兼容端点(过渡期内服务器保留 /tplanner/events 的 Basic Auth)。
+ * 认证探测与所有数据请求都只使用 V3 路由。生产 Web 由独立 Caddy
+ * 静态站点把 /tplanner 反代到 V3 API；也可用 VITE_SYNC_SERVER_URL 改为跨源。
  */
 import { createSyncEngine } from '../syncV3/createSyncEngine';
 import { appendCommands } from '../syncV3/commandOutbox';
@@ -21,6 +22,10 @@ const AUTH_PERSIST_KEY = 'tplanner_web_auth_persist';
 
 let authHeader = null;
 let enginePromise = null;
+const configuredServerUrl = import.meta.env?.VITE_SYNC_SERVER_URL?.trim();
+const SYNC_SERVER_URL = configuredServerUrl || '';
+
+const apiUrl = (path) => `${SYNC_SERVER_URL}${path}`;
 
 function readStoredAuth() {
     if (typeof window === 'undefined') return null;
@@ -65,7 +70,11 @@ async function apiFetch(input, init = {}, authorization = authHeader) {
 }
 
 async function verifyAuthorization(authorization) {
-    const response = await apiFetch('/tplanner/events', { method: 'GET', cache: 'no-store' }, authorization);
+    const response = await apiFetch(
+        apiUrl('/tplanner/v3/capabilities'),
+        { method: 'GET', cache: 'no-store' },
+        authorization,
+    );
     if (response.status === 401 || response.status === 403) return false;
     if (!response.ok) throw new Error(`认证服务暂时不可用（HTTP ${response.status}）`);
     assertJsonResponse(response, 'authentication request');
@@ -89,11 +98,11 @@ export async function restoreWebAuth() {
     return authenticated;
 }
 
-// ── V3 引擎(同源部署:serverUrl 用相对路径)───────────────────────────────
+// ── V3 引擎─────────────────────────────────────────────────────────────
 
 async function getEngine() {
     if (!enginePromise) {
-        enginePromise = createSyncEngine({ serverUrl: '', fetchFn: apiFetch });
+        enginePromise = createSyncEngine({ serverUrl: SYNC_SERVER_URL, fetchFn: apiFetch });
     }
     return enginePromise;
 }
@@ -110,8 +119,7 @@ async function syncWithLocal({ events, journals } = {}) {
     ];
     if (commands.length > 0) await appendCommands(engine.store, commands);
 
-    await engine.uploader.flush();
-    await engine.installer.syncToLatest();
+    await engine.syncNow();
     const display = (await engine.installer.getDisplayState())
         ?? (await engine.installer.getServerMirror())
         ?? { tasks: {}, journals: {} };

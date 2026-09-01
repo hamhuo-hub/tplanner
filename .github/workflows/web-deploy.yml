@@ -1,0 +1,51 @@
+name: Web deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.ts'
+      - 'scripts/deploy-web.mjs'
+      - 'scripts/deploy/**'
+      - '.github/workflows/web-deploy.yml'
+
+concurrency:
+  group: tplanner-web-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build:web
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tplanner-web-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+
+  deploy:
+    if: ${{ vars.TPLANNER_LAN_DEPLOY_ENABLED == 'true' }}
+    needs: verify
+    runs-on: [self-hosted, tplanner-lan]
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npm run deploy:web
+        env:
+          PI_HOST: 192.168.1.9
+          PI_USER: hamhuo

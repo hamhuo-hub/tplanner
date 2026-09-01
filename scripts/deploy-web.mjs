@@ -1,75 +1,111 @@
 /**
- * Deploy the web app to the Raspberry Pi.
+ * Build and atomically deploy only the Web bundle to the Raspberry Pi.
  *
- * Usage: node scripts/deploy-web.mjs
- *
- * 1. Builds the React app (vite build) if not already built
- * 2. Clears old files on the Pi, then scps dist/ over
- * 3. Restarts the tplanner-sync service via SSH
- *
- * Prerequisites:
- *   - SSH key-based auth to pi@192.168.5.5
- *   - scp and ssh available (built-in on Windows 10+, macOS, Linux)
- *   - PI_HOST env var overrides default (192.168.5.5)
- *   - PI_USER env var overrides default (hamhuo)
- *   - PI_PATH env var overrides default (/home/hamhuo/Documents/sync-server)
+ * Sync Server and State Builder are independent services: this script never
+ * copies their code and never restarts them.
  */
+import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import { execSync } from 'child_process';
-import { existsSync } from 'fs';
-import { join, dirname, basename } from 'path';
-import { fileURLToPath } from 'url';
+const scriptDir = dirname(fileURLToPath(import.meta.url));
+const rootDir = join(scriptDir, '..');
+const piHost = process.env.PI_HOST || '192.168.1.9';
+const piUser = process.env.PI_USER || 'hamhuo';
+const webRoot = process.env.PI_WEB_ROOT || '/srv/tplanner-web';
+const sshTarget = `${piUser}@${piHost}`;
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const rootDir = join(__dirname, '..');
-
-const PI_HOST = process.env.PI_HOST || '192.168.5.5';
-const PI_USER = process.env.PI_USER || 'hamhuo';
-const PI_PATH = process.env.PI_PATH || '/root/tplanner-sync';
-const SSH_TARGET = `${PI_USER}@${PI_HOST}`;
-const WEB_DIR  = `${PI_PATH}/dist-web`;
-
-function run(cmd, opts = {}) {
-    console.log(`\n> ${cmd}`);
-    return execSync(cmd, { stdio: 'inherit', cwd: rootDir, ...opts });
+function requireSafe(value, pattern, label) {
+    if (!pattern.test(value)) throw new Error(`Unsafe ${label}: ${value}`);
 }
 
-// ── 1. Build ──────────────────────────────────────────────────────────────
-console.log('=== Step 1: Build web app ===');
-run('npx vite build');
+requireSafe(piHost, /^[A-Za-z0-9.-]+$/, 'PI_HOST');
+requireSafe(piUser, /^[A-Za-z_][A-Za-z0-9_-]*$/, 'PI_USER');
+requireSafe(webRoot, /^\/srv\/tplanner-web(?:\/[A-Za-z0-9._-]+)*$/, 'PI_WEB_ROOT');
 
-// ── 2. Deploy ─────────────────────────────────────────────────────────────
-console.log('\n=== Step 2: Deploy to Pi ===');
-
-// scp to a temp location in hamhuo's home (avoids /root permission issues)
-const TMP_DIR = '/tmp/tplanner-deploy';
-const TMP_WEB_DIR = `${TMP_DIR}/web`;
-console.log('Uploading files...');
-run(`ssh ${SSH_TARGET} "rm -rf ${TMP_DIR} && mkdir -p ${TMP_WEB_DIR}"`);
-run(`scp -r dist/* ${SSH_TARGET}:${TMP_WEB_DIR}/`);
-
-// Also copy updated server.js
-const serverJs = join(rootDir, 'sync-server', 'server.js');
-if (!existsSync(serverJs)) {
-    throw new Error(`Missing sync server entry point: ${serverJs}`);
-}
-console.log('Including updated server.js...');
-run(`scp "${serverJs}" ${SSH_TARGET}:${TMP_DIR}/server.js`);
-
-// Move from temp to /root/tplanner-sync/ with sudo
-console.log('Installing to /root/tplanner-sync/...');
-run(`ssh ${SSH_TARGET} "sudo rm -rf ${WEB_DIR} && sudo mkdir -p ${WEB_DIR} && sudo cp -r ${TMP_WEB_DIR}/. ${WEB_DIR}/ && sudo cp ${TMP_DIR}/server.js ${PI_PATH}/server.js && rm -rf ${TMP_DIR}"`);
-
-// ── 3. Restart service ────────────────────────────────────────────────────
-console.log('\n=== Step 3: Restart sync server ===');
-try {
-    run(`ssh ${SSH_TARGET} "sudo systemctl restart tplanner-sync"`);
-    console.log('Service restarted successfully.');
-} catch (e) {
-    console.error('Failed to restart service. You may need to restart manually:');
-    console.error(`  ssh ${SSH_TARGET} sudo systemctl restart tplanner-sync`);
+function run(command, args, { capture = false } = {}) {
+    console.log(`> ${command} ${args.join(' ')}`);
+    return execFileSync(command, args, {
+        cwd: rootDir,
+        stdio: capture ? ['ignore', 'pipe', 'inherit'] : 'inherit',
+        encoding: capture ? 'utf8' : undefined,
+    });
 }
 
-console.log('\n=== Done ===');
-console.log('Web app deployed successfully.');
-console.log('Public URL: https://plan.hamhuo.top');
+const gitSha = String(run('git', ['rev-parse', '--short=12', 'HEAD'], { capture: true })).trim();
+const stamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+const releaseId = process.env.WEB_RELEASE_ID || `${stamp}-${gitSha}`;
+requireSafe(releaseId, /^[A-Za-z0-9._-]+$/, 'WEB_RELEASE_ID');
+
+const remoteTemp = `/tmp/tplanner-web-deploy-${releaseId}`;
+const remoteRelease = `${webRoot}/releases/${releaseId}`;
+const caddyTemplate = 'scripts/deploy/tplanner-web.Caddyfile';
+if (!existsSync(join(rootDir, caddyTemplate))) throw new Error(`Missing ${caddyTemplate}`);
+
+console.log('=== Build Web bundle ===');
+const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+run(npx, ['vite', 'build']);
+if (!existsSync(join(rootDir, 'dist', 'index.html'))) throw new Error('dist/index.html was not built');
+
+console.log('=== Upload release ===');
+run('ssh', [sshTarget, `set -eu; mkdir -p '${remoteTemp}/dist'`]);
+run('scp', ['-r', 'dist/.', `${sshTarget}:${remoteTemp}/dist/`]);
+run('scp', [caddyTemplate, `${sshTarget}:${remoteTemp}/tplanner-web.Caddyfile`]);
+
+const installScript = `
+set -eu
+WEB_ROOT='${webRoot}'
+RELEASE='${remoteRelease}'
+TEMP='${remoteTemp}'
+BACKUP="/etc/caddy/Caddyfile.tplanner-web.$(date +%Y%m%d%H%M%S).bak"
+PREVIOUS="$(readlink -f "$WEB_ROOT/current" 2>/dev/null || true)"
+
+sudo install -d -m 0755 "$WEB_ROOT/releases"
+if sudo test -e "$RELEASE"; then
+  echo "Release already exists: $RELEASE" >&2
+  exit 1
+fi
+sudo install -d -m 0755 "$RELEASE"
+sudo cp -a "$TEMP/dist/." "$RELEASE/"
+sudo chown -R root:root "$RELEASE"
+
+AUTH_HASH="$(sudo awk '$1 == "hamhuo" && $2 ~ /^\\$2/ { print $2; exit }' /etc/caddy/Caddyfile)"
+if [ -z "$AUTH_HASH" ]; then
+  echo 'Could not preserve the existing Caddy Basic Auth hash' >&2
+  exit 1
+fi
+sed "s|__TPLANNER_BASIC_HASH__|$AUTH_HASH|g" "$TEMP/tplanner-web.Caddyfile" > "$TEMP/Caddyfile"
+sudo cp /etc/caddy/Caddyfile "$BACKUP"
+sudo install -m 0644 "$TEMP/Caddyfile" /etc/caddy/Caddyfile
+sudo caddy validate --config /etc/caddy/Caddyfile
+
+sudo ln -sfn "$RELEASE" "$WEB_ROOT/.current-$RELEASE_ID"
+sudo mv -Tf "$WEB_ROOT/.current-$RELEASE_ID" "$WEB_ROOT/current"
+if ! sudo systemctl reload caddy; then
+  sudo cp "$BACKUP" /etc/caddy/Caddyfile
+  [ -n "$PREVIOUS" ] && sudo ln -sfn "$PREVIOUS" "$WEB_ROOT/current"
+  sudo systemctl reload caddy || true
+  exit 1
+fi
+
+if ! curl -fsS --max-time 10 -H 'Host: plan.hamhuo.top' http://127.0.0.1:37400/ >/dev/null; then
+  sudo cp "$BACKUP" /etc/caddy/Caddyfile
+  [ -n "$PREVIOUS" ] && sudo ln -sfn "$PREVIOUS" "$WEB_ROOT/current"
+  sudo systemctl reload caddy || true
+  exit 1
+fi
+rm -rf "$TEMP"
+echo "previous=$PREVIOUS"
+echo "release=$RELEASE"
+`;
+
+execFileSync('ssh', [sshTarget, `RELEASE_ID='${releaseId}' sh -s`], {
+    cwd: rootDir,
+    stdio: ['pipe', 'inherit', 'inherit'],
+    input: installScript,
+});
+
+console.log('=== Verify public site ===');
+run('curl', ['-fsS', '--max-time', '20', 'https://plan.hamhuo.top/'], { capture: true });
+console.log(`Deployed ${releaseId} to https://plan.hamhuo.top`);
