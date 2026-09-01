@@ -41,7 +41,6 @@ export const typography = Object.freeze({
     display: "'Oswald', 'Arial Narrow', sans-serif",
     mono: "'IBM Plex Mono', 'Courier New', monospace",
     body: "'IBM Plex Mono', monospace",
-    task: "Arial, sans-serif",
     taskTitle: '15px',
     taskBadge: '11px',
 });
@@ -50,6 +49,69 @@ export const geometry = Object.freeze({
     radiusSmall: '2px',
     radiusSmallNumber: 2,
     radiusMedium: '9px',
+});
+
+/**
+ * Semantic layer — State decides HOW prominent something is.
+ * Type (task/reminder/status) only provides the accent hue; these tokens own
+ * surface emphasis, text contrast, and border emphasis. Components must
+ * reference them instead of computing their own brightness/contrast.
+ */
+export const semantic = Object.freeze({
+    surface: {
+        default: colors.surfaceRaised,
+        selected: colors.control,
+        disabled: colors.surface,
+    },
+    text: {
+        primary: colors.textPrimary,
+        secondary: colors.textSecondary,
+        disabled: colors.textMuted,
+        onAccent: colors.textOnAccent,
+    },
+    border: {
+        default: colors.border,
+        selected: colors.gold,
+        conflict: colors.red,
+    },
+});
+
+/**
+ * Component layer — the event block multiplies TYPE (accent hue) by STATE
+ * (emphasis). All color-mix / opacity / outline decisions live here; the
+ * component only asks for `event.surface(accent, state)` and friends.
+ */
+export const event = Object.freeze({
+    // Accent share per state: higher = the accent is more present = more
+    // prominent. completed sinks toward the neutral surface (de-saturated).
+    surfaceAccentMix: Object.freeze({
+        selected: 0.72,
+        normal: 0.50,
+        shadow: 0.50,
+        completed: 0.30,
+    }),
+    borderAccentMix: Object.freeze({
+        selected: 0.90,
+        normal: 0.75,
+        shadow: 0.75,
+        completed: 0.55,
+    }),
+    opacity: Object.freeze({
+        selected: 1,
+        normal: 1,
+        shadow: 0.25,
+        completed: 0.45,
+    }),
+    completedFilter: 'saturate(0.3)',
+    outline: Object.freeze({
+        selected: colors.gold,
+        selectedWidth: '2px',
+        selectedOffset: '1px',
+    }),
+    surface: (accent, state = 'normal') =>
+        `color-mix(in srgb, ${accent} ${Math.round(event.surfaceAccentMix[state] * 100)}%, var(--clr-raised))`,
+    border: (accent, state = 'normal') =>
+        `color-mix(in srgb, ${accent} ${Math.round(event.borderAccentMix[state] * 100)}%, rgba(255,255,255,0.18))`,
 });
 
 /**
@@ -99,10 +161,20 @@ export function installDesignTokens(root = document.documentElement) {
         '--font-display': typography.display,
         '--font-mono': typography.mono,
         '--font-body': typography.body,
-        '--font-task': typography.task,
         '--task-title-size': typography.taskTitle,
         '--task-badge-size': typography.taskBadge,
         '--radius-sm': geometry.radiusSmall,
+        // Semantic layer — state emphasis for CSS-side rules (glow, hover…)
+        '--surface-default': semantic.surface.default,
+        '--surface-selected': semantic.surface.selected,
+        '--surface-disabled': semantic.surface.disabled,
+        '--text-primary': semantic.text.primary,
+        '--text-secondary': semantic.text.secondary,
+        '--text-disabled': semantic.text.disabled,
+        '--text-on-accent': semantic.text.onAccent,
+        '--border-default': semantic.border.default,
+        '--border-selected': semantic.border.selected,
+        '--border-conflict': semantic.border.conflict,
     };
     eventColors.forEach((color, index) => {
         variables[`--clr-event-${index}`] = color;

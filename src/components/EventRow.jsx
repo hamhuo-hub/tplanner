@@ -3,11 +3,10 @@ import { fromZonedTime, formatInTimeZone } from 'date-fns-tz';
 import EventBlock from './EventBlock';
 import { useTranslation } from 'react-i18next';
 import { getDateLocale } from '../utils/dateLocale';
-import { MASSEY_COLORS } from '../utils/constants';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { marked } from 'marked';
 import { assignOverlapGroupLanes, computeCascadeLayout } from '../utils/laneLayout';
-import { timeline } from '../design-system/tokens';
+import { event as eventTokens, eventColors, timeline } from '../design-system';
 
 export default function EventRow({ date, events, onEventClick, onAddEvent, highlight, onDragStart, dragState, clashes, displayTimezone, onToggleTaskComplete, journalText, onContextMenu, selectedIds }) {
     const { t, i18n } = useTranslation();
@@ -231,12 +230,15 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                             const left  = (startMins / 1440) * 100;
                             const width = ((endMins - startMins) / 1440) * 100;
                             const colorIdx = ev.colorId ?? 0;
-                            const colorVar = `var(--clr-event-${colorIdx}, ${MASSEY_COLORS[colorIdx] ?? MASSEY_COLORS[0]})`;
+                            const colorVar = `var(--clr-event-${colorIdx}, ${eventColors[colorIdx] ?? eventColors[0]})`;
                             return (
                                 <div key={ev.id}
                                     style={{
                                         position:        'absolute',
-                                        backgroundColor: colorVar,
+                                        // Status uses the SAME normal-state surface as task
+                                        // blocks: type accent 50% over the raised surface,
+                                        // instead of a brighter raw event color.
+                                        backgroundColor: eventTokens.surface(colorVar, 'normal'),
                                         left: `${left}%`, width: `${width}%`,
                                         top: `${ev.rowIndex * (timeline.statusRowHeight + timeline.statusRowGap)}px`, height: `${timeline.statusRowHeight}px`,
                                         borderRadius:    2,
@@ -258,7 +260,7 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                                         fontWeight:    600,
                                         letterSpacing: '0.06em',
                                         textTransform: 'uppercase',
-                                        color:         '#fff',
+                                        color:         'var(--clr-text)',
                                         whiteSpace:    'nowrap',
                                         overflow:      'hidden',
                                         textOverflow:  'ellipsis',

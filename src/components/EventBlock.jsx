@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { fromZonedTime, formatInTimeZone } from 'date-fns-tz';
-import { eventColors, TaskUnit } from '../design-system';
+import { event as eventTokens, eventColors, semantic, TaskUnit } from '../design-system';
 
 export default function EventBlock({ event, onClick, isConflicting, displayTimezone, onToggleTaskComplete, onDragStart, onContextMenu, isShadow, isSelected, style }) {
     const { t } = useTranslation();
@@ -26,6 +26,10 @@ export default function EventBlock({ event, onClick, isConflicting, displayTimez
     const colorIdx = event.colorId ?? 0;
     const colorVar = `var(--clr-event-${colorIdx}, ${eventColors[colorIdx] ?? eventColors[0]})`;
 
+    // TYPE provides the accent hue above; STATE owns every emphasis decision
+    // (surface mix, opacity, outline, conflict border) via design tokens.
+    const state = isShadow ? 'shadow' : isCompleted ? 'completed' : isSelected ? 'selected' : 'normal';
+
     // Checklist progress
     const checklist = event.checklist ?? [];
     const doneCount = checklist.filter(i => i.completed).length;
@@ -44,16 +48,15 @@ export default function EventBlock({ event, onClick, isConflicting, displayTimez
             onContextMenu={e => { e.preventDefault(); e.stopPropagation(); onContextMenu?.(e, event); }}
             className={blockClass}
             style={{
-                // Use the event palette for the whole unit, matching the colored
-                // timeline cells instead of reducing color to a narrow accent.
-                backgroundColor: `color-mix(in srgb, ${colorVar} 50%, var(--clr-raised))`,
-                borderColor: `color-mix(in srgb, ${colorVar} 75%, rgba(255,255,255,0.18))`,
-                opacity: isShadow ? 0.25 : isCompleted ? 0.45 : 1,
+                backgroundColor: eventTokens.surface(colorVar, state),
+                borderColor: isConflicting ? semantic.border.conflict : eventTokens.border(colorVar, state),
+                opacity: eventTokens.opacity[state],
+                filter: state === 'completed' ? eventTokens.completedFilter : undefined,
                 left:  `${leftPercent}%`,
                 width: `${widthPercent}%`,
                 zIndex: 10,
                 ...(style || { top: '4px', bottom: '4px' }),
-                ...(isSelected ? { outline: '2px solid var(--clr-gold, #C9A84C)', outlineOffset: '1px' } : null),
+                ...(isSelected ? { outline: `${eventTokens.outline.selectedWidth} solid ${eventTokens.outline.selected}`, outlineOffset: eventTokens.outline.selectedOffset } : null),
             }}
             title={`${event.title} (${formatInTimeZone(event.start, tz, 'HH:mm')} – ${formatInTimeZone(event.end, tz, 'HH:mm')})`}
         >

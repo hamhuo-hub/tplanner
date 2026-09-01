@@ -59,15 +59,10 @@
     --transition-fast:   120ms ease;
     --transition-normal: 200ms ease;
 
-    /* Event color palette — overridable by .tptheme packages */
-    --clr-event-0: #5B8FCC; /* Steel Blue      */
-    --clr-event-1: #C9A84C; /* Antique Gold    */
-    --clr-event-2: #C0697A; /* Dusty Rose      */
-    --clr-event-3: #5B9E72; /* Sage Green      */
-    --clr-event-4: #8B6BAE; /* Dusty Lavender  */
-    --clr-event-5: #C87D5A; /* Burnt Sienna    */
-    --clr-event-6: #4A9DA8; /* Steel Teal      */
-    --clr-event-7: #8A8A8A; /* Stone Grey      */
+    /* Event palette now lives only in src/design-system/tokens.js
+       (eventColors, installed at runtime via installDesignTokens so .tptheme
+       packages can override). Every var(--clr-event-*) consumer carries a
+       JS-side fallback for the pre-install first paint. */
 }
 
 /* ── Global Reset ───────────────────────────────────────────────────────── */
@@ -582,15 +577,12 @@ input[type="number"] {
 }
 
 .event-block--conflicting {
-    border-color: var(--clr-red) !important;
     box-shadow: 0 0 8px var(--clr-red-glow);
 }
 
-.event-block--completed {
-    opacity: 0.5;
-    filter: saturate(0.3);
-}
-
+/* Completed/shadow emphasis now comes from design tokens (event.opacity,
+   event.completedFilter) applied inline by EventBlock — no CSS-side
+   redefinition of state emphasis. */
 .tplanner-task-unit {
     padding: 5px 8px;
     height: 100%;
@@ -610,7 +602,7 @@ input[type="number"] {
 
 .tplanner-task-unit__title {
     min-width: 0;
-    font-family: var(--font-task, Arial, sans-serif);
+    font-family: var(--font-body);
     font-size: var(--task-title-size, 15px);
     font-weight: 500;
     color: var(--clr-text);
