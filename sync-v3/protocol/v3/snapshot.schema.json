@@ -36,14 +36,109 @@
       "type": "object",
       "additionalProperties": { "type": "object" }
     },
+    "checklistItem": {
+      "type": "object",
+      "required": ["id", "title", "completed"],
+      "properties": {
+        "id": { "$ref": "#/$defs/idString" },
+        "title": { "type": "string" },
+        "completed": { "type": "boolean" }
+      },
+      "not": { "required": ["text"] },
+      "additionalProperties": true,
+      "description": "Checklist text is canonicalized as title. The historical text alias is never persisted in V3 state."
+    },
+    "recurrence": {
+      "type": "object",
+      "required": ["frequency", "count"],
+      "properties": {
+        "frequency": { "type": "string", "minLength": 1 },
+        "count": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": true
+    },
+    "alarm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "offsetMinutes"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "offsetMinutes": { "type": "integer" }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lat", "lng"],
+      "properties": {
+        "lat": { "type": ["number", "null"] },
+        "lng": { "type": ["number", "null"] }
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string" },
+        "note": { "type": "string" },
+        "completed": { "type": "boolean" },
+        "itemType": { "type": "string" },
+        "schedule": { "type": ["object", "null"] },
+        "recurrence": {
+          "oneOf": [
+            { "$ref": "#/$defs/recurrence" },
+            { "type": "null" }
+          ]
+        },
+        "listId": {
+          "oneOf": [
+            { "$ref": "#/$defs/idString" },
+            { "type": "null" }
+          ]
+        },
+        "colorId": { "type": "integer", "minimum": 0 },
+        "alarm": { "$ref": "#/$defs/alarm" },
+        "location": { "$ref": "#/$defs/location" },
+        "extras": { "type": "object", "additionalProperties": true },
+        "checklist": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/checklistItem" }
+        },
+        "lifecycle": { "enum": ["active", "deleted"] },
+        "deletedAt": { "type": ["integer", "null"] }
+      }
+    },
+    "taskMap": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/task" }
+    },
+    "customList": {
+      "type": "object",
+      "required": ["title", "lifecycle", "deletedAt"],
+      "properties": {
+        "title": { "type": "string" },
+        "color": { "type": ["string", "null"] },
+        "lifecycle": { "enum": ["active", "deleted"] },
+        "deletedAt": { "type": ["integer", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "customListMap": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/customList" }
+    },
+    "idString": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+    },
     "globalState": {
       "type": "object",
       "additionalProperties": false,
       "required": ["tasks", "customLists", "journals", "goals", "insights"],
       "properties": {
-        "tasks": { "$ref": "#/$defs/entityMap" },
+        "tasks": { "$ref": "#/$defs/taskMap" },
         "customLists": {
-          "$ref": "#/$defs/entityMap",
+          "$ref": "#/$defs/customListMap",
           "description": "Only real user-defined lists. Inbox and Today are computed filter views and MUST NOT appear here."
         },
         "journals": { "$ref": "#/$defs/entityMap" },
