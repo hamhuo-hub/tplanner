@@ -4,6 +4,7 @@
 import { randomUUID } from 'node:crypto';
 import { loadStateFromDb } from '../materializer/materializer.js';
 import { buildSnapshot } from '../materializer/snapshot.js';
+import { insertJournalCommit } from './journal.js';
 
 function requireSafeNonNegativeInteger(value, name, { allowMax = true } = {}) {
   if (!Number.isSafeInteger(value) || value < 0 || (!allowMax && value >= Number.MAX_SAFE_INTEGER)) {
@@ -155,6 +156,16 @@ export function publishRecoverySnapshot(
       candidate.manifest.compressedBytes,
       createdAt,
     );
+    // 恢复 checkpoint 内容与 latest 相同:空 commit,保持 version → commit 一一对应。
+    insertJournalCommit(db, {
+      snapshotVersion: candidate.manifest.snapshotVersion,
+      parentVersion: candidate.manifest.parentVersion,
+      brokerFromSequence: Number(latest.broker_to_sequence),
+      brokerToSequence: Number(latest.broker_to_sequence),
+      stateHashAfter: candidate.stateHash,
+      changes: [],
+      createdAt,
+    });
     db.prepare(`
       UPDATE latest_snapshot
          SET version = ?, state_hash = ?

@@ -1,8 +1,8 @@
 // 有序 materializer 核心(见 docs/sync-v3.md §5/§6/§9/§10)。
 //
 // 职责:按 broker sequence 顺序应用中央 reducer,单 SQLite 事务写
-// entities / 回执 / 设备进度 / 快照 / latest / 发布 outbox。不直接接触
-// NATS —— 消息源由 main.js 注入,便于确定性重放测试。
+// entities / 回执 / 设备进度 / 快照 / change journal / latest / 发布 outbox。
+// 不直接接触 NATS —— 消息源由 main.js 注入,便于确定性重放测试。
 //
 // 铁律:
 //   - 一个 integration batch 一条事务、最多一个快照(§6)。
@@ -21,15 +21,11 @@ import {
 } from '../state/receipts.js';
 import { buildSnapshot } from './snapshot.js';
 import { canonicalizeTaskPayload } from '../state/canonicalTask.js';
-
-// reducer 状态 map 键 → entities 表 entity_type
-const ENTITY_TYPES = {
-  tasks: 'task',
-  customLists: 'customList',
-  journals: 'journal',
-  goals: 'goal',
-  insights: 'insight',
-};
+import {
+  computeJournalChanges,
+  ENTITY_TYPES,
+  insertJournalCommit,
+} from '../state/journal.js';
 
 // reducer 实体把 lifecycle/deletedAt 放在实体内;entities 表把它们拆成独立列。
 function splitLifecycle(entity) {
@@ -60,11 +56,7 @@ export function loadProgressFromDb(db) {
   return accepted;
 }
 
-// reducer 不可变更新:未变实体保持同一引用,引用不等即已变化。
-function changedKeys(oldMap, newMap) {
-  const keys = new Set([...Object.keys(oldMap ?? {}), ...Object.keys(newMap ?? {})]);
-  return [...keys].filter((id) => oldMap?.[id] !== newMap?.[id]);
-}
+// changedKeys/ENTITY_TYPES 的唯一权威定义在 state/journal.js,本文件直接复用。
 
 export function createMaterializer({
   db,
@@ -219,7 +211,19 @@ export function createMaterializer({
         })
       : null;
 
-    // 3. 单事务落库:重裁删除 → 回执 → 设备进度 → 实体 diff → 快照 → outbox(§10)
+    // 4. 每个新快照都带一个 journal commit(snapshotVersion 即 commit sequence)。
+    // changes 是 State Builder 已裁决的完整 authoritative entity diff,NOOP/
+    // REJECTED coverage 时为 []。纯内存计算,不进事务。
+    const journalChanges = snapshot
+      ? computeJournalChanges({
+          fromState: state,
+          toState: nextState,
+          brokerToSequence,
+        })
+      : [];
+
+    // 5. 单事务落库:重裁删除 → 回执 → 设备进度 → 实体 diff → 快照 →
+    // journal commit → outbox(§10)。journal 与 snapshot 同事务,绝不事后补写。
     const writeTx = db.transaction(() => {
       // Fencing happens under the same SQLite write lock as the authoritative commit. If a slow
       // former owner built this batch after its lease expired, a new owner can change the row
@@ -254,21 +258,19 @@ export function createMaterializer({
       }
 
       if (snapshot) {
-        for (const [mapKey, entityType] of Object.entries(ENTITY_TYPES)) {
-          for (const id of changedKeys(state[mapKey], nextState[mapKey])) {
-            const entity = nextState[mapKey][id];
-            if (!entity) continue; // reducer 从不移除实体,仅为防御
-            const { lifecycle, deletedAt, payload } = splitLifecycle(entity);
-            upsertEntity.run({
-              entityType,
-              entityId: id,
-              lifecycle,
-              payloadJson: JSON.stringify(payload),
-              brokerSequence: brokerToSequence,
-              now: now(),
-              deletedAt: deletedAt ?? null,
-            });
-          }
+        // journalChanges 与实体行共用同一份权威 diff:value 是完整实体,
+        // entities 表拆 lifecycle/deletedAt 成列,change_items 存完整 JSON。
+        for (const change of journalChanges) {
+          const { lifecycle, deletedAt, payload } = splitLifecycle(change.value);
+          upsertEntity.run({
+            entityType: change.entityType,
+            entityId: change.entityId,
+            lifecycle,
+            payloadJson: JSON.stringify(payload),
+            brokerSequence: brokerToSequence,
+            now: now(),
+            deletedAt: deletedAt ?? null,
+          });
         }
 
         insertSnapshot.run({
@@ -282,6 +284,15 @@ export function createMaterializer({
           uncompressedBytes: snapshot.manifest.uncompressedBytes,
           compressedBytes: snapshot.manifest.compressedBytes,
           now: now(),
+        });
+        insertJournalCommit(db, {
+          snapshotVersion: snapshot.manifest.snapshotVersion,
+          parentVersion: snapshot.manifest.parentVersion,
+          brokerFromSequence,
+          brokerToSequence,
+          stateHashAfter: snapshot.stateHash,
+          changes: journalChanges,
+          createdAt: now(),
         });
         upsertLatest.run({
           version: snapshot.manifest.snapshotVersion,
@@ -384,6 +395,17 @@ export function ensureReceiptCoverageSnapshot(
       snapshot.manifest.compressedBytes,
       createdAt,
     );
+    // 覆盖回执的 coverage commit:state 不变 → changes=[] 但仍必须产生 commit,
+    // 让 version 连续、receipt coverage 语义在 journal 上同样成立。
+    insertJournalCommit(db, {
+      snapshotVersion: snapshot.manifest.snapshotVersion,
+      parentVersion: snapshot.manifest.parentVersion,
+      brokerFromSequence: uncovered.min_seq,
+      brokerToSequence: uncovered.max_seq,
+      stateHashAfter: snapshot.manifest.stateHash,
+      changes: [],
+      createdAt,
+    });
     db.prepare(`
       UPDATE processed_commands
       SET snapshot_version = ?
@@ -453,6 +475,16 @@ export function ensureBootstrapSnapshot(
       snapshot.manifest.compressedBytes,
       createdAt,
     );
+    // 新装的 journal 起点:空状态的空 commit,让 version 1 也有 journal 覆盖。
+    insertJournalCommit(db, {
+      snapshotVersion: 1,
+      parentVersion: 0,
+      brokerFromSequence: 0,
+      brokerToSequence: 0,
+      stateHashAfter: snapshot.manifest.stateHash,
+      changes: [],
+      createdAt,
+    });
     db.prepare(`
       INSERT INTO latest_snapshot (singleton_id, version, state_hash)
       VALUES (1, 1, ?)

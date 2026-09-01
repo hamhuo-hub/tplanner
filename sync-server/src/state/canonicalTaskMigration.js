@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { canonicalizeTaskPayload } from './canonicalTask.js';
 import { loadStateFromDb } from '../materializer/materializer.js';
 import { buildSnapshot } from '../materializer/snapshot.js';
+import { computeJournalChanges, insertJournalCommit } from './journal.js';
 
 export function migrateCanonicalTaskEntities(
   db,
@@ -36,6 +37,8 @@ export function migrateCanonicalTaskEntities(
        SET payload_json = @payloadJson
      WHERE entity_type = 'task' AND entity_id = @entityId
   `);
+  // 迁移前的 canonical state(事务外读取,作为 journal diff 的 fromState)。
+  const fromState = loadStateFromDb(db);
   const insertSnapshot = db.prepare(`
     INSERT INTO snapshots
       (version, parent_version, broker_from_sequence, broker_to_sequence, schema_version,
@@ -99,6 +102,21 @@ export function migrateCanonicalTaskEntities(
       compressedPayload: snapshot.compressed,
       uncompressedBytes: snapshot.manifest.uncompressedBytes,
       compressedBytes: snapshot.manifest.compressedBytes,
+      createdAt,
+    });
+    // 一次性迁移也是 snapshot 生产者:同一事务写 journal commit,
+    // 携带真实 task.put diff(从 canonical 前后的 state 推导)。
+    insertJournalCommit(db, {
+      snapshotVersion: version,
+      parentVersion,
+      brokerFromSequence: brokerSequence,
+      brokerToSequence: brokerSequence,
+      stateHashAfter: snapshot.stateHash,
+      changes: computeJournalChanges({
+        fromState,
+        toState: loadStateFromDb(db),
+        brokerToSequence: brokerSequence,
+      }),
       createdAt,
     });
     upsertLatest.run({ version, stateHash: snapshot.stateHash });
