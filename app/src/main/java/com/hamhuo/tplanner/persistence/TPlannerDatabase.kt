@@ -21,7 +21,7 @@ import com.hamhuo.tplanner.syncv3.SyncV3Dao
         SyncStateEntity::class,
         SyncReceiptEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class TPlannerDatabase : RoomDatabase() {
@@ -43,7 +43,7 @@ abstract class TPlannerDatabase : RoomDatabase() {
                 TPlannerDatabase::class.java,
                 DATABASE_NAME,
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build().also { instance = it }
         }
 
@@ -149,6 +149,14 @@ abstract class TPlannerDatabase : RoomDatabase() {
                         "watch_projection_broker_to_sequence INTEGER NOT NULL DEFAULT 0"
                 )
                 db.execSQL("ALTER TABLE sync_receipts ADD COLUMN broker_sequence INTEGER")
+            }
+        }
+
+        // V4 delta-v1:opaque journal cursor(见 docs/sync-v3.md §9.3)。cursor 与
+        // 它证明的 server mirror 在同一个 Room transaction 内更新,绝不单独推进。
+        internal val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sync_state ADD COLUMN cursor TEXT")
             }
         }
     }

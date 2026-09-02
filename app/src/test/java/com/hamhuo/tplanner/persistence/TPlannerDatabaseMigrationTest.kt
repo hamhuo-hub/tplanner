@@ -75,6 +75,34 @@ class TPlannerDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun `4 to 5 adds the opaque delta cursor column`() {
+        val databasePath = InstrumentationRegistry.getInstrumentation()
+            .targetContext
+            .getDatabasePath(DATABASE_NAME_V4_V5)
+            .absolutePath
+        helper.createDatabase(databasePath, 4).use { database ->
+            database.execSQL(
+                "INSERT INTO sync_state " +
+                    "(singleton_id, device_id, next_client_sequence, installed_snapshot_version) " +
+                    "VALUES (1, 'old-device', 4, 3)"
+            )
+        }
+
+        helper.runMigrationsAndValidate(
+            databasePath,
+            5,
+            false,
+            TPlannerDatabase.MIGRATION_4_5,
+        ).use { database ->
+            assertTrue(columnExists(database, "sync_state", "cursor"))
+            database.query("SELECT cursor FROM sync_state WHERE singleton_id = 1").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertTrue(cursor.isNull(0))
+            }
+        }
+    }
+
     private fun tableExists(
         database: androidx.sqlite.db.SupportSQLiteDatabase,
         name: String,
@@ -95,5 +123,6 @@ class TPlannerDatabaseMigrationTest {
 
     private companion object {
         const val DATABASE_NAME = "migration-v3-v4-test"
+        const val DATABASE_NAME_V4_V5 = "migration-v4-v5-test"
     }
 }

@@ -290,6 +290,99 @@ PRAGMA:`journal_mode = WAL; synchronous = FULL; foreign_keys = ON; busy_timeout 
 
 `state_builder_lease` 单行表:`BEGIN IMMEDIATE` 抢占成功**之后**才 attach NATS durable consumer;systemd 单实例 + 文件锁兜底。第二个实例因 lease 失败退出,绝不允许两个消费者同时消费命令流。
 
+### 9.1 change journal(V4 增量下行的服务端一半)
+
+journal commit identity **就是** `snapshotVersion`,不另造 journal sequence。每次产生新快照的同一 SQLite transaction 同时写一个 journal commit:
+
+```sql
+CREATE TABLE sync_journal_meta (
+    singleton_id         INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+    journal_epoch        TEXT NOT NULL,
+    min_snapshot_version INTEGER NOT NULL,
+    created_at           INTEGER NOT NULL
+);
+
+CREATE TABLE change_commits (
+    snapshot_version      INTEGER PRIMARY KEY,
+    parent_version        INTEGER NOT NULL,
+    broker_from_sequence  INTEGER NOT NULL,
+    broker_to_sequence    INTEGER NOT NULL,
+    schema_version        INTEGER NOT NULL,
+    state_hash_after      TEXT NOT NULL,
+    change_count          INTEGER NOT NULL,
+    payload_bytes         INTEGER NOT NULL DEFAULT 0,
+    created_at            INTEGER NOT NULL,
+    FOREIGN KEY (snapshot_version) REFERENCES snapshots(version)
+);
+
+CREATE TABLE change_items (
+    snapshot_version       INTEGER NOT NULL,
+    ordinal                INTEGER NOT NULL,
+    change_type            TEXT NOT NULL,
+    entity_type            TEXT NOT NULL,
+    entity_id              TEXT NOT NULL,
+    entity_broker_sequence INTEGER NOT NULL,
+    payload_json           TEXT NOT NULL,
+    PRIMARY KEY (snapshot_version, ordinal),
+    FOREIGN KEY (snapshot_version) REFERENCES change_commits(snapshot_version) ON DELETE CASCADE
+);
+```
+
+不变量:
+
+- **每个 snapshot 版本恰有一个 commit**;NOOP/REJECTED coverage 的 `changes=[]` 空 commit 不得省略,version 覆盖必须连续。SEQUENCE_GAP 与已处理重投不产生 snapshot,也不产生 commit。
+- **每条 change 是完整 canonical entity**(`task.put` / `customList.put` / `journal.put` / `goal.put` / `insight.put`),State Builder 已裁决后的权威值,含 `lifecycle/deletedAt`;V3 无物理删除,reducer 若令实体消失立即抛错。
+- **journal 与 snapshot 同事务**;transaction 失败两者一起回滚,绝不事后补写。
+- **不回填历史**:迁移当刻 head 即 `min_snapshot_version`,更早版本没有 commit;后续 cursor 早于该点一律走完整快照。
+- 所有 snapshot 生产者(bootstrap、receipt coverage、恢复 checkpoint、canonical 迁移、正常整合)都必须 dual-write,无一例外。
+
+对账性质:**Snapshot(N) + Commit(N+1) == Snapshot(N+1)**(JCS stateHash),由 reconstruction property test 与 shadow validator 持续验证。
+
+### 9.2 shadow reconstruction validator(只验证,不修复)
+
+`state/journalValidator.js` 提供 `validateJournalRange(db, {fromSnapshotVersion, toSnapshotVersion})`(从快照 checkpoint 出发全链重建)与 `validateJournalTail`(从已验证 baseState 出发只验新增尾部);`validateJournalHead(db)` 默认 `from = min_snapshot_version`、`to = latest`。State Builder 启动时全链验证一次,之后每个间隔(60s)尾部验证;离线可用 `npm run validate:journal`。
+
+错误码(fail closed,绝不重写/重生成/跳版本):
+
+| 错误码 | 含义 |
+|---|---|
+| `JOURNAL_BASE_SNAPSHOT_MISSING` | checkpoint 快照不存在,链无法出发 |
+| `JOURNAL_COMMIT_MISSING` | 某 snapshotVersion 无 commit(断号) |
+| `JOURNAL_PARENT_MISMATCH` | `parentVersion !== version - 1` |
+| `JOURNAL_HASH_MISMATCH` | `stateHashAfter` ≠ 重建结果 hash |
+| `SNAPSHOT_HASH_MISMATCH` | snapshot 行 `state_hash` ≠ 重建结果 hash |
+| `JOURNAL_CHANGE_INVALID` | 无法安装的 change type |
+
+任一失配 = P0 correctness alert(记 `log.error`,对应 `state_hash_mismatch_total` / `journal_validation_failure_total` 计数),但**不停止 builder**:journal 尚未被客户端消费,snapshot 下行路径不受影响。
+
+### 9.3 opaque signed cursor(同步位置的唯一合法表示)
+
+`state/cursor.js`:`base64url(JSON payload) + "." + base64url(HMAC-SHA256(payload, secret))`。客户端只保存字符串、绝不解析。payload 只落在 **commit 边界**:`{v, serverInstanceId, journalEpoch, snapshotVersion, brokerToSequence, schemaVersion, deltaVersion, principal, issuedAt}` —— 不含任何 commit 内部位置。
+
+签名密钥:`TPLANNER_CURSOR_SECRET` 覆盖;否则 `dbPath.cursor-secret` 一次性随机文件,同部署跨重启稳定。密钥不是认证凭据,认证由外层的 authenticated principal 完成。
+
+校验语义(不猜测、不修补):
+
+| 情况 | HTTP | code |
+|---|---|---|
+| 签名/结构/字段错 | 400 | `CURSOR_INVALID` / `CURSOR_VERSION_UNSUPPORTED` |
+| principal / device scope 不符 | 403 | `FORBIDDEN` |
+| serverInstanceId 变 | 410 | `CURSOR_SERVER_CHANGED`(full bootstrap) |
+| journalEpoch 变 / schema 变 / delta 版本不支持 | 410 | `CURSOR_EPOCH_EXPIRED` / `CURSOR_SCHEMA_CHANGED` / `CURSOR_DELTA_UNSUPPORTED` |
+| `snapshotVersion < min_snapshot_version` | 410 | `CURSOR_EXPIRED` |
+| 超过 head / 超过 maxAge | 410 | `CURSOR_AHEAD_OF_SERVER` / `CURSOR_AGE_EXPIRED` |
+| `brokerToSequence` 与 snapshot 行不符 | 410 | `CURSOR_COVERAGE_MISMATCH` |
+
+所有 410 的统一响应体:`{ error, recovery: "FULL_SNAPSHOT", latestSnapshotVersion }`。
+
+### 9.4 retention 与 telemetry
+
+journal 是**有限历史**,正确性绝不依赖任何设备 ACK。`pruneJournal` 在每次 `/changes` 请求前执行:cutoff = max(min_snapshot_version, head − keepCommits, 按 keepAgeMs 算出的最老保留版本),删除 cutoff 及更早的 commits(change_items 级联),并把 `min_snapshot_version` 单调推进到 cutoff。老设备由此得到 410 → latest full snapshot。快照行永不因 journal GC 被删。
+
+默认/配置:`TPLANNER_JOURNAL_MAX_COMMITS=100000`、`TPLANNER_JOURNAL_MAX_AGE_DAYS=30`(工程起始值,由生产 telemetry 调优)。
+
+`/tplanner/v3/status` 暴露:`storage.journalHeadVersion / journalMinVersion / journalCommits / journalPayloadBytes / snapshotCount / snapshotBytes`,以及进程内 `metrics.counters`(`delta_requests_total`、`delta_commits_total`、`delta_response_bytes`、`delta_request_ms_total`、`snapshot_fallback_total:{reason}`)与 `metrics.gauges`(`cursor_lag_versions`、`cursor_age_seconds`)。builder 侧的 journal 失配按 P0 记 `log.error`(§9.2)。上量后必须补齐 `state_hash_mismatch_total`、`unknown_delta_type_total`、`nats_redelivery_total`、`tunnel_health` 等长时序。
+
 ## 10. 崩溃一致性(inbox/outbox)
 
 消费:`拉取 → BEGIN IMMEDIATE → 查 commandId → reducer → 写 entities/回执/快照/latest/发布outbox → COMMIT → ACK MQ`
@@ -302,6 +395,7 @@ PRAGMA:`journal_mode = WAL; synchronous = FULL; foreign_keys = ON; busy_timeout 
 | 快照提交后、ready 前 | publication_outbox 重启后补发 |
 | ready 后、outbox 标记前 | 重复发布,MQ 与客户端按版本去重 |
 | 旧版本已提交终态 receipt、未推进 watermark | 启动时生成同 stateHash 的 coverage snapshot,幂等补发 |
+| journal 行写失败 | 与快照同一事务整体回滚,快照不落库,重投重放 |
 | 客户端下载后、安装前 | 保留旧镜像,重启重下 |
 | 安装后、ACK 前 | 重启补发 ACK |
 
@@ -311,13 +405,14 @@ PRAGMA:`journal_mode = WAL; synchronous = FULL; foreign_keys = ON; busy_timeout 
 
 | 端点 | 说明 |
 |---|---|
-| `GET /tplanner/v3/capabilities` | software/protocol/schema 版本、serverInstanceId、latestSnapshotVersion、批次上限 |
+| `GET /tplanner/v3/capabilities` | software/protocol/schema 版本、serverInstanceId、latestSnapshotVersion、批次上限、`downlinkModes`(`["snapshot"]` 或 `["snapshot","delta-v1"]`)、`delta` 块(version/maxCommits/journalEpoch/minSnapshotVersion/headSnapshotVersion) |
 | `POST /tplanner/v3/command-batches` + `Idempotency-Key: batchId` | 返回 `{batchId, brokerSequence, state: BROKER_PERSISTED}` |
 | `GET /tplanner/v3/receipts?afterClientSequence=N` | `{acceptedThrough, results[]}` |
 | `GET /tplanner/v3/snapshots/latest` | `Cache-Control: no-store` |
 | `GET /tplanner/v3/snapshots/{version}` | `ETag: compressedHash`,`immutable`,`Content-Type: application/gzip`;不设置 `Content-Encoding`，确保浏览器返回可校验 `compressedHash` 的原始压缩字节；只允许 private cache |
 | `GET /tplanner/v3/notifications?afterVersion=N&wait=25000` | 长轮询,只返回 version+hash |
 | `POST /tplanner/v3/devices/{deviceId}/snapshot-acks` | `{version, stateHash}` |
+| `GET /tplanner/v3/changes?cursor=<opaque>&maxCommits=100` | delta-v1 下行(§9.3/§9.4):按 commit 分页、绝不切页;`changes:[]` 原样返回;`toCursor` 只落在整页最后 commit;无变化时 `toCursor == fromCursor`。400/403/410 语义见 §9.3,410 一律 `{error, recovery:"FULL_SNAPSHOT", latestSnapshotVersion}` |
 
 回执状态:`APPLIED / NOOP / REJECTED / SEQUENCE_GAP / ENTITY_DELETED / ID_ALREADY_EXISTS / SCHEMA_UNSUPPORTED`。
 
@@ -406,6 +501,10 @@ recurrence/alarm/location 纳入正式模型；timezone、extras 与未知字段
 ### 回滚
 
 - 只能回滚到兼容 V3 协议、且不会重新开放整库 PUT 的版本。DB migration 必须可重放；从 `materializedThroughSequence + 1` 续消费。DB 损坏则恢复已校验的 SQLite backup 再从 JetStream 重放；版本号只能前进。客户端获 `BROKER_PERSISTED` 前不删 outbox，正是为此。
+
+### V4 change journal(expand-only)
+
+migration 004 新增 `sync_journal_meta / change_commits / change_items`,不回填历史、无 down migration。旧版 State Builder 不认识这些表,继续只写 snapshot——因此**降级后不得再直接升回并启用 delta**,须先 bump journalEpoch(或保持 delta 关闭),否则 journal 中间有 gap。客户端在 delta capability 打开前继续走 snapshot,不受影响。
 
 ## 18. 实施计划(66 提交,里程碑化)
 

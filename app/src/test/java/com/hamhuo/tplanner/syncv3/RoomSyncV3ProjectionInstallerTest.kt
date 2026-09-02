@@ -11,6 +11,7 @@ import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -87,6 +88,89 @@ class RoomSyncV3ProjectionInstallerTest {
         assertEquals("事务前", dao.eventRows().single().title)
         assertEquals(1L, dao.getSyncState()!!.installedSnapshotVersion)
         assertNull(dao.getSyncState()!!.serverMirrorJson)
+    }
+
+    @Test
+    fun `installMirrorAtomically persists mirror overlay replay and cursor in one transaction`() {
+        val dao = db.syncV3Dao()
+        dao.upsertSyncState(syncState(version = 1, hash = hash('1')))
+        dao.insertCommand(titleCommand(sequence = 1, title = "离线编辑", state = "uploaded"))
+
+        val remote = canonicalState("中央权威标题")
+        val result = RoomSyncV3ProjectionInstaller(db).installMirrorAtomically(
+            mirror = remote,
+            version = 2L,
+            stateHash = hash('2'),
+            brokerToSequence = 9L,
+            serverInstanceId = "server-test",
+            cursor = "cursor-2",
+        )
+
+        assertEquals("离线编辑", dao.eventRows().single().title)
+        assertEquals(2L, result.version)
+        val meta = dao.getSyncState()!!
+        assertEquals(2L, meta.installedSnapshotVersion)
+        assertEquals(9L, meta.installedBrokerToSequence)
+        assertEquals("cursor-2", meta.cursor)
+        assertEquals(
+            "中央权威标题",
+            JSONObject(meta.serverMirrorJson!!).getJSONObject("tasks").getJSONObject("task_1").getString("title"),
+        )
+    }
+
+    @Test
+    fun `process death during mirror install rolls back rows mirror pointers and cursor`() {
+        val dao = db.syncV3Dao()
+        val original = task("事务前")
+        dao.upsertEventRows(listOf(PersistenceMapper.eventToEntity(original, 0)))
+        dao.upsertSyncState(
+            syncState(version = 1, hash = hash('1')).copy(
+                serverMirrorJson = canonicalState("事务前").toString(),
+                cursor = "cursor-1",
+            ),
+        )
+        val installer = RoomSyncV3ProjectionInstaller(db) { error("simulated process death") }
+
+        runCatching {
+            installer.installMirrorAtomically(
+                mirror = canonicalState("不应提交"),
+                version = 2L,
+                stateHash = hash('2'),
+                brokerToSequence = 9L,
+                serverInstanceId = "server-test",
+                cursor = "cursor-2",
+            )
+        }
+
+        assertEquals("事务前", dao.eventRows().single().title)
+        val meta = dao.getSyncState()!!
+        assertEquals(1L, meta.installedSnapshotVersion)
+        assertEquals("cursor-1", meta.cursor)
+        assertEquals(
+            "事务前",
+            JSONObject(meta.serverMirrorJson!!).getJSONObject("tasks").getJSONObject("task_1").getString("title"),
+        )
+    }
+
+    @Test
+    fun `delta mirror install rejects a version that is not strictly newer`() {
+        val dao = db.syncV3Dao()
+        dao.upsertSyncState(syncState(version = 2, hash = hash('2')))
+
+        runCatching {
+            RoomSyncV3ProjectionInstaller(db).installMirrorAtomically(
+                mirror = canonicalState("不应提交"),
+                version = 2L,
+                stateHash = hash('2'),
+                brokerToSequence = 9L,
+                serverInstanceId = "server-test",
+                cursor = "cursor-2",
+            )
+        }.onFailure { error ->
+            assertTrue(error is SyncV3SnapshotInstaller.SnapshotException)
+            assertEquals("ERROR008", (error as SyncV3SnapshotInstaller.SnapshotException).code)
+        }
+        assertEquals(2L, dao.getSyncState()!!.installedSnapshotVersion)
     }
 
     private fun titleCommand(sequence: Long, title: String, state: String) = SyncCommandEntity(

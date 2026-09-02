@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.net.ConnectException
 import java.net.NoRouteToHostException
 import java.net.SocketTimeoutException
@@ -53,12 +54,25 @@ class SyncV3Engine(
         snapshotVersion: Long,
         brokerToSequence: Long,
     ) -> Boolean = { _, _, _, _ -> false },
+    /** Android canary 开关(§9.3):默认关,capability + cursor 齐备才走 delta。 */
+    private val deltaEnabled: Boolean = false,
 ) {
     private val appContext = context.applicationContext
     private val dao = database.syncV3Dao()
     private val store = RoomSyncV3Store(dao)
     private val commands = SyncV3CommandRepository(appContext, database)
     private val projection = RoomSyncV3ProjectionInstaller(database)
+
+    private val onDeltaDisplayedInstalled: (
+        DisplayedStateProjection,
+        DisplayedStateProjection,
+        Long,
+        Long,
+    ) -> Unit = { displayed, authoritative, version, brokerToSequence ->
+        if (onDisplayedInstalled(displayed.events, authoritative.events, version, brokerToSequence)) {
+            projection.markWatchProjectionPublished(version, brokerToSequence)
+        }
+    }
 
     suspend fun syncOnce(serverUrl: String = SettingsRepository.DEFAULT_SERVER_URL): SyncV3RunResult =
         processMutex.withLock {
@@ -78,8 +92,8 @@ class SyncV3Engine(
                     }
                     requireNetwork()
                     val base = normalizeServerUrl(serverUrl)
-                    val capabilityServerInstanceId = verifyCapabilities(base)
-                    commands.prepareForServerInstance(capabilityServerInstanceId)
+                    val capabilities = verifyCapabilities(base)
+                    commands.prepareForServerInstance(capabilities.optString("serverInstanceId"))
 
                     val installer = SyncV3SnapshotInstaller(
                         store = store,
@@ -110,7 +124,7 @@ class SyncV3Engine(
                         null
                     }
                     if (baseline != null &&
-                        baseline.verified.serverInstanceId != capabilityServerInstanceId
+                        baseline.verified.serverInstanceId != capabilities.optString("serverInstanceId")
                     ) {
                         throw SyncV3SnapshotInstaller.SnapshotException(
                             "capabilities and snapshot identify different server instances",
@@ -134,7 +148,7 @@ class SyncV3Engine(
                     update(SyncV3Phase.UPLOADED)
 
                     update(SyncV3Phase.UPDATING)
-                    installer.syncToLatest()
+                    downlink(installer, capabilities, base)
                     drainReceipts(uploader)
                     reconcileReceiptsAndWatch()
 
@@ -149,7 +163,7 @@ class SyncV3Engine(
                             base,
                             waitMs = PUBLICATION_WAIT_MILLIS,
                         ).pollOnce()
-                        if (notification.hasNewVersion) installer.syncToLatest()
+                        if (notification.hasNewVersion) downlink(installer, capabilities, base)
                         drainReceipts(uploader)
                         reconcileReceiptsAndWatch()
                         installed = dao.getSyncState()?.installedSnapshotVersion ?: installed
@@ -229,7 +243,7 @@ class SyncV3Engine(
         }
     }
 
-    private fun verifyCapabilities(base: String): String {
+    private fun verifyCapabilities(base: String): JSONObject {
         val response = http.get("$base/tplanner/v3/capabilities", timeoutMs = 10_000)
         if (!response.isOk) {
             throw SyncV3Uploader.SyncException(
@@ -253,12 +267,40 @@ class SyncV3Engine(
                 "ERROR008",
             )
         }
-        return body.optString("serverInstanceId")
-            .takeIf(String::isNotBlank)
+        body.optString("serverInstanceId").takeIf(String::isNotBlank)
             ?: throw SyncV3SnapshotInstaller.SnapshotException(
                 "capabilities has no serverInstanceId",
                 "ERROR008",
             )
+        return body
+    }
+
+    /**
+     * 下行统一入口(§9.3):canary 开关 + capability 都允许且本地已有 cursor 时走
+     * delta;任何断链/410/未知 type 都 fail closed 到完整快照逃生舱。快照安装
+     * 会用 manifest.cursor 重建 delta 起点,两条路径互不冲突。
+     */
+    private fun downlink(
+        installer: SyncV3SnapshotInstaller,
+        capabilities: JSONObject,
+        base: String,
+    ) {
+        val meta = store.getSyncState()
+        val deltaEligible = deltaEnabled &&
+            capabilities.optJSONArray("downlinkModes")?.let { modes ->
+                (0 until modes.length()).any { modes.optString(it) == "delta-v1" }
+            } == true &&
+            !meta?.cursor.isNullOrEmpty()
+        if (deltaEligible) {
+            val deltaInstaller = SyncV4DeltaInstaller(store, projection, onDeltaDisplayedInstalled)
+            try {
+                deltaInstaller.syncByCursor(http, base)
+                return
+            } catch (_: DeltaFallbackException) {
+                // 已装 commit 不回滚;snapshot 覆盖权威状态并重建 cursor。
+            }
+        }
+        installer.syncToLatest()
     }
 
     private fun requireNetwork() {

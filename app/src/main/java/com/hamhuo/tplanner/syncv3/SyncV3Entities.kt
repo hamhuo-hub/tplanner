@@ -50,6 +50,8 @@ data class SyncStateEntity(
     /** Broker coverage of the projection durably queued for the Watch. */
     @ColumnInfo(name = "watch_projection_broker_to_sequence", defaultValue = "0")
     val watchProjectionBrokerToSequence: Long = 0L,
+    /** Opaque delta-v1 journal cursor; installed atomically with the mirror it proves (§9.3). */
+    @ColumnInfo(name = "cursor") val cursor: String? = null,
 )
 
 /** 中央回执:由服务器返回值落库,用于重启后对账与 outbox 清理。 */

@@ -347,6 +347,11 @@ class RoomSyncV3ProjectionInstaller(
                     "ERROR008",
                 )
             }
+            if (meta.cursor == null && manifest.cursor != null) {
+                // 同版本但本地没有 cursor(例如 pre-V4 构建安装过同版本快照):
+                // 只收养 delta 起点,不动任何状态。
+                dao.upsertSyncState(meta.copy(cursor = manifest.cursor))
+            }
             val existing = dao.eventRows().map(PersistenceMapper::eventToDomain)
             val mirror = meta.serverMirrorJson?.let(::JSONObject)
                 ?: throw SyncV3SnapshotInstaller.SnapshotException(
@@ -376,34 +381,98 @@ class RoomSyncV3ProjectionInstaller(
                 "ERROR008",
             )
         }
+        return@runInTransaction commitInstall(
+            meta = meta,
+            mirror = state,
+            version = manifest.snapshotVersion,
+            stateHash = manifest.stateHash,
+            brokerToSequence = manifest.brokerToSequence,
+            serverInstanceId = manifest.serverInstanceId ?: meta.serverInstanceId,
+            cursor = manifest.cursor ?: meta.cursor,
+        )
+    }
 
+    /**
+     * delta-v1 原子安装(§9.3):同一 Room transaction 内替换 server mirror、重放
+     * surviving pending overlay、重建 phone 行、推进 installed 指针与 cursor。
+     * 版本必须严格新于当前安装(版本链连续性由 SyncV4DeltaInstaller 校验)。
+     */
+    fun installMirrorAtomically(
+        mirror: JSONObject,
+        version: Long,
+        stateHash: String,
+        brokerToSequence: Long,
+        serverInstanceId: String?,
+        cursor: String?,
+    ): RoomProjectionInstallResult = db.runInTransaction<RoomProjectionInstallResult> {
+        val meta = dao.getSyncState()
+            ?: throw SyncV3SnapshotInstaller.SnapshotException(
+                "sync state not initialized",
+                "ERROR007",
+            )
+        if (meta.installedSnapshotVersion >= version) {
+            throw SyncV3SnapshotInstaller.SnapshotException(
+                "delta install version must be strictly newer than the installed version",
+                "ERROR008",
+            )
+        }
+        if (meta.serverInstanceId != null && serverInstanceId != null &&
+            meta.serverInstanceId != serverInstanceId
+        ) {
+            throw SyncV3SnapshotInstaller.SnapshotException(
+                "server instance changed; client must re-bootstrap",
+                "ERROR008",
+            )
+        }
+        commitInstall(
+            meta = meta,
+            mirror = mirror,
+            version = version,
+            stateHash = stateHash,
+            brokerToSequence = brokerToSequence,
+            serverInstanceId = serverInstanceId ?: meta.serverInstanceId,
+            cursor = cursor ?: meta.cursor,
+        )
+    }
+
+    /** 调用方必须已处于 Room transaction 内:镜像 + overlay + phone 行 + 指针一锤子提交。 */
+    private fun commitInstall(
+        meta: SyncStateEntity,
+        mirror: JSONObject,
+        version: Long,
+        stateHash: String,
+        brokerToSequence: Long,
+        serverInstanceId: String?,
+        cursor: String?,
+    ): RoomProjectionInstallResult {
         // Receipt rows and the proving snapshot cross the safety barrier in this same SQLite
         // transaction. A crash can therefore expose neither a deleted overlay with an old mirror
         // nor a new mirror with a stale rejected overlay.
-        dao.deletePublishedCommands(manifest.snapshotVersion, manifest.brokerToSequence)
+        dao.deletePublishedCommands(version, brokerToSequence)
         val existingRows = dao.eventRows()
         val existing = existingRows.map(PersistenceMapper::eventToDomain).associateBy(ScheduleItem::id)
-        val displayedJson = SyncV3ProjectionCodec.replay(state, dao.listAllCommands())
+        val displayedJson = SyncV3ProjectionCodec.replay(mirror, dao.listAllCommands())
         val projection = SyncV3ProjectionCodec.project(displayedJson, existing)
         replacePhoneRows(projection, existingRows)
         beforeCommit()
         dao.upsertSyncState(
             meta.copy(
-                installedSnapshotVersion = manifest.snapshotVersion,
-                installedSnapshotHash = manifest.stateHash,
-                serverInstanceId = manifest.serverInstanceId ?: meta.serverInstanceId,
-                serverMirrorJson = state.toString(),
-                installedBrokerToSequence = manifest.brokerToSequence,
+                installedSnapshotVersion = version,
+                installedSnapshotHash = stateHash,
+                serverInstanceId = serverInstanceId,
+                serverMirrorJson = mirror.toString(),
+                installedBrokerToSequence = brokerToSequence,
+                cursor = cursor,
                 syncPhase = "updating",
                 syncErrorCode = null,
                 syncUpdatedAt = System.currentTimeMillis(),
-            )
+            ),
         )
-        RoomProjectionInstallResult(
+        return RoomProjectionInstallResult(
             installed = true,
-            version = manifest.snapshotVersion,
+            version = version,
             displayed = projection,
-            authoritative = SyncV3ProjectionCodec.project(state, existing),
+            authoritative = SyncV3ProjectionCodec.project(mirror, existing),
         )
     }
 

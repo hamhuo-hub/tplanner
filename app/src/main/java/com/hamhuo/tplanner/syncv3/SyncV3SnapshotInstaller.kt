@@ -24,6 +24,8 @@ data class SnapshotManifest(
     val serverInstanceId: String?,
     /** Envelope-only coverage, populated after payload verification. */
     val brokerToSequence: Long = 0L,
+    /** delta-v1 bootstrap cursor(§9.3);旧服务器不带,客户端保持旧值。 */
+    val cursor: String? = null,
 ) {
     companion object {
         fun fromWire(json: JSONObject): SnapshotManifest = SnapshotManifest(
@@ -36,6 +38,7 @@ data class SnapshotManifest(
             compressedBytes = json.getLong("compressedBytes"),
             uncompressedBytes = json.getLong("uncompressedBytes"),
             serverInstanceId = json.optString("serverInstanceId").takeIf { it.isNotEmpty() },
+            cursor = json.optString("cursor").takeIf { it.isNotEmpty() },
         )
     }
 }
@@ -218,6 +221,7 @@ class SyncV3SnapshotInstaller(
                     serverInstanceId = serverInstanceId ?: meta.serverInstanceId,
                     serverMirrorJson = state.toString(),
                     installedBrokerToSequence = verifiedBrokerToSequence,
+                    cursor = manifest.cursor ?: meta.cursor,
                 ),
             )
         } else if (roomResult.installed) {
