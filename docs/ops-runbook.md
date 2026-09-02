@@ -19,7 +19,8 @@ systemctl status nats-server tplanner-state-builder tplanner-sync-api
 journalctl -u tplanner-state-builder -n 50          # 关键日志:integration batch committed / lease
 curl -s http://127.0.0.1:37401/health/live          # 进程存活
 curl -s http://127.0.0.1:37401/health/ready         # 全链路就绪(含 materializer lag)
-curl -s http://127.0.0.1:37401/tplanner/v3/status   # latestVersion / brokerLastSequence / materializedThroughSequence / queueLag
+curl -s http://127.0.0.1:37401/tplanner/v3/status   # latestVersion / queueLag / storage.* / metrics.*
+sudo -u tplanner npm --prefix /opt/tplanner-sync/sync-server run validate:journal
 ```
 
 健康判读:
@@ -27,6 +28,8 @@ curl -s http://127.0.0.1:37401/tplanner/v3/status   # latestVersion / brokerLast
 - `/health/ready` 非 200 或 `queueOldestAgeMs > 10s` → 看 State Builder 日志,常见原因是 reducer 抛错进入重投循环(§5:绝不跳过,所以表现为积压)。
 - `materializedThroughSequence` 长时间不变 → State Builder 卡死或 lease 被抢,`journalctl` 查 `lease renewal failed`。
 - 两个 builder 同时存在 → 后启动者必然因 lease 失败退出;若两个都活着,检查是不是两个数据库文件路径(环境变量不一致)。
+- **journal shadow validation FAILED(builder 日志)= P0 correctness 告警**:立即按 §5 关闭 delta(`TPLANNER_ENABLE_DELTA` 摘除)再排查,不得当普通 warning 处理。
+- `/tplanner/v3/status` 的 `storage.journalMinVersion` 是 retention 推进后的 journal 起点;`metrics.counters.snapshot_fallback_total` 按 reason 分解,`CURSOR_EXPIRED` 属设计内,异常升高要查。
 
 ## 3. 备份与恢复
 
@@ -35,6 +38,7 @@ curl -s http://127.0.0.1:37401/tplanner/v3/status   # latestVersion / brokerLast
 - **SQLite 在线备份**:`node src/state/backup.js` 内部走 SQLite Online Backup,写入期间服务不中断;建议 cron 每小时一次。
 - **JetStream**:单节点 file store,无写入窗口时整目录 `tar`;有写入时以 SQLite 备份 + JetStream 重放为准。
 - **异机**:`backups/` 用 restic/rclone 每日推离树莓派。**MQ 和 SQLite 放在同一张坏掉的 SD 卡上不构成冗余。**
+- **V4 cursor 密钥**:`/var/lib/tplanner-sync/state/tplanner.db.cursor-secret` 随 `config-latest.tar.gz` 一起备份;恢复时放回同路径。密钥丢失不会丢数据 —— 旧 cursor 全部 410,客户端按设计走 full snapshot 并重建 delta 起点。
 
 恢复流程(DB 损坏):
 
@@ -66,6 +70,10 @@ curl -s http://127.0.0.1:37401/tplanner/v3/status   # latestVersion / brokerLast
 ## 5. 升级与回滚
 
 - DB migration 是 expand-only(`user_version` 只增);升级前先做一次在线备份。
+- **V4(change journal)**:migration 004 自动套用,不新增手工步骤;`sync_journal_meta.min_snapshot_version` 落在升级当刻的 snapshot head,**历史不回填** —— 升级后新产生的 snapshot 才开始双写 journal。首次 `/changes` 请求前 retention 只按配置推进。
+- delta 下行默认关闭:`TPLANNER_ENABLE_DELTA=1` 才在 capabilities 暴露 `delta-v1`(写入 API unit 的 Environment)。回滚/刹车 = 摘掉该变量并 `systemctl restart tplanner-sync-api`,客户端立即退回 snapshot;journal 数据保留,无需 down migration。
+- retention 可调:`TPLANNER_JOURNAL_MAX_COMMITS`(默认 100000)、`TPLANNER_JOURNAL_MAX_AGE_DAYS`(默认 30)。
+- **降级警告**:把服务器代码回滚到不会 dual-write journal 的旧版本后,若再次升级并重新打开 delta,必须先 bump `sync_journal_meta.journal_epoch`(或保持 delta 关闭),否则 journal 中间有 gap。
 - 回滚只能回到兼容同一协议版本的代码;不能倒 user_version。
 - 客户端拿到 `BROKER_PERSISTED` 前不删本地 outbox —— 服务器在整合前故障时,客户端仍保有原始命令,这是回滚的最后防线。
 - `serverInstanceId` 变化(数据宇宙重建)后:客户端必须重新 bootstrap,不要沿用旧版本号。
