@@ -95,3 +95,4 @@ tplanner-linux
 package-lock.json
 !sync-server/package-lock.json
 /sync-server
+tplanner-deploy.tar.gz
