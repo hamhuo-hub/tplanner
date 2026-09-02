@@ -1,0 +1,35 @@
+name: Sync Server Tests
+
+# sync_server 的 Node 测试套件(材料器/journal/cursor//changes 契约矩阵)。
+on:
+  push:
+    branches:
+      - 'sync_server'
+    paths:
+      - 'sync-server/**'
+      - 'sync-v3/**'
+      - '.github/workflows/sync-server.yml'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: sync-server unit tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sync-server
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
