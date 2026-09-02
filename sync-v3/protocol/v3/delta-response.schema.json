@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tplanner.hamhuo.com/sync-v3/delta-response.schema.json",
+  "title": "Sync V3 Journal Delta Response (delta-v1)",
+  "description": "Downlink response of GET /tplanner/v3/changes. Commits are paginated strictly at commit boundaries: a commit is never split across pages, and empty commits (changes: []) must be preserved because NOOP/REJECTED coverage advances the version chain. Each change is a full authoritative entity produced by the State Builder; clients install results, never replay reducers. Cursors are opaque strings clients must store verbatim.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocolVersion",
+    "deltaVersion",
+    "schemaVersion",
+    "serverInstanceId",
+    "fromCursor",
+    "toCursor",
+    "headSnapshotVersion",
+    "hasMore",
+    "commits"
+  ],
+  "properties": {
+    "protocolVersion": { "const": 3 },
+    "deltaVersion": { "const": 1 },
+    "schemaVersion": { "const": 3 },
+    "serverInstanceId": { "type": "string", "minLength": 1 },
+    "fromCursor": { "type": "string", "minLength": 1 },
+    "toCursor": { "type": "string", "minLength": 1 },
+    "headSnapshotVersion": { "type": "integer", "minimum": 1 },
+    "hasMore": { "type": "boolean" },
+    "commits": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/commit" }
+    }
+  },
+  "$defs": {
+    "commit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshotVersion",
+        "parentVersion",
+        "brokerFromSequence",
+        "brokerToSequence",
+        "stateHashAfter",
+        "changes"
+      ],
+      "properties": {
+        "snapshotVersion": { "type": "integer", "minimum": 1 },
+        "parentVersion": { "type": "integer", "minimum": 0 },
+        "brokerFromSequence": { "type": "integer", "minimum": 0 },
+        "brokerToSequence": { "type": "integer", "minimum": 0 },
+        "stateHashAfter": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "changes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/change" }
+        }
+      }
+    },
+    "basePut": {
+      "type": "object",
+      "required": ["type", "entityId", "entityBrokerSequence", "value"],
+      "properties": {
+        "entityId": { "type": "string", "minLength": 1 },
+        "entityBrokerSequence": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "change": {
+      "oneOf": [
+        {
+          "allOf": [
+            { "$ref": "#/$defs/basePut" },
+            {
+              "properties": {
+                "type": { "const": "task.put" },
+                "value": { "$ref": "snapshot.schema.json#/$defs/task" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/basePut" },
+            {
+              "properties": {
+                "type": { "const": "customList.put" },
+                "value": { "$ref": "snapshot.schema.json#/$defs/customList" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/basePut" },
+            {
+              "properties": {
+                "type": { "const": "journal.put" },
+                "value": { "type": "object" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/basePut" },
+            {
+              "properties": {
+                "type": { "const": "goal.put" },
+                "value": { "type": "object" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/basePut" },
+            {
+              "properties": {
+                "type": { "const": "insight.put" },
+                "value": { "type": "object" }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
