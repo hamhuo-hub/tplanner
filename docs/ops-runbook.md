@@ -12,6 +12,8 @@
 
 目录:`/opt/tplanner-sync`(代码)、`/var/lib/tplanner-sync/{state,jetstream,backups}`(数据,**必须放在 SSD 上**)。
 
+> **认证边界(硬前提)**:API 进程没有应用层认证 —— `/command-batches` 只校验 schema 与 Idempotency-Key,`/receipts` 的 deviceId 是自报。127.0.0.1 绑定 + **外层 Cloudflare Access / OIDC / mTLS 之类的 authenticated perimeter 是上线硬前提;浏览器 CORS 不是认证**。没有外层鉴权就只允许局域网访问,否则公网用户可用 curl 直接调 API。
+
 ## 2. 日常检查
 
 ```bash
@@ -28,14 +30,14 @@ sudo -u tplanner npm --prefix /opt/tplanner-sync/sync-server run validate:journa
 - `/health/ready` 非 200 或 `queueOldestAgeMs > 10s` → 看 State Builder 日志,常见原因是 reducer 抛错进入重投循环(§5:绝不跳过,所以表现为积压)。
 - `materializedThroughSequence` 长时间不变 → State Builder 卡死或 lease 被抢,`journalctl` 查 `lease renewal failed`。
 - 两个 builder 同时存在 → 后启动者必然因 lease 失败退出;若两个都活着,检查是不是两个数据库文件路径(环境变量不一致)。
-- **journal shadow validation FAILED(builder 日志)= P0 correctness 告警**:立即按 §5 关闭 delta(`TPLANNER_ENABLE_DELTA` 摘除)再排查,不得当普通 warning 处理。
+- **journal shadow validation FAILED(builder 日志)= P0 correctness 告警**:立即按 §5 关闭 delta(`TPLANNER_ENABLE_DELTA` 摘除)再排查,不得当普通 warning 处理。shadow validator 在启动时全链验证一次,之后在主循环迭代边界约每 60s 尾部验证一次(与流量无关,不是挂在空闲分支上)。
 - `/tplanner/v3/status` 的 `storage.journalMinVersion` 是 retention 推进后的 journal 起点;`metrics.counters.snapshot_fallback_total` 按 reason 分解,`CURSOR_EXPIRED` 属设计内,异常升高要查。
 
 ## 3. 备份与恢复
 
 备份(见 `sync-server/deploy/backup.sh` 与 `src/state/backup.js`):
 
-- **SQLite 在线备份**:`node src/state/backup.js` 内部走 SQLite Online Backup,写入期间服务不中断;建议 cron 每小时一次。
+- **SQLite 在线备份**:`sudo -u tplanner /opt/tplanner-sync/sync-server/deploy/backup.sh`(底层是 `scripts/backup.mjs`,内部走 SQLite Online Backup,写入期间服务不中断);`tplanner-sync-backup.timer` 每小时自动跑一次。
 - **JetStream**:单节点 file store,无写入窗口时整目录 `tar`;有写入时以 SQLite 备份 + JetStream 重放为准。
 - **异机**:`backups/` 用 restic/rclone 每日推离树莓派。**MQ 和 SQLite 放在同一张坏掉的 SD 卡上不构成冗余。**
 - **V4 cursor 密钥**:`/var/lib/tplanner-sync/state/tplanner.db.cursor-secret` 随 `config-latest.tar.gz` 一起备份;恢复时放回同路径。密钥丢失不会丢数据 —— 旧 cursor 全部 410,客户端按设计走 full snapshot 并重建 delta 起点。

@@ -26,6 +26,12 @@ for required in /usr/bin/node npm openssl tar curl systemctl; do
         exit 1
     fi
 done
+# package.json engines 要求 Node >= 20:只检查"存在"不够,版本过低同样拒绝。
+NODE_MAJOR="$(/usr/bin/node -p 'process.versions.node.split(".")[0]' 2>/dev/null || printf '0')"
+if [ "$NODE_MAJOR" -lt 20 ]; then
+    echo "Node.js >= 20 required; found: $(/usr/bin/node --version 2>/dev/null || printf 'no node')" >&2
+    exit 1
+fi
 if [ ! -x "$APP_DIR/nats-server" ]; then
     echo "missing pinned NATS binary: $APP_DIR/nats-server" >&2
     exit 1

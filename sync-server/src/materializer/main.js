@@ -36,7 +36,8 @@ const CONSUMER_NAME = 'state-builder';
 const SUBJECT_COMMANDS = 'tplanner.v3.commands';
 
 // Shadow validator 节拍(§9.1):启动时从 min_snapshot_version 全链验证一次,
-// 之后每个间隔只验新增尾部(只在 journal 本身失配时 fail closed,绝不修复)。
+// 之后在主循环迭代边界检查该间隔(约每 60s,与流量无关),只验新增尾部,
+// 只在 journal 本身失配时 fail closed,绝不修复。
 const JOURNAL_VALIDATION_INTERVAL_MS = 60_000;
 
 // integration batch 边界(§6)。nats.js v3 要求 pull expires >= 1000ms，
@@ -316,6 +317,12 @@ export async function startStateBuilder({
 
     // 4. 主循环
     while (!closed) {
+      // Shadow validator 的独立节拍:每次循环迭代边界(繁忙时每批之间、空闲时
+      // 每个 60s 拉取超时之后)都会检查,与流量大小无关 —— 不是挂在"无批"分支上。
+      if (Date.now() - lastJournalValidationAt >= JOURNAL_VALIDATION_INTERVAL_MS) {
+        lastJournalValidationAt = Date.now();
+        runJournalValidation('interval');
+      }
       let batch;
       try {
         batch = await batchReader.nextBatch();
@@ -323,13 +330,7 @@ export async function startStateBuilder({
         if (closed) break;
         throw err;
       }
-      if (!batch) {
-        if (Date.now() - lastJournalValidationAt >= JOURNAL_VALIDATION_INTERVAL_MS) {
-          lastJournalValidationAt = Date.now();
-          runJournalValidation('interval');
-        }
-        continue;
-      }
+      if (!batch) continue;
       const { messages, entries } = batch;
 
       try {

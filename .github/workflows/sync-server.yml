@@ -31,5 +31,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run tests
+      - name: Run tests (includes the deploy/backup.sh smoke tests)
         run: npm test
+
+      - name: Syntax-check deploy shell scripts
+        run: bash -n deploy/*.sh

@@ -121,4 +121,5 @@ per-field delta patching、physical tombstone deletion、snapshot schema 4。
 - [ ] 双端并发编辑收敛到 State Builder 结果(跨端 E2E)
 - [ ] retention 在真实数据下推进 min_snapshot_version 且旧设备 410 → snapshot 恢复成功
 - [ ] 一键回滚演练:`TPLANNER_ENABLE_DELTA` 摘除后旧新客户端均回到 snapshot 且无数据差异
+- [ ] **认证边界确认**:API 无应用层认证,公网暴露前必须确认外层 Cloudflare Access / OIDC / mTLS 等 authenticated perimeter 生效(CORS 不是认证);未确认前保持局域网-only
 - [ ] 密钥与敏感信息审计:cursor 密钥文件与 API key 不进入仓库/APK/Web bundle
