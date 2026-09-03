@@ -5,6 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.hamhuo.tplanner.syncv3.SyncCommandEntity
+import com.hamhuo.tplanner.syncv3.SyncLogEntity
 import com.hamhuo.tplanner.syncv3.SyncReceiptEntity
 import com.hamhuo.tplanner.syncv3.SyncStateEntity
 import com.hamhuo.tplanner.syncv3.SyncV3Dao
@@ -20,8 +21,9 @@ import com.hamhuo.tplanner.syncv3.SyncV3Dao
         SyncCommandEntity::class,
         SyncStateEntity::class,
         SyncReceiptEntity::class,
+        SyncLogEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class TPlannerDatabase : RoomDatabase() {
@@ -43,7 +45,7 @@ abstract class TPlannerDatabase : RoomDatabase() {
                 TPlannerDatabase::class.java,
                 DATABASE_NAME,
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .build().also { instance = it }
         }
 
@@ -157,6 +159,22 @@ abstract class TPlannerDatabase : RoomDatabase() {
         internal val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE sync_state ADD COLUMN cursor TEXT")
+            }
+        }
+
+        // 同步日志表:纯诊断数据,不参与任何正确性路径。
+        internal val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS sync_logs (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "created_at INTEGER NOT NULL, " +
+                        "level TEXT NOT NULL, " +
+                        "source TEXT NOT NULL, " +
+                        "message TEXT NOT NULL, " +
+                        "detail TEXT, " +
+                        "error_code TEXT)"
+                )
             }
         }
     }

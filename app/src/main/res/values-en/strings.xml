@@ -91,6 +91,9 @@
     <string name="sync_updating">Updating</string>
     <string name="sync_sending">Syncing…</string>
     <string name="sync_failed_kept_local">Sync failed · kept on this device</string>
+    <string name="sync_logs_title">Sync logs</string>
+    <string name="sync_logs_clear">Clear</string>
+    <string name="sync_logs_empty">No logs yet</string>
     <string name="sync_server_title">Sync Server</string>
     <string name="unknown_error">Unknown error</string>
     <string name="schedule_created_toast">Schedule created: %1$s</string>

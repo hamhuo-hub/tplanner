@@ -195,4 +195,30 @@ interface SyncV3Dao {
         installedVersion: Long,
         installedBrokerToSequence: Long,
     ): SyncReceiptEntity?
+
+    // ── 同步日志(诊断,不参与正确性路径)──────────────────────────────
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    fun insertLog(entry: SyncLogEntity)
+
+    @Query("SELECT * FROM sync_logs ORDER BY id DESC LIMIT :limit")
+    fun recentLogs(limit: Int): List<SyncLogEntity>
+
+    @Query("SELECT * FROM sync_logs ORDER BY id DESC LIMIT :limit")
+    fun observeRecentLogs(limit: Int): Flow<List<SyncLogEntity>>
+
+    @Query("DELETE FROM sync_logs WHERE id NOT IN (SELECT id FROM sync_logs ORDER BY id DESC LIMIT :keep)")
+    fun trimLogs(keep: Int): Int
+
+    @Query("DELETE FROM sync_logs")
+    fun clearLogs()
+
+    @Query("SELECT COUNT(*) FROM sync_logs")
+    fun logCount(): Int
+
+    @Transaction
+    fun appendLog(entry: SyncLogEntity, keep: Int) {
+        insertLog(entry)
+        trimLogs(keep)
+    }
 }

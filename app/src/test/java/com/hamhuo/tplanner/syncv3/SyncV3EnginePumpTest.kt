@@ -117,6 +117,17 @@ class SyncV3EnginePumpTest {
             "interactive pump must not wait for receipts",
             calls.none { it.contains("/receipts") },
         )
+
+        // 同步日志异步落库:poll 到出现 pump 行。
+        val deadline = System.currentTimeMillis() + 5_000
+        while (db.syncV3Dao().logCount() == 0 && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20)
+        }
+        val logs = db.syncV3Dao().recentLogs(20)
+        assertTrue(
+            "pump must record a BROKER_PERSISTED log entry",
+            logs.any { it.source == "pump" && it.message == "BROKER_PERSISTED" },
+        )
     }
 
     @Test

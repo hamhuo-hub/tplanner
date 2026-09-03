@@ -102,6 +102,7 @@ fun SyncSettingsPanel(
     syncMsg: String,
     onUrlChange: (String) -> Unit,
     onClose: () -> Unit,
+    onOpenLogs: () -> Unit,
 ) {
     val msgColor = when (syncStatus) {
         "success" -> TEAL; "error" -> RED; else -> GOLD
@@ -133,6 +134,15 @@ fun SyncSettingsPanel(
             if (syncMsg.isNotBlank()) {
                 Text(syncMsg, color = msgColor, fontSize = TPlannerTypography.PhoneMicroSp.sp, fontFamily = FontFamily.Monospace)
             }
+
+            // 同步日志入口(诊断)
+            Text(
+                stringResource(R.string.sync_logs_title),
+                color = GOLD,
+                fontSize = TPlannerTypography.PhoneMicroSp.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.clickable(onClick = onOpenLogs),
+            )
         }
     }
 }

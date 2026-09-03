@@ -92,6 +92,9 @@
     <string name="sync_updating">正在更新</string>
     <string name="sync_sending">正在同步…</string>
     <string name="sync_failed_kept_local">同步失败,已保存在本机</string>
+    <string name="sync_logs_title">同步日志</string>
+    <string name="sync_logs_clear">清空</string>
+    <string name="sync_logs_empty">暂无日志</string>
     <string name="sync_server_title">同步服务器</string>
     <string name="unknown_error">未知错误</string>
     <string name="schedule_created_toast">已创建日程：%1$s</string>

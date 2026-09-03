@@ -6,6 +6,7 @@ import android.net.NetworkCapabilities
 import com.hamhuo.tplanner.ScheduleItem
 import com.hamhuo.tplanner.SyncFeedbackBus
 import com.hamhuo.tplanner.SyncFeedbackEvent
+import com.hamhuo.tplanner.SyncLog
 import com.hamhuo.tplanner.persistence.SettingsRepository
 import com.hamhuo.tplanner.persistence.TPlannerDatabase
 import com.hamhuo.tplanner.persistence.LegacyImportResult
@@ -69,6 +70,11 @@ class SyncV3Engine(
     private val commands = SyncV3CommandRepository(appContext, database)
     private val projection = RoomSyncV3ProjectionInstaller(database)
 
+    init {
+        // 进程级同步日志:引擎是唯一同步写路径,在这里绑定目标数据库。
+        SyncLog.init(database)
+    }
+
     private val onDeltaDisplayedInstalled: (
         DisplayedStateProjection,
         DisplayedStateProjection,
@@ -112,6 +118,11 @@ class SyncV3Engine(
                         uploaded += batchUploaded
                     }
                     update(SyncV3Phase.UPLOADED)
+                    SyncLog.info(
+                        source = "pump",
+                        message = "BROKER_PERSISTED",
+                        detail = "uploaded=$uploaded pending=${store.pendingCount()}",
+                    )
                     if (uploaded > 0 || store.pendingCount() == 0) {
                         SyncFeedbackBus.publish(
                             SyncFeedbackEvent.CloudAccepted(
@@ -136,6 +147,12 @@ class SyncV3Engine(
                         )
                     }
                     SyncFeedbackBus.publish(SyncFeedbackEvent.FailedLocally(code))
+                    SyncLog.error(
+                        source = "pump",
+                        message = "upload failed",
+                        detail = error.message,
+                        errorCode = code,
+                    )
                     throw SyncV3RunException(code, error)
                 }
             }
@@ -257,6 +274,11 @@ class SyncV3Engine(
                         SyncV3Phase.UPLOADED
                     }
                     update(phase)
+                    SyncLog.info(
+                        source = "sync",
+                        message = if (phase == SyncV3Phase.SUCCESS) "converged" else "partially converged",
+                        detail = "version=$installed pending=$pending uploaded=$uploaded",
+                    )
                     SyncV3RunResult(installed, pending, uploaded, phase)
                 } catch (error: Throwable) {
                     if (error is CancellationException) throw error
@@ -268,6 +290,12 @@ class SyncV3Engine(
                             errorCode = code,
                         )
                     }
+                    SyncLog.error(
+                        source = "sync",
+                        message = "sync failed",
+                        detail = error.message,
+                        errorCode = code,
+                    )
                     throw SyncV3RunException(code, error)
                 }
             }
@@ -368,8 +396,13 @@ class SyncV3Engine(
             try {
                 deltaInstaller.syncByCursor(http, base)
                 return
-            } catch (_: DeltaFallbackException) {
+            } catch (fallback: DeltaFallbackException) {
                 // 已装 commit 不回滚;snapshot 覆盖权威状态并重建 cursor。
+                SyncLog.warn(
+                    source = "delta",
+                    message = "delta fell back to snapshot",
+                    detail = fallback.reason,
+                )
             }
         }
         installer.syncToLatest()

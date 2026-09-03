@@ -103,6 +103,30 @@ class TPlannerDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun `5 to 6 creates the sync log table`() {
+        val databasePath = InstrumentationRegistry.getInstrumentation()
+            .targetContext
+            .getDatabasePath(DATABASE_NAME_V5_V6)
+            .absolutePath
+        helper.createDatabase(databasePath, 5).use { database ->
+            database.execSQL(
+                "INSERT INTO sync_state " +
+                    "(singleton_id, device_id, next_client_sequence, installed_snapshot_version) " +
+                    "VALUES (1, 'old-device', 4, 3)"
+            )
+        }
+
+        helper.runMigrationsAndValidate(
+            databasePath,
+            6,
+            false,
+            TPlannerDatabase.MIGRATION_5_6,
+        ).use { database ->
+            assertTrue(tableExists(database, "sync_logs"))
+        }
+    }
+
     private fun tableExists(
         database: androidx.sqlite.db.SupportSQLiteDatabase,
         name: String,
@@ -124,5 +148,6 @@ class TPlannerDatabaseMigrationTest {
     private companion object {
         const val DATABASE_NAME = "migration-v3-v4-test"
         const val DATABASE_NAME_V4_V5 = "migration-v4-v5-test"
+        const val DATABASE_NAME_V5_V6 = "migration-v5-v6-test"
     }
 }

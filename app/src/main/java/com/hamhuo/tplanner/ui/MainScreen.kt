@@ -65,6 +65,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.hamhuo.tplanner.timeline.TimelineScreen
+import com.hamhuo.tplanner.persistence.TPlannerDatabase
+import com.hamhuo.tplanner.ui.SyncLogPanel
 import com.hamhuo.tplanner.ui.components.TPlannerPullToSync
 import com.hamhuo.tplanner.ui.components.TPlannerSyncFeedback
 import com.hamhuo.tplanner.ui.components.TPlannerSyncFeedbackPresentation
@@ -73,10 +75,12 @@ import com.hamhuo.tplanner.persistence.DraftCommitResult
 import com.hamhuo.tplanner.persistence.EventDraftRecovery
 import com.hamhuo.tplanner.persistence.EventEditStage
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.util.UUID
 
@@ -270,6 +274,9 @@ fun MainScreen(
     var syncFeedback by remember { mutableStateOf<TPlannerSyncFeedbackPresentation?>(null) }
     var syncFeedbackGeneration by remember { mutableIntStateOf(0) }
     var presentedSyncOperationId by rememberSaveable { mutableStateOf<String?>(null) }
+    var showSyncLogs by remember { mutableStateOf(false) }
+    val syncLogDao = remember(context) { TPlannerDatabase.get(context.applicationContext).syncV3Dao() }
+    val syncLogEntries by syncLogDao.observeRecentLogs(200).collectAsState(initial = emptyList())
     val eventActions = remember(eventStore) {
         ScheduleItemActions(scope, context, eventStore, eventWriteMutex)
     }
@@ -517,6 +524,17 @@ fun MainScreen(
                         syncMsg = syncMsg,
                         onUrlChange = { serverUrl = it },
                         onClose = { panelOpen = false },
+                        onOpenLogs = { showSyncLogs = true },
+                    )
+                }
+                if (showSyncLogs) {
+                    SyncLogPanel(
+                        entries = syncLogEntries,
+                        onClear = {
+                            scope.launch { withContext(Dispatchers.IO) { syncLogDao.clearLogs() } }
+                        },
+                        onClose = { showSyncLogs = false },
+                        modifier = Modifier.align(Alignment.TopEnd).padding(top = 50.dp, end = 8.dp),
                     )
                 }
                 if (deepseekService != null) {

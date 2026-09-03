@@ -3,10 +3,10 @@ package com.hamhuo.tplanner.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
@@ -17,14 +17,22 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.hamhuo.tplanner.GOLD
+import com.hamhuo.tplanner.R
 import com.hamhuo.tplanner.SURFACE2
 import kotlinx.coroutines.flow.distinctUntilChanged
 
-/** One app-level pull gesture shared by Notes, Inbox, and Timeline. */
+/**
+ * One app-level pull gesture shared by Notes, Inbox, and Timeline.
+ *
+ * 无任何圆形转圈动画:下拉手势本身不显示指示器,同步进行中只显示一个静态
+ * 「正在同步…」pill;完成/失败统一由顶部的 sync complete/failed 反馈呈现。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TPlannerPullToSync(
@@ -70,28 +78,29 @@ fun TPlannerPullToSync(
     ) {
         content()
         if (enabled && !isSyncing) {
+            // 保留下拉手势本身,但不显示材料默认的圆形指示器。
             PullToRefreshContainer(
                 state = gestureState,
                 modifier = Modifier.align(Alignment.TopCenter),
                 containerColor = SURFACE2,
                 contentColor = GOLD,
+                indicator = {},
             )
         }
         if (isSyncing) {
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .size(40.dp)
-                    .background(SURFACE2, CircleShape)
+                    .background(SURFACE2, RoundedCornerShape(20.dp))
                     .semantics {
                         stateDescription = "sync-operation:${operationId.orEmpty()}"
-                    },
-                contentAlignment = Alignment.Center,
+                    }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
             ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(22.dp),
+                Text(
+                    stringResource(R.string.sync_sending),
                     color = GOLD,
-                    strokeWidth = 2.dp,
+                    fontSize = 12.sp,
                 )
             }
         }
