@@ -20,6 +20,15 @@ class SyncManager(context: Context) {
         settings.setServerUrl(normalizeServerUrl(url))
     }
 
+    /**
+     * PR A:交互同步 —— 到 BROKER_PERSISTED 即返回(用户确认点)。
+     * 与 [syncAllOrThrow](完全收敛)分开,不再让"保存一条事项"等整个
+     * receipt/delta/coverage 链。
+     */
+    suspend fun syncInteractive(serverUrl: String? = null) {
+        engine.pumpToBroker(serverUrl ?: getServerUrl())
+    }
+
     suspend fun syncAllOrThrow(serverUrl: String? = null) {
         val result = engine.syncOnce(serverUrl ?: getServerUrl())
         if (result.phase != SyncV3Phase.SUCCESS) {

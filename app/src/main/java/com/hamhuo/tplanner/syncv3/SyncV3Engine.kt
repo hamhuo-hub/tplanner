@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import com.hamhuo.tplanner.ScheduleItem
+import com.hamhuo.tplanner.SyncFeedbackBus
+import com.hamhuo.tplanner.SyncFeedbackEvent
 import com.hamhuo.tplanner.persistence.SettingsRepository
 import com.hamhuo.tplanner.persistence.TPlannerDatabase
 import com.hamhuo.tplanner.persistence.LegacyImportResult
@@ -54,9 +56,13 @@ class SyncV3Engine(
         snapshotVersion: Long,
         brokerToSequence: Long,
     ) -> Boolean = { _, _, _, _ -> false },
-    /** Android canary 开关(§9.3):默认关,capability + cursor 齐备才走 delta。 */
+    /** Android canary 开关(§9.3):capability + cursor 齐备才走 delta;默认关,生产由 SyncV3Runtime 打开。 */
     private val deltaEnabled: Boolean = false,
+    private val capabilitiesCache: CapabilitiesCache = CapabilitiesCache(),
+    /** 测试 seam:JVM/Robolectric 测试可注入 no-op,生产默认走 [requireNetwork]。 */
+    private val networkGuard: (() -> Unit)? = null,
 ) {
+    private val networkCheck: () -> Unit = networkGuard ?: { requireNetwork() }
     private val appContext = context.applicationContext
     private val dao = database.syncV3Dao()
     private val store = RoomSyncV3Store(dao)
@@ -74,6 +80,67 @@ class SyncV3Engine(
         }
     }
 
+    /**
+     * PR A/B:交互热路径 —— 只把 pending 排空到 BROKER_PERSISTED。
+     *
+     * 202 = 用户确认点(UI「✓ 已同步」),不等 receipt / delta / coverage;
+     * 收敛由 syncOnce、RemoteChangeMonitor 与 WorkManager 兜底完成。
+     * 「异步处理中」绝不等于「失败重试」。
+     */
+    suspend fun pumpToBroker(serverUrl: String = SettingsRepository.DEFAULT_SERVER_URL): SyncV3RunResult =
+        processMutex.withLock {
+            withContext(Dispatchers.IO) {
+                try {
+                    val localMigration = LegacyPreferencesImporter(appContext, database).importIfNeeded()
+                    if (localMigration is LegacyImportResult.Blocked) {
+                        throw SyncV3SnapshotInstaller.SnapshotException(
+                            "local storage upgrade is blocked: " +
+                                localMigration.issues.joinToString { it.message },
+                            "ERROR007",
+                        )
+                    }
+                    networkCheck()
+                    val base = normalizeServerUrl(serverUrl)
+                    val capabilities = verifyCapabilities(base)
+                    commands.prepareForServerInstance(capabilities.optString("serverInstanceId"))
+
+                    val uploader = SyncV3Uploader(store, http, base)
+                    var uploaded = 0
+                    while (true) {
+                        val batchUploaded = uploader.pump()
+                        if (batchUploaded == 0) break
+                        uploaded += batchUploaded
+                    }
+                    update(SyncV3Phase.UPLOADED)
+                    if (uploaded > 0 || store.pendingCount() == 0) {
+                        SyncFeedbackBus.publish(
+                            SyncFeedbackEvent.CloudAccepted(
+                                runCatching { java.net.URL(base).host }.getOrDefault(base),
+                            ),
+                        )
+                    }
+                    SyncV3RunResult(
+                        installedSnapshotVersion = dao.getSyncState()?.installedSnapshotVersion ?: 0L,
+                        pendingCommands = store.pendingCount(),
+                        uploadedCommands = store.uploadedCount(),
+                        phase = SyncV3Phase.UPLOADED,
+                    )
+                } catch (error: Throwable) {
+                    if (error is CancellationException) throw error
+                    val code = error.toSyncV3ErrorCode()
+                    store.updateSyncStatus("error", code, System.currentTimeMillis())
+                    if (store.pendingCount() > 0) {
+                        store.recordPendingFailure(
+                            nextAttemptAt = System.currentTimeMillis() + RETRY_BASE_MILLIS,
+                            errorCode = code,
+                        )
+                    }
+                    SyncFeedbackBus.publish(SyncFeedbackEvent.FailedLocally(code))
+                    throw SyncV3RunException(code, error)
+                }
+            }
+        }
+
     suspend fun syncOnce(serverUrl: String = SettingsRepository.DEFAULT_SERVER_URL): SyncV3RunResult =
         processMutex.withLock {
             withContext(Dispatchers.IO) {
@@ -90,7 +157,7 @@ class SyncV3Engine(
                             "ERROR007",
                         )
                     }
-                    requireNetwork()
+                    networkCheck()
                     val base = normalizeServerUrl(serverUrl)
                     val capabilities = verifyCapabilities(base)
                     commands.prepareForServerInstance(capabilities.optString("serverInstanceId"))
@@ -244,6 +311,10 @@ class SyncV3Engine(
     }
 
     private fun verifyCapabilities(base: String): JSONObject {
+        // PR E:热路径不每次付 capabilities 的 RTT;同 serverUrl 5 分钟内直接用缓存。
+        capabilitiesCache.get(base)?.let { cached ->
+            return cached
+        }
         val response = http.get("$base/tplanner/v3/capabilities", timeoutMs = 10_000)
         if (!response.isOk) {
             throw SyncV3Uploader.SyncException(
@@ -272,6 +343,7 @@ class SyncV3Engine(
                 "capabilities has no serverInstanceId",
                 "ERROR008",
             )
+        capabilitiesCache.put(base, body)
         return body
     }
 

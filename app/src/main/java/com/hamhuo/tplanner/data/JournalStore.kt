@@ -201,6 +201,9 @@ class JournalStore(
 
     /** The durable outbox is already committed; scheduler startup is retryable on next launch. */
     private fun scheduleSync() {
+        // PR B/C:同 ScheduleItemStore —— 前台立即排空 + 两阶段反馈;WorkManager 兜底。
+        SyncFeedbackBus.publish(SyncFeedbackEvent.Sending)
+        SyncV3ForegroundPump.request(appContext)
         runCatching { SyncV3Scheduler.enqueue(appContext) }
     }
 

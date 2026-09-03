@@ -310,6 +310,10 @@ class ScheduleItemStore(
 
     /** The Room outbox is authoritative; WorkManager can be started again on the next launch. */
     private fun scheduleSync() {
+        // PR B/C:Room 事务已提交 → 顶部 Gold「正在同步」→ 前台立即排空到
+        // BROKER_PERSISTED(顶部 Teal「已同步」)。WorkManager 只是 crash/断网兜底。
+        SyncFeedbackBus.publish(SyncFeedbackEvent.Sending)
+        SyncV3ForegroundPump.request(appContext)
         runCatching { SyncV3Scheduler.enqueue(appContext) }
     }
 

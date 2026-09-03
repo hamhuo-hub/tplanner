@@ -63,10 +63,9 @@ internal object WatchCommandBridge {
                     }
                     return@synchronized refreshed
                 }
-                SyncV3Scheduler.enqueue(appContext)
+                requestPump(appContext)
                 return@synchronized responseFromEntry(request, existing)
             }
-
             val persisted = runCatching {
                 runBlocking(Dispatchers.IO) {
                     SyncV3CommandRepository(appContext, TPlannerDatabase.get(appContext))
@@ -95,9 +94,16 @@ internal object WatchCommandBridge {
             putEntry(ledger, request, identity, response)
             pruneLedger(ledger)
             if (!writeLedger(appContext, ledger)) return@synchronized retry(request)
-            SyncV3Scheduler.enqueue(appContext)
+            requestPump(appContext)
             response
         }
+
+    /** PR B:手表命令也是用户意图 —— 前台立即排空,WorkManager 兜底。 */
+    private fun requestPump(appContext: Context) {
+        SyncFeedbackBus.publish(SyncFeedbackEvent.Sending)
+        SyncV3ForegroundPump.request(appContext)
+        runCatching { SyncV3Scheduler.enqueue(appContext) }
+    }
 
     /** Called only after a projection sourced from [sourceSnapshotVersion] is durably queued. */
     fun onProjectionQueued(

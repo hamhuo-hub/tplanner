@@ -281,6 +281,8 @@ fun MainScreen(
     val syncSavedMessage = stringResource(R.string.sync_saved)
     val syncUploadingMessage = stringResource(R.string.sync_uploading)
     val syncUpdatingMessage = stringResource(R.string.sync_updating)
+    val syncSendingMessage = stringResource(R.string.sync_sending)
+    val syncFailedKeptLocalMessage = stringResource(R.string.sync_failed_kept_local)
 
     fun serverHost(url: String): String =
         try { java.net.URL(SyncManager.normalizeServerUrl(url)).host } catch (_: Exception) { url }
@@ -338,6 +340,29 @@ fun MainScreen(
                 TPlannerSyncFeedbackTone.ERROR
             },
         )
+    }
+
+    // PR C:交互热路径的两阶段反馈 —— 与收敛事务(上面的 SUCCESS/ERROR)解耦。
+    // 本地 Room 提交 → Gold「正在同步…」;202 BROKER_PERSISTED → Teal「已同步」;
+    // 真失败 → Red「同步失败,已保存在本机」。都不等 receipt/delta 收敛。
+    LaunchedEffect(Unit) {
+        SyncFeedbackBus.events.collect { event ->
+            syncFeedbackGeneration++
+            syncFeedback = TPlannerSyncFeedbackPresentation(
+                generation = syncFeedbackGeneration,
+                message = when (event) {
+                    SyncFeedbackEvent.Sending -> syncSendingMessage
+                    is SyncFeedbackEvent.CloudAccepted ->
+                        syncedTemplate.format(event.serverHost)
+                    is SyncFeedbackEvent.FailedLocally -> syncFailedKeptLocalMessage
+                },
+                tone = when (event) {
+                    SyncFeedbackEvent.Sending -> TPlannerSyncFeedbackTone.ACCENT
+                    is SyncFeedbackEvent.CloudAccepted -> TPlannerSyncFeedbackTone.SUCCESS
+                    is SyncFeedbackEvent.FailedLocally -> TPlannerSyncFeedbackTone.ERROR
+                },
+            )
+        }
     }
 
     val isPhone = LocalConfiguration.current.screenWidthDp < 840

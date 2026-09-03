@@ -20,6 +20,9 @@ object SyncV3Runtime {
 
     private fun create(context: Context): SyncV3Engine = SyncV3Engine(
         context = context,
+        // PR D:Android 打开 delta canary。真正的开关仍是服务器 capability
+        // (TPLANNER_ENABLE_DELTA=1):服务器未开时这里自动退回 snapshot 路径。
+        deltaEnabled = true,
         onDisplayedInstalled = { displayedEvents, authoritativeEvents, snapshotVersion, brokerToSequence ->
             runCatching { TaskAlarmScheduler.reconcile(context, displayedEvents) }
             WatchScheduleSync.push(

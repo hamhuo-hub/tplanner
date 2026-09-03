@@ -5,6 +5,7 @@ import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
+import androidx.work.ListenableWorker
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
@@ -13,6 +14,7 @@ import com.hamhuo.tplanner.persistence.SettingsRepository
 import com.hamhuo.tplanner.syncv3.SyncV3Engine
 import com.hamhuo.tplanner.syncv3.SyncV3Phase
 import com.hamhuo.tplanner.syncv3.SyncV3RunException
+import com.hamhuo.tplanner.syncv3.SyncV3RunResult
 import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 
@@ -41,6 +43,17 @@ object SyncV3Scheduler {
     }
 }
 
+/**
+ * PR A:Worker 只把"真失败"交给 WorkManager retry。
+ * UPLOADED 意味着命令已经 BROKER_PERSISTED —— 这是成功状态,不是失败:
+ * 把它 retry() 会白白吃 WorkManager 强制的 10s minimum backoff。
+ * 剩余收敛(receipt/delta/coverage)由通知与下次前台同步继续。
+ */
+internal fun SyncV3RunResult.toWorkResult(): ListenableWorker.Result = when (phase) {
+    SyncV3Phase.SUCCESS, SyncV3Phase.UPLOADED -> ListenableWorker.Result.success()
+    else -> ListenableWorker.Result.retry()
+}
+
 class SyncV3PumpWorker(
     appContext: Context,
     parameters: WorkerParameters,
@@ -49,7 +62,7 @@ class SyncV3PumpWorker(
         val serverUrl = SettingsRepository(applicationContext).serverUrl.first()
         return try {
             val result = SyncV3Runtime.engine(applicationContext).syncOnce(serverUrl)
-            if (result.phase == SyncV3Phase.SUCCESS) Result.success() else Result.retry()
+            result.toWorkResult()
         } catch (error: SyncV3RunException) {
             when (error.errorCode) {
                 "ERROR008", "ERROR009", "ERROR010" -> Result.failure()
