@@ -22,7 +22,6 @@ import org.robolectric.annotation.Config
 class SyncV3EnginePumpTest {
     private lateinit var db: TPlannerDatabase
     private val calls = mutableListOf<String>()
-
     private class FakeHttp(
         private val calls: MutableList<String>,
         private val failBatches: Boolean = false,
@@ -68,13 +67,21 @@ class SyncV3EnginePumpTest {
         db = Room.inMemoryDatabaseBuilder(context, TPlannerDatabase::class.java)
             .allowMainThreadQueries()
             .build()
+        // 与 SyncV3CommandRepository 使用同一 deviceId,避免 identity rollover 重置状态。
         db.syncV3Dao().upsertSyncState(
             SyncStateEntity(
-                deviceId = "android-test",
+                deviceId = SyncV3DeviceIdentity.get(context),
                 nextClientSequence = 2,
                 installedSnapshotVersion = 1,
                 installedSnapshotHash = null,
                 serverInstanceId = "srv-test",
+                serverMirrorJson = JSONObject()
+                    .put("tasks", JSONObject())
+                    .put("customLists", JSONObject())
+                    .put("journals", JSONObject())
+                    .put("goals", JSONObject())
+                    .put("insights", JSONObject())
+                    .toString(),
                 installedBrokerToSequence = 1,
             ),
         )
@@ -140,5 +147,127 @@ class SyncV3EnginePumpTest {
             assertEquals("ERROR003", error.errorCode)
         }
         assertEquals("pending", db.syncV3Dao().listCommands("pending", 10).single().state)
+    }
+
+    private class BackgroundHttp(
+        private val calls: MutableList<String>,
+    ) : SyncHttpClient {
+        override fun post(url: String, body: String, idempotencyKey: String, timeoutMs: Int): SyncHttpResponse =
+            SyncHttpResponse.text(400, "{}")
+
+        override fun get(url: String, timeoutMs: Int): SyncHttpResponse {
+            calls.add(url)
+            return when {
+                url.contains("/capabilities") -> SyncHttpResponse.text(
+                    200,
+                    JSONObject()
+                        .put("softwareVersion", "8.0.0")
+                        .put("protocolVersion", 3)
+                        .put("schemaVersion", 3)
+                        .put("serverInstanceId", "srv-test")
+                        .put("downlinkModes", JSONArray().put("snapshot"))
+                        .toString(),
+                )
+                url.contains("/receipts") -> SyncHttpResponse.text(
+                    200,
+                    JSONObject().put("acceptedThrough", 0).put("results", JSONArray()).toString(),
+                )
+                url.contains("/notifications") -> SyncHttpResponse.text(
+                    200,
+                    JSONObject().put("latestVersion", 1).put("stateHash", HASH_ZERO).toString(),
+                )
+                url.endsWith("/snapshots/latest") -> SyncHttpResponse.text(
+                    200,
+                    JSONObject()
+                        .put("snapshotVersion", 1)
+                        .put("parentVersion", 0)
+                        .put("schemaVersion", 3)
+                        .put("stateHash", HASH_ZERO)
+                        .put("compressedHash", HASH_ZERO)
+                        .put("encoding", "gzip")
+                        .put("compressedBytes", 1)
+                        .put("uncompressedBytes", 1)
+                        .put("serverInstanceId", "srv-test")
+                        .toString(),
+                )
+                else -> SyncHttpResponse.text(404, "{}")
+            }
+        }
+
+        companion object {
+            val HASH_ZERO = "sha256:${"0".repeat(64)}"
+        }
+    }
+
+    private fun backgroundEngine(calls: MutableList<String>) = SyncV3Engine(
+        context = ApplicationProvider.getApplicationContext(),
+        database = db,
+        http = BackgroundHttp(calls),
+        networkGuard = {},
+    )
+
+    private fun uploadedCommand() = pendingCommand().copy(state = "uploaded")
+
+    /** 越过一次性 cutover 屏障与 legacy import 屏障,让 runSync 直接进入上传/下行路径。 */
+    private suspend fun markBootstrapped() {
+        val dao = db.syncV3Dao()
+        // LegacyPreferencesImporter 的完成标记(id 是其内部常量 "shared_prefs_v1")。
+        db.migrationDao().insertMarker(
+            com.hamhuo.tplanner.persistence.MigrationMarkerEntity(
+                id = "shared_prefs_v1",
+                completedAt = System.currentTimeMillis(),
+                sourceDigest = "smoke",
+                eventCount = 0,
+                journalCount = 0,
+                draftCount = 0,
+            ),
+        )
+        dao.insertMigrationMarker(
+            com.hamhuo.tplanner.persistence.MigrationMarkerEntity(
+                id = SyncV3CommandRepository.BOOTSTRAP_MARKER,
+                completedAt = System.currentTimeMillis(),
+                sourceDigest = "smoke",
+                eventCount = 0,
+                journalCount = 0,
+                draftCount = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun `syncBackgroundOnce never long-polls publication even with uploaded commands`() = runBlocking {
+        db.syncV3Dao().upsertSyncState(
+            db.syncV3Dao().getSyncState()!!.copy(installedSnapshotHash = BackgroundHttp.HASH_ZERO),
+        )
+        db.syncV3Dao().insertCommand(uploadedCommand())
+        markBootstrapped()
+
+        val calls = mutableListOf<String>()
+        val result = backgroundEngine(calls).syncBackgroundOnce("https://sync.example")
+
+        assertEquals(SyncV3Phase.UPLOADED, result.phase)
+        assertTrue("background catch-up must pull receipts once", calls.any { it.contains("/receipts") })
+        assertTrue("background catch-up must pull the snapshot once", calls.any { it.contains("/snapshots/latest") })
+        assertTrue(
+            "background catch-up must NEVER long-poll notifications",
+            calls.none { it.contains("/notifications") },
+        )
+    }
+
+    @Test
+    fun `syncOnce may long-poll publication to reach convergence`() = runBlocking {
+        db.syncV3Dao().upsertSyncState(
+            db.syncV3Dao().getSyncState()!!.copy(installedSnapshotHash = BackgroundHttp.HASH_ZERO),
+        )
+        db.syncV3Dao().insertCommand(uploadedCommand())
+        markBootstrapped()
+
+        val calls = mutableListOf<String>()
+        backgroundEngine(calls).syncOnce("https://sync.example")
+
+        assertTrue(
+            "explicit convergence sync is allowed to wait on the publication notification",
+            calls.any { it.contains("/notifications") },
+        )
     }
 }

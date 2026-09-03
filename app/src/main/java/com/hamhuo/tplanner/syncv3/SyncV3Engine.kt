@@ -158,7 +158,25 @@ class SyncV3Engine(
             }
         }
 
+    /**
+     * 手动下拉刷新 / 启动收敛:允许等待中央 publication(最多 5s 长轮询),
+     * 目标是完全收敛。热路径之后的 WorkManager 不得使用此入口。
+     */
     suspend fun syncOnce(serverUrl: String = SettingsRepository.DEFAULT_SERVER_URL): SyncV3RunResult =
+        runSync(serverUrl, waitForPublication = true)
+
+    /**
+     * PR F:WorkManager 的一次性 durable catch-up —— 补传 pending、收一次回执、
+     * 拉一次 delta/snapshot,然后立即返回;**绝不 long-poll 等 publication**。
+     * 剩余收敛由 RemoteChangeMonitor / 下一次通知或触发继续。
+     */
+    suspend fun syncBackgroundOnce(serverUrl: String = SettingsRepository.DEFAULT_SERVER_URL): SyncV3RunResult =
+        runSync(serverUrl, waitForPublication = false)
+
+    private suspend fun runSync(
+        serverUrl: String,
+        waitForPublication: Boolean,
+    ): SyncV3RunResult =
         processMutex.withLock {
             withContext(Dispatchers.IO) {
                 try {
@@ -236,11 +254,12 @@ class SyncV3Engine(
                     drainReceipts(uploader)
                     reconcileReceiptsAndWatch()
 
-                    // A 202 means broker-persisted, not yet visible. Wait only while the central
-                    // snapshot we need is absent; notifications wake immediately on publication.
+                    // A 202 means broker-persisted, not yet visible. Only the explicitly
+                    // convergence-seeking entry point (syncOnce) may long-poll publication;
+                    // background catch-up never blocks here and leaves the rest to notifications.
                     val requiredVersion = dao.maxReceiptSnapshotVersion() ?: 0L
                     var installed = dao.getSyncState()?.installedSnapshotVersion ?: 0L
-                    if (store.uploadedCount() > 0 || installed < requiredVersion) {
+                    if (waitForPublication && (store.uploadedCount() > 0 || installed < requiredVersion)) {
                         val notification = SyncV3NotificationClient(
                             store,
                             http,
@@ -275,7 +294,7 @@ class SyncV3Engine(
                     }
                     update(phase)
                     SyncLog.info(
-                        source = "sync",
+                        source = if (waitForPublication) "sync" else "sync-bg",
                         message = if (phase == SyncV3Phase.SUCCESS) "converged" else "partially converged",
                         detail = "version=$installed pending=$pending uploaded=$uploaded",
                     )
@@ -291,7 +310,7 @@ class SyncV3Engine(
                         )
                     }
                     SyncLog.error(
-                        source = "sync",
+                        source = if (waitForPublication) "sync" else "sync-bg",
                         message = "sync failed",
                         detail = error.message,
                         errorCode = code,

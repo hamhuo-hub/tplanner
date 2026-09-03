@@ -19,12 +19,13 @@ import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 
 /**
- * One replaceable queue pump. Repeated local operations never append successor WorkRequests;
- * cancelling/replacing a running request is safe because the Room command outbox is authoritative.
+ * Durable safety-net scheduling。Room outbox 是权威队列:正在运行的 worker
+ * 本来就能看到新写入的 command,KEEP 保证新保存不打断正在进行的 catch-up,
+ * 也不会制造 "cancel A → 重建 B" 的链条。前台热路径由 SyncV3ForegroundPump 负责。
  */
 object SyncV3Scheduler {
     internal const val UNIQUE_WORK_NAME = "tplanner-sync-v3-pump"
-    internal val existingWorkPolicy: ExistingWorkPolicy = ExistingWorkPolicy.REPLACE
+    internal val existingWorkPolicy: ExistingWorkPolicy = ExistingWorkPolicy.KEEP
 
     fun enqueue(context: Context) {
         val request = OneTimeWorkRequestBuilder<SyncV3PumpWorker>()
@@ -44,10 +45,12 @@ object SyncV3Scheduler {
 }
 
 /**
- * PR A:Worker 只把"真失败"交给 WorkManager retry。
- * UPLOADED 意味着命令已经 BROKER_PERSISTED —— 这是成功状态,不是失败:
- * 把它 retry() 会白白吃 WorkManager 强制的 10s minimum backoff。
- * 剩余收敛(receipt/delta/coverage)由通知与下次前台同步继续。
+ * PR A+F:Worker 是 durable safety net,不是热路径的延续。
+ *
+ * 它跑 [SyncV3Engine.syncBackgroundOnce] —— 补传 pending、收一次回执、
+ * 拉一次 delta/snapshot 后立即返回,**绝不 long-poll 等 publication**;
+ * 剩余收敛由 RemoteChangeMonitor / 下一次通知或触发继续。UPLOADED 与
+ * SUCCESS 一样算成功,只有真失败才吃 WorkManager 的 10s backoff。
  */
 internal fun SyncV3RunResult.toWorkResult(): ListenableWorker.Result = when (phase) {
     SyncV3Phase.SUCCESS, SyncV3Phase.UPLOADED -> ListenableWorker.Result.success()
@@ -61,7 +64,7 @@ class SyncV3PumpWorker(
     override suspend fun doWork(): Result {
         val serverUrl = SettingsRepository(applicationContext).serverUrl.first()
         return try {
-            val result = SyncV3Runtime.engine(applicationContext).syncOnce(serverUrl)
+            val result = SyncV3Runtime.engine(applicationContext).syncBackgroundOnce(serverUrl)
             result.toWorkResult()
         } catch (error: SyncV3RunException) {
             when (error.errorCode) {

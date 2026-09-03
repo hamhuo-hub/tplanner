@@ -10,9 +10,9 @@ import org.junit.Test
 
 class SyncV3SchedulerTest {
     @Test
-    fun `repeated writes address one replaceable pump and never append successors`() {
+    fun `safety-net scheduling keeps a running worker instead of replacing it`() {
         assertEquals("tplanner-sync-v3-pump", SyncV3Scheduler.UNIQUE_WORK_NAME)
-        assertEquals(ExistingWorkPolicy.REPLACE, SyncV3Scheduler.existingWorkPolicy)
+        assertEquals(ExistingWorkPolicy.KEEP, SyncV3Scheduler.existingWorkPolicy)
     }
 
     @Test
