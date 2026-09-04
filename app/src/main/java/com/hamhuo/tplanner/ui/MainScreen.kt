@@ -781,10 +781,17 @@ fun MainScreen(
     }
 
     // ── Main layout ──────────────────────────────────────────────────────
+    // UI 铁律:只有用户主动下拉(USER_GESTURE)才显示「正在同步…」pill。
+    // 本地保存走 SyncFeedbackBus 两阶段反馈;REMOTE_CHANGE / STARTUP / Worker
+    // 全部静默 —— 否则自己保存引发的版本变化会再弹一次 syncing 动画。
+    val isUserGestureSyncing =
+        syncOperation.reason == SyncReason.USER_GESTURE && syncOperation.phase.isRunning
     Box(Modifier.fillMaxSize().background(BG).windowInsetsPadding(WindowInsets.systemBars)) {
         TPlannerPullToSync(
-            isSyncing = syncOperation.phase.isRunning,
-            operationId = syncOperation.operationId,
+            isSyncing = isUserGestureSyncing,
+            operationId = syncOperation.operationId.takeIf {
+                syncOperation.reason == SyncReason.USER_GESTURE
+            },
             onSync = onSync,
             enabled = isPhone && !chromeHidden,
             modifier = Modifier.fillMaxSize(),
