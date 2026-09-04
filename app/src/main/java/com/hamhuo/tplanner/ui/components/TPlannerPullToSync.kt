@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
-import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -30,8 +29,9 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 /**
  * One app-level pull gesture shared by Notes, Inbox, and Timeline.
  *
- * 无任何圆形转圈动画:下拉手势本身不显示指示器,同步进行中只显示一个静态
- * 「正在同步…」pill;完成/失败统一由顶部的 sync complete/failed 反馈呈现。
+ * 完全没有任何圆形视觉:不渲染 PullToRefreshContainer(它即使 indicator 为空也
+ * 会画一个圆形 Surface 容器)。下拉手势本身无指示器,同步进行中只显示一个
+ * 静态「正在同步…」pill;完成/失败统一由顶部的 sync complete/failed 反馈呈现。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,16 +77,6 @@ fun TPlannerPullToSync(
         ),
     ) {
         content()
-        if (enabled && !isSyncing) {
-            // 保留下拉手势本身,但不显示材料默认的圆形指示器。
-            PullToRefreshContainer(
-                state = gestureState,
-                modifier = Modifier.align(Alignment.TopCenter),
-                containerColor = SURFACE2,
-                contentColor = GOLD,
-                indicator = {},
-            )
-        }
         if (isSyncing) {
             Box(
                 modifier = Modifier
