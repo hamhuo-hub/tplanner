@@ -65,10 +65,9 @@ class HttpUrlConnectionSyncHttpClient : SyncHttpClient {
             connection.connectTimeout = timeoutMs
             connection.readTimeout = timeoutMs
             connection.setRequestProperty("Accept", "application/json, */*")
-            // 禁用跨请求 keep-alive 复用:长轮询穿过 NAT/隧道时,平台连接池会复用到
-            // 已被对端关闭的死连接,表现为几百毫秒的假 SocketTimeout / EOF("unexpected
-            // end of stream")。单用户服务器没有 keep-alive 的性能诉求,一律 close。
-            connection.setRequestProperty("Connection", "close")
+            // 保持 keep-alive:每个请求都重做 TCP+TLS 握手会让经隧道/公网的
+            // 多请求同步链慢上数秒。长轮询偶发的死连接由
+            // SyncV3NotificationClient 的幂等重试单独兜底,不在这里一刀切。
             if (body != null) connection.setRequestProperty("Content-Type", "application/json")
             if (idempotencyKey != null) connection.setRequestProperty("Idempotency-Key", idempotencyKey)
             if (body != null) {

@@ -98,11 +98,10 @@ internal object WatchCommandBridge {
             response
         }
 
-    /** PR B:手表命令也是用户意图 —— 前台立即排空,WorkManager 兜底。 */
+    /** PR B/F:手表命令也是用户意图 —— 前台立即排空;WorkManager 由泵结束后 finally enqueue。 */
     private fun requestPump(appContext: Context) {
         SyncFeedbackBus.publish(SyncFeedbackEvent.Sending)
         SyncV3ForegroundPump.request(appContext)
-        runCatching { SyncV3Scheduler.enqueue(appContext) }
     }
 
     /** Called only after a projection sourced from [sourceSnapshotVersion] is durably queued. */

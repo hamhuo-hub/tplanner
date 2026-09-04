@@ -328,8 +328,11 @@ fun MainScreen(
 
     LaunchedEffect(syncOperation.operationId, syncOperation.phase) {
         val operationId = syncOperation.operationId ?: return@LaunchedEffect
-        val terminal = syncOperation.phase == SyncPhase.SUCCESS ||
-            syncOperation.phase == SyncPhase.ERROR
+        // 顶部 terminal 横幅只属于用户主动触发的手动同步(USER_GESTURE)。
+        // 保存驱动走 SyncFeedbackBus 两阶段反馈;REMOTE_CHANGE / STARTUP 是后台
+        // 收敛,不弹横幅 —— 否则自己保存引发的版本变化会再来一次「同步完成」双动画。
+        val terminal = (syncOperation.phase == SyncPhase.SUCCESS || syncOperation.phase == SyncPhase.ERROR) &&
+            syncOperation.reason == SyncReason.USER_GESTURE
         if (!terminal || presentedSyncOperationId == operationId) return@LaunchedEffect
         presentedSyncOperationId = operationId
         runCatching { refreshJournalRecovery(journalDateKey) }

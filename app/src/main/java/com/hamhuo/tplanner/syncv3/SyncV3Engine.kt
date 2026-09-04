@@ -106,6 +106,7 @@ class SyncV3Engine(
                         )
                     }
                     networkCheck()
+                    val startedAt = System.currentTimeMillis()
                     val base = normalizeServerUrl(serverUrl)
                     val capabilities = verifyCapabilities(base)
                     commands.prepareForServerInstance(capabilities.optString("serverInstanceId"))
@@ -121,7 +122,7 @@ class SyncV3Engine(
                     SyncLog.info(
                         source = "pump",
                         message = "BROKER_PERSISTED",
-                        detail = "uploaded=$uploaded pending=${store.pendingCount()}",
+                        detail = "ms=${System.currentTimeMillis() - startedAt} uploaded=$uploaded pending=${store.pendingCount()}",
                     )
                     if (uploaded > 0 || store.pendingCount() == 0) {
                         SyncFeedbackBus.publish(
@@ -244,15 +245,34 @@ class SyncV3Engine(
                     }
                     update(SyncV3Phase.SAVED)
 
+                    val source = if (waitForPublication) "sync" else "sync-bg"
+                    val startedAt = System.currentTimeMillis()
                     val receiptCursorBeforeRun = store.acceptedThrough() ?: 0L
                     val uploader = SyncV3Uploader(store, http, base)
                     uploader.flush()
+                    val uploadedAt = System.currentTimeMillis()
+                    SyncLog.info(
+                        source = source,
+                        message = "upload done",
+                        detail = "ms=${uploadedAt - startedAt}",
+                    )
                     update(SyncV3Phase.UPLOADED)
 
                     update(SyncV3Phase.UPDATING)
                     downlink(installer, capabilities, base)
+                    val downlinkAt = System.currentTimeMillis()
+                    SyncLog.info(
+                        source = source,
+                        message = "downlink done",
+                        detail = "ms=${downlinkAt - uploadedAt}",
+                    )
                     drainReceipts(uploader)
                     reconcileReceiptsAndWatch()
+                    SyncLog.info(
+                        source = source,
+                        message = "reconcile done",
+                        detail = "ms=${System.currentTimeMillis() - downlinkAt}",
+                    )
 
                     // A 202 means broker-persisted, not yet visible. Only the explicitly
                     // convergence-seeking entry point (syncOnce) may long-poll publication;
@@ -410,6 +430,11 @@ class SyncV3Engine(
                 (0 until modes.length()).any { modes.optString(it) == "delta-v1" }
             } == true &&
             !meta?.cursor.isNullOrEmpty()
+        SyncLog.info(
+            source = "downlink",
+            message = if (deltaEligible) "delta" else "snapshot",
+            detail = if (deltaEligible) null else "server capability or cursor not ready for delta-v1",
+        )
         if (deltaEligible) {
             val deltaInstaller = SyncV4DeltaInstaller(store, projection, onDeltaDisplayedInstalled)
             try {
