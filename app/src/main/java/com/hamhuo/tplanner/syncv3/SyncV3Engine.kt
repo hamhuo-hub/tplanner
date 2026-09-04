@@ -70,6 +70,13 @@ class SyncV3Engine(
     private val commands = SyncV3CommandRepository(appContext, database)
     private val projection = RoomSyncV3ProjectionInstaller(database)
 
+    /**
+     * 上传专用锁:只串行化交互泵本身(快速连续保存不并发 POST)。
+     * 交互泵与完整收敛不共用 processMutex —— 上传幂等(服务端按 commandId/
+     * Idempotency-Key 去重),与下行安装互不冲突,热路径绝不排队在慢收敛之后。
+     */
+    private val uploadMutex = Mutex()
+
     init {
         // 进程级同步日志:引擎是唯一同步写路径,在这里绑定目标数据库。
         SyncLog.init(database)
@@ -94,7 +101,7 @@ class SyncV3Engine(
      * 「异步处理中」绝不等于「失败重试」。
      */
     suspend fun pumpToBroker(serverUrl: String = SettingsRepository.DEFAULT_SERVER_URL): SyncV3RunResult =
-        processMutex.withLock {
+        uploadMutex.withLock {
             withContext(Dispatchers.IO) {
                 try {
                     val localMigration = LegacyPreferencesImporter(appContext, database).importIfNeeded()
@@ -249,6 +256,9 @@ class SyncV3Engine(
                     val startedAt = System.currentTimeMillis()
                     val receiptCursorBeforeRun = store.acceptedThrough() ?: 0L
                     val uploader = SyncV3Uploader(store, http, base)
+                    // 注意:这里不取 uploadMutex —— 后台收敛的上传与交互泵并行是安全的
+                    // (服务端按 Idempotency-Key 去重,markUploaded 幂等);uploadMutex
+                    // 只串行化交互泵本身,避免两个快速保存并发 POST。
                     uploader.flush()
                     val uploadedAt = System.currentTimeMillis()
                     SyncLog.info(
@@ -350,6 +360,9 @@ class SyncV3Engine(
         commands.needsBootstrap()
         SyncV3NotificationClient(store, http, normalizeServerUrl(serverUrl), waitMs).pollOnce()
     }
+
+    /** 当前已安装的中央版本(通知竞态去重用)。 */
+    fun installedSnapshotVersion(): Long = dao.getSyncState()?.installedSnapshotVersion ?: 0L
 
     private fun drainReceipts(uploader: SyncV3Uploader) {
         while (uploader.collectReceipts() >= RECEIPT_PAGE_SIZE) {

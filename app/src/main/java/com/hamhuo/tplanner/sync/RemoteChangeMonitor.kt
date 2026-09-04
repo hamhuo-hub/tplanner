@@ -1,10 +1,20 @@
 package com.hamhuo.tplanner
 
 import android.util.Log
+import com.hamhuo.tplanner.syncv3.SyncV3NotificationClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+
+/**
+ * 过期通知判定:长轮询以旧 installed 发出后,Worker/其它链路可能已经抢先
+ * 安装到 latestVersion —— 此时再跑一轮只会重复同一版本,直接丢弃通知。
+ */
+internal fun shouldHandleNotice(
+    notice: SyncV3NotificationClient.NotificationResult,
+    installedVersion: Long,
+): Boolean = notice.hasNewVersion && installedVersion < notice.latestVersion
 
 /** Foreground V3 version monitor. Notifications never contain or merge dataset fragments. */
 internal class RemoteChangeMonitor(
@@ -17,7 +27,7 @@ internal class RemoteChangeMonitor(
                 val serverUrl = manager.getServerUrl()
                 val notice = manager.awaitRemoteVersion(serverUrl)
                 retryDelayMillis = INITIAL_RETRY_MILLIS
-                if (notice.hasNewVersion) {
+                if (shouldHandleNotice(notice, manager.installedSnapshotVersion())) {
                     val operationId = SyncCoordinator.requestSync(SyncReason.REMOTE_CHANGE) { report ->
                         // 非阻塞下行(PR F):拉一次 delta/snapshot 即完成,
                         // 绝不 long-poll 等 publication —— 与 Worker 同一条铁律。

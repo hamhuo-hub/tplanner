@@ -4,7 +4,10 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.hamhuo.tplanner.persistence.TPlannerDatabase
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
@@ -16,6 +19,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -269,5 +274,97 @@ class SyncV3EnginePumpTest {
             "explicit convergence sync is allowed to wait on the publication notification",
             calls.any { it.contains("/notifications") },
         )
+    }
+
+    private class BlockingReceiptsHttp(
+        private val enteredReceipts: CountDownLatch,
+        private val releaseReceipts: CountDownLatch,
+    ) : SyncHttpClient {
+        override fun post(url: String, body: String, idempotencyKey: String, timeoutMs: Int): SyncHttpResponse {
+            if (url.contains("/command-batches")) {
+                val batchId = JSONObject(body).optString("batchId")
+                return SyncHttpResponse.text(
+                    202,
+                    JSONObject()
+                        .put("batchId", batchId)
+                        .put("state", "BROKER_PERSISTED")
+                        .put("brokerSequence", 7)
+                        .toString(),
+                )
+            }
+            return SyncHttpResponse.text(400, "{}")
+        }
+
+        override fun get(url: String, timeoutMs: Int): SyncHttpResponse {
+            if (url.contains("/receipts")) {
+                enteredReceipts.countDown()
+                releaseReceipts.await(15, TimeUnit.SECONDS)
+                return SyncHttpResponse.text(
+                    200,
+                    JSONObject().put("acceptedThrough", 0).put("results", JSONArray()).toString(),
+                )
+            }
+            if (url.contains("/capabilities")) {
+                return SyncHttpResponse.text(
+                    200,
+                    JSONObject()
+                        .put("softwareVersion", "8.0.0")
+                        .put("protocolVersion", 3)
+                        .put("schemaVersion", 3)
+                        .put("serverInstanceId", "srv-test")
+                        .put("downlinkModes", JSONArray().put("snapshot"))
+                        .toString(),
+                )
+            }
+            if (url.endsWith("/snapshots/latest")) {
+                return SyncHttpResponse.text(
+                    200,
+                    JSONObject()
+                        .put("snapshotVersion", 1)
+                        .put("parentVersion", 0)
+                        .put("schemaVersion", 3)
+                        .put("stateHash", BackgroundHttp.HASH_ZERO)
+                        .put("compressedHash", BackgroundHttp.HASH_ZERO)
+                        .put("encoding", "gzip")
+                        .put("compressedBytes", 1)
+                        .put("uncompressedBytes", 1)
+                        .put("serverInstanceId", "srv-test")
+                        .toString(),
+                )
+            }
+            return SyncHttpResponse.text(404, "{}")
+        }
+    }
+
+    @Test
+    fun `interactive pump never queues behind a blocked convergence sync`() = runBlocking {
+        db.syncV3Dao().upsertSyncState(
+            db.syncV3Dao().getSyncState()!!.copy(installedSnapshotHash = BackgroundHttp.HASH_ZERO),
+        )
+        db.syncV3Dao().insertCommand(pendingCommand())
+        markBootstrapped()
+
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val engine = SyncV3Engine(
+            context = ApplicationProvider.getApplicationContext(),
+            database = db,
+            http = BlockingReceiptsHttp(entered, release),
+            networkGuard = {},
+        )
+
+        // 后台收敛先起跑并卡在 /receipts 上(模拟慢收敛占用时间)
+        val background = launch(Dispatchers.IO) {
+            runCatching { engine.syncBackgroundOnce("https://sync.example") }
+        }
+        assertTrue("convergence must reach its blocked receipts request", entered.await(10, TimeUnit.SECONDS))
+
+        // 旧实现:交互泵会排队在 processMutex 之后,3 秒内必超时;
+        // 新实现:上传走 uploadMutex,应立刻完成。
+        val result = withTimeout(3_000) { engine.pumpToBroker("https://sync.example") }
+        assertEquals(SyncV3Phase.UPLOADED, result.phase)
+
+        release.countDown()
+        background.join()
     }
 }

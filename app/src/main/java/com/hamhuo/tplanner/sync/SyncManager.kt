@@ -16,6 +16,9 @@ class SyncManager(context: Context) {
 
     suspend fun getServerUrl(): String = settings.serverUrl.first()
 
+    /** 当前已安装的中央版本(通知竞态去重用)。 */
+    fun installedSnapshotVersion(): Long = engine.installedSnapshotVersion()
+
     suspend fun saveServerUrl(url: String) {
         settings.setServerUrl(normalizeServerUrl(url))
     }
