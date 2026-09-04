@@ -29,6 +29,14 @@ class SyncManager(context: Context) {
         engine.pumpToBroker(serverUrl ?: getServerUrl())
     }
 
+    /**
+     * PR F:后台收敛(RemoteChangeMonitor / 通知唤醒)—— 非阻塞下行,
+     * 绝不 long-poll 等 publication;真失败仍抛异常供上层 backoff。
+     */
+    suspend fun syncBackground(serverUrl: String? = null) {
+        engine.syncBackgroundOnce(serverUrl ?: getServerUrl())
+    }
+
     suspend fun syncAllOrThrow(serverUrl: String? = null) {
         val result = engine.syncOnce(serverUrl ?: getServerUrl())
         if (result.phase != SyncV3Phase.SUCCESS) {

@@ -19,7 +19,9 @@ internal class RemoteChangeMonitor(
                 retryDelayMillis = INITIAL_RETRY_MILLIS
                 if (notice.hasNewVersion) {
                     val operationId = SyncCoordinator.requestSync(SyncReason.REMOTE_CHANGE) { report ->
-                        manager.syncAllOrThrow(serverUrl)
+                        // 非阻塞下行(PR F):拉一次 delta/snapshot 即完成,
+                        // 绝不 long-poll 等 publication —— 与 Worker 同一条铁律。
+                        manager.syncBackground(serverUrl)
                         report(SyncPhase.UPDATING)
                     }
                     // Joining an already-running transaction must also await that transaction.

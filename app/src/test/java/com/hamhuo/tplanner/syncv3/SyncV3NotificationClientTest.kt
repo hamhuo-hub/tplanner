@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
 
 class SyncV3NotificationClientTest {
 
@@ -20,11 +21,28 @@ class SyncV3NotificationClientTest {
     private class FakeHttp(var response: SyncHttpResponse = SyncHttpResponse.text(200, """{"latestVersion":0}""")) :
         SyncHttpClient {
         val gets = mutableListOf<String>()
+        val timeouts = mutableListOf<Int>()
         override fun post(url: String, body: String, idempotencyKey: String, timeoutMs: Int): SyncHttpResponse =
             SyncHttpResponse.text(400, "{}")
         override fun get(url: String, timeoutMs: Int): SyncHttpResponse {
             gets.add(url)
+            timeouts.add(timeoutMs)
             return response
+        }
+    }
+
+    private class DeadConnectionOnceHttp(private val deadCount: Int) : SyncHttpClient {
+        val gets = mutableListOf<String>()
+        private var failuresLeft = deadCount
+        override fun post(url: String, body: String, idempotencyKey: String, timeoutMs: Int): SyncHttpResponse =
+            SyncHttpResponse.text(400, "{}")
+        override fun get(url: String, timeoutMs: Int): SyncHttpResponse {
+            gets.add(url)
+            if (failuresLeft > 0) {
+                failuresLeft--
+                throw IOException("unexpected end of stream")
+            }
+            return SyncHttpResponse.text(200, """{"latestVersion":8}""")
         }
     }
 
@@ -41,6 +59,26 @@ class SyncV3NotificationClientTest {
         assertTrue(url.contains("/tplanner/v3/notifications"))
         assertTrue(url.contains("afterVersion=7"))
         assertTrue(url.contains("wait=5000"))
+    }
+
+    @Test
+    fun `read timeout is the server wait plus a margin so the client never times out first`() {
+        val http = FakeHttp(SyncHttpResponse.text(200, """{"latestVersion":7}"""))
+        SyncV3NotificationClient(FakeStore(7), http, "https://sync.example", waitMs = 5000).pollOnce()
+
+        assertEquals(10_000, http.timeouts.single())
+    }
+
+    @Test
+    fun `a dead long-poll connection is retried once instead of burning the whole poll`() {
+        val http = DeadConnectionOnceHttp(deadCount = 1)
+        val client = SyncV3NotificationClient(FakeStore(7), http, "https://sync.example", waitMs = 5000)
+
+        val result = client.pollOnce()
+
+        assertTrue(result.hasNewVersion)
+        assertEquals(8L, result.latestVersion)
+        assertEquals("one retry after the dead connection", 2, http.gets.size)
     }
 
     @Test
