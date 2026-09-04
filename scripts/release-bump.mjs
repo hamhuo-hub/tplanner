@@ -1,7 +1,8 @@
 // Tag-driven release helper (npm run release -- <patch|minor|major|x.y.z>).
 // Computes the next version from existing v* tags, validates, then creates an
-// annotated tag. package.json is stamped at build time by scripts/version.mjs,
-// so no files are edited here.
+// annotated tag. The build derives its version from the tag via
+// scripts/version.mjs (package.json is never edited), so no files are edited
+// here.
 //
 //   npm run release -- patch
 //   npm run release -- 4.3.0
@@ -63,5 +64,5 @@ if (branch !== 'master') {
 
 // 5. Create an annotated tag (git describe prefers annotated tags).
 execFileSync('git', ['tag', '-a', tag, '-m', `Release ${tag}`], { stdio: 'inherit' });
-console.log(`tag created: ${tag}; npm run build will stamp package.json with ${next.join('.')}`);
+console.log(`tag created: ${tag}; builds will derive version ${next.join('.')} from this tag`);
 console.log(`push it with: git push origin ${tag}`);

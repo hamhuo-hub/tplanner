@@ -14,5 +14,8 @@ fi
 # Use Chinese mirror to download Electron binary
 export ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
 
+# Tag-derived version, injected via extraMetadata; package.json stays clean.
+V="$(node scripts/version.mjs)"
+
 npm run build
-npx electron-builder build --linux
+npx electron-builder build --linux --config.extraMetadata.version="$V"
