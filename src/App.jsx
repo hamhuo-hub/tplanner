@@ -37,7 +37,22 @@ function createViewRange(anchorDate = new Date()) {
 function hydrateEventDocuments(docs) {
     return docs.map(doc => {
         const event = doc.toJSON();
-        return { ...event, start: new Date(event.start), end: new Date(event.end) };
+        const start = new Date(event.start);
+        const end = new Date(event.end);
+
+        if (
+            Number.isNaN(start.getTime()) ||
+            Number.isNaN(end.getTime())
+        ) {
+            console.error(
+                '[INVALID EVENT DATE]',
+                event.id,
+                JSON.stringify(event.start),
+                JSON.stringify(event.end),
+            );
+        }
+
+        return { ...event, start, end };
     });
 }
 
@@ -73,7 +88,22 @@ function PlannerApp() {
     useEffect(() => {
         if (isElectron) {
             let subscription;
-            getDatabase().then(database => {
+            getDatabase().then(async database => {
+                // ── 一次性 RxDB 投影重建钩子(维护用)────────────────────────
+                // localStorage 旗标存在时:只删 tplannerdb(RxDB 投影)并重载,
+                // 同步层 tplanner-sync-v3(outbox/cursor/receipts)不动。
+                // 投影随后由 Sync V3 从中央 authoritative snapshot 重建。
+                if (localStorage.getItem('tplanner_purge_rxdb') === '1') {
+                    localStorage.removeItem('tplanner_purge_rxdb');
+                    try {
+                        await database.remove();
+                        console.error('[RXDB PURGE] tplannerdb removed, reloading');
+                    } catch (err) {
+                        console.error('[RXDB PURGE] failed', err);
+                    }
+                    location.reload();
+                    return;
+                }
                 setDb(database);
                 subscription = database.events.find().$.pipe(debounceTime(50)).subscribe(docs => {
                     setEvents(hydrateEventDocuments(docs));
@@ -761,7 +791,22 @@ function PlannerApp() {
                                     },
                                     _writeLocal: async (merged) => {
                                         if (!db) return;
-                                        try { await db.events.bulkUpsert(merged); } catch (err) { console.error('LAN snapshot apply failed', err); }
+                                        // 持久化边界:UI projection 里的 Date 必须在写入 RxDB 前
+                                        // 序列化回 schema 形状(ISO string / 时间戳),否则
+                                        // IndexedDB 里会被写入 Date 对象污染投影。
+                                        const persisted = merged.map(event => ({
+                                            ...event,
+                                            start: event.start instanceof Date
+                                                ? event.start.toISOString()
+                                                : event.start,
+                                            end: event.end instanceof Date
+                                                ? event.end.toISOString()
+                                                : event.end,
+                                            deletedAt: event.deletedAt instanceof Date
+                                                ? event.deletedAt.getTime()
+                                                : event.deletedAt,
+                                        }));
+                                        try { await db.events.bulkUpsert(persisted); } catch (err) { console.error('LAN snapshot apply failed', err); }
                                     },
                                 },
                                 {
