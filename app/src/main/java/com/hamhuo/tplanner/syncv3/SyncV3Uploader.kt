@@ -58,6 +58,9 @@ class SyncV3Uploader(
     /** 拉取并持久化回执。Outbox 清理由 Room 快照投影事务完成。 */
     fun collectReceipts(): Int {
         val meta = store.getSyncState() ?: return 0
+        // 无未终态命令时不可能存在新回执(回执只为本设备已上传的命令生成):
+        // 省掉一次 /receipts round-trip。手动同步"空上传"阶段此前为此白付 ~1.5s。
+        if (store.pendingCount() == 0 && store.uploadedCount() == 0) return 0
         val after = store.acceptedThrough() ?: 0L
         val url = "$serverUrl/tplanner/v3/receipts?deviceId=${encode(meta.deviceId)}&afterClientSequence=$after"
         val response = http.get(url)

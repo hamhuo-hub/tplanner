@@ -30,6 +30,7 @@ class SyncV3UploaderTest {
 
     private class FakeHttp : SyncHttpClient {
         val posts = mutableListOf<Triple<String, String, String>>()
+        val gets = mutableListOf<String>()
         var postResponse: (String) -> SyncHttpResponse = { body ->
             val batchId = JSONObject(body).getString("batchId")
             SyncHttpResponse.text(
@@ -49,7 +50,10 @@ class SyncV3UploaderTest {
             return postResponse(body)
         }
 
-        override fun get(url: String, timeoutMs: Int): SyncHttpResponse = receiptsResponse()
+        override fun get(url: String, timeoutMs: Int): SyncHttpResponse {
+            gets.add(url)
+            return receiptsResponse()
+        }
     }
 
     private fun command(seq: Long, type: String = "task.create", aggregateId: String = "t$seq"): SyncCommandEntity =
@@ -179,5 +183,29 @@ class SyncV3UploaderTest {
 
         assertEquals("3 条命令在一个批次内(≤100)发完", 1, http.posts.size)
         assertEquals("回执确认前已全部标记 uploaded", 3, store.listCommands("uploaded", 10).size)
+    }
+
+    @Test
+    fun `no receipts round-trip when the outbox has no live commands`() {
+        val store = FakeStore(state())
+        val http = FakeHttp()
+        val uploader = SyncV3Uploader(store, http, "https://sync.example")
+
+        uploader.flush()
+
+        assertEquals("无 pending/uploaded 命令时不应发任何请求", 0, http.posts.size)
+        assertEquals("无未终态命令不可能有新回执,跳过 /receipts round-trip", 0, http.gets.size)
+    }
+
+    @Test
+    fun `receipts are still collected while uploaded commands await coverage`() {
+        val store = FakeStore(state())
+        store.commands += command(1).copy(state = "uploaded")
+        val http = FakeHttp()
+        val uploader = SyncV3Uploader(store, http, "https://sync.example")
+
+        uploader.flush()
+
+        assertEquals("有 uploaded 命令时必须收一次回执", 1, http.gets.size)
     }
 }
