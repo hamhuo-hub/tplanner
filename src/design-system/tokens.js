@@ -41,9 +41,9 @@ export const typography = Object.freeze({
     display: "'Oswald', 'Arial Narrow', sans-serif",
     mono: "'IBM Plex Mono', 'Courier New', monospace",
     body: "'IBM Plex Mono', monospace",
-    taskTitle: '25px',
+    taskTitle: '15px',
     taskTime: '10px',
-    taskBadge: '11px',
+    taskBadge: '10px',
 });
 
 export const geometry = Object.freeze({
@@ -150,12 +150,12 @@ export const event = Object.freeze({
  * Timeline layout tokens — the single source for the horizontal day row.
  *
  * Derivation chain (see TaskUnit + index.css):
- *   title row 25px (25px font × line-height 1, checkbox 15px stays smaller)
+ *   title row 15px (15px font × line-height 1, checkbox 15px stays smaller)
  *   + time row 10px (10px font × line-height 1)
- *   + 2px gap  → title+time fill the summary exactly: 25 + 2 + 10 = 37px
+ *   + 2px gap  → title+time fill the summary exactly: 15 + 2 + 10 = 27px
  *   → eventSummaryHeight = overlapReveal: the fixed recognition zone an
  *     overlaid column must leave visible. The cascade algorithm knows ONLY
- *     this number — content beyond 37px clips instead of growing the box.
+ *     this number — content beyond 27px clips instead of growing the box.
  */
 export const timeline = Object.freeze({
     // Status strip — px rows replace the old fixed 15% container whose px
@@ -165,9 +165,9 @@ export const timeline = Object.freeze({
     statusStripGap: 2, // breathing room between strip and event area
 
     // Event cascade — conflict axis (top/height), never the time axis.
-    eventSummaryHeight: 25 + 2 + 10, // 37px fixed recognition zone = overlapReveal
-    eventMinHeight: 44, // one column's minimum height (≥ summary + a small body)
-    eventAreaBaseHeight: 44, // event area with a single column
+    eventSummaryHeight: 15 + 2 + 10, // 27px fixed recognition zone = overlapReveal
+    eventMinHeight: 34, // one column's minimum height (≥ summary + a small body)
+    eventAreaBaseHeight: 34, // event area with a single column
     eventGap: 2, // vertical inset around a block (former +2px / -4px)
 });
 

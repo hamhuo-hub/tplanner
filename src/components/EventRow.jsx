@@ -66,7 +66,7 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
     // Columns are LOCAL to overlap groups, and the conflict axis is vertical:
     // column i starts at i × eventSummaryHeight and bottom-aligns with column 0,
     // so a later column covers the body of earlier columns while each event's
-    // fixed 28px summary zone (overlapReveal = eventSummaryHeight) stays
+    // fixed 27px summary zone (overlapReveal = eventSummaryHeight) stays
     // visible. The event area grows only with the day's maximum column count —
     // an isolated afternoon event keeps the full height even after a 3-way
     // morning clash.

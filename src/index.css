@@ -598,11 +598,11 @@ input[type="number"] {
 }
 
 .tplanner-task-unit__summary {
-    /* THE fixed recognition zone — eventSummaryHeight (37px = 25px title +
+    /* THE fixed recognition zone — eventSummaryHeight (27px = 15px title +
        2px gap + 10px time). The cascade algorithm only knows this one
        number; title and time must fit inside it, and anything below is body
        that the next column may cover. Content clips, never grows the box. */
-    height: var(--event-summary-height, 37px);
+    height: var(--event-summary-height, 27px);
     flex-shrink: 0;
     overflow: hidden;
     display: flex;

@@ -72,6 +72,6 @@ describe('design tokens — Type vs State separation', () => {
 
 describe('design tokens — timeline layout layer stays intact', () => {
     it('overlapReveal equals the fixed summary height (title+time)', () => {
-        expect(timeline.eventSummaryHeight).toBe(25 + 2 + 10);
+        expect(timeline.eventSummaryHeight).toBe(15 + 2 + 10);
     });
 });
