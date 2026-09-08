@@ -12,14 +12,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.hamhuo.tplanner.BORDER
-import com.hamhuo.tplanner.DIM
-import com.hamhuo.tplanner.GOLD
+import com.hamhuo.tplanner.designsystem.TPlannerLightTokens
 import com.hamhuo.tplanner.designsystem.TPlannerTypography
 import com.hamhuo.tplanner.timeline.TimelineGeometry
 import java.time.LocalDate
@@ -51,7 +50,7 @@ internal fun TimelineGrid(
         for (hour in 0..24) {
             val y = hour * hourHeightPx
             drawLine(
-                color = BORDER,
+                color = Color(TPlannerLightTokens.Semantic.Color.BorderSubtle),
                 start = Offset(timeGutterPx, y),
                 end = Offset(size.width, y),
                 strokeWidth = lineWidthPx,
@@ -63,7 +62,7 @@ internal fun TimelineGrid(
         for (dayIndex in 0..visibleDayCount) {
             val x = timeGutterPx + dayWidthPx * dayIndex
             drawLine(
-                color = BORDER,
+                color = Color(TPlannerLightTokens.Semantic.Color.BorderSubtle),
                 start = Offset(x, 0f),
                 end = Offset(x, size.height),
                 strokeWidth = lineWidthPx,
@@ -75,7 +74,7 @@ internal fun TimelineGrid(
     for (hour in 0 until 24) {
         Text(
             text = String.format(Locale.US, "%02d:00", hour),
-            color = DIM,
+            color = Color(TPlannerLightTokens.Semantic.Color.TextSecondary),
             fontFamily = FontFamily.Monospace,
             fontSize = TPlannerTypography.TimelineTimeSp.sp,
             modifier = Modifier
@@ -107,13 +106,13 @@ internal fun TimelineNowIndicator(
         val y = minutes / 60f * hourHeightPx
         val left = timeGutterPx + dayWidthPx * todayIndex
         drawLine(
-            color = GOLD,
+            color = Color(TPlannerLightTokens.Semantic.Color.AccentText),
             start = Offset(left, y),
             end = Offset(left + dayWidthPx, y),
             strokeWidth = with(density) { 1.5.dp.toPx() },
         )
         drawCircle(
-            color = GOLD,
+            color = Color(TPlannerLightTokens.Semantic.Color.AccentText),
             radius = with(density) { 3.dp.toPx() },
             center = Offset(left + with(density) { 3.dp.toPx() }, y),
         )

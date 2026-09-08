@@ -11,7 +11,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import java.time.LocalDate
-import java.time.ZonedDateTime
+import com.hamhuo.tplanner.designsystem.TPlannerCategories
 
 /** Fifth destination: alarm, color, and the final save action. */
 class CreateSettingsActivity : WearPageActivity() {
@@ -49,10 +49,10 @@ class CreateSettingsActivity : WearPageActivity() {
             addView(createAlarmRow())
             addView(createColorRow())
             addView(
-                creationActionRow(R.string.task_create_save) {
+                creationActionRow(R.string.task_create_save, primary = true) {
                     saveTask()
                 }.also { saveButton = it },
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)).apply {
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                     topMargin = dp(9)
                 },
             )
@@ -90,7 +90,7 @@ class CreateSettingsActivity : WearPageActivity() {
         )
         colorValue = colorRow.findViewWithTag(TAG_VALUE)
         colorRow.setOnClickListener {
-            colorId = (colorId + 1) % TASK_COLORS.size
+            colorId = (colorId + 1) % TASK_COLOR_COUNT
             renderColor()
             it.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
         }
@@ -116,10 +116,12 @@ class CreateSettingsActivity : WearPageActivity() {
 
     private fun renderColor() {
         val names = resources.getStringArray(R.array.task_create_color_names)
-        val safeColorId = colorId.coerceIn(TASK_COLORS.indices)
+        val safeColorId = colorId.coerceIn(0 until TASK_COLOR_COUNT)
         val value = names[safeColorId]
         colorValue.text = value
-        colorValue.setTextColor(TASK_COLORS[safeColorId])
+        val category = TPlannerCategories.forColorId(safeColorId)
+        colorValue.setTextColor(category.foreground)
+        colorRow.background = wearInteractiveBackground(fill = category.background, border = category.border)
         colorRow.contentDescription = getString(
             R.string.task_create_setting_accessibility,
             getString(R.string.task_create_color),

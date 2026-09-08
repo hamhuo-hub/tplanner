@@ -62,6 +62,7 @@ android {
     }
 
     sourceSets {
+        getByName("main").res.directories.add(rootProject.file("shared/src/main/res").absolutePath)
         getByName("main").kotlin.directories.add(
             rootProject.file("shared/src/main/kotlin").absolutePath,
         )

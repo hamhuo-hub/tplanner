@@ -30,7 +30,7 @@
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity="com.hamhuo.tplanner.watch"
-            android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+            android:theme="@style/Theme.TPlanner.Wear.Light">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -41,43 +41,43 @@
             android:name=".ListSelectionActivity"
             android:exported="false"
             android:taskAffinity="com.hamhuo.tplanner.watch"
-            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+            android:theme="@style/Theme.TPlanner.Wear.Light" />
 
         <activity
             android:name=".TaskDetailActivity"
             android:exported="false"
             android:taskAffinity="com.hamhuo.tplanner.watch"
-            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+            android:theme="@style/Theme.TPlanner.Wear.Light" />
 
         <activity
             android:name=".CreateTitleActivity"
             android:exported="false"
             android:taskAffinity="com.hamhuo.tplanner.watch"
-            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+            android:theme="@style/Theme.TPlanner.Wear.Light" />
 
         <activity
             android:name=".CreateTypeActivity"
             android:exported="false"
             android:taskAffinity="com.hamhuo.tplanner.watch"
-            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+            android:theme="@style/Theme.TPlanner.Wear.Light" />
 
         <activity
             android:name=".CreateTimeActivity"
             android:exported="false"
             android:taskAffinity="com.hamhuo.tplanner.watch"
-            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+            android:theme="@style/Theme.TPlanner.Wear.Light" />
 
         <activity
             android:name=".CreateDateActivity"
             android:exported="false"
             android:taskAffinity="com.hamhuo.tplanner.watch"
-            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+            android:theme="@style/Theme.TPlanner.Wear.Light" />
 
         <activity
             android:name=".CreateSettingsActivity"
             android:exported="false"
             android:taskAffinity="com.hamhuo.tplanner.watch"
-            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+            android:theme="@style/Theme.TPlanner.Wear.Light" />
 
         <!-- ── tPlanner 表盘 ── -->
 

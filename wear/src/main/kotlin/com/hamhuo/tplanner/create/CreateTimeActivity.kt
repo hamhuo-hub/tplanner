@@ -1,214 +1,80 @@
 package com.hamhuo.tplanner
+
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.view.Gravity
-import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
-import android.view.View
 import android.view.ViewGroup
-import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.TextView
-import com.hamhuo.tplanner.designsystem.TPlannerTypography
 import java.time.LocalTime
 
-/** Third destination: compact, fixed full-screen time selector for round watches. */
+/** Time fields grow with the user's font size and remain reachable on round displays. */
 class CreateTimeActivity : WearPageActivity() {
     private var destinationOpened = false
     private var selectedHour = true
     private var hour = 0
     private var minute = 0
-    private lateinit var hourText: TextView
-    private lateinit var minuteText: TextView
-    private lateinit var colonText: TextView
-    private lateinit var hourButton: TextView
-    private lateinit var minuteButton: TextView
+    private lateinit var hourField: CreationNumberField
+    private lateinit var minuteField: CreationNumberField
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         title = getString(R.string.task_create_time_page)
-
         val route = intent.creationRouteOrNull()?.takeIf { !it.type.isNullOrBlank() } ?: run {
             finish()
             return
         }
-
         val now = LocalTime.now(CREATION_ZONE)
-        hour = now.hour
-        minute = now.minute
+        hour = savedInstanceState?.getInt(STATE_HOUR, now.hour) ?: now.hour
+        minute = savedInstanceState?.getInt(STATE_MINUTE, now.minute) ?: now.minute
+        selectedHour = savedInstanceState?.getBoolean(STATE_SELECTED_HOUR, true) ?: true
 
-        // This page deliberately does NOT use creationScrollPage().
-        // Everything is laid out inside one fixed screen so the Next button is always visible.
-        val root = FrameLayout(this).apply {
-            setBackgroundColor(WEAR_BG)
+        hourField = creationNumberField(R.string.task_create_hour) {
+            selectedHour = true
+            renderSelection()
         }
-
-        val heading = creationHeading(getString(R.string.task_create_time_page)).apply {
-            textSize = TPlannerTypography.WearTitleSp
-            setPadding(dp(8), 0, dp(8), 0)
+        minuteField = creationNumberField(R.string.task_create_minute) {
+            selectedHour = false
+            renderSelection()
         }
-        root.addView(
-            heading,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply {
-                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                leftMargin = dp(34)
-                rightMargin = dp(34)
-                topMargin = dp(9)
-            },
-        )
-
-        // One compact centered block. Hour / colon / minute use fixed column widths,
-        // so the visual centre does not move with proportional glyph widths.
-        val timeBlock = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
+        val content = creationContent().apply {
+            addView(creationTopSpacer())
+            addView(creationHeading(getString(R.string.task_create_time_page)))
+            addView(creationNumberFields(hourField, minuteField))
+            addView(creationStepperRow { adjust(it) })
+            addView(creationActionRow(R.string.task_create_next, primary = true) {
+                if (destinationOpened) return@creationActionRow
+                destinationOpened = true
+                @Suppress("DEPRECATION")
+                startActivityForResult(
+                    CreateDateActivity.createIntent(this@CreateTimeActivity, route.copy(hour = hour, minute = minute)),
+                    REQUEST_CREATION_NEXT,
+                )
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                .apply { topMargin = dp(8) })
+            addView(creationBottomSpacer())
         }
-
-        val timeRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-        }
-
-        hourText = timeDigit(hour).apply {
-            setOnClickListener {
-                if (!selectedHour) {
-                    selectedHour = true
-                    renderSelection()
-                    performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                }
-            }
-        }
-        colonText = timeColon()
-        minuteText = timeDigit(minute).apply {
-            setOnClickListener {
-                if (selectedHour) {
-                    selectedHour = false
-                    renderSelection()
-                    performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                }
-            }
-        }
-
-        timeRow.addView(hourText, LinearLayout.LayoutParams(dp(70), dp(52)))
-        timeRow.addView(colonText, LinearLayout.LayoutParams(dp(16), dp(52)))
-        timeRow.addView(minuteText, LinearLayout.LayoutParams(dp(70), dp(52)))
-        timeBlock.addView(timeRow)
-
-        // Labels use exactly the same 70 / 16 / 70 geometry as the digits above.
-        val selectRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-        }
-
-        hourButton = fieldToggle("HOUR") {
-            if (!selectedHour) {
-                selectedHour = true
-                renderSelection()
-            }
-        }
-        minuteButton = fieldToggle("MIN") {
-            if (selectedHour) {
-                selectedHour = false
-                renderSelection()
-            }
-        }
-
-        selectRow.addView(hourButton, LinearLayout.LayoutParams(dp(70), dp(22)))
-        selectRow.addView(View(this), LinearLayout.LayoutParams(dp(16), dp(22)))
-        selectRow.addView(minuteButton, LinearLayout.LayoutParams(dp(70), dp(22)))
-        timeBlock.addView(
-            selectRow,
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply {
-                topMargin = dp(1)
-            },
-        )
-
-        // Symmetric stepper pair. No trailing margin on the final button.
-        val stepRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-        }
-        stepRow.addView(
-            stepperButton("-") { adjust(-1) },
-            LinearLayout.LayoutParams(dp(62), dp(40)),
-        )
-        stepRow.addView(View(this), LinearLayout.LayoutParams(dp(12), dp(40)))
-        stepRow.addView(
-            stepperButton("+") { adjust(+1) },
-            LinearLayout.LayoutParams(dp(62), dp(40)),
-        )
-        timeBlock.addView(
-            stepRow,
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply {
-                topMargin = dp(6)
-            },
-        )
-
-        root.addView(
-            timeBlock,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply {
-                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                topMargin = dp(41)
-            },
-        )
-
-        // Fixed bottom action. It never participates in scrolling and stays inside
-        // the narrow safe chord near the bottom of a round display.
-        val confirmButton = creationActionRow(R.string.task_create_next) {
-            if (destinationOpened) return@creationActionRow
-            destinationOpened = true
-            @Suppress("DEPRECATION")
-            startActivityForResult(
-                CreateDateActivity.createIntent(
-                    this@CreateTimeActivity,
-                    route.copy(hour = hour, minute = minute),
-                ),
-                REQUEST_CREATION_NEXT,
-            )
-        }.apply {
-            setTextColor(WEAR_BG)
-            textSize = TPlannerTypography.WearBodySp
-            setPadding(0, 0, 0, 0)
-            background = creationRippleRounded(
-                CREATION_ACCENT,
-                WEAR_GOLD_PRESSED,
-                dp(20).toFloat(),
-            )
-        }
-
-        root.addView(
-            confirmButton,
-            FrameLayout.LayoutParams(dp(132), dp(40)).apply {
-                gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-                bottomMargin = dp(9)
-            },
-        )
-
-        setContentView(root)
-        renderSelection()
+        setContentView(creationScrollPage(content))
+        renderTime()
     }
 
-    // ── rotary ────────────────────────────────────────────────────────
+    // The page can scroll by touch, while the crown continues to edit the selected field.
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean =
+        if (event.rotaryScrollAxisOrNull() != null) onGenericMotionEvent(event)
+        else super.dispatchGenericMotionEvent(event)
+
     override fun onGenericMotionEvent(event: MotionEvent?): Boolean {
-        val crownAxis = event?.rotaryScrollAxisOrNull()
-            ?: return super.onGenericMotionEvent(event)
+        val crownAxis = event?.rotaryScrollAxisOrNull() ?: return super.onGenericMotionEvent(event)
         adjust(if (crownAxis > 0f) 1 else -1)
-        (if (selectedHour) hourText else minuteText)
-            .performCrownItemFocusFeedback(event)
+        (if (selectedHour) hourField.root else minuteField.root).performCrownItemFocusFeedback(event)
         return true
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putInt(STATE_HOUR, hour)
+        outState.putInt(STATE_MINUTE, minute)
+        outState.putBoolean(STATE_SELECTED_HOUR, selectedHour)
+        super.onSaveInstanceState(outState)
     }
 
     override fun onResume() {
@@ -223,96 +89,26 @@ class CreateTimeActivity : WearPageActivity() {
     }
 
     private fun adjust(delta: Int) {
-        if (selectedHour) {
-            hour = ((hour + delta) % 24 + 24) % 24
-        } else {
-            minute = ((minute + delta) % 60 + 60) % 60
-        }
+        if (selectedHour) hour = ((hour + delta) % 24 + 24) % 24
+        else minute = ((minute + delta) % 60 + 60) % 60
         renderTime()
     }
 
     private fun renderTime() {
-        hourText.text = "%02d".format(hour)
-        minuteText.text = "%02d".format(minute)
+        hourField.value.text = "%02d".format(currentWatchLocale(), hour)
+        minuteField.value.text = "%02d".format(currentWatchLocale(), minute)
+        renderSelection()
     }
 
     private fun renderSelection() {
-        hourText.setTextColor(if (selectedHour) CREATION_ACCENT else CREATION_PRIMARY)
-        minuteText.setTextColor(if (selectedHour) CREATION_PRIMARY else CREATION_ACCENT)
-
-        // Keep the separator neutral; colouring it with the selected side makes
-        // the whole time readout look optically off-centre.
-        colonText.setTextColor(CREATION_DIM)
-
-        hourButton.setTextColor(if (selectedHour) CREATION_PRIMARY else CREATION_DIM)
-        minuteButton.setTextColor(if (selectedHour) CREATION_DIM else CREATION_PRIMARY)
-        hourButton.alpha = 1f
-        minuteButton.alpha = 1f
-    }
-
-    private fun timeDigit(value: Int): TextView = TextView(this).apply {
-        text = "%02d".format(value)
-        setTextColor(CREATION_PRIMARY)
-        textSize = TPlannerTypography.WearTimePrimarySp
-        typeface = CREATION_BOLD
-        includeFontPadding = false
-        gravity = Gravity.CENTER
-        isClickable = true
-        isFocusable = true
-    }
-
-    private fun timeColon(): TextView = TextView(this).apply {
-        text = ":"
-        setTextColor(CREATION_DIM)
-        textSize = TPlannerTypography.WearTimeSecondarySp
-        typeface = CREATION_BOLD
-        includeFontPadding = false
-        gravity = Gravity.CENTER
-    }
-
-    private fun fieldToggle(
-        label: String,
-        onClick: () -> Unit,
-    ): TextView = TextView(this).apply {
-        text = label
-        setTextColor(CREATION_PRIMARY)
-        textSize = TPlannerTypography.WearMicroSp
-        typeface = CREATION_MEDIUM
-        includeFontPadding = false
-        gravity = Gravity.CENTER
-        isClickable = true
-        isFocusable = true
-        setOnClickListener {
-            performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-            onClick()
-        }
-    }
-
-    private fun stepperButton(
-        label: String,
-        onClick: () -> Unit,
-    ): TextView = TextView(this).apply {
-        text = label
-        setTextColor(CREATION_PRIMARY)
-        textSize = TPlannerTypography.WearTitleSp
-        typeface = CREATION_BOLD
-        includeFontPadding = false
-        gravity = Gravity.CENTER
-        setPadding(0, 0, 0, 0)
-        background = creationRippleRounded(
-            CREATION_CARD,
-            CREATION_CARD_PRESSED,
-            dp(14).toFloat(),
-        )
-        isClickable = true
-        isFocusable = true
-        setOnClickListener {
-            performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-            onClick()
-        }
+        hourField.renderSelection(selectedHour)
+        minuteField.renderSelection(!selectedHour)
     }
 
     companion object {
+        private const val STATE_HOUR = "selected_hour"
+        private const val STATE_MINUTE = "selected_minute"
+        private const val STATE_SELECTED_HOUR = "is_hour_selected"
         fun createIntent(context: Context, route: CreationRoute): Intent =
             Intent(context, CreateTimeActivity::class.java).putCreationRoute(route)
     }

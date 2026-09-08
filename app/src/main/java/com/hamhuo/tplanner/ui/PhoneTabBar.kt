@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemGesturesPadding
 import androidx.compose.foundation.layout.width
@@ -27,6 +28,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import com.hamhuo.tplanner.designsystem.TPlannerLightTokens as Tokens
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -38,8 +41,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.hamhuo.tplanner.designsystem.TPlannerGeometry
-import com.hamhuo.tplanner.designsystem.TPlannerTypography
+import com.hamhuo.tplanner.PhoneGeometry as TPlannerGeometry
+import com.hamhuo.tplanner.PhoneTypography as TPlannerTypography
 
 /**
  * Lets the screen coordinate the primary navigation with other transient chrome.
@@ -82,12 +85,12 @@ fun PhoneTabBar(
     ) {
         AnimatedVisibility(
             visible = expanded,
-            enter = fadeIn(tween(160)) + expandHorizontally(
-                animationSpec = tween(210),
+            enter = fadeIn(tween(Tokens.Semantic.Motion.Fast.toInt())) + expandHorizontally(
+                animationSpec = tween(Tokens.Semantic.Motion.Standard.toInt()),
                 expandFrom = Alignment.CenterHorizontally,
             ),
-            exit = fadeOut(tween(120)) + shrinkHorizontally(
-                animationSpec = tween(170),
+            exit = fadeOut(tween(Tokens.Semantic.Motion.Fast.toInt())) + shrinkHorizontally(
+                animationSpec = tween(Tokens.Semantic.Motion.Standard.toInt()),
                 shrinkTowards = Alignment.CenterHorizontally,
             ),
         ) {
@@ -100,8 +103,8 @@ fun PhoneTabBar(
 
         AnimatedVisibility(
             visible = !expanded,
-            enter = fadeIn(tween(180)),
-            exit = fadeOut(tween(90)),
+            enter = fadeIn(tween(Tokens.Semantic.Motion.Standard.toInt())),
+            exit = fadeOut(tween(Tokens.Semantic.Motion.Fast.toInt())),
         ) {
             NavigationHandle(
                 description = labels.joinToString(separator = " / "),
@@ -122,16 +125,15 @@ private fun NavigationIsland(
         modifier = Modifier
             .fillMaxWidth(0.9f)
             .widthIn(max = 420.dp)
-            .height(54.dp)
             .shadow(
-                elevation = 14.dp,
+                elevation = Tokens.Component.Panel.ShadowBlur.dp,
                 shape = islandShape,
-                ambientColor = BG,
-                spotColor = BG,
+                ambientColor = Color(Tokens.Component.Panel.ShadowColor).copy(alpha = Tokens.Component.Panel.ShadowOpacity),
+                spotColor = Color(Tokens.Component.Panel.ShadowColor).copy(alpha = Tokens.Component.Panel.ShadowOpacity),
             )
-            .background(SURFACE.copy(alpha = 0.96f), islandShape)
-            .border(1.dp, BORDER, islandShape)
-            .padding(5.dp),
+            .background(SURFACE, islandShape)
+            .border(1.dp, BORDER_SUBTLE, islandShape)
+            .padding(Tokens.Semantic.Spacing.InlineTight.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -141,29 +143,29 @@ private fun NavigationIsland(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxHeight()
+                    .heightIn(min = Tokens.Platform.Phone.Geometry.TouchTargetMin.dp)
                     .background(
                         color = if (isSelected) GOLD else SURFACE,
                         shape = itemShape,
                     )
                     .border(
                         width = 1.dp,
-                        color = if (isSelected) GOLD else BORDER,
+                        color = if (isSelected) FOCUS else BORDER,
                         shape = itemShape,
                     )
                     .clickable(
                         role = Role.Tab,
                         onClick = { onSelect(index) },
                     )
-                    .padding(horizontal = 8.dp),
+                    .padding(horizontal = Tokens.Semantic.Spacing.Inline.dp, vertical = Tokens.Semantic.Spacing.Inline.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = label,
-                    color = if (isSelected) BG else DIM,
+                    color = if (isSelected) ON_ACCENT else DIM,
                     fontSize = TPlannerTypography.PhoneMetaSp.sp,
                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                    letterSpacing = 0.2.sp,
+                    letterSpacing = TPlannerTypography.PhoneLetterSpacingSp.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -182,7 +184,7 @@ private fun NavigationHandle(
     Box(
         modifier = Modifier
             .width(76.dp)
-            .height(36.dp)
+            .height(Tokens.Platform.Phone.Geometry.TouchTargetMin.dp)
             .semantics {
                 contentDescription = description
                 role = Role.Button
@@ -229,7 +231,7 @@ private fun NavigationHandle(
             modifier = Modifier
                 .width(42.dp)
                 .height(4.dp)
-                .background(DIM.copy(alpha = 0.82f), RoundedCornerShape(50)),
+                .background(DRAG_HANDLE, RoundedCornerShape(TPlannerGeometry.RadiusPillDp.dp)),
         )
     }
 }

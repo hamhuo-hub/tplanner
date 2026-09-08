@@ -1,8 +1,6 @@
 package com.hamhuo.tplanner
 
 import android.content.Context
-import android.content.res.ColorStateList
-import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
@@ -14,9 +12,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import com.hamhuo.tplanner.designsystem.TPlannerColors
-import com.hamhuo.tplanner.designsystem.TPlannerGeometry
-import com.hamhuo.tplanner.designsystem.TPlannerTypography
+import com.hamhuo.tplanner.designsystem.TPlannerLightTokens
 import java.time.ZoneId
 
 // ── shared constants ───────────────────────────────────────────────────
@@ -27,16 +23,16 @@ const val TYPE_TASK = "task"
 const val TAG_VALUE = "task_creation_value"
 
 const val CREATION_PRIMARY = WEAR_PRIMARY
-const val CREATION_ACCENT = WEAR_GOLD
+const val CREATION_ACCENT = WEAR_ACCENT_TEXT
 const val CREATION_DIM = WEAR_DIM
 const val CREATION_CARD = WEAR_SURFACE2
 const val CREATION_BORDER = WEAR_BORDER
 const val CREATION_CARD_PRESSED = WEAR_CONTROL_PRESSED
 val CREATION_REGULAR = WEAR_REGULAR
 val CREATION_MEDIUM = WEAR_MEDIUM
-val CREATION_BOLD = WEAR_BOLD
+val CREATION_HEADING_FONT = WEAR_SEMIBOLD
 val CREATION_ZONE = ZoneId.of(WatchTaskProtocol.DEFAULT_TIME_ZONE_ID)
-val TASK_COLORS = TPlannerColors.EventPalette
+const val TASK_COLOR_COUNT = 8
 
 // ── shared View builders ───────────────────────────────────────────────
 
@@ -79,9 +75,9 @@ fun Context.creationBottomSpacer(): View = View(this).apply {
 fun Context.creationHeading(value: String): TextView = TextView(this).apply {
     text = value
     setTextColor(CREATION_PRIMARY)
-    textSize = TPlannerTypography.WearHeadingSp
-    typeface = CREATION_BOLD
-    includeFontPadding = false
+    textSize = TPlannerLightTokens.Platform.Wear.Typography.Heading.FontSize
+    typeface = CREATION_HEADING_FONT
+    wearTextMetrics(TPlannerLightTokens.Platform.Wear.Typography.Heading.LineHeight)
     gravity = Gravity.CENTER
     maxLines = 2
     ellipsize = TextUtils.TruncateAt.END
@@ -90,23 +86,11 @@ fun Context.creationHeading(value: String): TextView = TextView(this).apply {
 
 fun Context.creationActionRow(
     textRes: Int,
+    primary: Boolean = false,
     action: () -> Unit,
 ): TextView = TextView(this).apply {
     setText(textRes)
-    setTextColor(CREATION_ACCENT)
-    textSize = TPlannerTypography.WearTaskTitleSp
-    typeface = CREATION_BOLD
-    includeFontPadding = false
-    gravity = Gravity.CENTER
-    minimumHeight = dp(54)
-    setPadding(dp(18), dp(8), dp(18), dp(8))
-    background = creationRippleRounded(
-        Color.TRANSPARENT,
-        CREATION_CARD_PRESSED,
-        dp(TPlannerGeometry.RadiusFieldDp).toFloat(),
-    )
-    isClickable = true
-    isFocusable = true
+    wearButtonStyle(primary)
     contentDescription = getString(textRes)
     setOnClickListener { action() }
 }
@@ -121,12 +105,17 @@ fun Context.creationTypeButton(
     return LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        minimumHeight = dp(61)
-        setPadding(dp(13), dp(7), dp(13), dp(7))
+        minimumHeight = wearDp(TPlannerLightTokens.Platform.Wear.Geometry.TaskRowMinHeight)
+        setPadding(
+        wearDp(TPlannerLightTokens.Platform.Wear.Geometry.RowPaddingInline),
+        wearDp(TPlannerLightTokens.Platform.Wear.Geometry.RowPaddingBlock),
+        wearDp(TPlannerLightTokens.Platform.Wear.Geometry.RowPaddingInline),
+        wearDp(TPlannerLightTokens.Platform.Wear.Geometry.RowPaddingBlock),
+    )
         background = creationRippleRounded(
             CREATION_CARD,
             CREATION_CARD_PRESSED,
-            dp(TPlannerGeometry.RadiusFieldDp).toFloat(),
+            wearDp(TPlannerLightTokens.Semantic.Radius.Control).toFloat(),
         )
         isClickable = true
         isFocusable = true
@@ -139,8 +128,8 @@ fun Context.creationTypeButton(
         addView(LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
-            addView(creationRowText(title, TPlannerTypography.WearTaskTitleSp, CREATION_PRIMARY, CREATION_MEDIUM))
-            addView(creationRowText(description, TPlannerTypography.WearCaptionSp, CREATION_DIM, CREATION_REGULAR))
+            addView(creationRowText(title, TPlannerLightTokens.Platform.Wear.Typography.TaskTitle.FontSize, CREATION_PRIMARY, CREATION_MEDIUM))
+            addView(creationRowText(description, TPlannerLightTokens.Platform.Wear.Typography.Meta.FontSize, CREATION_DIM, CREATION_REGULAR))
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 
         layoutParams = LinearLayout.LayoutParams(
@@ -158,12 +147,17 @@ fun Context.creationSettingRow(
 ): LinearLayout = LinearLayout(this).apply {
     orientation = LinearLayout.HORIZONTAL
     gravity = Gravity.CENTER_VERTICAL
-    minimumHeight = dp(66)
-    setPadding(dp(13), dp(8), dp(12), dp(8))
+    minimumHeight = wearDp(TPlannerLightTokens.Platform.Wear.Geometry.TaskRowMinHeight)
+    setPadding(
+        wearDp(TPlannerLightTokens.Platform.Wear.Geometry.RowPaddingInline),
+        wearDp(TPlannerLightTokens.Platform.Wear.Geometry.RowPaddingBlock),
+        wearDp(TPlannerLightTokens.Platform.Wear.Geometry.RowPaddingInline),
+        wearDp(TPlannerLightTokens.Platform.Wear.Geometry.RowPaddingBlock),
+    )
     background = creationRippleRounded(
         CREATION_CARD,
         CREATION_CARD_PRESSED,
-        dp(TPlannerGeometry.RadiusFieldDp).toFloat(),
+        wearDp(TPlannerLightTokens.Semantic.Radius.Control).toFloat(),
     )
     isClickable = true
     isFocusable = true
@@ -175,8 +169,8 @@ fun Context.creationSettingRow(
     addView(LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
         gravity = Gravity.CENTER_VERTICAL
-        addView(creationRowText(getString(titleRes), TPlannerTypography.WearTaskTitleSp, CREATION_PRIMARY, CREATION_MEDIUM))
-        addView(creationRowText(getString(descriptionRes), TPlannerTypography.WearCaptionSp, CREATION_DIM, CREATION_REGULAR).apply {
+        addView(creationRowText(getString(titleRes), TPlannerLightTokens.Platform.Wear.Typography.TaskTitle.FontSize, CREATION_PRIMARY, CREATION_MEDIUM))
+        addView(creationRowText(getString(descriptionRes), TPlannerLightTokens.Platform.Wear.Typography.Meta.FontSize, CREATION_DIM, CREATION_REGULAR).apply {
             tag = TAG_VALUE
         })
     }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -192,24 +186,102 @@ fun Context.creationRowText(
     setTextColor(color)
     textSize = sizeSp
     typeface = font
-    includeFontPadding = false
-    maxLines = 1
+    wearTextMetrics()
+    maxLines = 3
     ellipsize = TextUtils.TruncateAt.END
 }
 
-fun Context.creationRounded(color: Int, radius: Float): GradientDrawable = GradientDrawable().apply {
-    shape = GradientDrawable.RECTANGLE
-    cornerRadius = radius
-    setColor(color)
-    if (color == CREATION_CARD) setStroke(dp(1), CREATION_BORDER)
-}
+fun Context.creationRounded(color: Int, radius: Float): GradientDrawable =
+    wearSurfaceBackground(color, radius)
 
 fun Context.creationRippleRounded(normal: Int, pressed: Int, radius: Float): RippleDrawable =
-    RippleDrawable(
-        ColorStateList.valueOf(pressed),
-        creationRounded(normal, radius),
-        null,
-    )
+    wearInteractiveBackground(normal, radius, WEAR_BORDER, pressed)
+
+/** A value and its label form one 48dp-or-larger target, with content-driven height. */
+internal class CreationNumberField(
+    val root: LinearLayout,
+    val value: TextView,
+    private val label: TextView,
+) {
+    fun renderSelection(selected: Boolean) {
+        root.isSelected = selected
+        value.setTextColor(if (selected) CREATION_ACCENT else CREATION_PRIMARY)
+        label.setTextColor(if (selected) CREATION_ACCENT else CREATION_DIM)
+        root.background = root.context.wearInteractiveBackground(
+            fill = if (selected) TPlannerLightTokens.Semantic.Color.SelectedBackground else WEAR_INPUT,
+            border = if (selected) TPlannerLightTokens.Semantic.Color.Focus else WEAR_BORDER,
+        )
+        root.contentDescription = "${label.text}: ${value.text}"
+    }
+}
+
+internal fun Context.creationNumberField(labelRes: Int, onSelect: () -> Unit): CreationNumberField {
+    val label = creationRowText(getString(labelRes),
+        TPlannerLightTokens.Platform.Wear.Typography.Meta.FontSize, CREATION_DIM, CREATION_MEDIUM)
+    val value = creationRowText("", TPlannerLightTokens.Platform.Wear.Typography.Heading.FontSize,
+        CREATION_PRIMARY, CREATION_HEADING_FONT).apply {
+        wearTextMetrics(TPlannerLightTokens.Platform.Wear.Typography.Heading.LineHeight)
+        gravity = Gravity.CENTER
+        maxLines = 2
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+    }
+    label.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+    val root = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER
+        minimumHeight = wearDp(TPlannerLightTokens.Platform.Wear.Geometry.ControlMinHeight)
+        setPadding(dp(12), dp(8), dp(12), dp(8))
+        isClickable = true
+        isFocusable = true
+        addView(label)
+        addView(value, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        setOnClickListener {
+            performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+            onSelect()
+        }
+        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            .apply { topMargin = dp(8) }
+    }
+    return CreationNumberField(root, value, label)
+}
+
+/** Keep the familiar two-column picker at normal scale; stack fields when text needs room. */
+internal fun Context.creationNumberFields(first: CreationNumberField, second: CreationNumberField): LinearLayout =
+    LinearLayout(this).apply {
+        val stacked = resources.configuration.fontScale > 1.3f || resources.configuration.screenWidthDp < 176
+        orientation = if (stacked) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+        listOf(first, second).forEachIndexed { index, field ->
+            addView(field.root, if (stacked) {
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                    .apply { if (index > 0) topMargin = dp(8) }
+            } else {
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                    .apply { if (index == 0) marginEnd = dp(8) }
+            })
+        }
+        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            .apply { topMargin = dp(8) }
+    }
+
+internal fun Context.creationStepperRow(adjust: (Int) -> Unit): LinearLayout = LinearLayout(this).apply {
+    orientation = LinearLayout.HORIZONTAL
+    gravity = Gravity.CENTER
+    listOf(-1, 1).forEachIndexed { index, delta ->
+        addView(TextView(context).apply {
+            text = if (delta < 0) "−" else "+"
+            contentDescription = getString(if (delta < 0) R.string.task_create_decrease else R.string.task_create_increase)
+            wearButtonStyle()
+            setOnClickListener {
+                performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+                adjust(delta)
+            }
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+            if (index == 0) marginEnd = dp(8)
+        })
+    }
+    layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        .apply { topMargin = dp(8) }
+}
 
 fun Context.dp(value: Int): Int =
     (value * resources.displayMetrics.density + 0.5f).toInt()

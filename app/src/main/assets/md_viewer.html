@@ -1,89 +1,156 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="zh" data-tp-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+<link rel="stylesheet" href="file:///android_asset/tplanner_light.css">
 <style>
-  :root {
-    --bg:        #1A1A1A;
-    --gold:      #C9A84C;
-    --text:      #E8E0D0;
-    --text-dim:  #7A7163;
-    --text-soft: #9A9080;
-    --border:    #2D2D2D;
-  }
-
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+  /* Keep the rem base separate from the selected phone typography profile. */
+  html { font-size: 16px; color-scheme: light; }
+
   html, body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Noto Sans SC', 'Noto Sans', 'PingFang SC', sans-serif;
-    font-size: 15px;
-    line-height: 1.75;
-    word-break: break-word;
+    background: var(--tp-semantic-color-surface);
+    color: var(--tp-semantic-color-text-primary);
     min-height: 100vh;
   }
 
-  h1, h2, h3, h4 {
-    color: var(--gold);
-    font-weight: 700;
-    margin: 18px 0 6px;
-    line-height: 1.3;
+  body {
+    font-family: var(--tp-platform-phone-typography-body-font-family);
+    font-size: var(--tp-platform-phone-typography-body-font-size);
+    font-weight: var(--tp-platform-phone-typography-body-font-weight);
+    line-height: var(--tp-platform-phone-typography-body-line-height);
+    letter-spacing: var(--tp-platform-phone-typography-body-letter-spacing);
+    overflow-wrap: anywhere;
   }
-  h1 { font-size: 22px; }
-  h2 { font-size: 18px; }
-  h3 { font-size: 15px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
-  h4 { font-size: 14px; }
 
-  p { margin: 0 0 8px; }
+  h1, h2, h3, h4, h5, h6 {
+    color: var(--tp-semantic-color-text-primary);
+    font-family: var(--tp-platform-phone-typography-heading-font-family);
+    font-weight: var(--tp-platform-phone-typography-heading-font-weight);
+    margin: var(--tp-semantic-spacing-section) 0 var(--tp-semantic-spacing-inline);
+    line-height: var(--tp-platform-phone-typography-heading-line-height);
+    letter-spacing: var(--tp-platform-phone-typography-heading-letter-spacing);
+  }
+  h1 { font-size: var(--tp-platform-phone-typography-heading-font-size); }
+  h2 { font-size: var(--tp-platform-phone-typography-title-font-size); }
+  h3, h4, h5, h6 { font-size: var(--tp-platform-phone-typography-body-font-size); }
+  h3 {
+    border-bottom: var(--tp-semantic-stroke-control) solid var(--tp-semantic-color-border-subtle);
+    padding-bottom: var(--tp-semantic-spacing-inline-tight);
+  }
 
-  ul, ol { padding-left: 20px; margin: 4px 0 8px; }
-  li { margin: 3px 0; }
+  p { margin: 0 0 var(--tp-semantic-spacing-block); }
+
+  ul, ol {
+    padding-left: var(--tp-semantic-spacing-section);
+    margin: var(--tp-semantic-spacing-inline-tight) 0 var(--tp-semantic-spacing-block);
+  }
+  li { margin: var(--tp-semantic-spacing-inline-tight) 0; }
 
   code {
-    background: rgba(255,255,255,0.08);
-    border-radius: 4px;
-    padding: 2px 6px;
-    font-size: 13px;
-    font-family: 'Courier New', monospace;
-    color: var(--gold);
+    background: var(--tp-semantic-color-raised);
+    border: var(--tp-semantic-stroke-control) solid var(--tp-semantic-color-border-subtle);
+    border-radius: var(--tp-semantic-radius-small);
+    padding: var(--tp-primitive-space-s2) var(--tp-semantic-spacing-inline-tight);
+    font-size: var(--tp-platform-phone-typography-body-font-size);
+    font-family: var(--tp-primitive-font-mono);
+    color: var(--tp-semantic-color-text-primary);
   }
 
   pre {
-    background: rgba(0,0,0,0.45);
-    border-radius: 6px;
-    padding: 12px 16px;
-    margin: 8px 0;
+    background: var(--tp-semantic-color-raised);
+    border: var(--tp-semantic-stroke-control) solid var(--tp-semantic-color-border-subtle);
+    border-radius: var(--tp-semantic-radius-control);
+    padding: var(--tp-semantic-spacing-block) var(--tp-primitive-space-s16);
+    margin: var(--tp-semantic-spacing-block) 0;
     overflow-x: auto;
+    overflow-wrap: normal;
+    line-height: var(--tp-platform-phone-typography-body-line-height);
   }
-  pre code { background: none; padding: 0; color: var(--text); font-size: 13px; }
+  pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--tp-semantic-color-text-primary);
+  }
 
   blockquote {
-    border-left: 3px solid var(--gold);
-    margin: 8px 0;
-    padding-left: 16px;
-    color: var(--text-soft);
+    border-left: var(--tp-semantic-stroke-focus) solid var(--tp-semantic-color-info);
+    margin: var(--tp-semantic-spacing-block) 0;
+    padding: var(--tp-semantic-spacing-block) var(--tp-primitive-space-s16);
+    background: var(--tp-semantic-color-info-background);
+    color: var(--tp-semantic-color-text-secondary);
+  }
+  blockquote > :last-child { margin-bottom: 0; }
+
+  strong {
+    color: var(--tp-semantic-color-text-primary);
+    font-weight: var(--tp-platform-phone-typography-heading-font-weight);
+  }
+  em { color: var(--tp-semantic-color-text-secondary); font-style: italic; }
+  del { color: var(--tp-semantic-color-text-muted); }
+  a {
+    color: var(--tp-semantic-color-accent-text);
+    text-decoration: underline;
+    text-underline-offset: 0.15em;
+  }
+  a:focus-visible {
+    outline: var(--tp-component-button-focus-width) solid var(--tp-component-button-focus-color);
+    outline-offset: var(--tp-component-button-focus-offset);
+    border-radius: var(--tp-semantic-radius-small);
+  }
+  hr {
+    border: none;
+    border-top: var(--tp-semantic-stroke-control) solid var(--tp-semantic-color-border-subtle);
+    margin: var(--tp-semantic-spacing-section) 0;
   }
 
-  strong { color: #F0C040; font-weight: 700; }
-  em { color: #b8a888; font-style: italic; }
-  a { color: var(--gold); text-decoration: none; }
-  hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+  table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+    margin: var(--tp-semantic-spacing-block) 0;
+    background: var(--tp-semantic-color-raised);
+    color: var(--tp-semantic-color-text-primary);
+  }
+  th, td {
+    padding: var(--tp-semantic-spacing-inline) var(--tp-semantic-spacing-block);
+    border: var(--tp-semantic-stroke-control) solid var(--tp-semantic-color-border-subtle);
+    text-align: start;
+    vertical-align: top;
+  }
+  th {
+    background: var(--tp-semantic-color-canvas);
+    font-weight: var(--tp-platform-phone-typography-heading-font-weight);
+  }
+  tbody tr:nth-child(even) { background: var(--tp-semantic-color-surface); }
+  img { max-width: 100%; height: auto; }
+  input[type="checkbox"] {
+    accent-color: var(--tp-semantic-color-accent-text);
+    margin-inline-end: var(--tp-semantic-spacing-inline-tight);
+    opacity: var(--tp-semantic-state-normal-opacity);
+  }
 
   .hint {
-    color: var(--text-dim);
-    font-size: 14px;
+    color: var(--tp-semantic-color-text-muted);
+    font-size: var(--tp-platform-phone-typography-body-font-size);
     font-style: italic;
     text-align: center;
-    margin-top: 60px;
+    margin-top: var(--tp-primitive-space-s48);
   }
 
-  ::-webkit-scrollbar { width: 4px; }
+  ::selection {
+    background: var(--tp-semantic-color-selected-background);
+    color: var(--tp-semantic-color-text-primary);
+  }
+  ::-webkit-scrollbar { width: var(--tp-semantic-spacing-inline-tight); height: var(--tp-semantic-spacing-inline-tight); }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: #3A3A3A; border-radius: 2px; }
+  ::-webkit-scrollbar-thumb { background: var(--tp-semantic-color-border-control); border-radius: var(--tp-semantic-radius-pill); }
 </style>
 </head>
 <body>

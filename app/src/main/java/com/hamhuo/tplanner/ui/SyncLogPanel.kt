@@ -24,14 +24,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hamhuo.tplanner.DIM
-import com.hamhuo.tplanner.GOLD
+import com.hamhuo.tplanner.ACCENT_TEXT
+import com.hamhuo.tplanner.WARNING
+import com.hamhuo.tplanner.BLUE
+import com.hamhuo.tplanner.ui.components.TPlannerIconButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.TextButton
 import com.hamhuo.tplanner.R
 import com.hamhuo.tplanner.RED
 import com.hamhuo.tplanner.SURFACE2
 import com.hamhuo.tplanner.TEAL
 import com.hamhuo.tplanner.TEXT_PRIMARY
-import com.hamhuo.tplanner.designsystem.TPlannerGeometry
-import com.hamhuo.tplanner.designsystem.TPlannerTypography
+import com.hamhuo.tplanner.PhoneGeometry as TPlannerGeometry
+import com.hamhuo.tplanner.PhoneTypography as TPlannerTypography
 import com.hamhuo.tplanner.syncv3.SyncLogEntity
 import java.time.Instant
 import java.time.ZoneId
@@ -64,23 +70,13 @@ fun SyncLogPanel(
                     stringResource(R.string.sync_logs_title),
                     color = DIM,
                     fontSize = TPlannerTypography.PhoneMicroSp.sp,
-                    letterSpacing = 0.1.sp,
+                    letterSpacing = TPlannerTypography.PhoneLetterSpacingSp.sp,
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        stringResource(R.string.sync_logs_clear),
-                        color = GOLD,
-                        fontSize = TPlannerTypography.PhoneMicroSp.sp,
-                        modifier = Modifier.clickable(onClick = onClear),
-                    )
-                    Text(
-                        "✕",
-                        color = DIM,
-                        fontSize = TPlannerTypography.PhoneMicroSp.sp,
-                        modifier = Modifier
-                            .padding(start = 12.dp)
-                            .clickable(onClick = onClose),
-                    )
+                    TextButton(onClick = onClear) {
+                        Text(stringResource(R.string.sync_logs_clear), color = ACCENT_TEXT)
+                    }
+                    TPlannerIconButton(Icons.Default.Close, "Close", onClose)
                 }
             }
             if (entries.isEmpty()) {
@@ -104,9 +100,9 @@ fun SyncLogPanel(
 @Composable
 private fun SyncLogRow(entry: SyncLogEntity) {
     val levelColor = when (entry.level) {
-        "warn" -> GOLD
+        "warn" -> WARNING
         "error" -> RED
-        else -> TEAL
+        else -> BLUE
     }
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Row(
@@ -124,7 +120,7 @@ private fun SyncLogRow(entry: SyncLogEntity) {
                 color = levelColor,
                 fontSize = TPlannerTypography.PhoneMicroSp.sp,
                 fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.SemiBold,
             )
             Text(
                 entry.message,

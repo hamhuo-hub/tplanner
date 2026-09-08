@@ -34,14 +34,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.hamhuo.tplanner.BORDER
-import com.hamhuo.tplanner.BG
-import com.hamhuo.tplanner.DIM
-import com.hamhuo.tplanner.GOLD
 import com.hamhuo.tplanner.R
-import com.hamhuo.tplanner.SURFACE2
-import com.hamhuo.tplanner.TEXT_EDITOR
 import com.hamhuo.tplanner.designsystem.TPlannerGeometry
+import com.hamhuo.tplanner.designsystem.TPlannerLightTokens
 import com.hamhuo.tplanner.designsystem.TPlannerTypography
 import com.hamhuo.tplanner.timeline.TIMELINE_DATE_WINDOW_CENTER
 import com.hamhuo.tplanner.timeline.TIMELINE_DATE_WINDOW_COUNT
@@ -104,8 +99,8 @@ internal fun TimelineDayHeader(
         modifier = Modifier
             .fillMaxWidth()
             .height(TimelineGeometry.dayHeaderHeight)
-            .background(SURFACE2)
-            .border(1.dp, BORDER),
+            .background(Color(TPlannerLightTokens.Semantic.Color.Raised))
+            .border(1.dp, Color(TPlannerLightTokens.Semantic.Color.BorderSubtle)),
     ) {
         CalendarAnchor(
             selectedDay = selectedDay,
@@ -165,7 +160,7 @@ private fun CalendarAnchor(
     ) {
         Text(
             text = selectedDay.format(monthFormatter).uppercase(Locale.getDefault()),
-            color = GOLD,
+            color = Color(TPlannerLightTokens.Semantic.Color.AccentText),
             fontSize = TPlannerTypography.TimelineTimeSp.sp,
             lineHeight = TPlannerTypography.TimelineHourLineHeightSp.sp,
             fontWeight = FontWeight.Bold,
@@ -174,7 +169,7 @@ private fun CalendarAnchor(
         )
         Text(
             text = todayLabel.uppercase(Locale.getDefault()),
-            color = DIM,
+            color = Color(TPlannerLightTokens.Semantic.Color.TextSecondary),
             fontSize = TPlannerTypography.TimelineWeekdaySp.sp,
             lineHeight = TPlannerTypography.TimelineTimeSp.sp,
             fontWeight = FontWeight.Medium,
@@ -193,11 +188,10 @@ private fun TimelineDateCell(
     onClick: () -> Unit,
 ) {
     val shape = RoundedCornerShape(TPlannerGeometry.RadiusFieldDp.dp)
-    val foreground = when {
-        selected -> BG
-        today -> GOLD
-        else -> TEXT_EDITOR
-    }
+    val foreground = Color(when {
+        today && !selected -> TPlannerLightTokens.Semantic.Color.AccentText
+        else -> TPlannerLightTokens.Semantic.Color.TextPrimary
+    })
 
     Column(
         modifier = Modifier
@@ -205,10 +199,10 @@ private fun TimelineDateCell(
             .fillMaxHeight()
             .padding(vertical = 4.dp)
             .clip(shape)
-            .background(if (selected) GOLD else Color.Transparent)
+            .background(if (selected) Color(TPlannerLightTokens.Semantic.Color.SelectedBackground) else Color.Transparent)
             .then(
-                if (today && !selected) {
-                    Modifier.border(1.dp, GOLD.copy(alpha = 0.75f), shape)
+                if (today || selected) {
+                    Modifier.border(1.dp, Color(TPlannerLightTokens.Semantic.Color.Focus), shape)
                 } else {
                     Modifier
                 },
@@ -220,7 +214,7 @@ private fun TimelineDateCell(
     ) {
         Text(
             text = day.format(weekdayFormatter).uppercase(locale),
-            color = foreground.copy(alpha = if (selected) 0.72f else 0.78f),
+            color = Color(TPlannerLightTokens.Semantic.Color.TextSecondary),
             fontSize = TPlannerTypography.TimelineMonthSp.sp,
             lineHeight = TPlannerTypography.TimelineTimeSp.sp,
             fontWeight = FontWeight.Medium,

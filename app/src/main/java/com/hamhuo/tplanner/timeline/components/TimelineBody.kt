@@ -13,6 +13,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
@@ -20,10 +21,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
-import com.hamhuo.tplanner.BG
-import com.hamhuo.tplanner.RED
 import com.hamhuo.tplanner.ScheduleItem
 import com.hamhuo.tplanner.designsystem.TPlannerGeometry
+import com.hamhuo.tplanner.designsystem.TPlannerLightTokens
 import com.hamhuo.tplanner.timeline.ConflictHighlight
 import com.hamhuo.tplanner.timeline.DayPlacement
 import com.hamhuo.tplanner.timeline.TimelineGeometry
@@ -84,7 +84,7 @@ internal fun TimelineBody(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(TimelineGeometry.hourHeight * 24)
-                .background(BG),
+                .background(Color(TPlannerLightTokens.Semantic.Color.Canvas)),
         ) {
             TimelineGrid(
                 days = days,
@@ -120,6 +120,7 @@ internal fun TimelineBody(
             }
             TimelineItemLayer(
                 renderSpecs = renderSpecs,
+                now = now.toInstant(),
                 highlightedEventIds = state.highlight?.eventIds.orEmpty(),
                 visibleDays = days,
                 zone = zone,
@@ -176,8 +177,8 @@ private fun TimelineConflictHighlight(
             )
             .width(dayWidth - 4.dp)
             .height(height)
-            .background(RED.copy(alpha = 0.16f), shape)
-            .border(2.dp, RED.copy(alpha = 0.8f), shape)
+            .background(Color(TPlannerLightTokens.Semantic.Color.ErrorBackground), shape)
+            .border(2.dp, Color(TPlannerLightTokens.Semantic.Color.Error), shape)
             .zIndex(4f),
     )
 }

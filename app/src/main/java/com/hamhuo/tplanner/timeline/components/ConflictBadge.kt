@@ -11,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -18,7 +19,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.hamhuo.tplanner.RED
+import com.hamhuo.tplanner.designsystem.TPlannerLightTokens
 import com.hamhuo.tplanner.designsystem.TPlannerTypography
 
 @Composable
@@ -44,11 +45,12 @@ internal fun ConflictBadge(
                 lineTo(0f, size.height)
                 close()
             }
-            drawPath(triangle, RED)
+            drawPath(triangle, Color(TPlannerLightTokens.Semantic.Color.ErrorBackground))
+            drawPath(triangle, Color(TPlannerLightTokens.Semantic.Color.Error), style = Stroke(1.dp.toPx()))
         }
         Text(
             text = count.toString(),
-            color = Color.White,
+            color = Color(TPlannerLightTokens.Semantic.Color.Error),
             fontSize = TPlannerTypography.TimelineTimeSp.sp,
             lineHeight = TPlannerTypography.TimelineTimeSp.sp,
             fontWeight = FontWeight.Bold,

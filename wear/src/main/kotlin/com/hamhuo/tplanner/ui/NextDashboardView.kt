@@ -14,7 +14,6 @@ import android.graphics.PorterDuffXfermode
 import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.os.Build
 import android.renderscript.Allocation
@@ -34,8 +33,8 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import com.hamhuo.tplanner.designsystem.TPlannerColors
-import com.hamhuo.tplanner.designsystem.TPlannerGeometry
+import androidx.core.graphics.ColorUtils
+import com.hamhuo.tplanner.designsystem.TPlannerLightTokens
 import com.hamhuo.tplanner.designsystem.TPlannerTaskUnitModel
 import com.hamhuo.tplanner.designsystem.TPlannerTaskUnitVariant
 import com.hamhuo.tplanner.designsystem.TPlannerTaskUnitView
@@ -225,8 +224,8 @@ private class FrostedHeaderView(
     private companion object {
         const val BLUR_RADIUS_DP = 7
         const val TINT_FADE_HEIGHT_DP = 54
-        const val TINT_TOP = TPlannerColors.WatchDashboardScrimTop
-        const val TINT_MIDDLE = TPlannerColors.WatchDashboardScrimMiddle
+        val TINT_TOP = ColorUtils.setAlphaComponent(WEAR_BG, 245)
+        val TINT_MIDDLE = ColorUtils.setAlphaComponent(WEAR_BG, 210)
     }
 }
 
@@ -249,9 +248,10 @@ private class FrostedHeaderClipView(context: Context) : FrameLayout(context) {
             0f,
             height.toFloat(),
             intArrayOf(
-                Color.WHITE,
-                TPlannerColors.WatchDashboardShineStrong,
-                TPlannerColors.WatchDashboardShineSoft,
+                // DST_IN reads alpha only; this mask does not paint a surface color.
+                WEAR_PRIMARY,
+                ColorUtils.setAlphaComponent(WEAR_PRIMARY, 230),
+                ColorUtils.setAlphaComponent(WEAR_PRIMARY, 102),
                 Color.TRANSPARENT,
             ),
             floatArrayOf(0f, 0.35f, 0.72f, 1f),
@@ -278,13 +278,18 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
     }
     private val frostedHeader = FrostedHeaderView(context, contentHost)
     private val frostedHeaderClip = FrostedHeaderClipView(context)
-    private val collapsedTitle = textView(12f, ACCENT, MEDIUM)
+    private val collapsedTitle = textView(TPlannerLightTokens.Platform.Wear.Typography.Meta.FontSize, ACCENT, MEDIUM)
     private val newButton = ImageButton(context).apply {
         setImageResource(R.drawable.ic_add_rounded_24)
-        imageTintList = ColorStateList.valueOf(ACCENT)
+        imageTintList = ColorStateList.valueOf(WEAR_ON_ACCENT)
         scaleType = ImageView.ScaleType.CENTER_INSIDE
         setPadding(dp(13), dp(12), dp(12), dp(12))
-        background = rippleRounded(CONTROL, CARD_PRESSED, dp(NEW_BUTTON_SIZE_DP / 2).toFloat())
+        background = context.wearInteractiveBackground(
+            fill = WEAR_ACCENT,
+            radiusPx = dp(NEW_BUTTON_SIZE_DP / 2).toFloat(),
+            border = TPlannerLightTokens.Component.Button.Primary.Border,
+            pressed = WEAR_ACCENT_PRESSED,
+        )
         contentDescription = context.getString(R.string.task_list_new)
         isClickable = true
         isFocusable = true
@@ -297,6 +302,7 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
     private var marks = WatchEventMarks.EMPTY
     private var selectedFilter = WatchListFilter.INBOX
     private var mainScrollY = 0
+    private var collapseStartPx = dp(LARGE_TITLE_TOP_MARGIN_DP + NEW_BUTTON_SIZE_DP)
     private var mainScroll: ScrollView? = null
     private var mainContent: LinearLayout? = null
     private var permissionRequired = false
@@ -334,7 +340,11 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         )
 
         collapsedTitle.apply {
-            gravity = Gravity.END
+            gravity = Gravity.CENTER
+            background = context.wearInteractiveBackground(fill = BG, border = Color.TRANSPARENT)
+            minimumHeight = context.wearDp(TPlannerLightTokens.Platform.Wear.Geometry.ControlMinHeight)
+            maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
             alpha = 0f
             importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
             isClickable = true
@@ -346,9 +356,10 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         }
         addView(
             collapsedTitle,
-            LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END).apply {
-                topMargin = dp(10)
-                marginEnd = dp(54)
+            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.TOP).apply {
+                topMargin = dp(8)
+                marginStart = dp(32)
+                marginEnd = dp(32)
             },
         )
 
@@ -356,8 +367,8 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
             elevation = dp(7).toFloat()
             setOnClickListener {
                 performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                animate().scaleX(0.88f).scaleY(0.88f).setDuration(80L).withEndAction {
-                    animate().scaleX(1f).scaleY(1f).setDuration(120L).start()
+                animate().scaleX(0.88f).scaleY(0.88f).setDuration(TPlannerLightTokens.Semantic.Motion.Fast).withEndAction {
+                    animate().scaleX(1f).scaleY(1f).setDuration(TPlannerLightTokens.Semantic.Motion.Fast).start()
                 }.start()
                 newTaskAction?.invoke()
             }
@@ -372,7 +383,10 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         addView(
             syncFeedback,
             LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
-                topMargin = dp(9)
+                topMargin = if (resources.configuration.isScreenRound) {
+                    // At 16% below the top, a round screen's chord exceeds the feedback's 70% width.
+                    dp(kotlin.math.ceil(resources.configuration.screenWidthDp * 0.16).toInt())
+                } else dp(9)
             },
         )
 
@@ -576,8 +590,13 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
 
         content.removeAllViews()
 
-        val largeTitle = textView(28f, ACCENT, BOLD).apply {
+        val largeTitle = textView(TPlannerLightTokens.Platform.Wear.Typography.Heading.FontSize, PRIMARY, WEAR_SEMIBOLD).apply {
+            wearTextMetrics(TPlannerLightTokens.Platform.Wear.Typography.Heading.LineHeight)
+            minimumHeight = context.wearDp(TPlannerLightTokens.Platform.Wear.Geometry.ControlMinHeight)
+            maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
             text = currentListName
+            background = context.wearInteractiveBackground(fill = BG, border = Color.TRANSPARENT)
             gravity = Gravity.START or Gravity.CENTER_VERTICAL
             isClickable = true
             isFocusable = true
@@ -591,9 +610,13 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
                 listSelectionAction?.invoke()
             }
         }
+        largeTitle.addOnLayoutChangeListener { _, _, _, _, bottom, _, _, _, _ ->
+            collapseStartPx = bottom
+            updateCollapsedHeader(mainScrollY)
+        }
         content.addView(
             largeTitle,
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(39)).apply {
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(LARGE_TITLE_TOP_MARGIN_DP)
                 bottomMargin = dp(LARGE_TITLE_BOTTOM_MARGIN_DP)
             },
@@ -678,15 +701,15 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
     ): View = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
         gravity = Gravity.CENTER_VERTICAL
-        minimumHeight = dp(58)
+        minimumHeight = context.wearDp(TPlannerLightTokens.Platform.Wear.Geometry.TaskRowMinHeight)
         setPadding(dp(13), dp(10), dp(13), dp(10))
         background = if (onClick == null) {
-            rounded(CARD, dp(TPlannerGeometry.RadiusWearDp).toFloat())
+            rounded(CARD, context.wearDp(TPlannerLightTokens.Semantic.Radius.Card).toFloat())
         } else {
-            rippleRounded(CARD, CARD_PRESSED, dp(TPlannerGeometry.RadiusWearDp).toFloat())
+            rippleRounded(CARD, CARD_PRESSED, context.wearDp(TPlannerLightTokens.Semantic.Radius.Card).toFloat())
         }
-        addView(textView(16f, PRIMARY, MEDIUM).apply { text = title })
-        addView(textView(13f, SECONDARY, REGULAR).apply {
+        addView(textView(TPlannerLightTokens.Platform.Wear.Typography.TaskTitle.FontSize, PRIMARY, MEDIUM).apply { text = title })
+        addView(textView(TPlannerLightTokens.Platform.Wear.Typography.Meta.FontSize, SECONDARY, REGULAR).apply {
             text = subtitle
             maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
@@ -704,12 +727,13 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
     }
 
     private fun updateCollapsedHeader(scrollY: Int) {
-        val progress = ((scrollY - dp(62)).toFloat() / dp(12)).coerceIn(0f, 1f)
+        val progress = ((scrollY - collapseStartPx).toFloat() / dp(12)).coerceIn(0f, 1f)
         frostedHeader.alpha = progress
-        frostedHeader.isClickable = progress > 0f
+        frostedHeader.isClickable = false
         collapsedTitle.alpha = progress
         collapsedTitle.translationY = dp(4) * (1f - progress)
         collapsedTitle.isClickable = progress >= 0.55f
+        collapsedTitle.isFocusable = progress >= 0.55f
         collapsedTitle.importantForAccessibility = if (progress >= 0.55f) {
             IMPORTANT_FOR_ACCESSIBILITY_YES
         } else {
@@ -773,22 +797,13 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         setTextColor(color)
         textSize = sizeSp
         typeface = font
-        includeFontPadding = false
+        wearTextMetrics()
     }
 
-    private fun rounded(color: Int, radius: Float) = GradientDrawable().apply {
-        shape = GradientDrawable.RECTANGLE
-        cornerRadius = radius
-        setColor(color)
-        if (color == CARD || color == CONTROL) setStroke(dp(1), BORDER)
-    }
+    private fun rounded(color: Int, radius: Float) = context.wearSurfaceBackground(color, radius)
 
     private fun rippleRounded(normal: Int, pressed: Int, radius: Float): RippleDrawable =
-        RippleDrawable(
-            ColorStateList.valueOf(pressed),
-            rounded(normal, radius),
-            null,
-        )
+        context.wearInteractiveBackground(normal, radius, WEAR_BORDER, pressed)
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
 
@@ -810,10 +825,14 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
             clipToPadding = false
 
             // bottom layer: delete button
-            val deleteButton = textView(14f, PRIMARY, MEDIUM).apply {
+            val deleteButton = textView(TPlannerLightTokens.Platform.Wear.Typography.Meta.FontSize, ERROR, MEDIUM).apply {
+                minimumHeight = context.wearDp(TPlannerLightTokens.Platform.Wear.Geometry.ControlMinHeight)
+                maxLines = 3
+                setPadding(dp(4), dp(8), dp(4), dp(8))
+                isFocusable = true
                 text = context.getString(R.string.task_list_delete)
                 gravity = Gravity.CENTER
-                background = rounded(ERROR, dp(TPlannerGeometry.RadiusWearDp).toFloat())
+                background = context.wearInteractiveBackground(fill = WEAR_ERROR_BACKGROUND, border = ERROR)
                 minimumWidth = revealWidth
                 setOnClickListener {
                     if (isDeleting) return@setOnClickListener
@@ -826,7 +845,7 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
                     val startHeight = wrapper.height.coerceAtLeast(1)
 
                     android.animation.ValueAnimator.ofInt(startHeight, 0).apply {
-                        duration = 200L
+                        duration = TPlannerLightTokens.Semantic.Motion.Standard
 
                         addUpdateListener { animator ->
                             val lp = wrapper.layoutParams
@@ -926,14 +945,13 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
             isOpen = open
             cardContent.animate()
                 .translationX(if (open) -revealWidth.toFloat() else 0f)
-                .setDuration(150L)
+                .setDuration(TPlannerLightTokens.Semantic.Motion.Standard)
                 .start()
         }
     }
 
     private companion object {
         const val LARGE_TITLE_TOP_MARGIN_DP = 23
-        const val LARGE_TITLE_HEIGHT_DP = 39
         const val LARGE_TITLE_BOTTOM_MARGIN_DP = 6
         const val COMPACT_HEADER_HEIGHT_DP = 54
         const val FROSTED_HEADER_SOURCE_HEIGHT_DP = COMPACT_HEADER_HEIGHT_DP + 16
@@ -941,12 +959,11 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         const val SYNC_PULL_DISTANCE_DP = 52
         val REGULAR: Typeface = WEAR_REGULAR
         val MEDIUM: Typeface = WEAR_MEDIUM
-        val BOLD: Typeface = WEAR_BOLD
 
         const val BG = WEAR_BG
         const val PRIMARY = WEAR_PRIMARY
         const val SECONDARY = WEAR_DIM
-        const val ACCENT = WEAR_GOLD
+        const val ACCENT = WEAR_ACCENT_TEXT
         const val ERROR = WEAR_RED
         const val BORDER = WEAR_BORDER
         const val CARD = WEAR_SURFACE2

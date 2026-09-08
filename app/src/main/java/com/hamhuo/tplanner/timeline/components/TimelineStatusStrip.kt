@@ -1,6 +1,7 @@
 package com.hamhuo.tplanner.timeline.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -20,17 +21,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.hamhuo.tplanner.EVENT_COLORS
-import com.hamhuo.tplanner.GOLD
 import com.hamhuo.tplanner.R
 import com.hamhuo.tplanner.ScheduleItem
-import com.hamhuo.tplanner.SURFACE2
 import com.hamhuo.tplanner.designsystem.TPlannerGeometry
+import com.hamhuo.tplanner.designsystem.TPlannerLightTokens
 import com.hamhuo.tplanner.designsystem.TPlannerTypography
 import com.hamhuo.tplanner.timeline.TimelineGeometry
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -40,6 +41,7 @@ import java.time.format.DateTimeFormatter
 internal fun TimelineStatusStrip(
     day: LocalDate,
     events: List<ScheduleItem>,
+    now: Instant,
     zone: ZoneId,
     onEventClick: (ScheduleItem) -> Unit,
 ) {
@@ -59,12 +61,17 @@ internal fun TimelineStatusStrip(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(SURFACE2)
+            .background(Color(TPlannerLightTokens.Semantic.Color.Raised))
             .padding(vertical = 3.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         statuses.forEach { status ->
-            val accent = EVENT_COLORS.getOrElse(status.colorId) { GOLD }
+            val visuals = timelineItemVisuals(
+                colorId = status.colorId,
+                completed = status.completed,
+                current = !status.completed && !now.isBefore(status.start) && now.isBefore(status.end),
+            )
+            val shape = RoundedCornerShape(TPlannerGeometry.RadiusControlDp.dp)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -76,7 +83,8 @@ internal fun TimelineStatusStrip(
                     modifier = Modifier
                         .weight(1f)
                         .padding(end = 4.dp)
-                        .background(accent, RoundedCornerShape(TPlannerGeometry.RadiusControlDp.dp))
+                        .background(visuals.background, shape)
+                        .border(1.dp, visuals.border, shape)
                         .clickable(role = Role.Button) { onEventClick(status) }
                         .padding(horizontal = 9.dp, vertical = 5.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -85,16 +93,17 @@ internal fun TimelineStatusStrip(
                     Text(
                         text = status.title.ifBlank { untitledLabel },
                         modifier = Modifier.weight(1f),
-                        color = Color.White,
+                        color = visuals.foreground,
                         fontSize = TPlannerTypography.TimelineBodySp.sp,
                         lineHeight = TPlannerTypography.TimelineBodyLineHeightSp.sp,
                         fontWeight = FontWeight.SemiBold,
+                        textDecoration = if (status.completed) TextDecoration.LineThrough else TextDecoration.None,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         text = "${status.start.atZone(zone).format(timeFormatter)}–${status.end.atZone(zone).format(timeFormatter)}",
-                        color = Color.White.copy(alpha = 0.82f),
+                        color = visuals.supportingForeground,
                         fontSize = TPlannerTypography.TimelineCompactSp.sp,
                         lineHeight = TPlannerTypography.TimelineBodySp.sp,
                         maxLines = 1,

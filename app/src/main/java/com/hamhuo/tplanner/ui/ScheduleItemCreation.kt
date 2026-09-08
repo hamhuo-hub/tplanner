@@ -1,6 +1,12 @@
 @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 package com.hamhuo.tplanner
 
+import com.hamhuo.tplanner.ui.components.TPlannerButton
+import com.hamhuo.tplanner.ui.components.TPlannerButtonStyle
+import com.hamhuo.tplanner.ui.components.TPlannerIconButton
+import com.hamhuo.tplanner.ui.components.TPlannerInputFrame
+import androidx.compose.ui.focus.onFocusChanged
+
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import androidx.activity.compose.BackHandler
@@ -82,8 +88,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.hamhuo.tplanner.designsystem.TPlannerGeometry
-import com.hamhuo.tplanner.designsystem.TPlannerTypography
+import com.hamhuo.tplanner.PhoneGeometry as TPlannerGeometry
+import com.hamhuo.tplanner.PhoneTypography as TPlannerTypography
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
@@ -138,9 +144,9 @@ fun CreateItemTypeSheet(onSelect: (String) -> Unit, onDismiss: () -> Unit) {
                 stringResource(R.string.label_new),
                 color = TEXT_PRIMARY,
                 fontSize = TPlannerTypography.PhoneSectionSp.sp,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.SemiBold,
             )
-            Icon(Icons.Default.Close, contentDescription = "Close", tint = DIM, modifier = Modifier.size(18.dp).clickable { onDismiss() })
+            TPlannerIconButton(Icons.Default.Close, "Close", onDismiss)
         }
 
         Spacer(Modifier.height(12.dp))
@@ -222,12 +228,9 @@ fun ItemTypeChangeSheet(currentType: String, onSelect: (String) -> Unit, onDismi
                 stringResource(R.string.change_type_title),
                 color = TEXT_PRIMARY,
                 fontSize = TPlannerTypography.PhoneSectionSp.sp,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.SemiBold,
             )
-            Icon(
-                Icons.Default.Close, contentDescription = "Close",
-                tint = DIM, modifier = Modifier.size(18.dp).clickable { onDismiss() }
-            )
+            TPlannerIconButton(Icons.Default.Close, "Close", onDismiss)
         }
 
         Spacer(Modifier.height(12.dp))
@@ -254,7 +257,7 @@ fun ItemTypeChangeSheet(currentType: String, onSelect: (String) -> Unit, onDismi
                 ) {
                     Icon(
                         typeIcon(type), contentDescription = null,
-                        tint = if (isCurrent) BG else TEXT_PRIMARY,
+                        tint = if (isCurrent) ON_ACCENT else TEXT_PRIMARY,
                         modifier = Modifier.size(26.dp)
                     )
                 }
@@ -280,9 +283,9 @@ fun ItemTypeChangeSheet(currentType: String, onSelect: (String) -> Unit, onDismi
                             ) {
                                 Text(
                                     stringResource(R.string.current_label),
-                                    color = BG,
+                                    color = ON_ACCENT,
                                     fontSize = TPlannerTypography.PhoneBadgeSp.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.SemiBold
                                 )
                             }
                         }
@@ -320,6 +323,7 @@ fun NameInputSheet(
     var text by remember(type) {
         mutableStateOf(TextFieldValue(startingText, selection = TextRange(0, startingText.length)))
     }
+    var inputFocused by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onCancel,
@@ -338,10 +342,11 @@ fun NameInputSheet(
                 stringResource(R.string.name_prompt_template, label),
                 color      = TEXT_PRIMARY,
                 fontSize   = TPlannerTypography.PhoneModalTitleSp.sp,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.SemiBold,
                 textAlign  = TextAlign.Center
             )
             Spacer(Modifier.height(40.dp))
+            TPlannerInputFrame(Modifier.fillMaxWidth(), focused = inputFocused) {
             BasicTextField(
                 value         = text,
                 onValueChange = {
@@ -349,45 +354,26 @@ fun NameInputSheet(
                     onDraftChange(it.text)
                 },
                 textStyle     = TextStyle(
-                    color      = GOLD,
+                    color      = TEXT_PRIMARY,
                     fontSize   = TPlannerTypography.PhoneDisplaySp.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.SemiBold,
                     textAlign  = TextAlign.Center
                 ),
-                cursorBrush = SolidColor(GOLD),
+                cursorBrush = SolidColor(FOCUS),
                 singleLine  = true,
-                modifier    = Modifier.fillMaxWidth()
+                modifier    = Modifier.fillMaxWidth().padding(12.dp)
+                    .onFocusChanged { inputFocused = it.isFocused }
             )
-            Spacer(Modifier.height(10.dp))
-            Box(Modifier.width(220.dp).height(1.dp).background(BORDER))
+            }
             Spacer(Modifier.height(36.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                PillButton(label = stringResource(R.string.action_cancel), filled = false, onClick = onCancel)
-                PillButton(label = stringResource(R.string.action_create), filled = true, onClick = {
+                TPlannerButton(label = stringResource(R.string.action_cancel), style = TPlannerButtonStyle.Secondary, onClick = onCancel, modifier = Modifier.weight(1f))
+                TPlannerButton(label = stringResource(R.string.action_create), enabled = text.text.isNotBlank(), modifier = Modifier.weight(1f), onClick = {
                     val name = text.text.trim()
                     if (name.isNotEmpty()) onConfirm(name)
                 })
             }
         }
-    }
-}
-
-@Composable
-private fun PillButton(label: String, filled: Boolean, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .background(if (filled) GOLD else Color.Transparent, RoundedCornerShape(TPlannerGeometry.RadiusPillDp.dp))
-            .border(1.dp, if (filled) GOLD else BORDER, RoundedCornerShape(TPlannerGeometry.RadiusPillDp.dp))
-            .clickable { onClick() }
-            .padding(horizontal = 30.dp, vertical = 12.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            label,
-            color      = if (filled) BG else TEXT_PRIMARY,
-            fontSize   = TPlannerTypography.PhoneTaskTitleSp.sp,
-            fontWeight = FontWeight.Bold
-        )
     }
 }
 

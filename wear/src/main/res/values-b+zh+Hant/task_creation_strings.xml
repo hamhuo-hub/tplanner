@@ -37,4 +37,10 @@
         <item>青藍</item>
         <item>石墨</item>
     </string-array>
+    <string name="task_create_hour">小時</string>
+    <string name="task_create_minute">分鐘</string>
+    <string name="task_create_day">日</string>
+    <string name="task_create_month">月</string>
+    <string name="task_create_decrease">減小選中數值</string>
+    <string name="task_create_increase">增大選中數值</string>
 </resources>

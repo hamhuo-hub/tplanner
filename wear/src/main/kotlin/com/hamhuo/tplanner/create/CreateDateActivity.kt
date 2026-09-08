@@ -2,19 +2,14 @@ package com.hamhuo.tplanner
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.TextView
-import com.hamhuo.tplanner.designsystem.TPlannerTypography
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.TextStyle
-import java.util.Locale
 import kotlin.math.abs
 
 
@@ -26,10 +21,8 @@ class CreateDateActivity : WearPageActivity() {
     private var day = 1
     private var month = 1
 
-    private lateinit var dayText: TextView
-    private lateinit var monthText: TextView
-    private lateinit var dayLabel: TextView
-    private lateinit var monthLabel: TextView
+    private lateinit var dayField: CreationNumberField
+    private lateinit var monthField: CreationNumberField
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,121 +41,30 @@ class CreateDateActivity : WearPageActivity() {
             ?.let { runCatching { LocalDate.ofEpochDay(it) }.getOrNull() }
             ?: today
 
-        day = initialDate.dayOfMonth
-        month = initialDate.monthValue
+        day = savedInstanceState?.getInt(STATE_DAY, initialDate.dayOfMonth) ?: initialDate.dayOfMonth
+        month = savedInstanceState?.getInt(STATE_MONTH, initialDate.monthValue) ?: initialDate.monthValue
+        selectedDayField = savedInstanceState?.getBoolean(STATE_SELECTED_DAY, true) ?: true
 
-        val root = FrameLayout(this).apply {
-            setBackgroundColor(WEAR_BG)
+        dayField = creationNumberField(R.string.task_create_day) {
+            selectedDayField = true
+            renderSelection()
         }
-
-        val heading = creationHeading("Set date").apply {
-            textSize = TPlannerTypography.WearTitleSp
-            setPadding(dp(8), 0, dp(8), 0)
+        monthField = creationNumberField(R.string.task_create_month) {
+            selectedDayField = false
+            renderSelection()
         }
-        root.addView(
-            heading,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply {
-                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                leftMargin = dp(34)
-                rightMargin = dp(34)
-                topMargin = dp(9)
-            },
-        )
-
-        val dateBlock = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-        }
-
-        val labelRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-        }
-
-        dayLabel = dateFieldLabel("Day") {
-            if (!selectedDayField) {
-                selectedDayField = true
-                renderSelection()
-            }
-        }
-        monthLabel = dateFieldLabel("Month") {
-            if (selectedDayField) {
-                selectedDayField = false
-                renderSelection()
-            }
-        }
-
-        // Same fixed geometry for labels and values so both columns stay optically centered.
-        labelRow.addView(dayLabel, LinearLayout.LayoutParams(dp(72), dp(24)))
-        labelRow.addView(View(this), LinearLayout.LayoutParams(dp(14), dp(24)))
-        labelRow.addView(monthLabel, LinearLayout.LayoutParams(dp(88), dp(24)))
-        dateBlock.addView(labelRow)
-
-        val valueRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-        }
-
-        dayText = dateValueText(38f).apply {
-            setOnClickListener {
-                if (!selectedDayField) {
-                    selectedDayField = true
-                    renderSelection()
-                }
-                performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-            }
-        }
-        monthText = dateValueText(34f).apply {
-            setOnClickListener {
-                if (selectedDayField) {
-                    selectedDayField = false
-                    renderSelection()
-                }
-                performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-            }
-        }
-
-        attachVerticalAdjustGesture(dayText, selectDay = true)
-        attachVerticalAdjustGesture(monthText, selectDay = false)
-
-        valueRow.addView(dayText, LinearLayout.LayoutParams(dp(72), dp(54)))
-        valueRow.addView(View(this), LinearLayout.LayoutParams(dp(14), dp(54)))
-        valueRow.addView(monthText, LinearLayout.LayoutParams(dp(88), dp(54)))
-        dateBlock.addView(valueRow)
-
-        root.addView(
-            dateBlock,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply {
-                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                topMargin = dp(58)
-            },
-        )
-
-        val doneButton = TextView(this).apply {
-            text = "Done"
-            setTextColor(WEAR_BG)
-            textSize = TPlannerTypography.WearBodySp
-            typeface = CREATION_BOLD
-            includeFontPadding = false
-            gravity = Gravity.CENTER
-            background = creationRippleRounded(
-                CREATION_ACCENT,
-                WEAR_GOLD_PRESSED,
-                dp(20).toFloat(),
-            )
-            isClickable = true
-            isFocusable = true
-            setOnClickListener {
-                if (destinationOpened) return@setOnClickListener
+        // Keep vertical adjustment on the numeric value; the label and page still scroll.
+        attachVerticalAdjustGesture(dayField.value, selectDay = true)
+        attachVerticalAdjustGesture(monthField.value, selectDay = false)
+        val content = creationContent().apply {
+            addView(creationTopSpacer())
+            addView(creationHeading(getString(R.string.task_create_date)))
+            addView(creationNumberFields(dayField, monthField))
+            addView(creationStepperRow { adjust(it) })
+            addView(creationActionRow(R.string.task_create_next, primary = true) {
+                if (destinationOpened) return@creationActionRow
                 destinationOpened = true
                 performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-
                 @Suppress("DEPRECATION")
                 startActivityForResult(
                     CreateSettingsActivity.createIntent(
@@ -171,20 +73,19 @@ class CreateDateActivity : WearPageActivity() {
                     ),
                     REQUEST_CREATION_NEXT,
                 )
-            }
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                .apply { topMargin = dp(8) })
+            addView(creationBottomSpacer())
         }
-
-        root.addView(
-            doneButton,
-            FrameLayout.LayoutParams(dp(132), dp(40)).apply {
-                gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-                bottomMargin = dp(9)
-            },
-        )
-
-        setContentView(root)
+        setContentView(creationScrollPage(content))
         renderDate()
-        renderSelection()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putInt(STATE_DAY, day)
+        outState.putInt(STATE_MONTH, month)
+        outState.putBoolean(STATE_SELECTED_DAY, selectedDayField)
+        super.onSaveInstanceState(outState)
     }
 
     /**
@@ -233,43 +134,15 @@ class CreateDateActivity : WearPageActivity() {
     }
 
     private fun renderDate() {
-        dayText.text = "%02d".format(day)
-        monthText.text = java.time.Month.of(month)
-            .getDisplayName(TextStyle.SHORT, Locale.getDefault())
-            .uppercase(Locale.getDefault())
+        val locale = currentWatchLocale()
+        dayField.value.text = "%02d".format(locale, day)
+        monthField.value.text = java.time.Month.of(month).getDisplayName(TextStyle.SHORT, locale)
+        renderSelection()
     }
 
     private fun renderSelection() {
-        dayText.setTextColor(if (selectedDayField) CREATION_ACCENT else CREATION_PRIMARY)
-        monthText.setTextColor(if (selectedDayField) CREATION_PRIMARY else CREATION_ACCENT)
-        dayLabel.setTextColor(if (selectedDayField) CREATION_PRIMARY else CREATION_DIM)
-        monthLabel.setTextColor(if (selectedDayField) CREATION_DIM else CREATION_PRIMARY)
-    }
-
-    private fun dateFieldLabel(label: String, onClick: () -> Unit): TextView =
-        TextView(this).apply {
-            text = label
-            setTextColor(CREATION_DIM)
-            textSize = TPlannerTypography.WearCaptionSp
-            typeface = CREATION_MEDIUM
-            includeFontPadding = false
-            gravity = Gravity.CENTER
-            isClickable = true
-            isFocusable = true
-            setOnClickListener {
-                performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                onClick()
-            }
-        }
-
-    private fun dateValueText(sizeSp: Float): TextView = TextView(this).apply {
-        setTextColor(CREATION_PRIMARY)
-        textSize = sizeSp
-        typeface = CREATION_MEDIUM
-        includeFontPadding = false
-        gravity = Gravity.CENTER
-        isClickable = true
-        isFocusable = true
+        dayField.renderSelection(selectedDayField)
+        monthField.renderSelection(!selectedDayField)
     }
 
     @Suppress("ClickableViewAccessibility")
@@ -280,6 +153,7 @@ class CreateDateActivity : WearPageActivity() {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     downY = event.y
+                    target.parent.requestDisallowInterceptTouchEvent(true)
                     true
                 }
 
@@ -289,27 +163,35 @@ class CreateDateActivity : WearPageActivity() {
                         renderSelection()
                     }
 
+                    target.parent.requestDisallowInterceptTouchEvent(false)
                     val deltaY = event.y - downY
                     if (abs(deltaY) >= dp(18)) {
                         adjust(if (deltaY < 0f) 1 else -1)
                         target.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
                     } else {
-                        target.performClick()
+                        (target.parent as? View)?.performClick()
                     }
                     true
                 }
 
-                MotionEvent.ACTION_CANCEL -> true
+                MotionEvent.ACTION_CANCEL -> {
+                    target.parent.requestDisallowInterceptTouchEvent(false)
+                    true
+                }
                 else -> true
             }
         }
     }
 
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean =
+        if (event.rotaryScrollAxisOrNull() != null) onGenericMotionEvent(event)
+        else super.dispatchGenericMotionEvent(event)
+
     override fun onGenericMotionEvent(event: MotionEvent?): Boolean {
         val crownAxis = event?.rotaryScrollAxisOrNull()
             ?: return super.onGenericMotionEvent(event)
         adjust(if (crownAxis > 0f) 1 else -1)
-        (if (selectedDayField) dayText else monthText)
+        (if (selectedDayField) dayField.root else monthField.root)
             .performCrownItemFocusFeedback(event)
         return true
     }
@@ -326,6 +208,9 @@ class CreateDateActivity : WearPageActivity() {
     }
 
     companion object {
+        private const val STATE_DAY = "selected_day"
+        private const val STATE_MONTH = "selected_month"
+        private const val STATE_SELECTED_DAY = "is_day_selected"
         fun createIntent(context: Context, route: CreationRoute): Intent =
             Intent(context, CreateDateActivity::class.java).putCreationRoute(route)
     }

@@ -30,9 +30,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -46,10 +44,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.hamhuo.tplanner.EVENT_COLORS
-import com.hamhuo.tplanner.GOLD
 import com.hamhuo.tplanner.R
-import com.hamhuo.tplanner.RED
 import com.hamhuo.tplanner.ScheduleItem
 import com.hamhuo.tplanner.designsystem.TPlannerGeometry
 import com.hamhuo.tplanner.designsystem.TPlannerTypography
@@ -62,11 +57,10 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-private const val TimelineEventFillAlpha = 0.50f
-
 @Composable
 internal fun TimelineItemCard(
     event: ScheduleItem,
+    isCurrent: Boolean,
     conflictCount: Int,
     isHighlighted: Boolean,
     isShadow: Boolean,
@@ -98,6 +92,7 @@ internal fun TimelineItemCard(
 
     DraggableTimelineEvent(
         event = event,
+        isCurrent = isCurrent,
         isHighlighted = isHighlighted,
         isShadow = isShadow,
         isCompact = isCompact,
@@ -115,9 +110,10 @@ internal fun TimelineItemCard(
         onClick = onClick,
         onDraggingChange = onDraggingChange,
         onDrop = onDrop,
-    ) {
+    ) { visuals ->
         TimelineItemCardContent(
             event = event,
+            visuals = visuals,
             conflictCount = conflictCount,
             conflictDescription = conflictDescription,
             isCompact = isCompact,
@@ -132,6 +128,7 @@ internal fun TimelineItemCard(
 @Composable
 private fun DraggableTimelineEvent(
     event: ScheduleItem,
+    isCurrent: Boolean,
     isHighlighted: Boolean,
     isShadow: Boolean,
     isCompact: Boolean,
@@ -149,7 +146,7 @@ private fun DraggableTimelineEvent(
     onClick: () -> Unit,
     onDraggingChange: (Boolean) -> Unit,
     onDrop: (Instant, Instant) -> Unit,
-    content: @Composable () -> Unit,
+    content: @Composable (TimelineItemVisuals) -> Unit,
 ) {
     val haptics = LocalHapticFeedback.current
     var dragOffset by remember(event.id, day) { mutableStateOf(Offset.Zero) }
@@ -190,10 +187,13 @@ private fun DraggableTimelineEvent(
     val visualY = with(density) { (move.visualMinuteDelta * pixelsPerMinute).toDp() }
     val currentOnDrop by rememberUpdatedState(onDrop)
     val currentOnDraggingChange by rememberUpdatedState(onDraggingChange)
-    val backgroundAlpha = if (isShadow || dragging) 1f else TimelineEventFillAlpha
-    val background = EVENT_COLORS
-        .getOrElse(event.colorId) { EVENT_COLORS[0] }
-        .copy(alpha = backgroundAlpha)
+    val visuals = timelineItemVisuals(
+        colorId = event.colorId,
+        completed = event.completed || isShadow,
+        current = isCurrent,
+        selected = dragging,
+        highlighted = isHighlighted,
+    )
     val shape = RoundedCornerShape(TPlannerGeometry.RadiusMediumDp.dp)
 
     fun resetDragState() {
@@ -239,15 +239,10 @@ private fun DraggableTimelineEvent(
             .onGloballyPositioned { coordinates ->
                 cardWindowTopPx = coordinates.positionInWindow().y
             }
-            .alpha(if (isShadow) 0.25f else if (dragging) 0.75f else 1f)
-            .background(background, shape)
+            .background(visuals.background, shape)
             .border(
                 width = if (isHighlighted || dragging) 2.dp else 1.dp,
-                color = when {
-                    isHighlighted -> RED
-                    dragging -> GOLD
-                    else -> Color.White.copy(alpha = 0.16f)
-                },
+                color = visuals.border,
                 shape = shape,
             )
             .then(
@@ -321,13 +316,14 @@ private fun DraggableTimelineEvent(
             }
             .padding(horizontal = 5.dp, vertical = if (isCompact) 3.dp else 5.dp),
     ) {
-        content()
+        content(visuals)
     }
 }
 
 @Composable
 private fun TimelineItemCardContent(
     event: ScheduleItem,
+    visuals: TimelineItemVisuals,
     conflictCount: Int,
     conflictDescription: String,
     isCompact: Boolean,
@@ -348,14 +344,14 @@ private fun TimelineItemCardContent(
                 Box(
                     modifier = Modifier
                         .size(11.dp)
-                        .border(1.dp, Color.White.copy(alpha = 0.75f), CircleShape),
+                        .border(1.dp, visuals.border, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
                     if (event.completed) {
                         Icon(
                             Icons.Default.Check,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = visuals.foreground,
                             modifier = Modifier.size(8.dp),
                         )
                     }
@@ -363,7 +359,7 @@ private fun TimelineItemCardContent(
             }
             Text(
                 text = event.title.ifBlank { stringResource(R.string.untitled_event) },
-                color = Color.White,
+                color = visuals.foreground,
                 fontSize = if (isCompact) {
                     TPlannerTypography.TimelineCompactSp.sp
                 } else {
@@ -388,7 +384,7 @@ private fun TimelineItemCardContent(
                 Icon(
                     imageVector = Icons.Default.Repeat,
                     contentDescription = stringResource(R.string.timeline_recurring_task),
-                    tint = Color.White.copy(alpha = 0.82f),
+                    tint = visuals.supportingForeground,
                     modifier = Modifier.size(if (isCompact) 9.dp else 11.dp),
                 )
             }
@@ -403,7 +399,7 @@ private fun TimelineItemCardContent(
         if (!isCompact) {
             Text(
                 text = "$startTime–$endTime",
-                color = Color.White.copy(alpha = 0.78f),
+                color = visuals.supportingForeground,
                 fontFamily = FontFamily.Monospace,
                 fontSize = TPlannerTypography.TimelineTimeSp.sp,
                 maxLines = 1,
@@ -411,7 +407,7 @@ private fun TimelineItemCardContent(
             if (durationMinutes >= 60 && event.note.isNotBlank()) {
                 Text(
                     text = event.note,
-                    color = Color.White.copy(alpha = 0.68f),
+                    color = visuals.supportingForeground,
                     fontSize = TPlannerTypography.TimelineTimeSp.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,

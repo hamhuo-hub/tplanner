@@ -1,5 +1,11 @@
 package com.hamhuo.tplanner
 
+import com.hamhuo.tplanner.ui.components.TPlannerButton
+import com.hamhuo.tplanner.ui.components.TPlannerIconButton
+import com.hamhuo.tplanner.ui.components.TPlannerInputFrame
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.material3.TextButton
+
 import android.annotation.SuppressLint
 import android.util.Base64
 import android.view.GestureDetector
@@ -61,8 +67,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
-import com.hamhuo.tplanner.designsystem.TPlannerGeometry
-import com.hamhuo.tplanner.designsystem.TPlannerTypography
+import com.hamhuo.tplanner.PhoneGeometry as TPlannerGeometry
+import com.hamhuo.tplanner.PhoneTypography as TPlannerTypography
 import kotlinx.coroutines.launch
 import java.time.format.DateTimeFormatter
 import java.time.LocalDate
@@ -80,7 +86,7 @@ fun NotesHeader(date: LocalDate, onPanelToggle: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(stringResource(R.string.tab_journal), color = GOLD, fontSize = TPlannerTypography.PhoneTitleSp.sp, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.tab_journal), color = ACCENT_TEXT, fontSize = TPlannerTypography.PhoneTitleSp.sp, fontWeight = FontWeight.SemiBold)
             Text(today, color = DIM, fontSize = TPlannerTypography.PhoneSupportingSp.sp)
         }
         IconButton(onClick = onPanelToggle) {
@@ -105,7 +111,7 @@ fun SyncSettingsPanel(
     onOpenLogs: () -> Unit,
 ) {
     val msgColor = when (syncStatus) {
-        "success" -> TEAL; "error" -> RED; else -> GOLD
+        "success" -> TEAL; "error" -> RED; else -> BLUE
     }
 
     Card(
@@ -118,8 +124,8 @@ fun SyncSettingsPanel(
 
             // 标题行
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.sync_server_title), color = DIM, fontSize = TPlannerTypography.PhoneMicroSp.sp, letterSpacing = 0.1.sp)
-                Icon(Icons.Default.Close, contentDescription = "Close", tint = DIM, modifier = Modifier.size(14.dp).clickable { onClose() })
+                Text(stringResource(R.string.sync_server_title), color = DIM, fontSize = TPlannerTypography.PhoneMicroSp.sp, letterSpacing = TPlannerTypography.PhoneLetterSpacingSp.sp)
+                TPlannerIconButton(Icons.Default.Close, "Close", onClose)
             }
 
             // 服务器地址
@@ -132,38 +138,36 @@ fun SyncSettingsPanel(
 
             // 状态
             if (syncMsg.isNotBlank()) {
-                Text(syncMsg, color = msgColor, fontSize = TPlannerTypography.PhoneMicroSp.sp, fontFamily = FontFamily.Monospace)
+                Text(syncMsg, color = msgColor, fontSize = TPlannerTypography.PhoneMicroSp.sp, fontFamily = FontFamily.SansSerif)
             }
 
             // 同步日志入口(诊断)
-            Text(
-                stringResource(R.string.sync_logs_title),
-                color = GOLD,
-                fontSize = TPlannerTypography.PhoneMicroSp.sp,
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier.clickable(onClick = onOpenLogs),
-            )
+            TextButton(onClick = onOpenLogs) {
+                Text(stringResource(R.string.sync_logs_title), color = ACCENT_TEXT)
+            }
         }
     }
 }
 
 @Composable
 fun MonoInput(value: String, placeholder: String, onValue: (String) -> Unit, modifier: Modifier) {
+    var focused by remember { mutableStateOf(false) }
+    TPlannerInputFrame(modifier, focused = focused) {
     BasicTextField(
         value         = value,
         onValueChange = onValue,
         singleLine    = true,
-        textStyle     = TextStyle(color = TEXT_PRIMARY, fontSize = TPlannerTypography.PhoneBadgeSp.sp, fontFamily = FontFamily.Monospace),
-        cursorBrush   = SolidColor(GOLD),
-        modifier      = modifier
-            .background(INPUT_SURFACE, RoundedCornerShape(TPlannerGeometry.RadiusControlDp.dp))
-            .border(1.dp, BORDER, RoundedCornerShape(TPlannerGeometry.RadiusControlDp.dp))
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+        textStyle     = TextStyle(color = TEXT_PRIMARY, fontSize = TPlannerTypography.PhoneBodySp.sp, fontFamily = FontFamily.SansSerif),
+        cursorBrush   = SolidColor(FOCUS),
+        modifier      = Modifier.fillMaxWidth().align(Alignment.CenterStart)
+            .onFocusChanged { focused = it.isFocused }
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         decorationBox = { inner ->
-            if (value.isEmpty()) Text(placeholder, color = DIM, fontSize = TPlannerTypography.PhoneBadgeSp.sp, fontFamily = FontFamily.Monospace)
+            if (value.isEmpty()) Text(placeholder, color = DIM, fontSize = TPlannerTypography.PhoneBodySp.sp, fontFamily = FontFamily.SansSerif)
             inner()
         }
     )
+    }
 }
 
 @Suppress("DEPRECATION")
@@ -344,28 +348,19 @@ fun MarkdownEditor(
                         stringResource(R.string.section_note),
                         color = TEXT_PRIMARY,
                         fontSize = TPlannerTypography.PhoneTitleSp.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.SemiBold,
                     )
                 }
-                Box(
-                    modifier = Modifier
-                        .background(GOLD, RoundedCornerShape(TPlannerGeometry.RadiusPillDp.dp))
-                        .clickable(onClick = {
+                TPlannerButton(
+                    label = stringResource(R.string.action_done),
+                    onClick = {
                             if (imeVisible) {
                                 keyboardController?.hide()
                             } else {
                                 finishEditing()
                             }
-                        })
-                        .padding(horizontal = 18.dp, vertical = 8.dp),
-                ) {
-                    Text(
-                        stringResource(R.string.action_done),
-                        color = BG,
-                        fontSize = TPlannerTypography.PhoneSupportingSp.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
+                        },
+                )
             }
         }
 
@@ -378,7 +373,7 @@ fun MarkdownEditor(
                 fontSize = TPlannerTypography.PhoneTaskTitleSp.sp,
                 lineHeight = TPlannerTypography.PhoneBodyLineHeightSp.sp,
             ),
-            cursorBrush = SolidColor(GOLD),
+            cursorBrush = SolidColor(FOCUS),
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
@@ -501,7 +496,7 @@ fun MarkdownField(
                 onClick = ::beginEditing,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
             ) {
-                Icon(Icons.Default.Edit, contentDescription = "Edit", tint = GOLD, modifier = Modifier.size(18.dp))
+                Icon(Icons.Default.Edit, contentDescription = "Edit", tint = ACCENT_TEXT, modifier = Modifier.size(18.dp))
             }
         }
     }

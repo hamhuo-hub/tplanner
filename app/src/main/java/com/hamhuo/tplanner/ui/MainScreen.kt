@@ -70,6 +70,7 @@ import com.hamhuo.tplanner.ui.SyncLogPanel
 import com.hamhuo.tplanner.ui.components.TPlannerPullToSync
 import com.hamhuo.tplanner.ui.components.TPlannerSyncFeedback
 import com.hamhuo.tplanner.ui.components.TPlannerSyncFeedbackPresentation
+import com.hamhuo.tplanner.designsystem.TPlannerLightTokens as Tokens
 import com.hamhuo.tplanner.designsystem.TPlannerSyncFeedbackTone
 import com.hamhuo.tplanner.persistence.DraftCommitResult
 import com.hamhuo.tplanner.persistence.EventDraftRecovery
@@ -546,14 +547,14 @@ fun MainScreen(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .padding(end = 12.dp, bottom = 12.dp)
-                            .size(40.dp)
+                            .size(Tokens.Platform.Phone.Geometry.TouchTargetMin.dp)
                             .background(GOLD, CircleShape),
                     ) {
                         Icon(
                             Icons.Filled.AutoAwesome,
                             contentDescription = stringResource(R.string.ai_schedule_extraction),
-                            tint = BG,
-                            modifier = Modifier.size(20.dp),
+                            tint = ON_ACCENT,
+                            modifier = Modifier.size(Tokens.Platform.Phone.Geometry.IconSize.dp),
                         )
                     }
                 }

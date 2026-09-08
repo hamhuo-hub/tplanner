@@ -13,6 +13,8 @@ $repository = (Resolve-Path -LiteralPath $RepositoryRoot).Path.TrimEnd('\', '/')
 $canonicalTokens = 'shared/src/main/kotlin/com/hamhuo/tplanner/designsystem/TPlannerDesignTokens.kt'
 $canonicalTokensPath = Join-Path $repository $canonicalTokens
 Require (Test-Path -LiteralPath $canonicalTokensPath) "Missing canonical design tokens: $canonicalTokens"
+& python (Join-Path $repository 'scripts/generate-design-tokens.py') --check --android
+Require ($LASTEXITCODE -eq 0) 'Generated light tokens are stale; run python scripts/generate-design-tokens.py --android'
 
 # Raw ARGB/CSS literals belong only in the canonical token source. These are numeric masks, not
 # colors, and are intentionally allowlisted by exact path and exact literal so the exception cannot

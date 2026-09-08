@@ -15,7 +15,7 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.hamhuo.tplanner.designsystem.TPlannerGeometry
+import com.hamhuo.tplanner.PhoneGeometry as TPlannerGeometry
 
 @Composable
 internal fun MainLayout(

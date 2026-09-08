@@ -20,6 +20,7 @@ import java.time.ZoneId
 @Composable
 internal fun TimelineItemLayer(
     renderSpecs: List<TimelineEventRenderSpec>,
+    now: Instant,
     highlightedEventIds: Set<String>,
     visibleDays: List<LocalDate>,
     zone: ZoneId,
@@ -40,6 +41,7 @@ internal fun TimelineItemLayer(
             val event = placement.placement.event
             TimelineItemCard(
                 event = event,
+                isCurrent = !event.completed && !now.isBefore(event.start) && now.isBefore(event.end),
                 conflictCount = placement.placement.conflictIds.size,
                 isHighlighted = event.id in highlightedEventIds,
                 isShadow = placement.placement.isShadow,

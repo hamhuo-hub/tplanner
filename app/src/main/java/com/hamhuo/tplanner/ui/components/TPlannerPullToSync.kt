@@ -21,7 +21,8 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.hamhuo.tplanner.GOLD
+import com.hamhuo.tplanner.ACCENT_TEXT
+import com.hamhuo.tplanner.designsystem.TPlannerLightTokens as Tokens
 import com.hamhuo.tplanner.R
 import com.hamhuo.tplanner.SURFACE2
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -81,7 +82,7 @@ fun TPlannerPullToSync(
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .background(SURFACE2, RoundedCornerShape(20.dp))
+                    .background(SURFACE2, RoundedCornerShape(Tokens.Semantic.Radius.Pill.dp))
                     .semantics {
                         stateDescription = "sync-operation:${operationId.orEmpty()}"
                     }
@@ -89,8 +90,8 @@ fun TPlannerPullToSync(
             ) {
                 Text(
                     stringResource(R.string.sync_sending),
-                    color = GOLD,
-                    fontSize = 12.sp,
+                    color = ACCENT_TEXT,
+                    fontSize = Tokens.Platform.Phone.Typography.Meta.FontSize.sp,
                 )
             }
         }

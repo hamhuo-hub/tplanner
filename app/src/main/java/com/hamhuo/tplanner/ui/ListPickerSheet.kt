@@ -1,5 +1,7 @@
 package com.hamhuo.tplanner
 
+import com.hamhuo.tplanner.ui.components.TPlannerIconButton
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -37,8 +39,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.hamhuo.tplanner.designsystem.TPlannerGeometry
-import com.hamhuo.tplanner.designsystem.TPlannerTypography
+import com.hamhuo.tplanner.PhoneGeometry as TPlannerGeometry
+import com.hamhuo.tplanner.PhoneTypography as TPlannerTypography
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -83,12 +85,9 @@ fun ListPickerSheet(
                     stringResource(R.string.task_view_picker_title),
                     color = TEXT_PRIMARY,
                     fontSize = TPlannerTypography.PhoneSectionSp.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.SemiBold,
                 )
-                Icon(
-                    Icons.Default.Close, contentDescription = "Close", tint = DIM,
-                    modifier = Modifier.size(18.dp).clickable { onDismiss() },
-                )
+                TPlannerIconButton(Icons.Default.Close, "Close", onDismiss)
             }
             Spacer(Modifier.height(12.dp))
             val renderItem: @Composable (TaskView) -> Unit = { item ->
@@ -116,7 +115,7 @@ fun ListPickerSheet(
                                     is TaskView.CustomList -> Icons.Filled.Inbox
                                 },
                                 contentDescription = null,
-                                tint = if (isSelected) BG else TEXT_PRIMARY,
+                                tint = if (isSelected) ON_ACCENT else TEXT_PRIMARY,
                                 modifier = Modifier.size(26.dp),
                             )
                         }
@@ -128,7 +127,7 @@ fun ListPickerSheet(
                                     is TaskView.Inbox -> stringResource(R.string.list_inbox)
                                     is TaskView.CustomList -> item.name
                                 },
-                                color = if (isSelected) GOLD else TEXT_PRIMARY,
+                                color = if (isSelected) ACCENT_TEXT else TEXT_PRIMARY,
                                 fontSize = TPlannerTypography.PhoneBodySp.sp, fontWeight = FontWeight.SemiBold,
                             )
                             Text(
@@ -160,13 +159,13 @@ fun ListPickerSheet(
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .background(RED),
+                                    .background(ERROR_BACKGROUND),
                                 contentAlignment = Alignment.CenterEnd,
                             ) {
                                 Icon(
                                     Icons.Filled.Delete,
                                     contentDescription = stringResource(R.string.cd_delete),
-                                    tint = Color.White,
+                                    tint = RED,
                                     modifier = Modifier.padding(end = 20.dp),
                                 )
                             }

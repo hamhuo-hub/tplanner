@@ -4,8 +4,6 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.RippleDrawable
 import android.os.Bundle
 import android.text.TextUtils
 import android.view.Gravity
@@ -21,8 +19,7 @@ import androidx.activity.ComponentActivity
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import com.hamhuo.tplanner.designsystem.TPlannerGeometry
-import com.hamhuo.tplanner.designsystem.TPlannerTypography
+import com.hamhuo.tplanner.designsystem.TPlannerLightTokens
 import java.time.Instant
 import java.time.ZonedDateTime
 
@@ -112,6 +109,8 @@ abstract class WearPageActivity : ComponentActivity() {
     private fun hideSystemUi() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = true
+            isAppearanceLightNavigationBars = true
             hide(WindowInsetsCompat.Type.systemBars())
             systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -152,19 +151,19 @@ private class ListSelectionView(
             val title = context.watchListName(filter)
             val row = TextView(context).apply {
                 gravity = Gravity.CENTER_VERTICAL
-                minimumHeight = dp(52)
+                minimumHeight = context.wearDp(TPlannerLightTokens.Platform.Wear.Geometry.ControlMinHeight)
                 setPadding(dp(13), dp(8), dp(13), dp(8))
                 setTextColor(if (filter == selected) ACCENT else PRIMARY)
-                textSize = TPlannerTypography.WearSectionSp
-                typeface = MEDIUM
-                includeFontPadding = false
+                textSize = TPlannerLightTokens.Platform.Wear.Typography.Title.FontSize
+                typeface = WEAR_SEMIBOLD
+                wearTextMetrics()
                 text = title
-                maxLines = 1
+                maxLines = 2
                 ellipsize = TextUtils.TruncateAt.END
-                background = rippleRounded(
-                    CARD,
-                    CARD_PRESSED,
-                    dp(TPlannerGeometry.RadiusCardDp).toFloat(),
+                isSelected = filter == selected
+                background = context.wearInteractiveBackground(
+                    fill = if (isSelected) TPlannerLightTokens.Semantic.Color.SelectedBackground else WEAR_CONTROL,
+                    border = if (isSelected) TPlannerLightTokens.Semantic.Color.Focus else WEAR_BORDER,
                 )
                 isClickable = true
                 isFocusable = true
@@ -189,16 +188,6 @@ private class ListSelectionView(
 
         addView(scroll, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
     }
-
-    private fun rounded(color: Int, radius: Float) = GradientDrawable().apply {
-        shape = GradientDrawable.RECTANGLE
-        cornerRadius = radius
-        setColor(color)
-        if (color == CARD) setStroke(dp(1), WEAR_BORDER)
-    }
-
-    private fun rippleRounded(normal: Int, pressed: Int, radius: Float): RippleDrawable =
-        RippleDrawable(android.content.res.ColorStateList.valueOf(pressed), rounded(normal, radius), null)
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
 }
@@ -235,12 +224,12 @@ private class TaskDetailView(
         )
 
         content.addView(
-            textView(22f, ACCENT, MEDIUM).apply {
+            textView(TPlannerLightTokens.Platform.Wear.Typography.Heading.FontSize, PRIMARY, WEAR_SEMIBOLD).apply {
                 text = context.getString(R.string.task_list_detail_title)
                 gravity = Gravity.START or Gravity.CENTER_VERTICAL
                 setPadding(dp(13), 0, 0, 0)
             },
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(38)).apply {
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(35)
                 bottomMargin = dp(7)
             },
@@ -266,7 +255,7 @@ private class TaskDetailView(
             orientation = LinearLayout.VERTICAL
             minimumHeight = dp(118)
             setPadding(dp(14), dp(13), dp(14), dp(14))
-            background = rounded(CARD, dp(TPlannerGeometry.RadiusWearDp).toFloat())
+            background = rounded(CARD, context.wearDp(TPlannerLightTokens.Semantic.Radius.Card).toFloat())
             contentDescription = context.getString(
                 R.string.task_list_detail_accessibility,
                 title,
@@ -274,7 +263,7 @@ private class TaskDetailView(
                 time,
             )
         }
-        panel.addView(textView(20f, PRIMARY, MEDIUM).apply {
+        panel.addView(textView(TPlannerLightTokens.Platform.Wear.Typography.Title.FontSize, PRIMARY, WEAR_SEMIBOLD).apply {
             text = title
             maxLines = 3
             ellipsize = TextUtils.TruncateAt.END
@@ -298,7 +287,7 @@ private class TaskDetailView(
                 orientation = LinearLayout.VERTICAL
                 minimumHeight = dp(60)
                 setPadding(dp(14), dp(13), dp(14), dp(14))
-                background = rounded(CARD, dp(TPlannerGeometry.RadiusWearDp).toFloat())
+                background = rounded(CARD, context.wearDp(TPlannerLightTokens.Semantic.Radius.Card).toFloat())
             }
             checklistPanel.addView(
                 detailLabel(context.getString(R.string.task_list_checklist_label)),
@@ -344,18 +333,18 @@ private class TaskDetailView(
     }
 
     private fun checklistItemView(text: String, completed: Boolean): TextView =
-        textView(14f, if (completed) WEAR_DIM else PRIMARY, REGULAR).apply {
+        textView(TPlannerLightTokens.Platform.Wear.Typography.Body.FontSize, if (completed) WEAR_DIM else PRIMARY, REGULAR).apply {
             setText(text)
             maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
             setPadding(dp(4), 0, 0, 0)
         }
 
-    private fun detailLabel(value: String): TextView = textView(12f, ACCENT, MEDIUM).apply {
+    private fun detailLabel(value: String): TextView = textView(TPlannerLightTokens.Platform.Wear.Typography.Meta.FontSize, ACCENT, MEDIUM).apply {
         text = value
     }
 
-    private fun detailValue(value: String): TextView = textView(15f, PRIMARY, REGULAR).apply {
+    private fun detailValue(value: String): TextView = textView(TPlannerLightTokens.Platform.Wear.Typography.Body.FontSize, PRIMARY, REGULAR).apply {
         text = value
         maxLines = 2
         ellipsize = TextUtils.TruncateAt.END
@@ -373,15 +362,10 @@ private class TaskDetailView(
         setTextColor(color)
         textSize = sizeSp
         typeface = font
-        includeFontPadding = false
+        wearTextMetrics()
     }
 
-    private fun rounded(color: Int, radius: Float) = GradientDrawable().apply {
-        shape = GradientDrawable.RECTANGLE
-        cornerRadius = radius
-        setColor(color)
-        if (color == CARD) setStroke(dp(1), WEAR_BORDER)
-    }
+    private fun rounded(color: Int, radius: Float) = context.wearSurfaceBackground(color, radius)
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
 }
@@ -389,6 +373,5 @@ private class TaskDetailView(
 private val REGULAR: Typeface = WEAR_REGULAR
 private val MEDIUM: Typeface = WEAR_MEDIUM
 private const val PRIMARY = WEAR_PRIMARY
-private const val ACCENT = WEAR_GOLD
+private const val ACCENT = WEAR_ACCENT_TEXT
 private const val CARD = WEAR_SURFACE2
-private const val CARD_PRESSED = WEAR_CONTROL_PRESSED

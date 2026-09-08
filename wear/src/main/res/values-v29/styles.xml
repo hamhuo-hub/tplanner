@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.TPlanner.Wear.Light" parent="Base.Theme.TPlanner.Wear.Light">
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:forceDarkAllowed">false</item>
+    </style>
+    <style name="Theme.TPlanner.Wear.Dialog" parent="Base.Theme.TPlanner.Wear.Dialog">
+        <item name="android:forceDarkAllowed">false</item>
+    </style>
+</resources>

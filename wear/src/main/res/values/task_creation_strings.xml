@@ -37,4 +37,10 @@
         <item>Cyan</item>
         <item>Graphite</item>
     </string-array>
+    <string name="task_create_hour">Hour</string>
+    <string name="task_create_minute">Minute</string>
+    <string name="task_create_day">Day</string>
+    <string name="task_create_month">Month</string>
+    <string name="task_create_decrease">Decrease selected value</string>
+    <string name="task_create_increase">Increase selected value</string>
 </resources>

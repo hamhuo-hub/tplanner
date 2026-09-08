@@ -47,10 +47,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.hamhuo.tplanner.designsystem.TPlannerGeometry
+import com.hamhuo.tplanner.PhoneGeometry as TPlannerGeometry
 import com.hamhuo.tplanner.designsystem.TPlannerTaskUnitModel
-import com.hamhuo.tplanner.designsystem.TPlannerTypography
+import com.hamhuo.tplanner.PhoneTypography as TPlannerTypography
 import com.hamhuo.tplanner.ui.components.TPlannerTaskUnit
+import com.hamhuo.tplanner.designsystem.TPlannerLightTokens as Tokens
+import androidx.compose.foundation.layout.heightIn
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -158,20 +160,21 @@ fun TaskWidget(
                         .background(CONTROL, RoundedCornerShape(TPlannerGeometry.RadiusPillDp.dp))
                         .border(1.dp, BORDER, RoundedCornerShape(TPlannerGeometry.RadiusPillDp.dp))
                         .clickable(onClick = onViewPickerClick)
+                        .heightIn(min = Tokens.Platform.Phone.Geometry.ControlMinHeight.dp)
                         .padding(start = 10.dp, end = 5.dp, top = 4.dp, bottom = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     Text(
                         viewLabel,
-                        color = GOLD,
+                        color = ACCENT_TEXT,
                         fontSize = TPlannerTypography.PhoneBodySp.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.SemiBold,
                     )
                     Icon(
                         Icons.Default.ArrowDropDown,
                         contentDescription = null,
-                        tint = GOLD,
+                        tint = ACCENT_TEXT,
                         modifier = Modifier.size(18.dp),
                     )
                 }
@@ -182,18 +185,18 @@ fun TaskWidget(
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (taskTotal > 0) {
-                    Text("$taskDone/$taskTotal", color = DIM, fontSize = TPlannerTypography.PhoneTaskTitleSp.sp, fontFamily = FontFamily.Monospace)
+                    Text("$taskDone/$taskTotal", color = DIM, fontSize = TPlannerTypography.PhoneTaskTitleSp.sp, fontFamily = FontFamily.SansSerif)
                 }
                 // 右侧 + 按钮
                 Box(
                     modifier = Modifier
-                        .size(34.dp)
+                        .size(Tokens.Platform.Phone.Geometry.TouchTargetMin.dp)
                         .background(CONTROL, CircleShape)
                         .border(1.dp, BORDER, CircleShape)
                         .clickable { showTypeSheet = true },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.label_new), tint = GOLD, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.label_new), tint = ACCENT_TEXT, modifier = Modifier.size(Tokens.Platform.Phone.Geometry.IconSize.dp))
                 }
             }
         }
@@ -309,7 +312,7 @@ private fun GroupHeader(
         if (collapsible) {
             Text(if (expanded) "▾" else "▸", color = GOLD_DARK, fontSize = TPlannerTypography.PhoneMetaSp.sp)
         }
-        Text(label, color = GOLD_DARK, fontSize = TPlannerTypography.PhoneMetaSp.sp, letterSpacing = 0.12.sp)
+        Text(label, color = GOLD_DARK, fontSize = TPlannerTypography.PhoneMetaSp.sp, letterSpacing = TPlannerTypography.PhoneLetterSpacingSp.sp)
         Box(
             Modifier
                 .background(GOLD_GHOST, RoundedCornerShape(TPlannerGeometry.RadiusSmallDp.dp))
@@ -347,13 +350,13 @@ private fun SwipeableTaskRow(
                 modifier = Modifier
                     .fillMaxSize()
                     .clip(RoundedCornerShape(TPlannerGeometry.RadiusCardDp.dp))
-                    .background(RED),
+                    .background(ERROR_BACKGROUND),
                 contentAlignment = Alignment.CenterEnd
             ) {
                 Icon(
                     Icons.Default.Delete,
                     contentDescription = stringResource(R.string.cd_delete),
-                    tint = Color.White,
+                    tint = RED,
                     modifier = Modifier.padding(end = 20.dp)
                 )
             }
@@ -389,9 +392,10 @@ fun TaskItem(
     val isDone = event.type == "task" && event.completed
     val startText = event.start.atZone(zone).format(fmt)
     val endText = event.end.atZone(zone).format(fmt)
-    val statusLabel = when (status) {
-        "now" -> stringResource(R.string.status_now)
-        "soon" -> stringResource(R.string.status_soon)
+    val statusLabel = when {
+        isDone -> ""
+        status == "now" -> stringResource(R.string.status_now)
+        status == "soon" -> stringResource(R.string.status_soon)
         else -> ""
     }
     TPlannerTaskUnit(
@@ -402,7 +406,7 @@ fun TaskItem(
             showTaskCheckbox = false,
             completed = isDone,
             past = status == "past",
-            current = status == "now",
+            current = !isDone && status == "now",
             accentColor = EVENT_COLORS.getOrElse(event.colorId) { EVENT_COLORS[0] }.toArgb(),
             checklistDone = event.checklist.count { it.completed },
             checklistTotal = event.checklist.size,

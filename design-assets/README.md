@@ -1,8 +1,8 @@
 # TPlanner Android brand assets
 
 The new light cross-client development baseline is in [`tokens/`](tokens/README.md), with
-one editable JSON source, generated platform values, and a migration map. It is not yet
-wired into every production theme; the Android ownership rules below still apply.
+one editable JSON source, generated platform values, and a migration map. Android integration
+is tracked in `docs/android-light-migration.md`; the ownership rules below still apply.
 
 ## Design-system source of truth
 
@@ -11,6 +11,12 @@ Android source file allowed to own product ARGB values. `TPlannerColors`, `TPlan
 and `TPlannerGeometry` are consumed by Phone and Wear business UI. A repeated or brand-semantic
 font size/radius must become a named shared token before it is used; renderers and screens must not
 create a local copy.
+
+Light product UI consumes `TPlannerLightTokens`, generated into a marked block of that canonical
+file from `tokens/tplanner-light.tokens.json`. Run `python scripts/generate-design-tokens.py --android`
+to update the block, shared XML colors for Activity themes, and the phone Markdown WebView CSS.
+Those resources are generated mirrors, not separate editable palettes. `TPlannerColors` remains
+for legacy watch-face art; do not recolor it globally when changing product UI.
 
 Watch-face art is deliberately independent from the product theme, but it is still canonicalized:
 Tide and Next colors live under `TPlannerWatchFacePalette` in that same file. A renderer may derive

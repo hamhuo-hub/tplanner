@@ -1,6 +1,6 @@
 # TPlanner 浅色设计令牌
 
-全客户端以 **冷灰蓝底、深色文字、橙色强调、白色边缘** 为统一方向。Web、Desktop、手机与 Wear 共用语义；字体、行高、点击尺寸按平台适配。本包是浅色开发基线，现有业务界面尚未整体换肤。
+全客户端以 **冷灰蓝底、深色文字、橙色强调、白色边缘** 为统一方向。Web、Desktop、手机与 Wear 共用语义；字体、行高、点击尺寸按平台适配。各端实际接入与验证进度见 [Android 记录](../../docs/android-light-migration.md) 和 [Web/Desktop 记录](../../docs/web-desktop-skin-coordination.md)。
 
 ## 使用入口
 
@@ -11,7 +11,7 @@
 | [generated/tplanner-light.css](generated/tplanner-light.css) | Web、Electron 主窗口及独立小窗 |
 | [generated/tplanner-light.ts](generated/tplanner-light.ts) | TypeScript 值与类型推断 |
 | [generated/tplanner-light.mjs](generated/tplanner-light.mjs) | 不经过 TypeScript 的 JavaScript 使用方 |
-| [generated/TPlannerLightTokens.kt](generated/TPlannerLightTokens.kt) | Android 接入样板，当前未加入生产 source set |
+| [generated/TPlannerLightTokens.kt](generated/TPlannerLightTokens.kt) | Kotlin 镜像；通过 `--android` 同步到 Android 唯一颜色入口 |
 | [adapters/mui-light.ts](adapters/mui-light.ts) | MUI 浅色 theme factory、文字按钮/输入框/焦点等基础适配 |
 | [generated/contrast-report.json](generated/contrast-report.json) | 可重复的颜色配对校验及表盘已知差距 |
 | [跨端迁移地图](../../docs/token-migration.md) | 实际代码入口、旧语义映射与迁移顺序 |
@@ -22,6 +22,15 @@
 python scripts/generate-design-tokens.py
 python scripts/generate-design-tokens.py --check
 ```
+
+Android 应用、启动窗口和手机 Markdown WebView 同源接入：
+
+```powershell
+python scripts/generate-design-tokens.py --android
+python scripts/generate-design-tokens.py --check --android
+```
+
+显式 `--android` 同步 `TPlannerDesignTokens.kt` 中的生成区块、`shared/src/main/res/values/tplanner_light_colors.xml` 和 `shared/src/main/assets/tplanner_light.css`。保留区块外的旧表盘令牌；不手改生成内容。普通命令仍只导出本设计包，避免 Web/Desktop 并行任务写入原生源码。
 
 只修改源 JSON，再生成。`--check` 检测导出是否过期；别名、类型或必需对比度不通过时生成失败。MUI 适配器只引用生成值，组件层不得再复制颜色。格式使用 [DTCG 2025.10](https://www.designtokens.org/tr/2025.10/format/) 的 `$type` / `$value` 与别名写法；生成器仅支持本包使用的类型和整 token 别名，不是通用 DTCG 实现。
 
@@ -109,6 +118,6 @@ import { lightTokens } from './tplanner-light.mjs';
 const colors = lightTokens.semantic.color;
 ```
 
-Android 正式接入时，将生成的对象并入现有唯一 ARGB 源 `TPlannerDesignTokens.kt`，或让生成器管理该源中的明确区块；本次不建立第二个生产颜色源。现有 `TPlannerColors` 仍服务 legacy，不能直接全部替换为浅色而遗漏前景、混色和状态。迁移批次再运行品牌检查与相应客户端构建。
+Android 的 `TPlannerLightTokens` 由生成器管理在唯一 ARGB 源 `TPlannerDesignTokens.kt` 的明确区块中。原 `TPlannerColors` 保留给既有表盘艺术依赖，业务界面显式消费新令牌。`TPlannerCategories` 统一适配分类配对，启动和平台控件使用生成 XML 颜色。品牌检查同时验证 Android 生成结果没有漂移。
 
 当前 Web 时间轴的 27px 摘要高度参与叠放算法；新字号不能直接替换其中的 10px 时间标签而保留原几何。颜色接入与布局迁移应分批验证。

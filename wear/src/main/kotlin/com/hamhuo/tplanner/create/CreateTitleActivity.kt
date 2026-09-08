@@ -13,8 +13,7 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.LinearLayout
-import com.hamhuo.tplanner.designsystem.TPlannerGeometry
-import com.hamhuo.tplanner.designsystem.TPlannerTypography
+import com.hamhuo.tplanner.designsystem.TPlannerLightTokens
 import java.util.UUID
 
 class CreateTitleActivity : WearPageActivity() {
@@ -36,18 +35,19 @@ class CreateTitleActivity : WearPageActivity() {
             id = View.generateViewId()
             setText(savedInstanceState?.getString(STATE_TITLE).orEmpty())
             setTextColor(CREATION_PRIMARY)
-            textSize = TPlannerTypography.WearDialogTitleSp
-            typeface = CREATION_MEDIUM
+            setHintTextColor(WEAR_MUTED)
+            highlightColor = TPlannerLightTokens.Semantic.Color.SelectedBackground
+            minimumHeight = wearDp(TPlannerLightTokens.Platform.Wear.Geometry.ControlMinHeight)
+            textSize = TPlannerLightTokens.Platform.Wear.Typography.Title.FontSize
+            typeface = WEAR_SEMIBOLD
+            wearTextMetrics()
             gravity = Gravity.CENTER_VERTICAL
             maxLines = 2
             filters = arrayOf(InputFilter.LengthFilter(MAX_TITLE_LENGTH))
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             imeOptions = EditorInfo.IME_ACTION_NEXT
             setPadding(dp(16), dp(10), dp(16), dp(10))
-            background = creationRounded(
-                CREATION_CARD,
-                dp(TPlannerGeometry.RadiusFieldDp).toFloat(),
-            )
+            background = wearInteractiveBackground(fill = WEAR_INPUT)
             setOnEditorActionListener { _, actionId, _ ->
                 if (actionId == EditorInfo.IME_ACTION_NEXT) {
                     continueToType()
@@ -67,7 +67,7 @@ class CreateTitleActivity : WearPageActivity() {
             )
             addView(
                 titleInput,
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(60)).apply {
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                     topMargin = dp(10)
                 },
             )

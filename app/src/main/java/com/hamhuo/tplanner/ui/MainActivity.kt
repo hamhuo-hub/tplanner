@@ -12,6 +12,9 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.SystemBarStyle
+import androidx.core.graphics.drawable.toDrawable
+import com.hamhuo.tplanner.designsystem.TPlannerLightTokens
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -60,7 +63,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        val canvas = TPlannerLightTokens.Semantic.Color.Canvas
+        window.setBackgroundDrawable(canvas.toDrawable())
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.light(canvas, canvas),
+            navigationBarStyle = SystemBarStyle.light(canvas, canvas),
+        )
         advancePermissionSetup()
         WatchTaskImportService.startIfAllowed(this)
         lifecycleScope.launch { initializeStorageAndContent() }
@@ -131,19 +139,21 @@ class MainActivity : ComponentActivity() {
         runCatching { TaskAlarmScheduler.reconcile(this, initialEvents) }
             .onFailure { Log.w(TAG, "Unable to reconcile alarms during startup", it) }
         setContent {
-            MainScreen(
-                store = store,
-                eventStore = eventStore,
-                manager = manager,
-                deepseekService = deepseekService,
-                amapApiKey = amapKey,
-                initialContent = initialContent,
-                initialEvents = initialEvents,
-                initialJournalDate = initialJournalDate,
-                initialJournalRecovery = initialJournalRecovery,
-                initialServerUrl = initialServerUrl,
-                initialEventRecovery = initialEventRecovery,
-            )
+            TPlannerPhoneTheme {
+                MainScreen(
+                    store = store,
+                    eventStore = eventStore,
+                    manager = manager,
+                    deepseekService = deepseekService,
+                    amapApiKey = amapKey,
+                    initialContent = initialContent,
+                    initialEvents = initialEvents,
+                    initialJournalDate = initialJournalDate,
+                    initialJournalRecovery = initialJournalRecovery,
+                    initialServerUrl = initialServerUrl,
+                    initialEventRecovery = initialEventRecovery,
+                )
+            }
         }
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {

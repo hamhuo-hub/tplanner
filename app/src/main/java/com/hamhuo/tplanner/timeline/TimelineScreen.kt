@@ -10,12 +10,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.hamhuo.tplanner.APP_ZONE
-import com.hamhuo.tplanner.BG
 import com.hamhuo.tplanner.ScheduleItem
+import com.hamhuo.tplanner.designsystem.TPlannerLightTokens
 import com.hamhuo.tplanner.timeline.components.TimelineAddButton
 import com.hamhuo.tplanner.timeline.components.TimelineBody
 import com.hamhuo.tplanner.timeline.components.TimelineDayHeader
@@ -86,7 +87,7 @@ fun TimelineScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(BG),
+            .background(Color(TPlannerLightTokens.Semantic.Color.Canvas)),
     ) {
         Column(Modifier.fillMaxSize()) {
             TimelineDayHeader(
@@ -102,6 +103,7 @@ fun TimelineScreen(
             TimelineStatusStrip(
                 day = selectedDay,
                 events = visibleEvents,
+                now = now.toInstant(),
                 zone = zone,
                 onEventClick = onEventClick,
             )

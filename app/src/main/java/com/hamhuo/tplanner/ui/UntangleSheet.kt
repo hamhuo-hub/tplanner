@@ -1,5 +1,11 @@
 package com.hamhuo.tplanner
 
+import com.hamhuo.tplanner.ui.components.TPlannerButton
+import com.hamhuo.tplanner.ui.components.TPlannerButtonStyle
+import com.hamhuo.tplanner.ui.components.TPlannerIconButton
+import com.hamhuo.tplanner.ui.components.TPlannerInputFrame
+import androidx.compose.ui.focus.onFocusChanged
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -37,8 +43,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.hamhuo.tplanner.designsystem.TPlannerGeometry
-import com.hamhuo.tplanner.designsystem.TPlannerTypography
+import com.hamhuo.tplanner.PhoneGeometry as TPlannerGeometry
+import com.hamhuo.tplanner.PhoneTypography as TPlannerTypography
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -110,17 +116,15 @@ fun UntangleSheet(
                     thinking -> "识别中…"
                     else -> "写日程"
                 },
-                color = GOLD,
+                color = ACCENT_TEXT,
                 fontSize = TPlannerTypography.PhoneTitleSp.sp,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.SemiBold,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (showEditor) {
-                    Text("提取", color = if (text.isNotBlank()) GOLD else DIM, fontSize = TPlannerTypography.PhoneBodySp.sp, fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.clickable { if (text.isNotBlank()) onSubmit(text) })
+                    TPlannerButton("提取", { onSubmit(text) }, enabled = text.isNotBlank())
                 }
-                Icon(Icons.Default.Close, contentDescription = "Close", tint = DIM,
-                    modifier = Modifier.size(18.dp).clickable { onDismiss() })
+                TPlannerIconButton(Icons.Default.Close, "Close", onDismiss)
             }
         }
 
@@ -132,7 +136,7 @@ fun UntangleSheet(
                     locationLoading -> stringResource(R.string.location_locating)
                     else -> stringResource(R.string.location_unavailable)
                 },
-                color = if (prefillLocation.isNotBlank()) GOLD else DIM,
+                color = if (prefillLocation.isNotBlank()) ACCENT_TEXT else DIM,
                 fontSize = TPlannerTypography.PhoneMetaSp.sp,
                 modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
             )
@@ -143,7 +147,7 @@ fun UntangleSheet(
             thinking -> {
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                        CircularProgressIndicator(color = GOLD, strokeWidth = 2.dp, modifier = Modifier.size(28.dp))
+                        CircularProgressIndicator(color = ACCENT_TEXT, strokeWidth = 2.dp, modifier = Modifier.size(28.dp))
                         Text("识别日程信息…", color = DIM, fontSize = TPlannerTypography.PhoneSupportingSp.sp)
                     }
                 }
@@ -165,7 +169,7 @@ fun UntangleSheet(
                 Column(
                     modifier = Modifier.fillMaxWidth()
                         .background(SURFACE, RoundedCornerShape(TPlannerGeometry.RadiusCardDp.dp))
-                        .border(1.dp, GOLD.copy(alpha = 0.5f), RoundedCornerShape(TPlannerGeometry.RadiusCardDp.dp))
+                        .border(1.dp, FOCUS, RoundedCornerShape(TPlannerGeometry.RadiusCardDp.dp))
                         .padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
@@ -176,11 +180,11 @@ fun UntangleSheet(
                         fontWeight = FontWeight.SemiBold,
                         lineHeight = TPlannerTypography.PhoneBodyLineHeightSp.sp,
                     )
-                    Text("$typeLabel · ${prettyWhen(action.startIso, action.endIso)}", color = GOLD, fontSize = TPlannerTypography.PhoneSupportingSp.sp)
+                    Text("$typeLabel · ${prettyWhen(action.startIso, action.endIso)}", color = ACCENT_TEXT, fontSize = TPlannerTypography.PhoneSupportingSp.sp)
                     Text("颜色 ${action.colorId + 1}", color = DIM, fontSize = TPlannerTypography.PhoneMetaSp.sp)
                     Text(
                         prettyAlarm(action.alarmEnabled, action.alarmOffsetMinutes),
-                        color = if (action.alarmEnabled) GOLD else DIM,
+                        color = if (action.alarmEnabled) ACCENT_TEXT else DIM,
                         fontSize = TPlannerTypography.PhoneMetaSp.sp,
                     )
                     if (action.note.isNotBlank()) Text(
@@ -203,27 +207,15 @@ fun UntangleSheet(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Box(
-                        modifier = Modifier.weight(1f).background(SURFACE2, RoundedCornerShape(TPlannerGeometry.RadiusCardDp.dp))
-                            .clickable { onDismiss() }.padding(vertical = 14.dp),
-                        contentAlignment = Alignment.Center,
-                    ) { Text(stringResource(R.string.action_cancel), color = DIM, fontSize = TPlannerTypography.PhoneTaskTitleSp.sp) }
-                    Box(
-                        modifier = Modifier.weight(1f).background(GOLD, RoundedCornerShape(TPlannerGeometry.RadiusCardDp.dp))
-                            .clickable { onConfirmAction(action) }.padding(vertical = 14.dp),
-                        contentAlignment = Alignment.Center,
-                    ) { Text("加入日程", color = BG, fontSize = TPlannerTypography.PhoneTaskTitleSp.sp, fontWeight = FontWeight.SemiBold) }
+                    TPlannerButton(stringResource(R.string.action_cancel), onDismiss, Modifier.weight(1f), TPlannerButtonStyle.Secondary)
+                    TPlannerButton("加入日程", { onConfirmAction(action) }, Modifier.weight(1f))
                 }
             }
 
             // ── editor ───────────────────────────────────────────────
             else -> {
-                Box(
-                    modifier = Modifier.weight(1f).fillMaxWidth()
-                        .background(SURFACE, RoundedCornerShape(TPlannerGeometry.RadiusCardDp.dp))
-                        .border(1.dp, BORDER, RoundedCornerShape(TPlannerGeometry.RadiusCardDp.dp))
-                        .padding(16.dp)
-                ) {
+                var editorFocused by remember { mutableStateOf(false) }
+                TPlannerInputFrame(modifier = Modifier.weight(1f).fillMaxWidth(), focused = editorFocused) {
                     BasicTextField(
                         value = text,
                         onValueChange = {
@@ -235,8 +227,9 @@ fun UntangleSheet(
                             fontSize = TPlannerTypography.PhoneEditorSp.sp,
                             lineHeight = TPlannerTypography.PhoneEditorLineHeightSp.sp,
                         ),
-                        cursorBrush = SolidColor(GOLD),
-                        modifier = Modifier.fillMaxSize().focusRequester(focusRequester),
+                        cursorBrush = SolidColor(FOCUS),
+                        modifier = Modifier.fillMaxSize().padding(16.dp).focusRequester(focusRequester)
+                            .onFocusChanged { editorFocused = it.isFocused },
                         decorationBox = { inner -> inner() }
                     )
                 }
