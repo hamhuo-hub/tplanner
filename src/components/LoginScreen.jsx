@@ -55,7 +55,7 @@ function LoginScreen({ onLogin }) {
             </section>
 
             <section className="login-panel">
-                <div className="login-card">
+                <div className="login-card tp-panel">
                     <header className="login-card-header">
                         <span className="login-lock"><LockKeyhole size={20} strokeWidth={1.8} /></span>
                         <p>安全访问</p>
@@ -71,6 +71,7 @@ function LoginScreen({ onLogin }) {
                         <label className="login-field">
                             <span>账号</span>
                             <input
+                                className="tp-field"
                                 type="text"
                                 value={account}
                                 onChange={(event) => setAccount(event.target.value)}
@@ -84,6 +85,7 @@ function LoginScreen({ onLogin }) {
                             <span>密码</span>
                             <span className="login-password-wrap">
                                 <input
+                                    className="tp-field"
                                     type={showPassword ? 'text' : 'password'}
                                     value={password}
                                     onChange={(event) => setPassword(event.target.value)}
@@ -115,7 +117,7 @@ function LoginScreen({ onLogin }) {
 
                         {error && <p className="login-error" role="alert">{error}</p>}
 
-                        <button type="submit" className="login-submit" disabled={isSubmitting}>
+                        <button type="submit" className="login-submit btn btn--primary" disabled={isSubmitting}>
                             <span>{isSubmitting ? '正在验证…' : '进入日程'}</span>
                             <ArrowRight size={18} />
                         </button>
@@ -127,7 +129,7 @@ function LoginScreen({ onLogin }) {
                     </footer>
                 </div>
 
-                <p className="login-panel-footer">tPlanner for macOS · Build 4.0</p>
+                <p className="login-panel-footer">tPlanner · 个人日程空间</p>
             </section>
         </main>
     )

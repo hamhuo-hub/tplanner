@@ -6,7 +6,7 @@ import { eventColors } from '../design-system/tokens';
  * @property {string} title
  * @property {Date} start
  * @property {Date} end
- * @property {number} colorId - 0-6
+ * @property {number} colorId - Stable category ID 0-7
  * @property {string} [note]
  * @property {'event'|'status'|'task'} [type] - Default 'event'
  * @property {Array<{id: string, text: string, completed: boolean}>} [checklist] - For 'task' type
@@ -25,9 +25,9 @@ export const EVENT_TYPES = {
  * @property {number} overlapMinutes
  */
 
-// Default event color palette — lower saturation, harmonious tones.
-// These are also exposed as CSS variables --clr-event-0 … --clr-event-7
-// so that .tptheme packages can override them via their "eventColors" field.
+// Category identity accents from the canonical light package, IDs 0..7.
+// Use categoryForId() for paired foreground/background paints. Legacy theme
+// accent overrides alone do not define a complete accessible light category.
 export const MASSEY_COLORS = eventColors;
 
 // CSS variable names corresponding to each color slot.

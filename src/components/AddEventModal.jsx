@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { toDate } from 'date-fns-tz';
 import { useTranslation } from 'react-i18next';
-import { MAX_LENGTH_TITLE, MASSEY_COLORS, EVENT_TYPES, TIMEZONES } from '../utils/constants';
+import { MAX_LENGTH_TITLE, EVENT_TYPES, TIMEZONES } from '../utils/constants';
+import { categoryTokens } from '../design-system';
 
 import {
     Dialog,
@@ -21,22 +22,8 @@ import {
 } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
-import { styled } from '@mui/material/styles';
-import { PlusCircle, MinusCircle } from 'lucide-react';
+import { PlusCircle, MinusCircle, Check } from 'lucide-react';
 import NoteEditor from './NoteEditor';
-
-const ColorButton = styled('button')(({ theme, colorSelected }) => ({
-    width: 32,
-    height: 32,
-    borderRadius: '50%',
-    border: colorSelected ? '2px solid #666' : '2px solid transparent',
-    padding: 0,
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-    '&:hover': {
-        transform: 'scale(1.1)',
-    },
-}));
 
 export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, initialEvent, events = [] }) {
     const { t } = useTranslation();
@@ -256,8 +243,8 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
 
                         {/* Recurrence Options — tasks only */}
                         {type === EVENT_TYPES.TASK && (
-                        <Box sx={{ border: '1px solid #eee', p: 1, borderRadius: 1 }}>
-                            <Stack direction="row" alignItems="center" justifyContent="space-between">
+                        <Box sx={{ border: '1px solid', borderColor: 'divider', p: 1, borderRadius: 'var(--tp-semantic-radius-control)' }}>
+                            <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="space-between">
                                 <Typography variant="body2" color="text.secondary">
                                     {t('event.recurrence', 'Repeat')}
                                 </Typography>
@@ -333,7 +320,7 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                                 />
                             )}
 
-                            <Stack direction="row" spacing={2} alignItems="center">
+                            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="stretch">
                                 <DatePicker
                                     label={t('event.startDate', 'Start Date')}
                                     value={startDate}
@@ -359,7 +346,7 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                                     />
                                 )}
                             </Stack>
-                            <Stack direction="row" spacing={2} alignItems="center">
+                            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="stretch">
                                 <DatePicker
                                     label={t('event.endDate', 'End Date')}
                                     value={endDate}
@@ -407,7 +394,7 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                         {/* Note */}
                         <Box>
                             <Typography variant="caption" color="text.secondary"
-                                sx={{ display: 'block', mb: 0.5, letterSpacing: '0.1em', textTransform: 'uppercase' }}
+                                sx={{ display: 'block', mb: 0.5 }}
                             >
                                 {t('event.note')}
                             </Typography>
@@ -438,6 +425,7 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                                             <IconButton
                                                 size="small"
                                                 color="error"
+                                                aria-label={`${t('actions.delete')} ${item.text || t('event.checklistItem', 'Item...')}`}
                                                 onClick={() => {
                                                     const newChecklist = checklist.filter((_, i) => i !== index);
                                                     setChecklist(newChecklist);
@@ -464,21 +452,23 @@ export default function AddEventModal({ isOpen, onClose, onSave, defaultDate, in
                             <Typography variant="body2" color="text.secondary" gutterBottom>
                                 {t('event.color')}
                             </Typography>
-                            <Stack direction="row" spacing={1}>
-                                {MASSEY_COLORS.map((c, i) => (
-                                    // Render color circle
-                                    // Using DOM button with Tailwind class for color? 
-                                    // Or mapping tailwind class to hex?
-                                    // Our constant uses Tailwind classes `bg-blue-600`.
-                                    // We can just use a div with className.
-                                    <div
-                                        key={i}
-                                        className={`rounded-full w-8 h-8 cursor-pointer border-2 ${colorId === i ? 'border-gray-600' : 'border-transparent'}`}
-                                        style={{ backgroundColor: c }}
-                                        onClick={() => setColorId(i)}
-                                    />
+                            <div className="event-category-picker" role="group" aria-label={t('event.color')}>
+                                {categoryTokens.map((category) => (
+                                    <button
+                                        type="button"
+                                        key={category.id}
+                                        className="event-category-option"
+                                        aria-label={`${t('event.color')} ${category.id + 1}`}
+                                        aria-pressed={colorId === category.id}
+                                        title={`${t('event.color')} ${category.id + 1}`}
+                                        style={{ backgroundColor: category.background, color: category.foreground, borderColor: category.border }}
+                                        onClick={() => setColorId(category.id)}
+                                    >
+                                        <span className="event-category-option__swatch" style={{ backgroundColor: category.accent }} />
+                                        {colorId === category.id && <Check size={16} aria-hidden="true" />}
+                                    </button>
                                 ))}
-                            </Stack>
+                            </div>
                         </Box>
 
                     </Stack>

@@ -10,24 +10,24 @@ export default function LanSync(props) {
     return (
         <div style={{ position: 'relative' }}>
             <button className="btn btn--ghost" onClick={() => setOpen(v => !v)} title="同步"
-                style={{ color: status === 'success' ? '#4A9DA8' : status === 'error' ? 'var(--clr-red,#C0392B)' : undefined }}>
+                style={{ color: status === 'success' ? 'var(--tp-semantic-color-success)' : status === 'error' ? 'var(--clr-red)' : undefined }}>
                 <Wifi size={13} />
             </button>
 
             {open && (
-                <div style={{ position: 'absolute', top: '100%', right: 0, zIndex: 300, width: 300, background: 'var(--clr-surface,#1e1e1e)', border: '1px solid var(--clr-border,#333)', borderRadius: 8, padding: 14, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div className="tp-popover" style={{ position: 'absolute', top: '100%', right: 0, zIndex: 300, width: 300, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontFamily: 'var(--font-display)', fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--clr-text-dim)' }}>同步服务器</span>
+                        <span style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--tp-profile-meta-font-size)', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--clr-text-dim)' }}>同步服务器</span>
                     </div>
-                    <input type="text" placeholder="https://sync.hamhuo.top" value={config.serverUrl}
+                    <input className="tp-field" type="text" aria-label="同步服务器地址" placeholder="https://sync.hamhuo.top" value={config.serverUrl}
                         onChange={e => setConfig(c => ({ ...c, serverUrl: e.target.value }))}
-                        onBlur={() => saveConfig(config)} style={inputStyle} />
-                    <div style={{ fontSize: 11, lineHeight: 1.6, color: 'var(--clr-text-dim)' }}>
+                        onBlur={() => saveConfig(config)} />
+                    <div style={{ fontSize: 'var(--tp-profile-meta-font-size)', lineHeight: 1.6, color: 'var(--clr-text-dim)' }}>
                         保存、完成或删除后立即同步；其他在线设备收到通知后自动拉取最新版本。
                     </div>
-                    {statusMsg && <span style={{ fontSize: 10, color: statusColor, fontFamily: 'var(--font-mono)' }}>{statusMsg}</span>}
+                    {statusMsg && <span style={{ fontSize: 'var(--tp-profile-meta-font-size)', color: statusColor, fontFamily: 'var(--font-body)' }}>{statusMsg}</span>}
                     {lastVersion > 0 && (
-                        <span style={{ fontSize: 10, color: 'var(--clr-text-dim)', fontFamily: 'var(--font-mono)' }}>
+                        <span style={{ fontSize: 'var(--tp-profile-meta-font-size)', color: 'var(--clr-text-dim)', fontFamily: 'var(--font-body)' }}>
                             本机镜像版本 v{lastVersion}
                         </span>
                     )}
@@ -41,9 +41,3 @@ export default function LanSync(props) {
         </div>
     );
 }
-
-const inputStyle = {
-    background: 'var(--clr-bg,#111)', border: '1px solid var(--clr-border,#333)',
-    borderRadius: 4, color: 'var(--clr-text,#e0e0e0)', fontSize: 12,
-    padding: '4px 8px', outline: 'none', width: '100%', fontFamily: 'var(--font-mono)',
-};

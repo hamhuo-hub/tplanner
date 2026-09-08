@@ -264,8 +264,8 @@ export default function Timeline({ startDate, endDate, events, onEventClick, onA
                     top: Math.min(selectionBox.y1, selectionBox.y2),
                     width: Math.abs(selectionBox.x2 - selectionBox.x1),
                     height: Math.abs(selectionBox.y2 - selectionBox.y1),
-                    background: 'rgba(201,168,76,0.12)',
-                    border: '1px solid rgba(201,168,76,0.7)',
+                    background: 'var(--tp-semantic-color-selected-background)',
+                    border: '1px solid var(--tp-semantic-color-focus)',
                     zIndex: 9999,
                     pointerEvents: 'none',
                 }} />

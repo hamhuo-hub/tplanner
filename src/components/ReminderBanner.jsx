@@ -43,14 +43,14 @@ export default function ReminderBanner({ events, onHighlight, travelTimezone }) 
                             <li key={ev.id}>
                                 <button
                                     onClick={() => onHighlight({ type: 'reminder', start: ev.start, end: ev.end })}
-                                    style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: 0, fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--clr-text)', textAlign: 'left' }}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: 0, fontFamily: 'var(--font-body)', fontSize: 'var(--tp-profile-meta-font-size)', color: 'var(--clr-text)', textAlign: 'left' }}
                                 >
                                     <strong style={{ color: 'var(--clr-blue)' }}>{ev.title}</strong>
                                     <span className="banner-tag">
                                         {`${formatInTimeZone(ev.start, tz, 'HH:mm')}–${formatInTimeZone(ev.end, tz, 'HH:mm')}`}
                                     </span>
                                     {isNow && (
-                                        <span className="banner-tag" style={{ background: 'var(--clr-blue)', color: '#fff' }}>
+                                        <span className="banner-tag" style={{ background: 'var(--tp-semantic-color-info-background)', color: 'var(--tp-semantic-color-info)' }}>
                                             {t('reminder.ongoing')}
                                         </span>
                                     )}
@@ -62,7 +62,7 @@ export default function ReminderBanner({ events, onHighlight, travelTimezone }) 
                 {hasMore && (
                     <button
                         onClick={() => setIsExpanded(!isExpanded)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, marginTop: 6, fontFamily: 'var(--font-display)', fontSize: '10px', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--clr-blue)' }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, marginTop: 6, fontFamily: 'var(--font-display)', fontSize: 'var(--tp-profile-meta-font-size)', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--clr-blue)' }}
                     >
                         {isExpanded
                             ? <><ChevronUp size={12} /> {t('actions.showLess')}</>

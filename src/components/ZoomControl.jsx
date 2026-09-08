@@ -71,7 +71,7 @@ export default function ZoomControl() {
                 id="btn-zoom-control"
                 style={{
                     fontFamily:    'var(--font-mono)',
-                    fontSize:      '11px',
+                    fontSize: 'var(--tp-profile-meta-font-size)',
                     letterSpacing: '0.04em',
                     minWidth:      44,
                     padding:       '3px 7px',
@@ -95,14 +95,14 @@ export default function ZoomControl() {
                         border:       '1px solid var(--clr-border-bright)',
                         borderTop:    '2px solid var(--clr-gold)',
                         borderRadius: 'var(--radius)',
-                        boxShadow:    '0 12px 40px rgba(0,0,0,0.5)',
+                        boxShadow:    'var(--tp-shadow-dialog)',
                         zIndex:       9000,
                         overflow:     'hidden',
                     }}
                 >
                     {/* Header */}
                     <div style={{ padding: '8px 12px 6px', borderBottom: '1px solid var(--clr-border)', background: 'var(--clr-void)' }}>
-                        <div style={{ fontFamily: 'var(--font-display)', fontSize: '11px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--clr-gold)' }}>
+                        <div style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--tp-profile-meta-font-size)', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--clr-gold)' }}>
                             {t('zoom.guiScale')}
                         </div>
                     </div>
@@ -114,7 +114,7 @@ export default function ZoomControl() {
                             className="btn btn--ghost"
                             disabled={zoom <= 0.5}
                             title={t('zoom.zoomOut')}
-                            style={{ padding: '4px 8px', opacity: zoom <= 0.5 ? 0.35 : 1 }}
+                            style={{ padding: '4px 8px', opacity: 1 }}
                         >
                             <ZoomOut size={13} />
                         </button>
@@ -137,15 +137,15 @@ export default function ZoomControl() {
                             className="btn btn--ghost"
                             disabled={zoom >= 2.0}
                             title={t('zoom.zoomIn')}
-                            style={{ padding: '4px 8px', opacity: zoom >= 2.0 ? 0.35 : 1 }}
+                            style={{ padding: '4px 8px', opacity: 1 }}
                         >
                             <ZoomIn size={13} />
                         </button>
                     </div>
 
                     {/* Current value display */}
-                    <div style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '18px', fontWeight: 600, color: 'var(--clr-gold)', letterSpacing: '0.04em', paddingBottom: 2 }}>
-                        {displayPct}<span style={{ fontSize: '11px', color: 'var(--clr-text-dim)' }}>%</span>
+                    <div style={{ textAlign: 'center', fontFamily: 'var(--font-body)', fontSize: '18px', fontWeight: 600, color: 'var(--clr-gold)', letterSpacing: '0.04em', paddingBottom: 2 }}>
+                        {displayPct}<span style={{ fontSize: 'var(--tp-profile-meta-font-size)', color: 'var(--clr-text-dim)' }}>%</span>
                     </div>
 
                     {/* Preset grid */}
@@ -155,12 +155,12 @@ export default function ZoomControl() {
                                 key={pct}
                                 onClick={() => setZoom(pct / 100)}
                                 style={{
-                                    background:    pct === displayPct ? 'var(--clr-gold)' : 'var(--clr-raised)',
+                                    background:    pct === displayPct ? 'var(--tp-semantic-color-accent)' : 'var(--clr-raised)',
                                     border:        `1px solid ${pct === displayPct ? 'var(--clr-gold)' : 'var(--clr-border)'}`,
                                     borderRadius:  'var(--radius-sm)',
-                                    color:         pct === displayPct ? '#0A0A0A' : 'var(--clr-text-dim)',
+                                    color:         pct === displayPct ? 'var(--tp-semantic-color-on-accent)' : 'var(--clr-text-dim)',
                                     fontFamily:    'var(--font-mono)',
-                                    fontSize:      '11px',
+                                    fontSize: 'var(--tp-profile-meta-font-size)',
                                     fontWeight:    pct === displayPct ? 700 : 400,
                                     letterSpacing: '0.06em',
                                     padding:       '5px 0',
@@ -193,11 +193,11 @@ export default function ZoomControl() {
                                 borderRadius:  'var(--radius-sm)',
                                 cursor:        zoom === 1 ? 'default' : 'pointer',
                                 fontFamily:    'var(--font-display)',
-                                fontSize:      '10px',
+                                fontSize: 'var(--tp-profile-meta-font-size)',
                                 letterSpacing: '0.12em',
                                 textTransform: 'uppercase',
                                 color:         zoom === 1 ? 'var(--clr-text-mute)' : 'var(--clr-text-dim)',
-                                opacity:       zoom === 1 ? 0.4 : 1,
+                                opacity: 1,
                                 transition:    'all var(--transition-fast)',
                             }}
                         >

@@ -1,0 +1,33 @@
+main { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding: var(--tp-semantic-spacing-inline); }
+#notes-editor {
+  flex: 1; min-height: 0; padding: var(--tp-semantic-spacing-block); overflow-y: auto;
+  border: var(--tp-semantic-stroke-control) solid var(--tp-component-field-border);
+  border-radius: var(--tp-component-field-radius);
+  background: var(--tp-component-field-background); color: var(--tp-component-field-foreground);
+  font: inherit; line-height: var(--tp-platform-desktop-typography-body-line-height);
+  outline: none; caret-color: var(--tp-semantic-color-focus); overflow-wrap: anywhere; white-space: pre-wrap;
+}
+#notes-editor:focus { border-color: var(--tp-component-field-focus-border); outline: var(--tp-semantic-stroke-focus) solid var(--tp-component-field-focus-border); outline-offset: var(--tp-primitive-space-s2); }
+#notes-editor.rendered { white-space: normal; }
+#notes-editor:empty::before { content: attr(data-placeholder); color: var(--tp-component-field-placeholder); pointer-events: none; }
+#notes-editor.rendered :is(h1, h2, h3, h4, h5, h6) { color: var(--tp-semantic-color-text-primary); font-weight: var(--tp-platform-desktop-typography-heading-font-weight); margin: var(--tp-semantic-spacing-block) 0 var(--tp-primitive-space-s4); line-height: var(--tp-platform-desktop-typography-heading-line-height); }
+#notes-editor.rendered h1 { font-size: var(--tp-platform-desktop-typography-heading-font-size); }
+#notes-editor.rendered h2 { font-size: var(--tp-platform-desktop-typography-title-font-size); }
+#notes-editor.rendered :is(h3, h4, h5, h6) { font-size: var(--tp-platform-desktop-typography-body-font-size); }
+#notes-editor.rendered :first-child { margin-top: 0; }
+#notes-editor.rendered p { margin: 0 0 var(--tp-semantic-spacing-inline); }
+#notes-editor.rendered :is(ul, ol) { padding-left: var(--tp-primitive-space-s24); margin: var(--tp-primitive-space-s4) 0 var(--tp-semantic-spacing-inline); }
+#notes-editor.rendered li { margin: var(--tp-primitive-space-s2) 0; }
+#notes-editor.rendered code { background: var(--tp-semantic-color-surface); color: var(--tp-semantic-color-accent-text); border-radius: var(--tp-semantic-radius-small); padding: var(--tp-primitive-space-s2) var(--tp-primitive-space-s4); font-size: var(--tp-platform-desktop-typography-meta-font-size); font-family: var(--tp-primitive-font-mono); }
+#notes-editor.rendered pre { background: var(--tp-semantic-color-surface); color: var(--tp-semantic-color-text-primary); border: var(--tp-semantic-stroke-control) solid var(--tp-semantic-color-border-subtle); border-radius: var(--tp-semantic-radius-control); padding: var(--tp-semantic-spacing-inline) var(--tp-semantic-spacing-block); margin: var(--tp-semantic-spacing-inline) 0; overflow-x: auto; }
+#notes-editor.rendered pre code { background: transparent; color: inherit; padding: 0; }
+#notes-editor.rendered blockquote { border-left: var(--tp-primitive-space-s4) solid var(--tp-semantic-color-accent); margin: var(--tp-semantic-spacing-inline) 0; padding: var(--tp-primitive-space-s4) var(--tp-semantic-spacing-inline); color: var(--tp-semantic-color-text-secondary); background: var(--tp-semantic-color-surface); }
+#notes-editor.rendered strong { color: var(--tp-semantic-color-text-primary); font-weight: 700; }
+#notes-editor.rendered em { color: var(--tp-semantic-color-text-secondary); }
+#notes-editor.rendered a { color: var(--tp-semantic-color-accent-text); text-decoration: underline; }
+#notes-editor.rendered hr { border: none; border-top: var(--tp-semantic-stroke-control) solid var(--tp-semantic-color-border-subtle); margin: var(--tp-semantic-spacing-block) 0; }
+#notes-editor.rendered table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
+#notes-editor.rendered :is(th, td) { border: var(--tp-semantic-stroke-control) solid var(--tp-semantic-color-border-subtle); padding: var(--tp-primitive-space-s4) var(--tp-semantic-spacing-inline); }
+#notes-editor.rendered img { max-width: 100%; height: auto; }
+#mode-hint, #save-indicator { -webkit-app-region: no-drag; }
+#save-indicator { color: var(--tp-semantic-color-success); min-height: 1.5em; }

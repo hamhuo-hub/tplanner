@@ -19,28 +19,25 @@ export default function ContextMenu({ x, y, event, onClose, onCopy, onDelete }) 
     }, [onClose]);
 
     // Keep menu inside viewport
-    const menuW = 160, menuH = 80;
-    const left = x + menuW > window.innerWidth  ? x - menuW : x;
-    const top  = y + menuH > window.innerHeight ? y - menuH : y;
+    const menuW = 220, menuH = 160;
+    const left = Math.max(8, Math.min(x, window.innerWidth - menuW - 8));
+    const top = Math.max(8, Math.min(y, window.innerHeight - menuH - 8));
 
     return (
         <div
             ref={ref}
+            className="tp-popover"
             style={{
                 position: 'fixed',
                 left, top,
                 zIndex: 9999,
-                background: 'var(--clr-surface, #1e1e1e)',
-                border: '1px solid var(--clr-border, #333)',
-                borderRadius: 6,
-                padding: '4px 0',
+                padding: 4,
                 minWidth: menuW,
-                boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
                 fontFamily: 'var(--font-display)',
-                fontSize: 12,
+                fontSize: 'var(--tp-profile-body-font-size)',
             }}
         >
-            <div style={{ padding: '4px 10px 6px', fontSize: 10, color: 'var(--clr-text-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', borderBottom: '1px solid var(--clr-border, #333)' }}>
+            <div style={{ padding: '4px 10px 6px', fontSize: 'var(--tp-profile-meta-font-size)', color: 'var(--clr-text-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', borderBottom: '1px solid var(--clr-border)' }}>
                 {event?.title}
             </div>
             <MenuItem icon={<Copy size={13} />} label={t('contextMenu.copy')} onClick={() => { onCopy(event); onClose(); }} />
@@ -52,17 +49,9 @@ export default function ContextMenu({ x, y, event, onClose, onCopy, onDelete }) 
 function MenuItem({ icon, label, onClick, danger }) {
     return (
         <button
+            type="button"
+            className={`tp-menu-item${danger ? ' tp-menu-item--danger' : ''}`}
             onClick={onClick}
-            style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                width: '100%', padding: '7px 14px',
-                background: 'none', border: 'none', cursor: 'pointer',
-                color: danger ? 'var(--clr-red, #C0392B)' : 'var(--clr-text, #e0e0e0)',
-                textAlign: 'left', fontSize: 12,
-                fontFamily: 'inherit',
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'none'}
         >
             {icon}
             {label}

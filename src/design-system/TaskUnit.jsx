@@ -1,8 +1,8 @@
-export function TaskCheckbox({ completed, disabled = false, title, onToggle }) {
+export function TaskCheckbox({ completed, disabled = false, title, onToggle, className = '' }) {
     return (
         <button
             type="button"
-            className={`tplanner-task-checkbox${completed ? ' tplanner-task-checkbox--completed' : ''}`}
+            className={`tplanner-task-checkbox${completed ? ' tplanner-task-checkbox--completed' : ''}${className ? ` ${className}` : ''}`}
             disabled={disabled}
             aria-pressed={completed}
             aria-label={title}
@@ -21,11 +21,11 @@ export function TaskCheckbox({ completed, disabled = false, title, onToggle }) {
     );
 }
 
-export function TaskProgress({ done, total }) {
+export function TaskProgress({ done, total, className = '' }) {
     if (total <= 0) return null;
     const completed = done === total;
     return (
-        <span className={`tplanner-task-progress${completed ? ' tplanner-task-progress--completed' : ''}`}>
+        <span className={`tplanner-task-progress${completed ? ' tplanner-task-progress--completed' : ''}${className ? ` ${className}` : ''}`}>
             {done}/{total}
         </span>
     );

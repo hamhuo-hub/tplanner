@@ -1,12 +1,13 @@
 import { format, areIntervalsOverlapping, max, min, addMinutes } from 'date-fns';
 import { fromZonedTime, formatInTimeZone } from 'date-fns-tz';
 import EventBlock from './EventBlock';
+import { MarkdownPreview } from './NoteEditor';
 import { useTranslation } from 'react-i18next';
 import { getDateLocale } from '../utils/dateLocale';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { marked } from 'marked';
 import { assignOverlapGroupLanes, computeCascadeLayout } from '../utils/laneLayout';
-import { event as eventTokens, eventColors, timeline } from '../design-system';
+import { categoryForId, timeline } from '../design-system';
 
 export default function EventRow({ date, events, onEventClick, onAddEvent, highlight, onDragStart, dragState, clashes, displayTimezone, onToggleTaskComplete, journalText, onContextMenu, selectedIds }) {
     const { t, i18n } = useTranslation();
@@ -166,13 +167,13 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                 <span className="event-row-date-dow">{format(date, 'EEE', { locale })}</span>
                 <span className={`event-row-date-num${isWeekend ? ' event-row-date-num--weekend' : ''}`}>
                     {format(date, 'd')}
-                    <span style={{ fontSize: '10px', display: 'block', fontWeight: 400, letterSpacing: '0.05em', color: 'var(--clr-text-dim)', marginTop: '-2px' }}>
+                    <span className="event-row-date-month">
                         {format(date, 'MMM', { locale })}
                     </span>
                 </span>
                 {/* Dot indicator when journal has content */}
                 {journalText && (
-                    <span style={{ display: 'block', width: 5, height: 5, borderRadius: '50%', background: 'var(--clr-gold, #C9A84C)', margin: '2px auto 0' }} />
+                    <span className="event-row-journal-dot" />
                 )}
 
                 {/* Journal popup — WYSIWYG: transparent textarea overlays live preview */}
@@ -180,32 +181,25 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                     <div
                         ref={popupRef}
                         onClick={e => e.stopPropagation()}
+                        className="journal-popup"
                         style={{
                             position: 'absolute',
                             left: '100%',
                             top: 0,
                             zIndex: 200,
                             width: 280,
-                            background: 'rgba(24,24,24,0.97)',
-                            border: '1px solid #383838',
-                            borderTop: '3px solid var(--clr-gold)',
-                            borderRadius: 6,
-                            boxShadow: '0 6px 24px rgba(0,0,0,0.6)',
                             display: 'flex',
                             flexDirection: 'column',
                         }}
                     >
                         {/* Header */}
-                        <span style={{ padding: '5px 10px', fontSize: '9px', color: '#6B6355', letterSpacing: '0.14em', textTransform: 'uppercase', borderBottom: '1px solid #2A2A2A' }}>
+                        <span className="journal-popup__header">
                             {format(date, i18n.language === 'zh' ? 'M月d日' : 'MMM d', { locale })} · {t('journal.label')}
                         </span>
 
                         {/* Read-only markdown preview */}
-                        <div
-                            className="journal-md-preview"
-                            dangerouslySetInnerHTML={{ __html: journalText ? renderedMarkdown : `<span style="color:#4A453D">${t('journal.placeholder')}</span>` }}
-                            style={{ padding: '7px 10px 8px', fontSize: '12px', lineHeight: 1.6, color: '#E8E0D0', minHeight: 80, maxHeight: 200, overflowY: 'auto' }}
-                        />
+                        <MarkdownPreview className="journal-md-preview journal-popup__preview"
+                            html={renderedMarkdown} placeholder={t('journal.placeholder')} />
                     </div>
                 )}
             </div>
@@ -230,20 +224,16 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                             }
                             const left  = (startMins / 1440) * 100;
                             const width = ((endMins - startMins) / 1440) * 100;
-                            const colorIdx = ev.colorId ?? 0;
-                            const colorVar = `var(--clr-event-${colorIdx}, ${eventColors[colorIdx] ?? eventColors[0]})`;
+                            const category = categoryForId(ev.colorId);
                             return (
-                                <div key={ev.id}
+                                <div key={ev.id} className="timeline-status-block"
                                     style={{
                                         position:        'absolute',
-                                        // Status uses the SAME normal-state surface as task
-                                        // blocks: type accent 50% over the raised surface,
-                                        // instead of a brighter raw event color.
-                                        backgroundColor: eventTokens.surface(colorVar),
+                                        backgroundColor: category.background,
+                                        color: category.foreground,
                                         left: `${left}%`, width: `${width}%`,
                                         top: `${ev.rowIndex * (timeline.statusRowHeight + timeline.statusRowGap)}px`, height: `${timeline.statusRowHeight}px`,
-                                        borderRadius:    2,
-                                        borderLeft:      '3px solid rgba(255,255,255,0.3)',
+                                        borderColor:     category.border,
                                         overflow:        'hidden',
                                         paddingLeft:     5,
                                         paddingRight:    4,
@@ -255,13 +245,7 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                                     }}
                                     onClick={e => { e.stopPropagation(); onEventClick(events.find(o => o.id === ev.id) || ev); }}
                                 >
-                                    <span style={{
-                                        fontFamily:    'var(--font-display)',
-                                        fontSize:      '9px',
-                                        fontWeight:    600,
-                                        letterSpacing: '0.06em',
-                                        textTransform: 'uppercase',
-                                        color:         'var(--clr-text)',
+                                    <span className="timeline-status-title" style={{
                                         whiteSpace:    'nowrap',
                                         overflow:      'hidden',
                                         textOverflow:  'ellipsis',
@@ -287,7 +271,7 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                         <div key={`lane-sep-${i}`} style={{
                             position: 'absolute', left: 0, right: 0,
                             top: `${topPx}px`, height: '1px',
-                            background: 'rgba(255,255,255,0.04)',
+                            background: 'var(--tp-semantic-color-border-subtle)',
                             pointerEvents: 'none', zIndex: 5,
                         }} />
                     );
@@ -307,7 +291,7 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                     const endMins   = (hEnd.getTime()   - dayStart.getTime()) / 60000;
                     return (
                         <div className="highlight-clash"
-                            style={{ position: 'absolute', left: `${(startMins / 1440) * 100}%`, width: `${((endMins - startMins) / 1440) * 100}%`, top: `${statusStripPx}px`, bottom: 0, background: 'rgba(192,57,43,0.12)', zIndex: 10, pointerEvents: 'none' }}
+                            style={{ position: 'absolute', left: `${(startMins / 1440) * 100}%`, width: `${((endMins - startMins) / 1440) * 100}%`, top: `${statusStripPx}px`, bottom: 0, zIndex: 10, pointerEvents: 'none' }}
                         />
                     );
                 })()}
@@ -367,7 +351,7 @@ export default function EventRow({ date, events, onEventClick, onAddEvent, highl
                                 left: `${(startMins / 1440) * 100}%`,
                                 width: `${((endMins - startMins) / 1440) * 100}%`,
                                 top: `${statusStripPx + timeline.eventGap}px`, height: `${eventAreaHeight - timeline.eventGap - timeline.eventSummaryHeight}px`, zIndex: 50, position: 'absolute',
-                                opacity: 0.75, border: '2px dashed rgba(201,168,76,0.8)',
+                                opacity: 1, border: '2px dashed var(--tp-semantic-color-focus)',
                             }}
                         />
                     );

@@ -1,3 +1,5 @@
+import { initializeWindowControls } from './widget-shared.mjs';
+
 (function () {
   'use strict';
 
@@ -19,9 +21,9 @@
 
   function showSaved() {
     var el = $('save-indicator');
-    el.classList.add('visible');
+    el.textContent = '已保存';
     clearTimeout(el._t);
-    el._t = setTimeout(function () { el.classList.remove('visible'); }, 1200);
+    el._t = setTimeout(function () { el.textContent = ''; }, 1200);
   }
 
   function renderMd(text) {
@@ -55,7 +57,8 @@
     var operationStartText = '';
 
     if (!api) {
-      editor.textContent = 'notesAPI 不可用 — preload 未注入';
+      editor.textContent = '暂时无法加载随手记，请重新打开便签。';
+      editor.contentEditable = 'false';
       return;
     }
 
@@ -104,18 +107,7 @@
       operationStartText = rawText;
     });
 
-    // Always-on-top pin
-    api.isAlwaysOnTop().then(function (on) {
-      $('btn-pin').classList.toggle('active', on);
-    });
-    $('btn-pin').addEventListener('click', function () {
-      api.toggleAlwaysOnTop().then(function (on) {
-        $('btn-pin').classList.toggle('active', on);
-      });
-    });
-
-    $('btn-open').addEventListener('click', api.openMain);
-    $('btn-close').addEventListener('click', api.close);
+    initializeWindowControls(api);
   }
 
   if (document.readyState === 'loading') {

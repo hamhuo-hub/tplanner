@@ -1,314 +1,259 @@
 import { createTheme } from '@mui/material/styles';
-import { colors, geometry, typography } from './design-system/tokens';
+import { createLightThemeOptions } from '../design-assets/tokens/adapters/mui-light';
+import { colors as c, lightTokens as t, platformProfile, typography } from './design-system/tokens';
 
-/**
- * MUI Black-Gold Dark Theme — Soviet Constructivism
- */
-const theme = createTheme({
-    palette: {
-        mode: 'dark',
-        primary: {
-            main: colors.gold,
-            light: colors.goldBright,
-            dark: colors.goldDark,
-            contrastText: colors.textOnAccent,
-        },
-        secondary: {
-            main: colors.red,
-            light: '#E74C3C',
-            dark: '#922B21',
-            contrastText: '#ffffff',
-        },
-        error:   { main: colors.red },
-        warning: { main: colors.gold },
-        success: { main: colors.green },
-        info:    { main: colors.blue },
-        background: {
-            default: colors.background,
-            paper: colors.surface,
-        },
-        text: {
-            primary: colors.textPrimary,
-            secondary: colors.textSecondary,
-            disabled: colors.textMuted,
-        },
-        divider: colors.border,
-    },
+const p = t.platform[platformProfile];
+const radius = t.semantic.radius;
+const spacing = t.semantic.spacing;
+const focus = {
+    outline: `${t.component.button.focus.width}px solid ${c.focus}`,
+    outlineOffset: t.component.button.focus.offset,
+};
+const shadow = component => `${component.shadowX}px ${component.shadowY}px ${component.shadowBlur}px ${component.shadowSpread}px color-mix(in srgb, ${component.shadowColor} ${component.shadowOpacity * 100}%, transparent)`;
+const panelShadow = shadow(t.component.panel);
+const dialogShadow = shadow(t.component.dialog);
+const controlSize = {
+    minHeight: p.geometry.controlMinHeight,
+    '@media (pointer: coarse)': { minHeight: p.geometry.touchTargetMin },
+};
+const selectedFill = {
+    backgroundColor: c.accent,
+    color: c.onAccent,
+    border: `${t.semantic.stroke.control}px solid ${t.component.button.primary.border}`,
+    '&:hover, &:focus': { backgroundColor: c.accentHover },
+};
+const inputRoot = {
+    ...controlSize,
+    backgroundColor: c.input,
+    color: c.textPrimary,
+    borderRadius: radius.control,
+    '@media (max-width: 600px)': { fontSize: '1rem' },
+};
 
-    typography: {
-        fontFamily: typography.mono,
-        h1: { fontFamily: typography.display, fontWeight: 700, letterSpacing: '0.06em' },
-        h2: { fontFamily: typography.display, fontWeight: 700, letterSpacing: '0.05em' },
-        h3: { fontFamily: typography.display, fontWeight: 600, letterSpacing: '0.05em' },
-        h4: { fontFamily: typography.display, fontWeight: 600 },
-        h5: { fontFamily: typography.display, fontWeight: 500 },
-        h6: { fontFamily: typography.display, fontWeight: 500 },
-        button: {
-            fontFamily: typography.display,
-            fontWeight: 500,
-            letterSpacing: '0.1em',
-            textTransform: 'uppercase',
-        },
-        caption: { fontFamily: typography.body, fontSize: '0.7rem', letterSpacing: '0.1em' },
-        overline: { fontFamily: typography.body, letterSpacing: '0.2em' },
-    },
-
-    shape: { borderRadius: geometry.radiusSmallNumber },
-
+/** The canonical factory provides the baseline; this layer covers actual app components. */
+const theme = createTheme(createLightThemeOptions(platformProfile), {
+    typography: { htmlFontSize: 16 },
     components: {
-        // ── Dialog ──────────────────────────────────────────────────────────
-        MuiDialog: {
+        MuiBackdrop: {
             styleOverrides: {
-                paper: {
-                    background: colors.surface,
-                    border: `1px solid ${colors.border}`,
-                    borderTop: `3px solid ${colors.gold}`,
-                    borderRadius: 2,
-                    boxShadow: '0 24px 80px rgba(0,0,0,0.7)',
-                    backgroundImage: 'none',
+                root: { backgroundColor: 'var(--tp-overlay-background)' },
+                invisible: { backgroundColor: 'transparent' },
+            },
+        },
+        MuiCssBaseline: {
+            styleOverrides: {
+                html: { fontSize: '16px', colorScheme: 'light' },
+                '@media (prefers-reduced-motion: reduce)': {
+                    '*, *::before, *::after': { animationDuration: '0s !important', transitionDuration: '0s !important' },
                 },
             },
+        },
+        MuiDialog: {
+            styleOverrides: { paper: { backgroundImage: 'none' } },
         },
         MuiDialogTitle: {
             styleOverrides: {
                 root: {
-                    fontFamily: typography.display,
-                    fontWeight: 700,
-                    fontSize: '1rem',
-                    letterSpacing: '0.08em',
-                    textTransform: 'uppercase',
-                    color: colors.gold,
-                    borderBottom: `1px solid ${colors.border}`,
-                    padding: '14px 18px',
-                    paddingLeft: '22px',
-                    position: 'relative',
-                    '&::before': {
-                        content: '""',
-                        position: 'absolute',
-                        left: 0, top: 0, bottom: 0,
-                        width: 3,
-                        background: colors.gold,
-                    },
+                    fontFamily: typography.body,
+                    fontSize: `${p.typography.title.fontSize / 16}rem`,
+                    fontWeight: p.typography.title.fontWeight,
+                    lineHeight: p.typography.title.lineHeight,
+                    color: c.textPrimary,
+                    borderBottom: `1px solid ${c.borderSubtle}`,
+                    padding: `${spacing.block}px ${spacing.section}px`,
                 },
             },
         },
         MuiDialogContent: {
             styleOverrides: {
                 root: {
-                    padding: '18px',
-                    background: colors.surface,
+                    padding: spacing.section,
+                    color: c.textPrimary,
                     '&::-webkit-scrollbar': { width: 6 },
-                    '&::-webkit-scrollbar-track': { background: '#060606' },
-                    '&::-webkit-scrollbar-thumb': { background: colors.goldDark, borderRadius: 0 },
+                    '&::-webkit-scrollbar-track': { background: c.surface },
+                    '&::-webkit-scrollbar-thumb': { background: c.borderControl, borderRadius: radius.pill },
                 },
             },
         },
         MuiDialogActions: {
             styleOverrides: {
                 root: {
-                    padding: '12px 18px',
-                    borderTop: `1px solid ${colors.border}`,
-                    background: colors.background,
-                    gap: 8,
+                    padding: `${spacing.block}px ${spacing.section}px`,
+                    borderTop: `1px solid ${c.borderSubtle}`,
+                    backgroundColor: c.surface,
+                    gap: spacing.inline,
+                    flexWrap: 'wrap',
                 },
             },
         },
-
-        // ── TextField ────────────────────────────────────────────────────────
-        MuiTextField: {
-            defaultProps: { variant: 'outlined', size: 'small' },
-        },
+        MuiTextField: { defaultProps: { variant: 'outlined', size: 'small' } },
         MuiOutlinedInput: {
             styleOverrides: {
                 root: {
-                    fontFamily: typography.body,
-                    fontSize: '0.8rem',
-                    borderRadius: 2,
-                    background: colors.background,
-                    '& fieldset': { borderColor: colors.border },
-                    '&:hover fieldset': { borderColor: `${colors.goldDark} !important` },
-                    '&.Mui-focused fieldset': { borderColor: `${colors.gold} !important`, borderWidth: '1px !important' },
+                    ...inputRoot,
+                    '&&.Mui-focused:not(.Mui-error) .MuiOutlinedInput-notchedOutline': { borderColor: c.focus },
+                    '&&.Mui-error .MuiOutlinedInput-notchedOutline': { borderColor: c.error },
                 },
-                input: {
-                    color: colors.textPrimary,
-                    fontFamily: typography.body,
-                    '&::placeholder': { color: colors.textMuted, opacity: 1 },
+            },
+        },
+        MuiPickersOutlinedInput: {
+            styleOverrides: {
+                root: {
+                    ...inputRoot,
+                    '& .MuiPickersOutlinedInput-notchedOutline': { borderColor: c.borderControl },
+                    '&:hover .MuiPickersOutlinedInput-notchedOutline': { borderColor: c.focus },
+                    // Picker color variants include :not(.Mui-error); match that
+                    // condition and outrank the palette.primary accent fill.
+                    '&&.Mui-focused:not(.Mui-error) .MuiPickersOutlinedInput-notchedOutline': { borderColor: c.focus },
+                    '&&.Mui-error .MuiPickersOutlinedInput-notchedOutline': { borderColor: c.error },
                 },
+                input: { color: c.textPrimary },
             },
         },
         MuiInputLabel: {
             styleOverrides: {
                 root: {
-                    fontFamily: typography.body,
-                    fontSize: '0.75rem',
-                    letterSpacing: '0.08em',
-                    color: colors.textSecondary,
-                    '&.Mui-focused': { color: colors.gold },
+                    '&&.Mui-focused:not(.Mui-error)': { color: c.focus },
+                    '&&.Mui-error': { color: c.error },
                 },
             },
         },
-        MuiSelect: {
-            styleOverrides: { icon: { color: colors.goldDark } },
-        },
-
-        // ── Button ────────────────────────────────────────────────────────────
-        MuiButton: {
-            styleOverrides: {
-                root: {
-                    borderRadius: 2,
-                    fontFamily: typography.display,
-                    letterSpacing: '0.1em',
-                    fontSize: '0.75rem',
-                    fontWeight: 500,
-                    textTransform: 'uppercase',
-                },
-                contained: {
-                    background: colors.gold,
-                    color: colors.textOnAccent,
-                    boxShadow: 'none',
-                    '&:hover': { background: colors.goldBright, boxShadow: `0 0 16px ${colors.goldGlow}` },
-                },
-                outlined: {
-                    borderColor: colors.border,
-                    color: colors.textSecondary,
-                    '&:hover': { borderColor: colors.gold, color: colors.gold, background: colors.goldSubtle },
-                },
-                text: {
-                    color: colors.textSecondary,
-                    '&:hover': { color: colors.gold, background: colors.goldSubtle },
-                },
-            },
-        },
+        MuiSelect: { styleOverrides: { icon: { color: c.textSecondary } } },
         MuiIconButton: {
             styleOverrides: {
                 root: {
-                    borderRadius: 2,
-                    color: colors.textSecondary,
-                    '&:hover': { color: colors.gold, background: colors.goldGhost },
+                    ...controlSize,
+                    minWidth: p.geometry.controlMinHeight,
+                    borderRadius: radius.control,
+                    color: c.textSecondary,
+                    '@media (pointer: coarse)': { minWidth: p.geometry.touchTargetMin, minHeight: p.geometry.touchTargetMin },
+                    '&:hover': { color: c.accentText, backgroundColor: c.hoverBackground },
+                    '&.Mui-focusVisible': focus,
+                    '&.Mui-disabled': { color: c.disabledForeground, opacity: 1 },
                 },
             },
         },
-
-        // ── ToggleButton ─────────────────────────────────────────────────────
         MuiToggleButton: {
             styleOverrides: {
                 root: {
-                    fontFamily: typography.display,
-                    fontSize: '0.72rem',
-                    letterSpacing: '0.1em',
-                    textTransform: 'uppercase',
-                    fontWeight: 500,
-                    borderRadius: 2,
-                    color: colors.textSecondary,
-                    borderColor: colors.border,
+                    ...controlSize,
+                    borderRadius: radius.control,
+                    fontFamily: typography.body,
+                    fontSize: `${p.typography.body.fontSize / 16}rem`,
+                    fontWeight: p.typography.taskTitle.fontWeight,
+                    textTransform: 'none',
+                    color: c.textSecondary,
+                    borderColor: c.borderControl,
                     '&.Mui-selected': {
-                        color: colors.textOnAccent,
-                        background: colors.gold,
-                        borderColor: colors.gold,
-                        '&:hover': { background: colors.goldBright },
+                        color: c.accentText, backgroundColor: c.selectedBackground, borderColor: c.focus,
+                        '&:hover': { backgroundColor: c.hoverBackground },
                     },
-                    '&:hover': { background: colors.goldGhost, color: colors.gold },
+                    '&:hover': { backgroundColor: c.hoverBackground, color: c.accentText },
+                    '&.Mui-focusVisible': focus,
                 },
             },
         },
-        MuiToggleButtonGroup: {
-            styleOverrides: {
-                root: {
-                    gap: 0,
-                    '& .MuiToggleButtonGroup-grouped': {
-                        borderRadius: 0,
-                        '&:first-of-type': { borderRadius: '2px 0 0 2px' },
-                        '&:last-of-type':  { borderRadius: '0 2px 2px 0' },
-                    },
-                },
-            },
-        },
-
-        // ── Date/Time Pickers ─────────────────────────────────────────────────
         MuiPickersDay: {
             styleOverrides: {
                 root: {
-                    borderRadius: 2,
-                    fontFamily: typography.body,
-                    fontSize: '0.75rem',
-                    '&.Mui-selected': { background: `${colors.gold} !important`, color: colors.textOnAccent },
-                    '&:hover': { background: colors.goldHover },
+                    borderRadius: radius.control,
+                    color: c.textPrimary,
+                    fontSize: `${p.typography.meta.fontSize / 16}rem`,
+                    '&.Mui-selected': selectedFill,
+                    '&.MuiPickersDay-today': { borderColor: c.focus },
+                    '&:hover': { backgroundColor: c.hoverBackground },
+                    '&.Mui-focusVisible': focus,
                 },
             },
         },
         MuiPickersCalendarHeader: {
-            styleOverrides: {
-                label: {
-                    fontFamily: typography.display,
-                    letterSpacing: '0.05em',
-                    textTransform: 'uppercase',
-                    color: colors.gold,
-                },
-            },
+            styleOverrides: { label: { fontFamily: typography.body, color: c.textPrimary } },
         },
         MuiDateCalendar: {
-            styleOverrides: { root: { background: colors.surface, borderRadius: geometry.radiusSmallNumber } },
+            styleOverrides: { root: { backgroundColor: c.raised, borderRadius: radius.card } },
         },
         MuiClock: {
-            styleOverrides: {
-                pin: { background: colors.gold },
-                clock: { background: colors.background },
-            },
+            styleOverrides: { pin: { backgroundColor: c.accentText }, clock: { backgroundColor: c.canvas } },
         },
         MuiClockNumber: {
             styleOverrides: {
                 root: {
+                    color: c.textPrimary,
                     fontFamily: typography.body,
-                    fontSize: '0.7rem',
-                    '&.Mui-selected': { background: colors.gold, color: colors.textOnAccent },
+                    fontSize: `${p.typography.meta.fontSize / 16}rem`,
+                    '&.Mui-selected': { backgroundColor: c.accent, color: c.onAccent },
                 },
             },
         },
         MuiClockPointer: {
             styleOverrides: {
-                root: { background: colors.gold },
-                thumb: { background: colors.gold, borderColor: colors.gold },
+                root: { backgroundColor: c.accentText },
+                thumb: { backgroundColor: c.accent, borderColor: c.accentText },
             },
         },
-
-        // ── Paper / Popover ───────────────────────────────────────────────────
         MuiPaper: {
             styleOverrides: {
-                root: {
-                    backgroundImage: 'none',
-                    background: colors.surface,
-                    border: `1px solid ${colors.border}`,
-                    borderRadius: 2,
-                },
+                root: { backgroundImage: 'none', color: c.textPrimary },
+                rounded: { borderRadius: radius.card },
+                elevation1: { boxShadow: panelShadow },
             },
         },
         MuiPopover: {
             styleOverrides: {
-                paper: { border: '1px solid #383838', boxShadow: '0 8px 32px rgba(0,0,0,0.6)' },
+                paper: {
+                    backgroundColor: c.raised,
+                    border: `${t.component.panel.edgeWidth}px solid ${t.component.panel.edge}`,
+                    borderRadius: radius.card,
+                    boxShadow: dialogShadow,
+                },
             },
-        },
-
-        // ── Misc ──────────────────────────────────────────────────────────────
-        MuiDivider: {
-            styleOverrides: { root: { borderColor: colors.border } },
-        },
-        MuiTypography: {
-            styleOverrides: { root: { fontFamily: typography.body } },
         },
         MuiMenuItem: {
             styleOverrides: {
                 root: {
+                    ...controlSize,
                     fontFamily: typography.body,
-                    fontSize: '0.78rem',
-                    color: colors.textPrimary,
-                    '&:hover': { background: colors.goldGhost },
+                    fontSize: `${p.typography.body.fontSize / 16}rem`,
+                    color: c.textPrimary,
+                    '&:hover': { backgroundColor: c.hoverBackground },
                     '&.Mui-selected': {
-                        background: colors.goldSelected,
-                        '&:hover': { background: colors.goldSelectedHover },
+                        backgroundColor: c.selectedBackground, color: c.accentText,
+                        '&:hover': { backgroundColor: c.hoverBackground },
                     },
+                    '&.Mui-focusVisible': { ...focus, outlineOffset: -2 },
                 },
             },
         },
+        MuiTooltip: {
+            styleOverrides: {
+                tooltip: {
+                    backgroundColor: c.raised,
+                    color: c.textPrimary,
+                    border: `1px solid ${c.borderSubtle}`,
+                    borderRadius: radius.control,
+                    boxShadow: panelShadow,
+                    fontSize: `${p.typography.meta.fontSize / 16}rem`,
+                    lineHeight: p.typography.meta.lineHeight,
+                },
+                arrow: { color: c.raised },
+            },
+        },
+        MuiSwitch: {
+            styleOverrides: {
+                switchBase: {
+                    color: c.textSecondary,
+                    '&:hover': { backgroundColor: c.hoverBackground },
+                    '&.Mui-checked': { color: c.accentText },
+                    '&.Mui-checked + .MuiSwitch-track': { backgroundColor: c.selectedBackground, opacity: 1 },
+                    '&.Mui-disabled': { color: c.disabledForeground },
+                    '&.Mui-disabled + .MuiSwitch-track': { backgroundColor: c.disabledBackground, opacity: 1 },
+                    '&.Mui-focusVisible': focus,
+                },
+                track: { backgroundColor: c.disabledBackground, border: `1px solid ${c.borderControl}`, opacity: 1 },
+                thumb: { boxShadow: 'none' },
+            },
+        },
+        MuiDivider: { styleOverrides: { root: { borderColor: c.borderSubtle } } },
     },
 });
 

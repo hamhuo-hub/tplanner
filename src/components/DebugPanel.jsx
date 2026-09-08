@@ -100,35 +100,35 @@ export default function DebugPanel() {
     return (
         <div style={{
             position: 'fixed', bottom: 0, right: 0, zIndex: 9000,
-            width: 520, height: 340,
-            background: '#0d0d0d', border: '1px solid #2a2a2a',
-            borderRadius: '8px 0 0 0',
+            width: 'min(520px, 100vw)', height: 'min(340px, 70dvh)',
+            background: 'var(--tp-semantic-color-surface)', border: '1px solid var(--tp-semantic-color-border-subtle)',
+            borderRadius: 'var(--tp-semantic-radius-card)',
             display: 'flex', flexDirection: 'column',
             fontFamily: 'var(--font-mono, monospace)',
-            fontSize: 11,
-            boxShadow: '0 -4px 20px rgba(0,0,0,0.7)',
+            fontSize: 'var(--tp-profile-meta-font-size)',
+            boxShadow: 'var(--tp-shadow-dialog)',
         }}>
             {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderBottom: '1px solid #222', background: '#111', borderRadius: '8px 0 0 0' }}>
-                <Terminal size={12} style={{ color: '#666' }} />
-                <span style={{ color: '#888', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{t('debug.title')}</span>
-                <span style={{ color: '#444', fontSize: 10, marginLeft: 2 }}>F12</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderBottom: '1px solid var(--tp-semantic-color-border-subtle)', background: 'var(--tp-semantic-color-canvas)', borderRadius: 'var(--tp-semantic-radius-card)' }}>
+                <Terminal size={12} style={{ color: 'var(--tp-semantic-color-text-secondary)' }} />
+                <span style={{ color: 'var(--tp-semantic-color-text-secondary)', fontSize: 'var(--tp-profile-meta-font-size)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{t('debug.title')}</span>
+                <span style={{ color: 'var(--tp-semantic-color-text-muted)', fontSize: 'var(--tp-profile-meta-font-size)', marginLeft: 2 }}>F12</span>
 
                 {/* Perf badges */}
                 {perf && (
                     <div style={{ display: 'flex', gap: 6, marginLeft: 8 }}>
-                        <Badge icon={<MemoryStick size={9} />} label={fmt(perf.processMemory?.rss)} color="#5B8FCC" title="Main process RSS" />
-                        <Badge icon={<Cpu size={9} />} label={`${Math.round(perf.uptime)}s`} color="#4A9DA8" title="Uptime" />
+                        <Badge icon={<MemoryStick size={9} />} label={fmt(perf.processMemory?.rss)} color="var(--tp-semantic-color-info)" title="Main process RSS" />
+                        <Badge icon={<Cpu size={9} />} label={`${Math.round(perf.uptime)}s`} color="var(--tp-semantic-color-success)" title="Uptime" />
                     </div>
                 )}
 
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
                     <IconBtn onClick={refreshPerf} title={t('debug.refreshPerf')}><RefreshCw size={11} /></IconBtn>
                     <IconBtn onClick={openDevTools} title={t('debug.openDevTools')}>
-                        <span style={{ fontSize: 10, letterSpacing: 0 }}>DevTools</span>
+                        <span style={{ fontSize: 'var(--tp-profile-meta-font-size)', letterSpacing: 0 }}>DevTools</span>
                     </IconBtn>
                     <IconBtn onClick={clearLogs} title={t('debug.clearLogs')}>
-                        <span style={{ fontSize: 10 }}>{t('debug.clearLogs')}</span>
+                        <span style={{ fontSize: 'var(--tp-profile-meta-font-size)' }}>{t('debug.clearLogs')}</span>
                     </IconBtn>
                     <IconBtn onClick={() => setOpen(false)} title={t('debug.close')}><X size={11} /></IconBtn>
                 </div>
@@ -136,7 +136,7 @@ export default function DebugPanel() {
 
             {/* Perf detail row */}
             {perf && (
-                <div style={{ display: 'flex', gap: 12, padding: '4px 10px', borderBottom: '1px solid #1a1a1a', background: '#0f0f0f', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 12, padding: '4px 10px', borderBottom: '1px solid var(--tp-semantic-color-border-subtle)', background: 'var(--tp-semantic-color-surface)', flexWrap: 'wrap' }}>
                     <PerfItem label="Main RSS"    value={fmt(perf.processMemory?.rss)} />
                     <PerfItem label="Heap used"   value={fmt(perf.processMemory?.heapUsed)} />
                     <PerfItem label="Heap total"  value={fmt(perf.processMemory?.heapTotal)} />
@@ -147,20 +147,20 @@ export default function DebugPanel() {
             )}
 
             {/* Filter */}
-            <div style={{ padding: '4px 10px', borderBottom: '1px solid #1a1a1a' }}>
+            <div style={{ padding: '4px 10px', borderBottom: '1px solid var(--tp-semantic-color-border-subtle)' }}>
                 <input
                     type="text"
                     placeholder={t('debug.filterPlaceholder')}
                     value={filter}
                     onChange={e => setFilter(e.target.value)}
-                    style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', color: '#888', fontSize: 11, fontFamily: 'inherit' }}
+                    style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', color: 'var(--tp-semantic-color-text-secondary)', fontSize: 'var(--tp-profile-meta-font-size)', fontFamily: 'inherit' }}
                 />
             </div>
 
             {/* Log list */}
             <div style={{ flex: 1, overflow: 'auto', padding: '4px 0' }}>
                 {filtered.length === 0 ? (
-                    <div style={{ color: '#333', textAlign: 'center', marginTop: 20, fontSize: 10 }}>{t('debug.noLogs')}</div>
+                    <div style={{ color: 'var(--tp-semantic-color-text-muted)', textAlign: 'center', marginTop: 20, fontSize: 'var(--tp-profile-meta-font-size)' }}>{t('debug.noLogs')}</div>
                 ) : (
                     filtered.map(entry => (
                         <LogLine key={entry.id} entry={entry} />
@@ -170,32 +170,32 @@ export default function DebugPanel() {
             </div>
 
             {/* Footer: log count */}
-            <div style={{ padding: '3px 10px', borderTop: '1px solid #1a1a1a', color: '#444', fontSize: 10, display: 'flex', justifyContent: 'space-between' }}>
+            <div style={{ padding: '3px 10px', borderTop: '1px solid var(--tp-semantic-color-border-subtle)', color: 'var(--tp-semantic-color-text-muted)', fontSize: 'var(--tp-profile-meta-font-size)', display: 'flex', justifyContent: 'space-between' }}>
                 <span>{filter ? t('debug.logCountFiltered', { total: logs.length, filtered: filtered.length }) : t('debug.logCount', { total: logs.length })}</span>
-                <span style={{ color: '#333' }}>{t('debug.maxRetention')}</span>
+                <span style={{ color: 'var(--tp-semantic-color-text-muted)' }}>{t('debug.maxRetention')}</span>
             </div>
         </div>
     );
 }
 
 function LogLine({ entry }) {
-    const colors = { log: '#ccc', info: '#5B8FCC', warn: '#C9A84C', error: '#C0392B' };
-    const bgColors = { error: 'rgba(192,57,43,0.06)', warn: 'rgba(201,168,76,0.04)' };
+    const colors = { log: 'var(--tp-semantic-color-text-primary)', info: 'var(--tp-semantic-color-info)', warn: 'var(--tp-semantic-color-warning)', error: 'var(--tp-semantic-color-error)' };
+    const bgColors = { error: 'var(--tp-semantic-color-error-background)', warn: 'var(--tp-semantic-color-warning-background)' };
     return (
         <div style={{
             display: 'flex', gap: 8, padding: '2px 10px',
             background: bgColors[entry.level] || 'transparent',
-            borderLeft: `2px solid ${entry.level === 'error' ? '#C0392B' : entry.level === 'warn' ? '#C9A84C' : 'transparent'}`,
+            borderLeft: `2px solid ${entry.level === 'error' ? 'var(--tp-semantic-color-error)' : entry.level === 'warn' ? 'var(--tp-semantic-color-warning)' : 'transparent'}`,
         }}>
-            <span style={{ color: '#444', flexShrink: 0 }}>{entry.time}</span>
-            <span style={{ color: colors[entry.level] ?? '#ccc', wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>{entry.msg}</span>
+            <span style={{ color: 'var(--tp-semantic-color-text-muted)', flexShrink: 0 }}>{entry.time}</span>
+            <span style={{ color: colors[entry.level] ?? 'var(--tp-semantic-color-text-primary)', wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>{entry.msg}</span>
         </div>
     );
 }
 
 function Badge({ icon, label, color, title }) {
     return (
-        <span title={title} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: `${color}18`, color, padding: '1px 5px', borderRadius: 3, fontSize: 10 }}>
+        <span title={title} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: 'var(--tp-semantic-color-raised)', color, padding: '1px 5px', borderRadius: 3, fontSize: 'var(--tp-profile-meta-font-size)' }}>
             {icon}{label}
         </span>
     );
@@ -203,9 +203,9 @@ function Badge({ icon, label, color, title }) {
 
 function PerfItem({ label, value }) {
     return (
-        <span style={{ fontSize: 10, color: '#555' }}>
-            <span style={{ color: '#444' }}>{label} </span>
-            <span style={{ color: '#777' }}>{value}</span>
+        <span style={{ fontSize: 'var(--tp-profile-meta-font-size)', color: 'var(--tp-semantic-color-text-secondary)' }}>
+            <span style={{ color: 'var(--tp-semantic-color-text-muted)' }}>{label} </span>
+            <span style={{ color: 'var(--tp-semantic-color-text-secondary)' }}>{value}</span>
         </span>
     );
 }
@@ -214,11 +214,11 @@ function IconBtn({ onClick, title, children }) {
     return (
         <button onClick={onClick} title={title} style={{
             background: 'none', border: 'none', cursor: 'pointer',
-            color: '#555', padding: '2px 5px', borderRadius: 3,
+            color: 'var(--tp-semantic-color-text-secondary)', padding: '2px 5px', borderRadius: 3,
             display: 'inline-flex', alignItems: 'center',
         }}
-            onMouseEnter={e => e.currentTarget.style.color = '#aaa'}
-            onMouseLeave={e => e.currentTarget.style.color = '#555'}
+            onMouseEnter={e => e.currentTarget.style.color = 'var(--tp-semantic-color-accent-text)'}
+            onMouseLeave={e => e.currentTarget.style.color = 'var(--tp-semantic-color-text-secondary)'}
         >
             {children}
         </button>

@@ -40,62 +40,12 @@ function toggleCheckbox(e, container, value) {
     return lines.join('\n');
 }
 
-const BORDER_DIM  = '1px solid rgba(255,255,255,0.12)';
-const BORDER_EDIT = '1px solid rgba(201,168,76,0.5)';
-const BG          = 'rgba(255,255,255,0.04)';
-const FONT        = 'IBM Plex Mono, monospace';
-
-const previewStyle = {
-    minHeight: 90,
-    maxHeight: 240,
-    overflowY: 'auto',
-    padding: '10px 36px 10px 14px',
-    background: BG,
-    border: BORDER_DIM,
-    borderRadius: 4,
-    fontSize: 13,
-    lineHeight: 1.65,
-    color: '#E0D8C8',
-    cursor: 'text',
-    wordBreak: 'break-word',
-};
-
-const textareaStyle = {
-    display: 'block',
-    width: '100%',
-    minHeight: 90,
-    maxHeight: 240,
-    overflowY: 'auto',
-    padding: '10px 36px 10px 14px',
-    background: BG,
-    border: BORDER_EDIT,
-    borderRadius: 4,
-    fontFamily: FONT,
-    fontSize: 13,
-    lineHeight: 1.65,
-    color: '#E0D8C8',
-    caretColor: '#C9A84C',
-    resize: 'none',
-    outline: 'none',
-};
-
-const expandBtnStyle = {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 22,
-    height: 22,
-    background: 'rgba(201,168,76,0.12)',
-    border: '1px solid rgba(201,168,76,0.25)',
-    borderRadius: 3,
-    cursor: 'pointer',
-    color: '#6B5928',
-    padding: 0,
-    transition: 'color 120ms, background 120ms',
-};
+/** Shared rendered Markdown and plain-text placeholder for notes and journals. */
+export function MarkdownPreview({ html, placeholder, ...props }) {
+    return html
+        ? <div {...props} dangerouslySetInnerHTML={{ __html: html }} />
+        : <div {...props}><span className="journal-placeholder">{placeholder}</span></div>;
+}
 
 /**
  * NoteEditor — 便签式 MD 编辑器（行内切换 + 全屏左右分栏）
@@ -145,8 +95,6 @@ export default function NoteEditor({ value = '', onChange, onCommit, placeholder
         }
     };
 
-    const placeholderHtml = `<span style="color:#3A342A">${ph}</span>`;
-
     const handleBlur = () => {
         setEditing(false);
         commitTextOperation();
@@ -181,43 +129,27 @@ export default function NoteEditor({ value = '', onChange, onCommit, placeholder
     /* ── Fullscreen overlay（portal 到 body，绕开所有 stacking context）── */
     const fullscreenNode = fullscreen && createPortal(
         <div
-            style={{
-                position: 'fixed', inset: 0, zIndex: 99999,
-                display: 'flex', flexDirection: 'column',
-                background: 'var(--clr-bg)',
-                fontFamily: FONT,
-            }}
+            className="note-editor__fullscreen"
             /* 阻止点击冒泡到 React 树上层的 modal onClose */
             onClick={e => e.stopPropagation()}
         >
             {/* Header */}
-            <div style={{
-                display: 'flex', alignItems: 'center',
-                height: 40, padding: '0 16px', gap: 12,
-                borderBottom: '1px solid var(--clr-border)',
-                background: 'var(--clr-void)',
-                flexShrink: 0,
-            }}>
-                <span style={{
-                    fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase',
-                    color: 'var(--clr-gold-dim)', fontFamily: 'var(--font-display)',
-                }}>
+            <div className="note-editor__header">
+                <span className="note-editor__label">
                     {t('event.note')}
                 </span>
 
-                <span style={{ fontSize: 10, color: 'var(--clr-text-mute)', letterSpacing: '0.08em' }}>
+                <span className="note-editor__meta">
                     {t('note.editorLabel')}
                 </span>
 
                 <div style={{ flex: 1 }} />
 
                 <button
+                    type="button"
                     onClick={closeFullscreen}
-                    style={{
-                        background: 'none', border: 'none', cursor: 'pointer',
-                        color: 'var(--clr-text-dim)', display: 'flex',
-                        alignItems: 'center', padding: 4,
-                    }}
+                    className="note-editor__close"
+                    aria-label={t('note.closeFullscreen')}
                     title={t('note.closeFullscreen')}
                 >
                     <X size={16} />
@@ -225,7 +157,7 @@ export default function NoteEditor({ value = '', onChange, onCommit, placeholder
             </div>
 
             {/* Body — 左右分栏 */}
-            <div style={{ flex: 1, overflow: 'hidden', display: 'flex' }}>
+            <div className="note-editor__body">
                 {/* 左：原文编辑 */}
                 <textarea
                     autoFocus
@@ -234,39 +166,16 @@ export default function NoteEditor({ value = '', onChange, onCommit, placeholder
                     onFocus={beginTextOperation}
                     onBlur={commitTextOperation}
                     spellCheck={false}
-                    style={{
-                        flex: 1,
-                        height: '100%',
-                        padding: '20px 28px',
-                        background: 'transparent',
-                        borderRight: '1px solid var(--clr-border)',
-                        fontFamily: FONT,
-                        fontSize: 14,
-                        lineHeight: 1.75,
-                        color: '#E0D8C8',
-                        caretColor: '#C9A84C',
-                        resize: 'none',
-                        outline: 'none',
-                        border: 'none',
-                        borderRight: '1px solid var(--clr-border)',
-                    }}
+                    className="note-editor__source"
+                    aria-label={t('note.editorLabel')}
                 />
 
                 {/* 右：MD 渲染预览（checkbox 可点击） */}
-                <div
-                    className="journal-md-preview"
+                <MarkdownPreview
+                    className="journal-md-preview note-editor__rendered"
                     onClick={handlePreviewClick}
-                    style={{
-                        flex: 1,
-                        height: '100%',
-                        overflowY: 'auto',
-                        padding: '20px 28px',
-                        fontSize: 14,
-                        lineHeight: 1.75,
-                        color: '#E0D8C8',
-                        wordBreak: 'break-word',
-                    }}
-                    dangerouslySetInnerHTML={{ __html: value ? rendered : placeholderHtml }}
+                    html={rendered}
+                    placeholder={ph}
                 />
             </div>
         </div>,
@@ -278,7 +187,7 @@ export default function NoteEditor({ value = '', onChange, onCommit, placeholder
         <>
             {fullscreenNode}
 
-            <div style={{ position: 'relative' }}>
+            <div className={`note-editor${readOnly ? ' note-editor--readonly' : ''}`}>
                 {editing ? (
                     <textarea
                         autoFocus
@@ -287,11 +196,12 @@ export default function NoteEditor({ value = '', onChange, onCommit, placeholder
                         onFocus={beginTextOperation}
                         onBlur={handleBlur}
                         spellCheck={false}
-                        style={textareaStyle}
+                        className="note-editor__textarea"
+                        aria-label={t('note.editorLabel')}
                     />
                 ) : (
-                    <div
-                        className="journal-md-preview"
+                    <MarkdownPreview
+                        className="journal-md-preview note-editor__preview"
                         onClick={e => {
                             if (readOnly) {
                                 if (e.target.type === 'checkbox') e.preventDefault();
@@ -306,22 +216,28 @@ export default function NoteEditor({ value = '', onChange, onCommit, placeholder
                                 setEditing(true);
                             }
                         }}
-                        style={{
-                            ...previewStyle,
-                            cursor: readOnly ? 'default' : previewStyle.cursor,
-                            paddingRight: readOnly ? 14 : previewStyle.paddingRight,
+                        tabIndex={readOnly ? undefined : 0}
+                        onKeyDown={e => {
+                            if (!readOnly && e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+                                e.preventDefault();
+                                beginTextOperation();
+                                setEditing(true);
+                            }
                         }}
                         aria-readonly={readOnly}
-                        dangerouslySetInnerHTML={{ __html: value ? rendered : placeholderHtml }}
+                        html={rendered}
+                        placeholder={ph}
                     />
                 )}
 
                 {/* 全屏按钮 — preventDefault 防止点击时触发 textarea blur */}
                 {!readOnly && (
                     <button
+                        type="button"
                         onMouseDown={e => e.preventDefault()}
                         onClick={openFullscreen}
-                        style={expandBtnStyle}
+                        className="note-editor__expand"
+                        aria-label={t('note.fullscreen')}
                         title={t('note.fullscreen')}
                     >
                         <Maximize2 size={12} />

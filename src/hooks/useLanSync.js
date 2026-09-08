@@ -127,7 +127,7 @@ export default function useLanSync(props = {}) {
     }, [isElectron, props.syncRequest?.sequence, config.serverUrl, queueAutomaticSync]);
 
     const serverUrl = normalizeServerUrl(config.serverUrl);
-    const statusColor = { idle: 'var(--clr-text-dim)', syncing: 'var(--clr-gold)', success: '#4A9DA8', error: 'var(--clr-red,#C0392B)' }[status];
+    const statusColor = { idle: 'var(--clr-text-dim)', syncing: 'var(--clr-gold)', success: 'var(--tp-semantic-color-success)', error: 'var(--clr-red)' }[status];
 
     return {
         isElectron, open, setOpen, config, setConfig, saveConfig,

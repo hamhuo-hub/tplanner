@@ -64,13 +64,13 @@ export default function OverdueBanner({ events, onHighlight, travelTimezone }) {
                                 <li key={task.id}>
                                     <button
                                         onClick={() => onHighlight({ type: 'overdue', start: new Date(task.start), end: new Date(task.end) })}
-                                        style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: 0, fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--clr-text)', textAlign: 'left' }}
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: 0, fontFamily: 'var(--font-body)', fontSize: 'var(--tp-profile-meta-font-size)', color: 'var(--clr-text)', textAlign: 'left' }}
                                     >
                                         <strong style={{ color: 'var(--clr-gold)' }}>{task.title}</strong>
                                         <span className="banner-tag">
                                             {`${formatInTimeZone(task.end, tz, 'MMM d HH:mm')}`}
                                         </span>
-                                        <span className="banner-tag" style={{ color: 'var(--clr-red, #C0392B)' }}>
+                                        <span className="banner-tag" style={{ color: 'var(--clr-red)' }}>
                                             {t('task.overdue')}
                                         </span>
                                     </button>
@@ -79,7 +79,7 @@ export default function OverdueBanner({ events, onHighlight, travelTimezone }) {
                         </ul>
                         {overdueTasks.length > 3 && (
                             <button onClick={() => setOverdueExpanded(!overdueExpanded)}
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, marginTop: 6, fontFamily: 'var(--font-display)', fontSize: '10px', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--clr-gold-dim)' }}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, marginTop: 6, fontFamily: 'var(--font-display)', fontSize: 'var(--tp-profile-meta-font-size)', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--clr-gold-dim)' }}
                             >
                                 {overdueExpanded
                                     ? <><ChevronUp size={12} /> {t('actions.showLess')}</>
@@ -94,7 +94,7 @@ export default function OverdueBanner({ events, onHighlight, travelTimezone }) {
             {/* ── Upcoming countdown section ── */}
             {upcomingTasks.length > 0 && (
                 <div className="banner banner--upcoming upcoming-banner">
-                    <Clock size={15} style={{ flexShrink: 0, marginTop: 2, color: 'var(--clr-teal, #4A9DA8)' }} />
+                    <Clock size={15} style={{ flexShrink: 0, marginTop: 2, color: 'var(--clr-teal)' }} />
                     <div style={{ flex: 1 }}>
                         <p className="banner-title">{t('task.upcoming')}</p>
                         <ul style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 3, listStyle: 'none' }}>
@@ -102,13 +102,13 @@ export default function OverdueBanner({ events, onHighlight, travelTimezone }) {
                                 <li key={task.id}>
                                     <button
                                         onClick={() => onHighlight({ type: 'overdue', start: new Date(task.start), end: new Date(task.end) })}
-                                        style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: 0, fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--clr-text)', textAlign: 'left' }}
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: 0, fontFamily: 'var(--font-body)', fontSize: 'var(--tp-profile-meta-font-size)', color: 'var(--clr-text)', textAlign: 'left' }}
                                     >
-                                        <strong style={{ color: 'var(--clr-teal, #4A9DA8)' }}>{task.title}</strong>
+                                        <strong style={{ color: 'var(--clr-teal)' }}>{task.title}</strong>
                                         <span className="banner-tag">
                                             {formatInTimeZone(deadline(task), tz, 'MMM d HH:mm')}
                                         </span>
-                                        <span className="banner-tag" style={{ background: 'rgba(74,157,168,0.15)', color: 'var(--clr-teal, #4A9DA8)', border: '1px solid rgba(74,157,168,0.3)' }}>
+                                        <span className="banner-tag" style={{ background: 'var(--tp-semantic-color-info-background)', color: 'var(--clr-teal)', border: '1px solid var(--tp-semantic-color-info-background)' }}>
                                             {daysLabel(task, now, t)}
                                         </span>
                                     </button>
@@ -117,7 +117,7 @@ export default function OverdueBanner({ events, onHighlight, travelTimezone }) {
                         </ul>
                         {upcomingTasks.length > 3 && (
                             <button onClick={() => setUpcomingExpanded(!upcomingExpanded)}
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, marginTop: 6, fontFamily: 'var(--font-display)', fontSize: '10px', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--clr-teal, #4A9DA8)' }}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, marginTop: 6, fontFamily: 'var(--font-display)', fontSize: 'var(--tp-profile-meta-font-size)', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--clr-teal)' }}
                             >
                                 {upcomingExpanded
                                     ? <><ChevronUp size={12} /> {t('actions.showLess')}</>

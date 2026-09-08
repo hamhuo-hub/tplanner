@@ -12,18 +12,20 @@ const syncProxy = {
 }
 
 /**
- * Copies the today-widget renderer assets (widget.html / widget.js) into
- * dist-electron/ so they sit next to main.cjs at runtime. They don't need
- * any bundling — the Electron WebView loads them as plain HTML / JS.
+ * Copies both standalone renderers and the exact vendored light-token exports.
+ * Every HTML/module URL resolves inside dist-electron, including packaged builds.
  */
 function copyWidgetAssets(): Plugin {
   const copy = () => {
     const outDir = resolve(__dirname, 'dist-electron')
     if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true })
-    const files = ['widget.html', 'widget.js', 'notes-widget.html', 'notes-widget.js', 'marked.umd.js']
+    const files = ['widget.html', 'widget.js', 'widget.css', 'notes-widget.html', 'notes-widget.js', 'notes-widget.css', 'shared-widget.css', 'widget-shared.mjs', 'marked.umd.js']
     for (const f of files) {
       const src = resolve(__dirname, 'electron', f)
-      if (existsSync(src)) copyFileSync(src, resolve(outDir, f))
+      copyFileSync(src, resolve(outDir, f))
+    }
+    for (const f of ['tplanner-light.css', 'tplanner-light.mjs']) {
+      copyFileSync(resolve(__dirname, 'design-assets/tokens/generated', f), resolve(outDir, f))
     }
   }
   return {

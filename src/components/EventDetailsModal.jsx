@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import { useTranslation } from 'react-i18next';
-import { MASSEY_COLORS } from '../utils/constants';
-import { X, CheckCircle2, Circle } from 'lucide-react';
+import { categoryForId, TaskCheckbox, TaskProgress } from '../design-system';
+import { X } from 'lucide-react';
 import { getDateLocale } from '../utils/dateLocale';
 import NoteEditor from './NoteEditor';
 
@@ -16,19 +16,28 @@ export default function EventDetailsModal({ event, travelTimezone, onClose, onDe
 
     if (!event) return null;
 
-    const color = MASSEY_COLORS[event.colorId] ?? MASSEY_COLORS[0];
+    const category = categoryForId(event.colorId);
+    const toggleChecklistItem = (index, completed) => {
+        if (!onSave) return;
+        const newChecklist = event.checklist.map((item, itemIndex) =>
+            itemIndex === index ? { ...item, completed } : item);
+        // Preserve automatic parent completion when every subtask is complete.
+        const allDone = newChecklist.every(item => item.completed);
+        const anyUndone = newChecklist.some(item => !item.completed);
+        onSave({ ...event, checklist: newChecklist, completed: allDone ? true : anyUndone ? false : event.completed });
+    };
 
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-panel" onClick={e => e.stopPropagation()} style={{ borderTopColor: color }}>
+            <div className="modal-panel" onClick={e => e.stopPropagation()} style={{ borderTopColor: category.border }}>
 
                 {/* Header */}
                 <div className="modal-header">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, overflow: 'hidden' }}>
-                        <div style={{ width: 10, height: 10, background: color, borderRadius: 1, flexShrink: 0 }} />
+                        <div aria-hidden="true" style={{ width: 10, height: 10, background: category.accent, borderRadius: 'var(--tp-semantic-radius-small)', flexShrink: 0 }} />
                         <h2 className="modal-event-title">{event.title}</h2>
                     </div>
-                    <button onClick={onClose} className="btn btn--ghost" style={{ padding: '4px 8px', border: 'none' }} title={t('actions.close')}>
+                    <button onClick={onClose} className="btn btn--ghost" style={{ padding: '4px 8px', border: 'none' }} title={t('actions.close')} aria-label={t('actions.close')}>
                         <X size={15} />
                     </button>
                 </div>
@@ -41,21 +50,21 @@ export default function EventDetailsModal({ event, travelTimezone, onClose, onDe
                         <p className="modal-value">
                             {format(event.start, 'EEEE, d MMMM yyyy', { locale })}
                             <br />
-                            <span style={{ color: 'var(--clr-gold)', fontWeight: 600 }}>
+                            <span style={{ color: 'var(--tp-semantic-color-accent-text)', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
                                 {format(event.start, 'HH:mm')} — {format(event.end, 'HH:mm')}
                             </span>
                         </p>
                         {/* Timezone display */}
                         <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: '10px', color: 'var(--clr-text-dim)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{t('event.originalTz')}</span>
+                            <span className="modal-timezone-label">{t('event.originalTz')}</span>
                             {(() => {
                                 const displayTz = event.timezone || 'Asia/Shanghai';
                                 return (
                                     <>
-                                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--clr-text)' }}>
+                                        <span className="modal-timezone-time">
                                             {formatInTimeZone(event.start, displayTz, 'HH:mm')} — {formatInTimeZone(event.end, displayTz, 'HH:mm')}
                                         </span>
-                                        <span style={{ fontSize: '9px', background: 'var(--clr-gold-ghost)', color: 'var(--clr-gold)', border: '1px solid var(--clr-gold-dim)', padding: '1px 6px', borderRadius: 2, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+                                        <span className="modal-timezone-badge">
                                             {displayTz.split('/').pop().replace(/_/g, ' ')}
                                         </span>
                                     </>
@@ -78,28 +87,17 @@ export default function EventDetailsModal({ event, travelTimezone, onClose, onDe
                         <div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                                 <span className="modal-label" style={{ marginBottom: 0 }}>{t('event.checklist')}</span>
-                                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--clr-gold-dim)' }}>
-                                    {event.checklist.filter(i => i.completed).length}/{event.checklist.length}
-                                </span>
+                                <TaskProgress className="modal-checklist-progress"
+                                    done={event.checklist.filter(item => item.completed).length} total={event.checklist.length} />
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                 {event.checklist.map((item, idx) => (
                                     <div key={item.id || idx} className="modal-checklist-item"
-                                        onClick={() => {
-                                            if (!onSave) return;
-                                            const newChecklist = [...event.checklist];
-                                            newChecklist[idx] = { ...item, completed: !item.completed };
-                                            // Auto-complete or auto-uncomplete main task based on subtask state
-                                            const allDone = newChecklist.every(i => i.completed);
-                                            const anyUndone = newChecklist.some(i => !i.completed);
-                                            const newCompleted = allDone ? true : anyUndone ? false : event.completed;
-                                            onSave({ ...event, checklist: newChecklist, completed: newCompleted });
-                                        }}
+                                        onClick={() => toggleChecklistItem(idx, !item.completed)}
                                     >
-                                        <div style={{ color: item.completed ? 'var(--clr-gold)' : 'var(--clr-border-bright)', flexShrink: 0 }}>
-                                            {item.completed ? <CheckCircle2 size={15} /> : <Circle size={15} />}
-                                        </div>
-                                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: item.completed ? 'var(--clr-text-dim)' : 'var(--clr-text)', textDecoration: item.completed ? 'line-through' : 'none' }}>
+                                        <TaskCheckbox completed={item.completed} disabled={!onSave} title={item.text}
+                                            className="modal-checklist-checkbox" onToggle={completed => toggleChecklistItem(idx, completed)} />
+                                        <span className={`modal-checklist-text${item.completed ? ' modal-checklist-text--completed' : ''}`}>
                                             {item.text}
                                         </span>
                                     </div>
@@ -121,7 +119,7 @@ export default function EventDetailsModal({ event, travelTimezone, onClose, onDe
                                 </button>
                             ) : (
                                 <>
-                                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--clr-text-dim)' }}>
+                                    <span className="modal-delete-confirmation">
                                         {t('messages.deleteConfirmation')}
                                     </span>
                                     <button className="btn btn--danger" onClick={() => { onDelete(event.id); onClose(); }}>

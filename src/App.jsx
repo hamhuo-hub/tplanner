@@ -919,10 +919,10 @@ function PlannerApp() {
             {clipboard && (
                 <div style={{
                     position: 'fixed', bottom: 60, left: '50%', transform: 'translateX(-50%)',
-                    zIndex: 9000, background: 'var(--clr-surface,#1e1e1e)',
-                    border: '1px solid var(--clr-gold,#C9A84C)', borderRadius: 8,
+                    zIndex: 9000, background: 'var(--clr-surface)',
+                    border: '1px solid var(--clr-gold)', borderRadius: 8,
                     padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 12,
-                    boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+                    boxShadow: 'var(--tp-shadow-dialog)',
                     fontFamily: 'var(--font-mono)', fontSize: 12,
                 }}>
                     <span style={{ color: 'var(--clr-gold)' }}>{t('paste.copied')}</span>
@@ -939,18 +939,18 @@ function PlannerApp() {
             {selectedIds.size > 0 && (
                 <div style={{
                     position: 'fixed', bottom: 60, left: '50%', transform: 'translateX(-50%)',
-                    zIndex: 9000, background: 'var(--clr-surface,#1e1e1e)',
-                    border: '1px solid var(--clr-gold,#C9A84C)', borderRadius: 8,
+                    zIndex: 9000, background: 'var(--clr-surface)',
+                    border: '1px solid var(--clr-gold)', borderRadius: 8,
                     padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 12,
-                    boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+                    boxShadow: 'var(--tp-shadow-dialog)',
                     fontFamily: 'var(--font-mono)', fontSize: 12,
                 }}>
                     <span style={{ color: 'var(--clr-gold)' }}>{t('selection.count', { count: selectedIds.size })}</span>
                     <button
                         onClick={() => handleBatchDelete(Array.from(selectedIds))}
                         style={{
-                            background: 'none', border: '1px solid var(--clr-red,#C0392B)', borderRadius: 4,
-                            cursor: 'pointer', color: 'var(--clr-red,#C0392B)', padding: '3px 10px', fontSize: 12,
+                            background: 'none', border: '1px solid var(--clr-red)', borderRadius: 4,
+                            cursor: 'pointer', color: 'var(--clr-red)', padding: '3px 10px', fontSize: 12,
                         }}
                     >
                         {t('selection.delete')}

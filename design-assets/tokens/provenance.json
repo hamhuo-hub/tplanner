@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "111b90d27c4206c7c588348f542b60583fc905c3",
+  "sourceDirectory": "design-assets/tokens",
+  "sourceDescription": "Canonical TPlanner cross-platform light token package; synchronize from an explicitly supplied repository.",
+  "hashAlgorithm": "SHA-256",
+  "hashNormalization": "UTF-8 text with LF line endings",
+  "files": {
+    ".gitattributes": "6fc8bc06913307c435c8e829f21baebf5d932a5460f65255fdb20987bc8eb2f0",
+    "tplanner-light.tokens.json": "3c3f45d1a715d2b8ff146bcaad37d5cf6a7b35787d5b12e67d1d3f86bbd231fb",
+    "generated/tplanner-light.css": "24b72cf5046f778274fbc72008600b6d4876ba430b22602c0a9cded3de0b9743",
+    "generated/tplanner-light.ts": "09a08257d25cb143210598bc3e7194283bd7c0fb91011b0b881dc1835355b5aa",
+    "generated/tplanner-light.mjs": "dbd98477a113172ba6a81229138248a9b4511cbf598056f106dfa4732ef3ba58",
+    "generated/contrast-report.json": "f8104d1f03fa26812faa811eb4ec8fa37d7f48b791cd4d8d1f0f8caa4c386c45",
+    "adapters/mui-light.ts": "0a38c5b87ae9774cf6bc0e028e1f3ea2d67041e464ce0625a4bc045e83fc5f5d"
+  }
+}

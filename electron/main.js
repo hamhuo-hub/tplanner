@@ -1,3 +1,5 @@
+import { lightTokens } from '../design-assets/tokens/generated/tplanner-light.mjs';
+
 const { app, BrowserWindow, ipcMain, Tray, Menu, Notification, nativeImage, shell, dialog, screen } = require('electron');
 const path  = require('path');
 const fs    = require('fs');
@@ -123,7 +125,7 @@ function createWindow() {
         minHeight: 600,
         frame: false,
         transparent: false,
-        backgroundColor: '#111111',
+        backgroundColor: lightTokens.semantic.color.canvas,
         titleBarStyle: 'hidden',
         icon: getIconPath(),
         webPreferences: {

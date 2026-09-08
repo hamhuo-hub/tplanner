@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { fromZonedTime, formatInTimeZone } from 'date-fns-tz';
-import { event as eventTokens, eventColors, semantic, TaskUnit } from '../design-system';
+import { event as eventTokens, categoryForId, semantic, TaskUnit } from '../design-system';
 
 export default function EventBlock({ event, onClick, isConflicting, displayTimezone, onToggleTaskComplete, onDragStart, onContextMenu, isShadow, isSelected, style }) {
     const { t } = useTranslation();
@@ -23,12 +23,11 @@ export default function EventBlock({ event, onClick, isConflicting, displayTimez
     const leftPercent  = (startMins / 1440) * 100;
     const widthPercent = (durationMins / 1440) * 100;
     const isCompleted  = event.completed === true;
-    const colorIdx = event.colorId ?? 0;
-    const colorVar = `var(--clr-event-${colorIdx}, ${eventColors[colorIdx] ?? eventColors[0]})`;
+    const category = categoryForId(event.colorId);
     const timeLabel = `${formatInTimeZone(event.start, tz, 'HH:mm')} – ${formatInTimeZone(event.end, tz, 'HH:mm')}`;
 
-    // TYPE provides the accent hue above; STATE owns every emphasis decision
-    // (surface mix, opacity, outline, conflict border) via design tokens.
+    // User category owns the paired foreground/background; interaction state
+    // independently owns completed, selection and conflict emphasis.
     const state = isShadow ? 'shadow' : isCompleted ? 'completed' : isSelected ? 'selected' : 'normal';
 
     // Checklist progress
@@ -49,8 +48,10 @@ export default function EventBlock({ event, onClick, isConflicting, displayTimez
             onContextMenu={e => { e.preventDefault(); e.stopPropagation(); onContextMenu?.(e, event); }}
             className={blockClass}
             style={{
-                backgroundColor: eventTokens.surfaceFor(colorVar, state),
-                borderColor: isConflicting ? semantic.border.conflict : eventTokens.borderFor(colorVar, state),
+                backgroundColor: eventTokens.surfaceFor(category, state),
+                color: eventTokens.foregroundFor(category, state),
+                '--event-foreground': eventTokens.foregroundFor(category, state),
+                borderColor: isConflicting ? semantic.border.conflict : eventTokens.borderFor(category, state),
                 opacity: eventTokens.opacityFor(state),
                 filter: state === 'completed' ? eventTokens.completedFilter : undefined,
                 left:  `${leftPercent}%`,
@@ -64,7 +65,7 @@ export default function EventBlock({ event, onClick, isConflicting, displayTimez
             <TaskUnit
                 title={event.title}
                 type={event.type}
-                accentColor={colorVar}
+                accentColor={category.accent}
                 completed={isCompleted}
                 checklist={checklist}
                 blockedTitle={t('event.subtaskBlocked', { done: doneCount, total: checklist.length })}

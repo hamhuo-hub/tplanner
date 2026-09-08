@@ -32,7 +32,7 @@ export default function ClashBanner({ clashes, events, onHighlight, travelTimezo
                     {displayClashes.map(clash => (
                         <li key={clash.id}>
                             <button onClick={() => onHighlight({ type: 'clash', start: new Date(clash.start), end: new Date(clash.end) })}
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: 0, fontFamily: 'var(--font-mono)', fontSize: '11px', color: '#E8C8C4', textAlign: 'left' }}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: 0, fontFamily: 'var(--font-body)', fontSize: 'var(--tp-profile-meta-font-size)', color: 'var(--tp-semantic-color-error)', textAlign: 'left' }}
                             >
                                 <span>
                                     <strong>{clash.eventA}</strong>
@@ -51,7 +51,7 @@ export default function ClashBanner({ clashes, events, onHighlight, travelTimezo
                 </ul>
                 {hasMore && (
                     <button onClick={() => setIsExpanded(!isExpanded)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, marginTop: 6, fontFamily: 'var(--font-display)', fontSize: '10px', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--clr-red)' }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, marginTop: 6, fontFamily: 'var(--font-display)', fontSize: 'var(--tp-profile-meta-font-size)', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--clr-red)' }}
                     >
                         {isExpanded
                             ? <><ChevronUp size={12} /> {t('actions.showLess', 'Show less')}</>

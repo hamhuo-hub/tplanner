@@ -1,3 +1,5 @@
+import { applyCategory, initializeWindowControls } from './widget-shared.mjs';
+
 /* tPlanner Today Widget — vanilla renderer.
  * Receives event lists from the main process via window.widgetAPI
  * (set up by widget-preload.cjs). All persistence and reminder firing
@@ -5,11 +7,6 @@
  */
 (function () {
   'use strict';
-
-  var EVENT_COLORS = [
-    '#5B8FCC', '#C9A84C', '#C0697A', '#5B9E72',
-    '#8B6BAE', '#C87D5A', '#4A9DA8', '#8A8A8A'
-  ];
 
   var DOWS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
@@ -78,7 +75,8 @@
     var todays = eventsForToday();
     if (todays.length === 0) {
       var empty = el('div', 'empty');
-      var icon = el('div', 'empty-icon material-symbols-outlined'); icon.textContent = 'ALL CLEAR';
+      var icon = el('div', 'empty-icon'); icon.textContent = '✓';
+      icon.setAttribute('aria-hidden', 'true');
       var text = el('div', 'empty-text'); text.textContent = '今天没有安排，享受清闲吧';
       empty.appendChild(icon);
       empty.appendChild(text);
@@ -115,9 +113,10 @@
 
     // ── Completed section (collapsible) ──────────────────────────────────
     if (groups.done.length > 0) {
-      var doneHd = el('div', 'group-label');
-      doneHd.style.cursor = 'pointer';
-      doneHd.style.userSelect = 'none';
+      var doneHd = el('button', 'group-label group-toggle');
+      doneHd.type = 'button';
+      doneHd.setAttribute('aria-expanded', String(!completedCollapsed));
+      doneHd.setAttribute('aria-controls', 'completed-items');
 
       var doneLabel = document.createTextNode('已完成 ');
       doneHd.appendChild(doneLabel);
@@ -125,17 +124,18 @@
       doneHd.appendChild(doneCount);
 
       var arrow = el('span');
-      arrow.style.marginLeft = '4px';
-      arrow.style.fontSize = '9px';
+      arrow.setAttribute('aria-hidden', 'true');
       arrow.textContent = completedCollapsed ? '▶' : '▼';
       doneHd.appendChild(arrow);
 
       var doneBody = el('div');
+      doneBody.id = 'completed-items';
       doneBody.style.display = completedCollapsed ? 'none' : '';
       groups.done.forEach(function (e) { doneBody.appendChild(renderItem(e, nowTs, 'done')); });
 
       doneHd.addEventListener('click', function () {
         saveCollapsed(!completedCollapsed);
+        doneHd.setAttribute('aria-expanded', String(!completedCollapsed));
         doneBody.style.display = completedCollapsed ? 'none' : '';
         arrow.textContent = completedCollapsed ? '▶' : '▼';
       });
@@ -152,18 +152,26 @@
     var doneCount = checklist.filter(function(i) { return i.completed; }).length;
     var allDone = hasChecklist ? doneCount === checklist.length : true;
 
+    var completed = e.type === 'task' && e.completed;
     var item = el('div', 'item' + (e.type === 'task' ? ' task' : '')
-      + (e.type === 'task' && e.completed ? ' done' : '')
-      + (status === 'now' ? ' now' : '')
-      + (status === 'past' ? ' past' : ''));
-
-    var color = EVENT_COLORS[(e.colorId || 0) % EVENT_COLORS.length];
+      + (completed ? ' done' : '')
+      + (!completed && status === 'now' ? ' now' : '')
+      + (!completed && status === 'past' ? ' past' : ''));
+    applyCategory(item, e.colorId);
     if (e.type === 'task') {
-      var bullet = el('span', 'item-bullet');
+      var bullet = el('button', 'task-check');
+      bullet.type = 'button';
+      bullet.setAttribute('role', 'checkbox');
+      bullet.setAttribute('aria-checked', String(Boolean(e.completed)));
+      bullet.setAttribute('aria-label', (e.completed ? '取消完成：' : '完成：') + (e.title || '无标题任务'));
+      var check = el('span', 'check-mark');
+      check.setAttribute('aria-hidden', 'true');
+      check.textContent = e.completed ? '✓' : '';
+      bullet.appendChild(check);
       // Block main toggle if subtasks not all done
       bullet.title = hasChecklist && !allDone ? '请先完成所有子任务' : '';
-      bullet.style.cursor = hasChecklist && !allDone && !e.completed ? 'not-allowed' : 'pointer';
-      bullet.style.opacity = hasChecklist && !allDone && !e.completed ? '0.4' : '1';
+      bullet.disabled = hasChecklist && !allDone && !e.completed;
+      if (bullet.disabled) bullet.setAttribute('aria-label', '请先完成所有子任务：' + (e.title || '无标题任务'));
       bullet.addEventListener('click', function (ev) {
         ev.stopPropagation();
         if (hasChecklist && !allDone && !e.completed) return;
@@ -174,7 +182,7 @@
       item.appendChild(bullet);
     } else {
       var bar = el('span', 'item-bullet color-bar');
-      bar.style.background = color;
+      bar.setAttribute('aria-hidden', 'true');
       item.appendChild(bar);
     }
 
@@ -187,20 +195,26 @@
 
     // Subtask progress badge
     if (hasChecklist) {
-      var badge = el('span', 'progress-badge' + (allDone ? ' done-all' : ''));
+      var badge = el('button', 'progress-badge' + (allDone ? ' done-all' : ''));
+      badge.type = 'button';
+      badge.setAttribute('aria-expanded', 'true');
+      badge.setAttribute('aria-label', '子任务：已完成 ' + doneCount + ' 项，共 ' + checklist.length + ' 项；收起或展开');
       badge.textContent = doneCount + '/' + checklist.length;
       row1.appendChild(badge);
     }
 
-    if (status === 'now') {
+    if (completed) {
+      var tag3 = el('span', 'item-tag done'); tag3.textContent = '完成';
+      row1.appendChild(tag3);
+    } else if (status === 'now') {
       var tag = el('span', 'item-tag now'); tag.textContent = '现在';
       row1.appendChild(tag);
     } else if (status === 'soon') {
       var tag2 = el('span', 'item-tag soon'); tag2.textContent = '即将';
       row1.appendChild(tag2);
-    } else if (e.type === 'task' && e.completed) {
-      var tag3 = el('span', 'item-tag done'); tag3.textContent = '完成';
-      row1.appendChild(tag3);
+    } else if (status === 'past') {
+      var pastTag = el('span', 'item-tag past'); pastTag.textContent = '已过';
+      row1.appendChild(pastTag);
     }
     body.appendChild(row1);
 
@@ -226,10 +240,15 @@
         clear(subtaskList);
         checklist.forEach(function(sub) {
           var subId = sub.id;
-          var row = el('div', 'subtask-item');
+          var row = el('button', 'subtask-item');
+          row.type = 'button';
+          row.setAttribute('role', 'checkbox');
+          row.setAttribute('aria-checked', String(Boolean(sub.completed)));
 
-          var sbullet = el('span', 'subtask-bullet' + (sub.completed ? ' done' : ''));
-          sbullet.addEventListener('click', function(ev) {
+          var sbullet = el('span', 'check-mark');
+          sbullet.setAttribute('aria-hidden', 'true');
+          sbullet.textContent = sub.completed ? '✓' : '';
+          row.addEventListener('click', function(ev) {
             ev.stopPropagation();
             if (window.widgetAPI && window.widgetAPI.toggleSubtask) {
               window.widgetAPI.toggleSubtask(e.id, subId);
@@ -247,10 +266,10 @@
 
       // Toggle expand/collapse via clicking the progress badge
       if (badge) {
-        badge.style.cursor = 'pointer';
         badge.addEventListener('click', function(ev) {
           ev.stopPropagation();
           subtaskOpen = !subtaskOpen;
+          badge.setAttribute('aria-expanded', String(subtaskOpen));
           subtaskList.style.display = subtaskOpen ? '' : 'none';
         });
       }
@@ -304,9 +323,10 @@
       // Preload not loaded — show a clear error so the user reports it
       var list = $('list');
       clear(list);
-      var msg = el('div', 'empty');
-      msg.innerHTML = '<div class="empty-icon material-symbols-outlined">warning</div>'
-        + '<div class="empty-text">widgetAPI 不可用<br>preload 未注入</div>';
+      var msg = el('div', 'empty error');
+      msg.setAttribute('role', 'alert');
+      msg.innerHTML = '<div class="empty-icon" aria-hidden="true">!</div>'
+        + '<div class="empty-text">暂时无法加载今日安排，请重新打开便签。</div>';
       list.appendChild(msg);
       return;
     }
@@ -317,18 +337,7 @@
     // Live updates from main process
     api.onEvents(setEvents);
 
-    // Always-on-top button reflects state on click
-    api.isAlwaysOnTop().then(function (on) {
-      $('btn-pin').classList.toggle('active', on);
-    });
-
-    $('btn-pin').addEventListener('click', function () {
-      api.toggleAlwaysOnTop().then(function (on) {
-        $('btn-pin').classList.toggle('active', on);
-      });
-    });
-    $('btn-open').addEventListener('click', api.openMain);
-    $('btn-close').addEventListener('click', api.close);
+    initializeWindowControls(api);
     $('btn-refresh').addEventListener('click', function () {
       api.getEvents().then(setEvents);
     });

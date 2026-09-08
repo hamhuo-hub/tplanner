@@ -1,0 +1,61 @@
+/* Shared surfaces and controls for the application shell, login and non-MUI popovers. */
+:root {
+    --tp-shadow-panel: var(--tp-component-panel-shadow-x) var(--tp-component-panel-shadow-y) var(--tp-component-panel-shadow-blur) var(--tp-component-panel-shadow-spread) color-mix(in srgb, var(--tp-component-panel-shadow-color) calc(var(--tp-component-panel-shadow-opacity) * 100%), transparent);
+    --tp-shadow-dialog: var(--tp-component-dialog-shadow-x) var(--tp-component-dialog-shadow-y) var(--tp-component-dialog-shadow-blur) var(--tp-component-dialog-shadow-spread) color-mix(in srgb, var(--tp-component-dialog-shadow-color) calc(var(--tp-component-dialog-shadow-opacity) * 100%), transparent);
+    /* There is no scrim token in v1.0.0. Temporary composition is tracked as WD-05. */
+    --tp-overlay-background: color-mix(in srgb, var(--tp-component-dialog-shadow-color) 32%, transparent);
+}
+
+:where(button, a, input, textarea, select, [tabindex]):focus-visible {
+    outline: var(--tp-component-button-focus-width) solid var(--tp-component-button-focus-color);
+    outline-offset: var(--tp-component-button-focus-offset);
+}
+
+.tp-panel {
+    background: var(--tp-component-panel-background);
+    color: var(--tp-semantic-color-text-primary);
+    border: var(--tp-component-panel-edge-width) solid var(--tp-component-panel-edge);
+    border-radius: var(--tp-component-panel-radius);
+    box-shadow: var(--tp-shadow-panel);
+}
+
+.tp-popover {
+    background: var(--tp-component-dialog-background);
+    color: var(--tp-semantic-color-text-primary);
+    border: var(--tp-component-panel-edge-width) solid var(--tp-component-panel-edge);
+    border-radius: var(--tp-component-dialog-radius);
+    box-shadow: var(--tp-shadow-dialog);
+    max-width: calc(100vw - 24px);
+}
+
+.tp-field {
+    width: 100%;
+    min-height: var(--tp-profile-control-min-height);
+    padding: var(--tp-semantic-spacing-inline) var(--tp-semantic-spacing-block);
+    background: var(--tp-component-field-background);
+    color: var(--tp-component-field-foreground);
+    border: 1px solid var(--tp-component-field-border);
+    border-radius: var(--tp-component-field-radius);
+    font: inherit;
+}
+.tp-field::placeholder { color: var(--tp-component-field-placeholder); opacity: 1; }
+.tp-field:focus { border-color: var(--tp-component-field-focus-border); }
+.tp-field[aria-invalid="true"] { border-color: var(--tp-component-field-error-border); }
+
+.tp-menu-item {
+    display: flex;
+    align-items: center;
+    gap: var(--tp-semantic-spacing-inline);
+    min-height: var(--tp-profile-control-min-height);
+    width: 100%;
+    padding: var(--tp-semantic-spacing-inline) var(--tp-semantic-spacing-block);
+    color: var(--tp-semantic-color-text-primary);
+    border: 0;
+    background: transparent;
+    text-align: left;
+    font: inherit;
+    border-radius: var(--tp-semantic-radius-control);
+    cursor: pointer;
+}
+.tp-menu-item:hover { background: var(--tp-semantic-color-hover-background); }
+.tp-menu-item--danger { color: var(--tp-semantic-color-error); }
