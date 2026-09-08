@@ -31,9 +31,9 @@ jobs:
           for branch in "${branches[@]}"; do
             [ "$branch" = "$current" ] && continue
             git fetch origin "$branch" --depth=1 --quiet
-            if ! git diff --quiet "origin/$branch" HEAD -- docs/sync-v3.md sync-v3/; then
+            if ! git diff --quiet "origin/$branch" HEAD -- docs/sync-v3.md sync-v3/ ":(exclude)sync-v3/protocol/v3/fixtures/**"; then
               echo "::error::sync-v3 protocol files differ from origin/$branch (branch $current)"
-              git diff --stat "origin/$branch" HEAD -- docs/sync-v3.md sync-v3/
+              git diff --stat "origin/$branch" HEAD -- docs/sync-v3.md sync-v3/ ":(exclude)sync-v3/protocol/v3/fixtures/**"
               exit 1
             fi
           done

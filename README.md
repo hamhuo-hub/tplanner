@@ -29,7 +29,6 @@ Sync API、NATS 或 State Builder。
 ```bash
 npm ci
 npm run dev
-npm test
 npm run build
 ```
 
