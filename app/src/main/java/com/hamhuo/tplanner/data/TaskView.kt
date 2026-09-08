@@ -26,6 +26,10 @@ sealed class TaskView(val key: String) {
             is CustomList -> items.filter { it.deletedAt == 0L && it.listId == id }
         }
 
+    /** Recover from the complete dataset before filtering; the series root may be on another day. */
+    fun listItems(items: List<ScheduleItem>, date: LocalDate = appToday()): List<ScheduleItem> =
+        collapseRecurringTaskSeries(filter(recoverRecurringTaskSeries(items), date))
+
     companion object {
         val FILTERS: List<Filter>
             get() = listOf(Inbox, Today)

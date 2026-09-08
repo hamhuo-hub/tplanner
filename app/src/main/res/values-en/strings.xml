@@ -47,7 +47,7 @@
     <string name="recurrence_weekly">Weekly</string>
     <string name="recurrence_monthly">Monthly</string>
     <string name="recurrence_count">%1$d occurrences</string>
-    <string name="recurrence_independent_hint">Each occurrence is an independent task; edits and deletions do not affect the others.</string>
+    <string name="recurrence_series_hint">Title, schedule and shared content update the series. Completion stays independent. Lists show the next occurrence; the timeline keeps all occurrences. Turning repeat off keeps this occurrence and completed history.</string>
 
     <!-- Task groups -->
     <string name="group_now">In Progress</string>

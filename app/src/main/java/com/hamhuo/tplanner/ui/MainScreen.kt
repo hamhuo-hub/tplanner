@@ -662,7 +662,7 @@ fun MainScreen(
                 }
                 events = nextEvents
                 scope.launch {
-                    eventWriteMutex.withLock { eventStore.save(updated) }
+                    eventWriteMutex.withLock { eventStore.save(updated, original = event) }
                 }
             },
             allowExpandedNavigation =
@@ -939,24 +939,15 @@ fun MainScreen(
                 eventStore.enqueueEventDraft(snapshot, EventEditStage.DETAIL)
             },
             onSave = { updated, onFinished ->
-                val updates = if (events.none { it.id == updated.id }) {
-                    createRecurringTaskInstances(updated)
-                } else {
-                    listOf(updated)
-                }
-                val nextEvents = updates.fold(events, ::upsertEventPreservingOrder)
                 scope.launch {
                     try {
                         when (val result = eventWriteMutex.withLock {
-                            eventStore.saveAndClearEventDraft(
-                                event = updates.first(),
-                                additionalEvents = updates.drop(1),
-                            )
+                            eventStore.saveAndClearEventDraft(updated)
                         }) {
                             DraftCommitResult.Saved,
                             DraftCommitResult.AlreadySaved,
                             -> {
-                                events = nextEvents
+                                events = eventStore.getAll()
                                 editingItem = null
                                 onFinished(true)
                             }
@@ -993,7 +984,6 @@ fun MainScreen(
                 )
             },
             onNoteSave = { updated, onFinished ->
-                val nextEvents = upsertEventPreservingOrder(events, updated)
                 scope.launch {
                     try {
                         when (val result = eventWriteMutex.withLock {
@@ -1002,8 +992,8 @@ fun MainScreen(
                             DraftCommitResult.Saved,
                             DraftCommitResult.AlreadySaved,
                             -> {
-                                events = nextEvents
-                                editingItem = updated
+                                events = eventStore.getAll()
+                                editingItem = events.firstOrNull { it.id == updated.id && it.deletedAt == 0L }
                                 onFinished(true)
                             }
                             is DraftCommitResult.Conflict -> {

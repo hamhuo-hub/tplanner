@@ -82,6 +82,7 @@ object WatchScheduleSync {
         val startEpochMs: Long,
         val endEpochMs: Long,
         val checklistJson: String,
+        val series: WatchTaskSeriesMetadata? = null,
     )
 
     private val taskOrder = compareBy<TaskSnapshot>(
@@ -115,7 +116,7 @@ object WatchScheduleSync {
                 val today = java.time.Instant.ofEpochMilli(generatedAt)
                     .atZone(APP_ZONE)
                     .toLocalDate()
-                val activeTasks = events.filter { event ->
+                val activeTasks = recoverRecurringTaskSeries(events).filter { event ->
                     event.deletedAt == 0L && event.type in WATCH_TASK_TYPES && !event.completed
                 }
                 val windowStart = today.atStartOfDay(APP_ZONE).toInstant()
@@ -170,6 +171,7 @@ object WatchScheduleSync {
                     })
                     put("tasks", taskArray(tasks))
                     put("tasksHash", tasksHash(tasks))
+                    put(WatchTaskSeriesCodec.HASH_FIELD, WatchTaskSeriesCodec.hash(tasks.map { it.id to it.series }))
                 }.toString()
                 val committed = prefs.edit()
                     .putLong(KEY_LAST_VERSION, version)
@@ -606,6 +608,10 @@ object WatchScheduleSync {
                 startEpochMs = event.start.toEpochMilli(),
                 endEpochMs = event.end.toEpochMilli(),
                 checklistJson = encodeChecklist(event.checklist),
+                // Unsupported optional metadata must never suppress the task or its schedule.
+                series = runCatching {
+                    recurringSeriesMetadata(event)?.let { WatchTaskSeriesMetadata(it.seriesId, it.occurrenceIndex) }
+                }.getOrNull(),
             )
         }.sortedWith(taskOrder)
         for (task in candidates) {
@@ -649,6 +655,7 @@ object WatchScheduleSync {
                 put("type", task.type)
                 put("startEpochMs", task.startEpochMs)
                 put("endEpochMs", task.endEpochMs)
+                WatchTaskSeriesCodec.write(this, task.series)
                 if (task.checklistJson.isNotEmpty()) {
                     put("checklist", org.json.JSONArray(task.checklistJson))
                 }

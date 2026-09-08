@@ -4,6 +4,8 @@ import androidx.room.withTransaction
 import com.hamhuo.tplanner.JournalEntry
 import com.hamhuo.tplanner.ScheduleItem
 import com.hamhuo.tplanner.UserList
+import com.hamhuo.tplanner.planRecurringTaskChange
+import com.hamhuo.tplanner.withoutRecurringTaskSeries
 import com.hamhuo.tplanner.syncv3.SyncV3CommandRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -77,6 +79,7 @@ class RoomEventRepository(
         clearDraftKey: String? = null,
         clearPendingActionId: String? = null,
         now: Long = System.currentTimeMillis(),
+        original: ScheduleItem? = null,
     ): PendingActionCommitResult = db.withTransaction {
             if (clearPendingActionId != null) {
                 val pending = db.pendingActionDao().get(clearPendingActionId)
@@ -93,13 +96,7 @@ class RoomEventRepository(
                     pending.state != CONFIRMABLE_PENDING_STATE
                 ) return@withTransaction PendingActionCommitResult.INVALID_STATE
             }
-            val existing = db.eventDao().get(event.id)
-            val sortIndex = existing?.sortIndex ?: (db.eventDao().maxSortIndex() + 1L)
-            db.eventDao().upsert(PersistenceMapper.eventToEntity(event, sortIndex))
-            val changed = existing == null ||
-                EventWireMapper.contentKey(PersistenceMapper.eventToDomain(existing)) !=
-                EventWireMapper.contentKey(event)
-            if (changed) commands.enqueueTaskChange(existing?.let(PersistenceMapper::eventToDomain), event)
+            applySeriesChange(event, original, now)
             clearDraftKey?.let { db.draftDao().delete(it) }
             clearPendingActionId?.let { db.pendingActionDao().delete(it) }
             PendingActionCommitResult.SAVED
@@ -186,7 +183,7 @@ class RoomEventRepository(
             stored.draftUpdatedAt != expected.draftUpdatedAt
         ) return@withTransaction null
 
-        val copy = source.copy(
+        val copy = withoutRecurringTaskSeries(source).copy(
             id = UUID.randomUUID().toString(),
             title = source.title + "（冲突副本）",
             deletedAt = 0L,
@@ -235,32 +232,50 @@ class RoomEventRepository(
         when (val decision = decideDraftRecovery(candidate, currentRevision)) {
             is DraftRecoveryDecision.Conflict -> DraftCommitResult.Conflict(decision.conflict)
             is DraftRecoveryDecision.ClearDraft -> {
+                // Exact legacy-ID recovery may add identity even when the visible fields did not
+                // change. Unknown historical Web instances remain untouched by this plan.
+                // NO_CHANGES can also mean the untouched editor's base became stale remotely.
+                // That case must only close the draft, never copy the old UI over the new fact.
+                val sameCurrentContent = current != null && EventWireMapper.contentKey(current) ==
+                    EventWireMapper.contentKey(event.copy(updatedAt = current.updatedAt))
+                val changed = sameCurrentContent && applySeriesChange(event, current, now)
                 db.draftDao().delete(target.storageKey)
-                DraftCommitResult.AlreadySaved
+                if (changed) DraftCommitResult.Saved else DraftCommitResult.AlreadySaved
             }
             DraftRecoveryDecision.NoDraft -> error("Candidate event draft cannot be absent")
             is DraftRecoveryDecision.AutoRestore -> {
-                val existingSortIndex = currentRow?.sortIndex
-                val sortIndex = existingSortIndex ?: (db.eventDao().maxSortIndex() + 1L)
-                db.eventDao().upsert(PersistenceMapper.eventToEntity(event, sortIndex))
-                commands.enqueueTaskChange(current, event)
+                applySeriesChange(event, current, now)
                 additionalEvents.forEach { additional ->
                     if (additional.id == event.id) return@forEach
-                    val existingAdditional = db.eventDao().get(additional.id)
-                    val additionalSortIndex = existingAdditional?.sortIndex
-                        ?: (db.eventDao().maxSortIndex() + 1L)
-                    db.eventDao().upsert(
-                        PersistenceMapper.eventToEntity(additional, additionalSortIndex),
-                    )
-                    commands.enqueueTaskChange(
-                        existingAdditional?.let(PersistenceMapper::eventToDomain),
-                        additional,
-                    )
+                    // Compatibility for old callers supplying extra new facts, never overwrite an
+                    // already stored sibling (which may carry newer independent completion).
+                    if (db.eventDao().get(additional.id) == null) applySeriesChange(additional, null, now)
                 }
                 db.draftDao().delete(target.storageKey)
                 DraftCommitResult.Saved
             }
         }
+    }
+
+    /** Must run in the caller's Room transaction: latest siblings, facts and outbox are atomic. */
+    private suspend fun applySeriesChange(event: ScheduleItem, original: ScheduleItem?, now: Long): Boolean {
+        val rows = db.eventDao().getAll()
+        val beforeById = rows.associateBy { it.id }
+        val facts = rows.map(PersistenceMapper::eventToDomain)
+        val current = facts.firstOrNull { it.id == event.id }
+        val plan = planRecurringTaskChange(facts, original ?: current, event, now)
+        var nextSort = db.eventDao().maxSortIndex() + 1L
+        var changed = false
+        plan.forEach { next ->
+            val previousRow = beforeById[next.id]
+            val previous = previousRow?.let(PersistenceMapper::eventToDomain)
+            if (previous != null && EventWireMapper.contentKey(previous) ==
+                EventWireMapper.contentKey(next.copy(updatedAt = previous.updatedAt))) return@forEach
+            db.eventDao().upsert(PersistenceMapper.eventToEntity(next, previousRow?.sortIndex ?: nextSort++))
+            commands.enqueueTaskChange(previous, next)
+            changed = true
+        }
+        return changed
     }
 
     /** Deletes a custom-list definition and atomically returns its active items to no list. */

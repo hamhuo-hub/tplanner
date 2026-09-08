@@ -422,7 +422,7 @@ journal 是**有限历史**,正确性绝不依赖任何设备 ACK。`pruneJourna
 
 - **设备重置**:deviceId 每次安装新生成且永不随备份恢复；服务器不提供 reset 端点，新安装以新 deviceId 从 clientSequence 1 开始。
 - **旧数据集协议已退役**:8.0.0 不再注册 dataset GET/PUT、changes 或兼容 adapter；`/health` 仅作为 V3 readiness 别名保留。
-- **循环任务展开(8.0.0 契约)**:客户端在首次创建时以确定性 ID 展开成独立 `task.create` facts；中央只权威保存每个事实的 recurrence 字段，不再二次展开，避免生成双份实例。
+- **循环任务展开**:客户端物化各次 `task.create` facts，中央只权威保存、不二次展开。系列关联保存在每个事实的 `recurrence.seriesId / occurrenceIndex / anchorStartAt / anchorEndAt / timeZone` 扩展中；客户端的共用内容编辑生成整组事实的语义差异，每次完成状态独立。待办列表仅折叠展示，不删除底层实例；顶层 `groupId` 仍不进入协议。详见 [重复任务系列约定](recurring-task-series.md)。
 - **canonical hash**:RFC 8785 (JCS)。
 - **日边界时区**:journal 切日与 watch projection 分桶固定按 Asia/Shanghai 计算,写入 schema 说明。
 - **checklist.reorderItem**:用"移到某 item 之前"的 token 语义,不用绝对下标。

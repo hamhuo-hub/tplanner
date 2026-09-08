@@ -48,7 +48,7 @@
     <string name="recurrence_weekly">每周</string>
     <string name="recurrence_monthly">每月</string>
     <string name="recurrence_count">共 %1$d 次</string>
-    <string name="recurrence_independent_hint">每次重复都会创建为独立任务，编辑或删除互不影响。</string>
+    <string name="recurrence_series_hint">标题、时间和共用内容会更新整组；每次完成进度独立。待办只显示下一次，时间轴保留每次安排。取消重复会保留本次和已完成记录。</string>
 
     <!-- 任务分组 -->
     <string name="group_now">进行中</string>

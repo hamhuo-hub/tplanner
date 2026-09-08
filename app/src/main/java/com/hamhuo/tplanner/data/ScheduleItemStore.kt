@@ -71,11 +71,11 @@ class ScheduleItemStore(
     suspend fun getAll(): List<ScheduleItem> =
         DurableWriteQueue.readAfterPending(EVENT_FACT_QUEUE_KEY) { repository.getAll() }
 
-    suspend fun save(event: ScheduleItem) {
+    suspend fun save(event: ScheduleItem, original: ScheduleItem? = null) {
         // The writer belongs to the application process, not the Activity coroutine awaiting it.
         // Rotation/onStop may cancel the waiter but cannot cancel an accepted fact mutation.
         DurableWriteQueue.submitAndAwait(EVENT_FACT_QUEUE_KEY) {
-            repository.saveOneLocal(event)
+            repository.saveOneLocal(event, original = original)
             reconcileAlarms(repository.getAll())
             scheduleSync()
         }

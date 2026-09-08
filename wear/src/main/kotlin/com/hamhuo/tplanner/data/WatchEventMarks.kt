@@ -18,6 +18,7 @@ object WatchEventMarks {
         val startEpochMs: Long,
         val endEpochMs: Long,
         val checklistJson: String,
+        val series: WatchTaskSeriesMetadata? = null,
     )
 
     data class Marks(val minutes: List<Int>, val items: List<NextTask>) {
@@ -89,7 +90,7 @@ object WatchEventMarks {
                         .takeIf { it in SUPPORTED_TASK_TYPES }
                         ?: "task"
                     val checklistJson = item.optJSONArray("checklist")?.toString().orEmpty()
-                    StoredTask(id, title, type, startEpochMs, endEpochMs, checklistJson)
+                    StoredTask(id, title, type, startEpochMs, endEpochMs, checklistJson, WatchTaskSeriesCodec.read(item))
                 }.sortedWith(taskOrder)
             }.orEmpty()
             val merged = (tasks + pending)
@@ -107,6 +108,7 @@ object WatchEventMarks {
         val startEpochMs: Long,
         val endEpochMs: Long,
         val checklistJson: String,
+        val series: WatchTaskSeriesMetadata? = null,
     )
 
     private val taskOrder = compareBy<StoredTask>(
@@ -141,6 +143,7 @@ object WatchEventMarks {
                     startEpochMs = task.startEpochMs,
                     endEpochMs = task.endEpochMs,
                     checklistJson = task.checklistJson,
+                    series = task.series,
                 )
             }
             .toList()

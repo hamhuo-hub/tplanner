@@ -102,7 +102,7 @@ class ScheduleItemActions(
         onEventsChanged(nextEvents)
         nextEvents.firstOrNull { it.id == eventId }?.let { updated ->
             scope.launch {
-                eventWriteMutex.withLock { eventStore.save(updated) }
+                eventWriteMutex.withLock { eventStore.save(updated, original = events.firstOrNull { it.id == eventId }) }
             }
         }
     }
@@ -119,7 +119,7 @@ class ScheduleItemActions(
         onEventsChanged(nextEvents)
         nextEvents.firstOrNull { it.id == eventId }?.let { updated ->
             scope.launch {
-                eventWriteMutex.withLock { eventStore.save(updated) }
+                eventWriteMutex.withLock { eventStore.save(updated, original = events.firstOrNull { it.id == eventId }) }
             }
         }
     }
@@ -139,7 +139,7 @@ class ScheduleItemActions(
             try {
                 eventWriteMutex.withLock {
                     if (storedEvent != null) {
-                        eventStore.save(storedEvent.copy(deletedAt = now, updatedAt = now))
+                        eventStore.save(storedEvent.copy(deletedAt = now, updatedAt = now), original = storedEvent)
                     }
                     // A detail editor always owns a durable draft. Clear it after the
                     // deletion so a cold start cannot restore a deleted or cancelled item.
@@ -172,7 +172,7 @@ class ScheduleItemActions(
         onEventsChanged(nextEvents)
         nextEvents.firstOrNull { it.id == eventId }?.let { updated ->
             scope.launch {
-                eventWriteMutex.withLock { eventStore.save(updated) }
+                eventWriteMutex.withLock { eventStore.save(updated, original = events.firstOrNull { it.id == eventId }) }
             }
         }
     }

@@ -76,6 +76,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -149,6 +150,7 @@ fun ScheduleItemDetailScreen(
         val count = if (raw is Number) raw.toInt() else raw?.toString()?.toIntOrNull() ?: 1
         mutableStateOf(count.coerceIn(1, MAX_TASK_RECURRENCE_COUNT))
     }
+    var recurrenceEdited by remember(event.id) { mutableStateOf(false) }
 
     var showTypeSheet by remember { mutableStateOf(false) }
     val typeSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -180,6 +182,8 @@ fun ScheduleItemDetailScreen(
             if (recurrenceType == "none") {
                 remove("recurrenceType")
                 remove("recurrenceCount")
+                // Preserve unsupported future rules through unrelated edits; clear only on intent.
+                if (recurrenceEdited) remove("_syncV3Recurrence")
             } else {
                 put("recurrenceType", recurrenceType)
                 put("recurrenceCount", recurrenceCount.coerceIn(1, MAX_TASK_RECURRENCE_COUNT))
@@ -315,6 +319,7 @@ fun ScheduleItemDetailScreen(
                         Box(
                             modifier = Modifier
                                 .size(56.dp)
+                                .clip(RoundedCornerShape(TPlannerGeometry.RadiusFieldDp.dp))
                                 .background(
                                     Color(TPlannerCategories.forColorId(colorId).background),
                                     RoundedCornerShape(TPlannerGeometry.RadiusFieldDp.dp)
@@ -413,6 +418,7 @@ fun ScheduleItemDetailScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clip(RoundedCornerShape(TPlannerGeometry.RadiusPanelDp.dp))
                             .background(SURFACE_LOW, RoundedCornerShape(TPlannerGeometry.RadiusPanelDp.dp))
                             .border(1.dp, BORDER, RoundedCornerShape(TPlannerGeometry.RadiusPanelDp.dp))
                             .clickable {
@@ -493,6 +499,7 @@ fun ScheduleItemDetailScreen(
                                     label = label,
                                     selected = recurrenceType == value,
                                     onClick = {
+                                        recurrenceEdited = true
                                         recurrenceType = value
                                         if (value != "none" && recurrenceCount < 2) {
                                             recurrenceCount = 2
@@ -519,9 +526,11 @@ fun ScheduleItemDetailScreen(
                                 Box(
                                     modifier = Modifier
                                         .size(Tokens.Platform.Phone.Geometry.TouchTargetMin.dp)
+                                        .clip(RoundedCornerShape(TPlannerGeometry.RadiusMediumDp.dp))
                                         .background(SURFACE_LOW, RoundedCornerShape(TPlannerGeometry.RadiusMediumDp.dp))
                                         .border(1.dp, BORDER, RoundedCornerShape(TPlannerGeometry.RadiusMediumDp.dp))
                                         .clickable(enabled = recurrenceCount > 1) {
+                                            recurrenceEdited = true
                                             recurrenceCount--
                                             persistDraft()
                                         },
@@ -532,9 +541,11 @@ fun ScheduleItemDetailScreen(
                                 Box(
                                     modifier = Modifier
                                         .size(Tokens.Platform.Phone.Geometry.TouchTargetMin.dp)
+                                        .clip(RoundedCornerShape(TPlannerGeometry.RadiusMediumDp.dp))
                                         .background(SURFACE_LOW, RoundedCornerShape(TPlannerGeometry.RadiusMediumDp.dp))
                                         .border(1.dp, BORDER, RoundedCornerShape(TPlannerGeometry.RadiusMediumDp.dp))
                                         .clickable(enabled = recurrenceCount < MAX_TASK_RECURRENCE_COUNT) {
+                                            recurrenceEdited = true
                                             recurrenceCount++
                                             persistDraft()
                                         },
@@ -544,7 +555,7 @@ fun ScheduleItemDetailScreen(
                                 }
                             }
                             Text(
-                                stringResource(R.string.recurrence_independent_hint),
+                                stringResource(R.string.recurrence_series_hint),
                                 color = DIM,
                                 fontSize = TPlannerTypography.PhoneCaptionSp.sp,
                                 lineHeight = TPlannerTypography.PhoneCompactLineHeightSp.sp,
@@ -609,6 +620,7 @@ fun ScheduleItemDetailScreen(
                                 val selected = minutes == alarmOffsetMinutes
                                 Box(
                                     modifier = Modifier
+                                        .clip(RoundedCornerShape(TPlannerGeometry.RadiusChipDp.dp))
                                         .background(
                                             if (selected) GOLD else SURFACE_LOW,
                                             RoundedCornerShape(TPlannerGeometry.RadiusChipDp.dp),
@@ -729,6 +741,7 @@ fun ScheduleItemDetailScreen(
                             Box(
                                 modifier = Modifier
                                     .size(Tokens.Platform.Phone.Geometry.TouchTargetMin.dp)
+                                    .clip(CircleShape)
                                     .semantics { contentDescription = "颜色 ${idx + 1}"; selected = idx == colorId }
                                     .clickable {
                                         colorId = idx
@@ -964,6 +977,7 @@ private fun ListAssignmentChip(
 ) {
     Box(
         modifier = Modifier
+            .clip(RoundedCornerShape(TPlannerGeometry.RadiusChipDp.dp))
             .background(
                 if (selected) GOLD else SURFACE_LOW,
                 RoundedCornerShape(TPlannerGeometry.RadiusChipDp.dp),
@@ -998,6 +1012,7 @@ private fun alarmOffsetLabel(minutes: Int): String = when {
 private fun TimeChip(label: String, value: String, onClick: () -> Unit) {
     Column(
         modifier = Modifier
+            .clip(RoundedCornerShape(TPlannerGeometry.RadiusPanelDp.dp))
             .background(SURFACE_LOW, RoundedCornerShape(TPlannerGeometry.RadiusPanelDp.dp))
             .border(1.dp, BORDER, RoundedCornerShape(TPlannerGeometry.RadiusPanelDp.dp))
             .clickable { onClick() }

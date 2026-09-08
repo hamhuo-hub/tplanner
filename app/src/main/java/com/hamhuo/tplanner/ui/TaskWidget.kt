@@ -102,7 +102,7 @@ fun TaskWidget(
     }
 
     val isToday = view is TaskView.Today
-    val source = remember(events, view.key, today) { view.filter(events, today) }
+    val source = remember(events, view.key, today) { view.listItems(events, today) }
 
     val groupNowLabel   = stringResource(R.string.group_now)
     val groupLaterLabel = stringResource(R.string.group_later)

@@ -750,13 +750,13 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         } else {
             marks.items.filterNot { it.id in deletedIds }
         }
-        if (filter == WatchListFilter.INBOX) return available
+        if (filter == WatchListFilter.INBOX) return collapseWatchTaskSeries(available)
         val today = LocalDate.now(APP_ZONE)
         val start = today.atStartOfDay(APP_ZONE).toInstant().toEpochMilli()
         val end = today.plusDays(1).atStartOfDay(APP_ZONE).toInstant().toEpochMilli()
-        return available.filter { task ->
-            task.endEpochMs > start && task.startEpochMs < end
-        }
+        return collapseWatchTaskSeries(available.filter { task ->
+            watchTaskFallsInWindow(task, start, end)
+        })
     }
 
     private fun taskSubtitle(task: WatchEventMarks.NextTask): String {

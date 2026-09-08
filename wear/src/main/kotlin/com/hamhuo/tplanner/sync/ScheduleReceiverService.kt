@@ -117,11 +117,13 @@ internal object ScheduleStore {
         val startEpochMs: Long,
         val endEpochMs: Long,
         val checklistJson: String,
+        val series: WatchTaskSeriesMetadata? = null,
     )
 
     private data class TaskBundle(
         val tasks: List<TaskSnapshot>,
         val hash: String,
+        val seriesHash: String?,
     )
 
     private val taskOrder = compareBy<TaskSnapshot>(
@@ -172,6 +174,8 @@ internal object ScheduleStore {
             val existingHash = existing?.optString("hash")
             val existingTasksHash = existing?.optString("tasksHash")
                 ?.takeIf { it.isNotBlank() }
+            val existingSeriesHash = existing?.optString(WatchTaskSeriesCodec.HASH_FIELD)
+                ?.takeIf { it.isNotBlank() }
             val existingSourceSnapshotVersion = existing?.optLong("sourceSnapshotVersion", 0L) ?: 0L
             val schemaVersion = payload.optInt("schemaVersion", -1)
             if (schemaVersion != SCHEMA_VERSION) {
@@ -217,6 +221,7 @@ internal object ScheduleStore {
             val taskBundle = normalizedTasks(payload)
             val tasks = taskBundle?.tasks
             val taskContentHash = taskBundle?.hash
+            val taskSeriesHash = taskBundle?.seriesHash
 
             if (existingVersion > version) {
                 Log.w(TAG, "storeSchedule: ignored stale version=$version current=$existingVersion")
@@ -232,12 +237,25 @@ internal object ScheduleStore {
                     return StoreResult.REJECTED
                 }
                 when {
-                    existingTasksHash == taskContentHash -> {
-                        WatchTaskOutbox.onProjectionInstalled(
-                            context,
-                            maxOf(existingSourceSnapshotVersion, sourceSnapshotVersion),
-                        )
-                        return StoreResult.ALREADY_CURRENT
+                    existingTasksHash == taskContentHash -> when {
+                        existingSeriesHash == taskSeriesHash -> {
+                            WatchTaskOutbox.onProjectionInstalled(
+                                context,
+                                maxOf(existingSourceSnapshotVersion, sourceSnapshotVersion),
+                            )
+                            return StoreResult.ALREADY_CURRENT
+                        }
+                        existingSeriesHash == null && taskSeriesHash != null -> {
+                            Log.i(TAG, "storeSchedule: enriching version=$version with series metadata")
+                        }
+                        existingSeriesHash != null && taskSeriesHash == null -> {
+                            Log.i(TAG, "storeSchedule: ignored series metadata downgrade version=$version")
+                            return StoreResult.STALE
+                        }
+                        else -> {
+                            Log.e(TAG, "storeSchedule: rejected divergent series metadata for version=$version")
+                            return StoreResult.REJECTED
+                        }
                     }
                     existingTasksHash == null && taskContentHash != null -> {
                         Log.i(TAG, "storeSchedule: enriching version=$version with task details")
@@ -277,6 +295,7 @@ internal object ScheduleStore {
                 if (tasks != null && taskContentHash != null) {
                     put("tasks", taskArray(tasks))
                     put("tasksHash", taskContentHash)
+                    if (taskSeriesHash != null) put(WatchTaskSeriesCodec.HASH_FIELD, taskSeriesHash)
                 }
             }
             val committed = prefs.edit()
@@ -330,6 +349,7 @@ internal object ScheduleStore {
         require(hasTasks == hasTasksHash) {
             "tasks and tasksHash must either both be present or both be absent"
         }
+        require(hasTasks || !payload.has(WatchTaskSeriesCodec.HASH_FIELD)) { "taskSeriesHash requires tasks" }
         if (!hasTasks) return null
 
         val input = payload.optJSONArray("tasks")
@@ -376,7 +396,7 @@ internal object ScheduleStore {
                 "tasks[$index] ends before it starts"
             }
             val checklistJson = item.optJSONArray("checklist")?.toString().orEmpty()
-            TaskSnapshot(id, title, type, startEpochMs, endEpochMs, checklistJson)
+            TaskSnapshot(id, title, type, startEpochMs, endEpochMs, checklistJson, WatchTaskSeriesCodec.read(item))
         }.sortedWith(taskOrder)
 
         require(taskArray(tasks).toString().toByteArray(Charsets.UTF_8).size <= MAX_TASKS_UTF8_BYTES) {
@@ -384,7 +404,19 @@ internal object ScheduleStore {
         }
         val actualHash = tasksHash(tasks)
         require(expectedHashValue == actualHash) { "tasksHash mismatch" }
-        return TaskBundle(tasks, actualHash)
+        val actualSeriesHash = WatchTaskSeriesCodec.hash(tasks.map { it.id to it.series })
+        val hasSeriesHash = payload.has(WatchTaskSeriesCodec.HASH_FIELD)
+        if (hasSeriesHash) {
+            val expectedSeriesHash = payload.get(WatchTaskSeriesCodec.HASH_FIELD)
+            require(expectedSeriesHash is String && sha256.matches(expectedSeriesHash)) {
+                "taskSeriesHash is not a lowercase SHA-256 value"
+            }
+            require(expectedSeriesHash == actualSeriesHash) { "taskSeriesHash mismatch" }
+        }
+        // Legacy payloads have neither extension. If an additive sender omits its hash,
+        // still fingerprint the normalized binding so same-version changes cannot hide.
+        val seriesHash = actualSeriesHash.takeIf { hasSeriesHash || tasks.any { task -> task.series != null } }
+        return TaskBundle(tasks, actualHash, seriesHash)
     }
 
     private fun JSONObject.strictLong(field: String, description: String): Long {
@@ -405,6 +437,7 @@ internal object ScheduleStore {
                 put("type", task.type)
                 put("startEpochMs", task.startEpochMs)
                 put("endEpochMs", task.endEpochMs)
+                WatchTaskSeriesCodec.write(this, task.series)
                 if (task.checklistJson.isNotEmpty()) {
                     put("checklist", JSONArray(task.checklistJson))
                 }
