@@ -1,5 +1,9 @@
 # TPlanner Android brand assets
 
+The new light cross-client development baseline is in [`tokens/`](tokens/README.md), with
+one editable JSON source, generated platform values, and a migration map. It is not yet
+wired into every production theme; the Android ownership rules below still apply.
+
 ## Design-system source of truth
 
 `shared/src/main/kotlin/com/hamhuo/tplanner/designsystem/TPlannerDesignTokens.kt` is the only

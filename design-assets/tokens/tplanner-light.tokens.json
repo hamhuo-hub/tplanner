@@ -1,0 +1,2954 @@
+{
+  "$description": "TPlanner 浅色跨端开发基线。照片取样为已确认视觉依据；产品状态、尺寸和适配为新增统一规范。",
+  "$extensions": {
+    "com.tplanner": {
+      "version": "1.0.0",
+      "theme": "light",
+      "status": "development-baseline",
+      "format": "DTCG 2025.10 types; project-specific exporter subset",
+      "reference": "../hop/reference.png",
+      "units": {
+        "web": "CSS px; typography exported as rem (16 px base)",
+        "desktop": "CSS px; typography exported as rem (16 px base)",
+        "android": "geometry px values map to dp; typography fontSize/letterSpacing px values map to sp; never use raw screen px"
+      },
+      "contrastPairs": [
+        {
+          "foreground": "semantic.color.textPrimary",
+          "background": "semantic.color.canvas",
+          "minimum": 4.5,
+          "purpose": "产品正文与反馈",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.textPrimary",
+          "background": "semantic.color.surface",
+          "minimum": 4.5,
+          "purpose": "产品正文与反馈",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.textPrimary",
+          "background": "semantic.color.raised",
+          "minimum": 4.5,
+          "purpose": "产品正文与反馈",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.textSecondary",
+          "background": "semantic.color.canvas",
+          "minimum": 4.5,
+          "purpose": "产品正文与反馈",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.textSecondary",
+          "background": "semantic.color.surface",
+          "minimum": 4.5,
+          "purpose": "产品正文与反馈",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.textSecondary",
+          "background": "semantic.color.raised",
+          "minimum": 4.5,
+          "purpose": "产品正文与反馈",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.textMuted",
+          "background": "semantic.color.canvas",
+          "minimum": 4.5,
+          "purpose": "产品正文与反馈",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.textMuted",
+          "background": "semantic.color.surface",
+          "minimum": 4.5,
+          "purpose": "产品正文与反馈",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.textMuted",
+          "background": "semantic.color.raised",
+          "minimum": 4.5,
+          "purpose": "产品正文与反馈",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.accentText",
+          "background": "semantic.color.canvas",
+          "minimum": 4.5,
+          "purpose": "产品正文与反馈",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.accentText",
+          "background": "semantic.color.surface",
+          "minimum": 4.5,
+          "purpose": "产品正文与反馈",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.accentText",
+          "background": "semantic.color.raised",
+          "minimum": 4.5,
+          "purpose": "产品正文与反馈",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.success",
+          "background": "semantic.color.canvas",
+          "minimum": 4.5,
+          "purpose": "产品正文与反馈",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.success",
+          "background": "semantic.color.surface",
+          "minimum": 4.5,
+          "purpose": "产品正文与反馈",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.success",
+          "background": "semantic.color.raised",
+          "minimum": 4.5,
+          "purpose": "产品正文与反馈",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.error",
+          "background": "semantic.color.canvas",
+          "minimum": 4.5,
+          "purpose": "产品正文与反馈",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.error",
+          "background": "semantic.color.surface",
+          "minimum": 4.5,
+          "purpose": "产品正文与反馈",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.error",
+          "background": "semantic.color.raised",
+          "minimum": 4.5,
+          "purpose": "产品正文与反馈",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.info",
+          "background": "semantic.color.canvas",
+          "minimum": 4.5,
+          "purpose": "产品正文与反馈",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.info",
+          "background": "semantic.color.surface",
+          "minimum": 4.5,
+          "purpose": "产品正文与反馈",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.info",
+          "background": "semantic.color.raised",
+          "minimum": 4.5,
+          "purpose": "产品正文与反馈",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.warning",
+          "background": "semantic.color.canvas",
+          "minimum": 4.5,
+          "purpose": "产品正文与反馈",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.warning",
+          "background": "semantic.color.surface",
+          "minimum": 4.5,
+          "purpose": "产品正文与反馈",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.warning",
+          "background": "semantic.color.raised",
+          "minimum": 4.5,
+          "purpose": "产品正文与反馈",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.onAccent",
+          "background": "semantic.color.accent",
+          "minimum": 4.5,
+          "purpose": "主操作文字",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.onAccent",
+          "background": "semantic.color.accentHover",
+          "minimum": 4.5,
+          "purpose": "主操作文字",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.onAccent",
+          "background": "semantic.color.accentPressed",
+          "minimum": 4.5,
+          "purpose": "主操作文字",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.borderControl",
+          "background": "semantic.color.canvas",
+          "minimum": 3,
+          "purpose": "必要控件边界/焦点",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.borderControl",
+          "background": "semantic.color.input",
+          "minimum": 3,
+          "purpose": "必要控件边界/焦点",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.focus",
+          "background": "semantic.color.canvas",
+          "minimum": 3,
+          "purpose": "必要控件边界/焦点",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.focus",
+          "background": "semantic.color.input",
+          "minimum": 3,
+          "purpose": "必要控件边界/焦点",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.success",
+          "background": "semantic.color.successBackground",
+          "minimum": 4.5,
+          "purpose": "状态浅底文字",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.error",
+          "background": "semantic.color.errorBackground",
+          "minimum": 4.5,
+          "purpose": "状态浅底文字",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.info",
+          "background": "semantic.color.infoBackground",
+          "minimum": 4.5,
+          "purpose": "状态浅底文字",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.warning",
+          "background": "semantic.color.warningBackground",
+          "minimum": 4.5,
+          "purpose": "状态浅底文字",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.textPrimary",
+          "background": "semantic.color.selectedBackground",
+          "minimum": 4.5,
+          "purpose": "已选择任务标题",
+          "required": true
+        },
+        {
+          "foreground": "semantic.color.textMuted",
+          "background": "semantic.color.surface",
+          "minimum": 4.5,
+          "purpose": "已完成任务保持可读",
+          "required": true
+        },
+        {
+          "foreground": "component.button.primary.border",
+          "background": "component.button.primary.background",
+          "minimum": 3,
+          "purpose": "橙色按钮轮廓与填充",
+          "required": true
+        },
+        {
+          "foreground": "semantic.category.id0.foreground",
+          "background": "semantic.category.id0.background",
+          "minimum": 4.5,
+          "purpose": "类别浅底文字",
+          "required": true
+        },
+        {
+          "foreground": "semantic.category.id0.onSolid",
+          "background": "semantic.category.id0.solid",
+          "minimum": 4.5,
+          "purpose": "类别实心条文字",
+          "required": true
+        },
+        {
+          "foreground": "semantic.category.id1.foreground",
+          "background": "semantic.category.id1.background",
+          "minimum": 4.5,
+          "purpose": "类别浅底文字",
+          "required": true
+        },
+        {
+          "foreground": "semantic.category.id1.onSolid",
+          "background": "semantic.category.id1.solid",
+          "minimum": 4.5,
+          "purpose": "类别实心条文字",
+          "required": true
+        },
+        {
+          "foreground": "semantic.category.id2.foreground",
+          "background": "semantic.category.id2.background",
+          "minimum": 4.5,
+          "purpose": "类别浅底文字",
+          "required": true
+        },
+        {
+          "foreground": "semantic.category.id2.onSolid",
+          "background": "semantic.category.id2.solid",
+          "minimum": 4.5,
+          "purpose": "类别实心条文字",
+          "required": true
+        },
+        {
+          "foreground": "semantic.category.id3.foreground",
+          "background": "semantic.category.id3.background",
+          "minimum": 4.5,
+          "purpose": "类别浅底文字",
+          "required": true
+        },
+        {
+          "foreground": "semantic.category.id3.onSolid",
+          "background": "semantic.category.id3.solid",
+          "minimum": 4.5,
+          "purpose": "类别实心条文字",
+          "required": true
+        },
+        {
+          "foreground": "semantic.category.id4.foreground",
+          "background": "semantic.category.id4.background",
+          "minimum": 4.5,
+          "purpose": "类别浅底文字",
+          "required": true
+        },
+        {
+          "foreground": "semantic.category.id4.onSolid",
+          "background": "semantic.category.id4.solid",
+          "minimum": 4.5,
+          "purpose": "类别实心条文字",
+          "required": true
+        },
+        {
+          "foreground": "semantic.category.id5.foreground",
+          "background": "semantic.category.id5.background",
+          "minimum": 4.5,
+          "purpose": "类别浅底文字",
+          "required": true
+        },
+        {
+          "foreground": "semantic.category.id5.onSolid",
+          "background": "semantic.category.id5.solid",
+          "minimum": 4.5,
+          "purpose": "类别实心条文字",
+          "required": true
+        },
+        {
+          "foreground": "semantic.category.id6.foreground",
+          "background": "semantic.category.id6.background",
+          "minimum": 4.5,
+          "purpose": "类别浅底文字",
+          "required": true
+        },
+        {
+          "foreground": "semantic.category.id6.onSolid",
+          "background": "semantic.category.id6.solid",
+          "minimum": 4.5,
+          "purpose": "类别实心条文字",
+          "required": true
+        },
+        {
+          "foreground": "semantic.category.id7.foreground",
+          "background": "semantic.category.id7.background",
+          "minimum": 4.5,
+          "purpose": "类别浅底文字",
+          "required": true
+        },
+        {
+          "foreground": "semantic.category.id7.onSolid",
+          "background": "semantic.category.id7.solid",
+          "minimum": 4.5,
+          "purpose": "类别实心条文字",
+          "required": true
+        },
+        {
+          "foreground": "component.hop.color.time",
+          "background": "component.hop.color.paper",
+          "minimum": 4.5,
+          "purpose": "参考表盘时间小字的已知对比度差距；保持照片视觉，不能用作产品正文规范",
+          "required": false
+        },
+        {
+          "foreground": "semantic.color.accent",
+          "background": "semantic.color.canvas",
+          "minimum": 3,
+          "purpose": "取样橙线与盘面，仅作诊断",
+          "required": false
+        }
+      ]
+    }
+  },
+  "primitive": {
+    "color": {
+      "paper": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.89803922,
+            0.90980392,
+            0.92941176
+          ],
+          "hex": "#E5E8ED"
+        },
+        "$description": "照片盘面两个未印字区域中位数；取样坐标见 hop-watchface.md。"
+      },
+      "rim": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.96470588,
+            0.97254902,
+            0.94901961
+          ],
+          "hex": "#F6F8F2"
+        },
+        "$description": "照片白色边缘取样；装饰高光，不充当可交互控件的唯一边界。"
+      },
+      "ink": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.12941176,
+            0.1254902,
+            0.12941176
+          ],
+          "hex": "#212021"
+        },
+        "$description": "照片数字字干取样。"
+      },
+      "orange": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.96862745,
+            0.44313725,
+            0.15686275
+          ],
+          "hex": "#F77128"
+        },
+        "$description": "照片橙线高色度核心取样；用于强调填充/表盘线，不能直接作为浅底小字。"
+      },
+      "track": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.58823529,
+            0.59607843,
+            0.61176471
+          ],
+          "hex": "#96989C"
+        },
+        "$description": "照片顶缘阴影取样；表盘细轨道色。"
+      },
+      "shadow": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.18823529,
+            0.20392157,
+            0.22745098
+          ],
+          "hex": "#30343A"
+        },
+        "$description": "由照片阴影推导的渐变基色。"
+      },
+      "surface": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.96470588,
+            0.97254902,
+            0.98039216
+          ],
+          "hex": "#F6F8FA"
+        },
+        "$description": "产品浅色内容表面。"
+      },
+      "white": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            1,
+            1,
+            1
+          ],
+          "hex": "#FFFFFF"
+        },
+        "$description": "抬升表面、输入区与深色类别上的文字。"
+      },
+      "secondary": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.33333333,
+            0.3372549,
+            0.35294118
+          ],
+          "hex": "#55565A"
+        },
+        "$description": "低于主文字的层级，仍适合正文。"
+      },
+      "muted": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.37647059,
+            0.4,
+            0.43921569
+          ],
+          "hex": "#606670"
+        },
+        "$description": "辅助时间、已完成任务、占位文案。"
+      },
+      "borderSubtle": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.78039216,
+            0.79607843,
+            0.82352941
+          ],
+          "hex": "#C7CBD2"
+        },
+        "$description": "非交互分隔线，不用于识别输入控件。"
+      },
+      "borderControl": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.48627451,
+            0.50196078,
+            0.52941176
+          ],
+          "hex": "#7C8087"
+        },
+        "$description": "输入框、复选框等必要边界。"
+      },
+      "hover": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.86666667,
+            0.88235294,
+            0.90588235
+          ],
+          "hex": "#DDE1E7"
+        },
+        "$description": "中性悬停/禁用背景。"
+      },
+      "orangeHover": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.97647059,
+            0.50980392,
+            0.25882353
+          ],
+          "hex": "#F98242"
+        },
+        "$description": "橙色主操作悬停填充。"
+      },
+      "orangePressed": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.91372549,
+            0.38823529,
+            0.10588235
+          ],
+          "hex": "#E9631B"
+        },
+        "$description": "橙色主操作按下填充。"
+      },
+      "orangeText": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.63529412,
+            0.24705882,
+            0.03921569
+          ],
+          "hex": "#A23F0A"
+        },
+        "$description": "浅底链接、强调文字、焦点和主操作轮廓。"
+      },
+      "orangeTint": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.99215686,
+            0.90588235,
+            0.85490196
+          ],
+          "hex": "#FDE7DA"
+        },
+        "$description": "选择与强调的浅底。"
+      },
+      "success": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.14509804,
+            0.41960784,
+            0.27058824
+          ],
+          "hex": "#256B45"
+        },
+        "$description": "成功/完成反馈文字和图标。"
+      },
+      "successTint": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.89411765,
+            0.94509804,
+            0.91372549
+          ],
+          "hex": "#E4F1E9"
+        },
+        "$description": "成功浅底。"
+      },
+      "error": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.70196078,
+            0.14901961,
+            0.11764706
+          ],
+          "hex": "#B3261E"
+        },
+        "$description": "错误/危险操作文字和图标。"
+      },
+      "errorTint": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.98823529,
+            0.90588235,
+            0.89803922
+          ],
+          "hex": "#FCE7E5"
+        },
+        "$description": "错误浅底。"
+      },
+      "info": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.1372549,
+            0.36862745,
+            0.57254902
+          ],
+          "hex": "#235E92"
+        },
+        "$description": "信息/当前时段文字和图标。"
+      },
+      "infoTint": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.89803922,
+            0.93333333,
+            0.97254902
+          ],
+          "hex": "#E5EEF8"
+        },
+        "$description": "当前时段与信息浅底。"
+      },
+      "warning": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.50196078,
+            0.34117647,
+            0
+          ],
+          "hex": "#805700"
+        },
+        "$description": "提醒/将到期文字和图标。"
+      },
+      "warningTint": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.96470588,
+            0.92941176,
+            0.8
+          ],
+          "hex": "#F6EDCC"
+        },
+        "$description": "提醒浅底。"
+      },
+      "black": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0,
+            0,
+            0
+          ],
+          "hex": "#000000"
+        },
+        "$description": "Wear ambient 专用底色。"
+      },
+      "ambientInk": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.65098039,
+            0.65098039,
+            0.62745098
+          ],
+          "hex": "#A6A6A0"
+        },
+        "$description": "Hop ambient 文字；不用于浅色业务 UI。"
+      },
+      "blueCategory": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.35686275,
+            0.56078431,
+            0.8
+          ],
+          "hex": "#5B8FCC"
+        },
+        "$description": "保留现有 colorId 色相识别，用作装饰色点。"
+      },
+      "blueCategoryInk": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.15294118,
+            0.37254902,
+            0.58823529
+          ],
+          "hex": "#275F96"
+        },
+        "$description": "浅色类别的可读前景/实心填充。"
+      },
+      "blueCategoryTint": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.89803922,
+            0.93333333,
+            0.97254902
+          ],
+          "hex": "#E5EEF8"
+        },
+        "$description": "浅色类别背景。"
+      },
+      "goldCategory": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.78823529,
+            0.65882353,
+            0.29803922
+          ],
+          "hex": "#C9A84C"
+        },
+        "$description": "保留现有 colorId 色相识别，用作装饰色点。"
+      },
+      "goldCategoryInk": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.50196078,
+            0.34117647,
+            0
+          ],
+          "hex": "#805700"
+        },
+        "$description": "浅色类别的可读前景/实心填充。"
+      },
+      "goldCategoryTint": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.96470588,
+            0.92941176,
+            0.8
+          ],
+          "hex": "#F6EDCC"
+        },
+        "$description": "浅色类别背景。"
+      },
+      "roseCategory": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.75294118,
+            0.41176471,
+            0.47843137
+          ],
+          "hex": "#C0697A"
+        },
+        "$description": "保留现有 colorId 色相识别，用作装饰色点。"
+      },
+      "roseCategoryInk": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.6,
+            0.23529412,
+            0.33333333
+          ],
+          "hex": "#993C55"
+        },
+        "$description": "浅色类别的可读前景/实心填充。"
+      },
+      "roseCategoryTint": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.97254902,
+            0.90980392,
+            0.9254902
+          ],
+          "hex": "#F8E8EC"
+        },
+        "$description": "浅色类别背景。"
+      },
+      "greenCategory": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.35686275,
+            0.61960784,
+            0.44705882
+          ],
+          "hex": "#5B9E72"
+        },
+        "$description": "保留现有 colorId 色相识别，用作装饰色点。"
+      },
+      "greenCategoryInk": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.15294118,
+            0.38823529,
+            0.23921569
+          ],
+          "hex": "#27633D"
+        },
+        "$description": "浅色类别的可读前景/实心填充。"
+      },
+      "greenCategoryTint": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.89411765,
+            0.94509804,
+            0.91372549
+          ],
+          "hex": "#E4F1E9"
+        },
+        "$description": "浅色类别背景。"
+      },
+      "purpleCategory": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.54509804,
+            0.41960784,
+            0.68235294
+          ],
+          "hex": "#8B6BAE"
+        },
+        "$description": "保留现有 colorId 色相识别，用作装饰色点。"
+      },
+      "purpleCategoryInk": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.40784314,
+            0.28627451,
+            0.59215686
+          ],
+          "hex": "#684997"
+        },
+        "$description": "浅色类别的可读前景/实心填充。"
+      },
+      "purpleCategoryTint": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.93333333,
+            0.90980392,
+            0.96862745
+          ],
+          "hex": "#EEE8F7"
+        },
+        "$description": "浅色类别背景。"
+      },
+      "clayCategory": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.78431373,
+            0.49019608,
+            0.35294118
+          ],
+          "hex": "#C87D5A"
+        },
+        "$description": "保留现有 colorId 色相识别，用作装饰色点。"
+      },
+      "clayCategoryInk": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.56862745,
+            0.30196078,
+            0.1372549
+          ],
+          "hex": "#914D23"
+        },
+        "$description": "浅色类别的可读前景/实心填充。"
+      },
+      "clayCategoryTint": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.97254902,
+            0.92156863,
+            0.86666667
+          ],
+          "hex": "#F8EBDD"
+        },
+        "$description": "浅色类别背景。"
+      },
+      "tealCategory": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.29019608,
+            0.61568627,
+            0.65882353
+          ],
+          "hex": "#4A9DA8"
+        },
+        "$description": "保留现有 colorId 色相识别，用作装饰色点。"
+      },
+      "tealCategoryInk": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.13333333,
+            0.41568627,
+            0.44705882
+          ],
+          "hex": "#226A72"
+        },
+        "$description": "浅色类别的可读前景/实心填充。"
+      },
+      "tealCategoryTint": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.88235294,
+            0.94117647,
+            0.94509804
+          ],
+          "hex": "#E1F0F1"
+        },
+        "$description": "浅色类别背景。"
+      },
+      "grayCategory": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.54117647,
+            0.54117647,
+            0.54117647
+          ],
+          "hex": "#8A8A8A"
+        },
+        "$description": "保留现有 colorId 色相识别，用作装饰色点。"
+      },
+      "grayCategoryInk": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.37647059,
+            0.39607843,
+            0.42745098
+          ],
+          "hex": "#60656D"
+        },
+        "$description": "浅色类别的可读前景/实心填充。"
+      },
+      "grayCategoryTint": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.9254902,
+            0.93333333,
+            0.94509804
+          ],
+          "hex": "#ECEEF1"
+        },
+        "$description": "浅色类别背景。"
+      }
+    },
+    "space": {
+      "s0": {
+        "$type": "dimension",
+        "$value": {
+          "value": 0,
+          "unit": "px"
+        }
+      },
+      "s2": {
+        "$type": "dimension",
+        "$value": {
+          "value": 2,
+          "unit": "px"
+        }
+      },
+      "s4": {
+        "$type": "dimension",
+        "$value": {
+          "value": 4,
+          "unit": "px"
+        }
+      },
+      "s8": {
+        "$type": "dimension",
+        "$value": {
+          "value": 8,
+          "unit": "px"
+        }
+      },
+      "s12": {
+        "$type": "dimension",
+        "$value": {
+          "value": 12,
+          "unit": "px"
+        }
+      },
+      "s16": {
+        "$type": "dimension",
+        "$value": {
+          "value": 16,
+          "unit": "px"
+        }
+      },
+      "s24": {
+        "$type": "dimension",
+        "$value": {
+          "value": 24,
+          "unit": "px"
+        }
+      },
+      "s32": {
+        "$type": "dimension",
+        "$value": {
+          "value": 32,
+          "unit": "px"
+        }
+      },
+      "s48": {
+        "$type": "dimension",
+        "$value": {
+          "value": 48,
+          "unit": "px"
+        }
+      }
+    },
+    "radius": {
+      "small": {
+        "$type": "dimension",
+        "$value": {
+          "value": 4,
+          "unit": "px"
+        }
+      },
+      "control": {
+        "$type": "dimension",
+        "$value": {
+          "value": 8,
+          "unit": "px"
+        }
+      },
+      "card": {
+        "$type": "dimension",
+        "$value": {
+          "value": 12,
+          "unit": "px"
+        }
+      },
+      "dialog": {
+        "$type": "dimension",
+        "$value": {
+          "value": 16,
+          "unit": "px"
+        }
+      },
+      "pill": {
+        "$type": "dimension",
+        "$value": {
+          "value": 9999,
+          "unit": "px"
+        }
+      }
+    },
+    "font": {
+      "body": {
+        "$type": "fontFamily",
+        "$value": [
+          "system-ui",
+          "-apple-system",
+          "BlinkMacSystemFont",
+          "Segoe UI",
+          "Noto Sans SC",
+          "sans-serif"
+        ],
+        "$description": "业务正文使用系统无衬线及中文回退；不强制全端下载字体。"
+      },
+      "mono": {
+        "$type": "fontFamily",
+        "$value": [
+          "ui-monospace",
+          "SFMono-Regular",
+          "Consolas",
+          "monospace"
+        ],
+        "$description": "只用于代码/ID等；时间优先系统字体等宽数字。"
+      },
+      "hopNumeral": {
+        "$type": "fontFamily",
+        "$value": [
+          "Comfortaa",
+          "sans-serif"
+        ],
+        "$description": "仅 Hop 小时数字使用已打包的 Comfortaa Bold。"
+      }
+    }
+  },
+  "semantic": {
+    "color": {
+      "canvas": {
+        "$type": "color",
+        "$value": "{primitive.color.paper}"
+      },
+      "surface": {
+        "$type": "color",
+        "$value": "{primitive.color.surface}"
+      },
+      "raised": {
+        "$type": "color",
+        "$value": "{primitive.color.white}"
+      },
+      "input": {
+        "$type": "color",
+        "$value": "{primitive.color.white}"
+      },
+      "textPrimary": {
+        "$type": "color",
+        "$value": "{primitive.color.ink}"
+      },
+      "textSecondary": {
+        "$type": "color",
+        "$value": "{primitive.color.secondary}"
+      },
+      "textMuted": {
+        "$type": "color",
+        "$value": "{primitive.color.muted}"
+      },
+      "borderSubtle": {
+        "$type": "color",
+        "$value": "{primitive.color.borderSubtle}"
+      },
+      "borderControl": {
+        "$type": "color",
+        "$value": "{primitive.color.borderControl}"
+      },
+      "accent": {
+        "$type": "color",
+        "$value": "{primitive.color.orange}"
+      },
+      "accentHover": {
+        "$type": "color",
+        "$value": "{primitive.color.orangeHover}"
+      },
+      "accentPressed": {
+        "$type": "color",
+        "$value": "{primitive.color.orangePressed}"
+      },
+      "accentText": {
+        "$type": "color",
+        "$value": "{primitive.color.orangeText}"
+      },
+      "onAccent": {
+        "$type": "color",
+        "$value": "{primitive.color.ink}"
+      },
+      "focus": {
+        "$type": "color",
+        "$value": "{primitive.color.orangeText}"
+      },
+      "success": {
+        "$type": "color",
+        "$value": "{primitive.color.success}"
+      },
+      "successBackground": {
+        "$type": "color",
+        "$value": "{primitive.color.successTint}"
+      },
+      "error": {
+        "$type": "color",
+        "$value": "{primitive.color.error}"
+      },
+      "errorBackground": {
+        "$type": "color",
+        "$value": "{primitive.color.errorTint}"
+      },
+      "info": {
+        "$type": "color",
+        "$value": "{primitive.color.info}"
+      },
+      "infoBackground": {
+        "$type": "color",
+        "$value": "{primitive.color.infoTint}"
+      },
+      "warning": {
+        "$type": "color",
+        "$value": "{primitive.color.warning}"
+      },
+      "warningBackground": {
+        "$type": "color",
+        "$value": "{primitive.color.warningTint}"
+      },
+      "currentBackground": {
+        "$type": "color",
+        "$value": "{primitive.color.infoTint}"
+      },
+      "selectedBackground": {
+        "$type": "color",
+        "$value": "{primitive.color.orangeTint}"
+      },
+      "hoverBackground": {
+        "$type": "color",
+        "$value": "{primitive.color.hover}"
+      },
+      "disabledBackground": {
+        "$type": "color",
+        "$value": "{primitive.color.hover}"
+      },
+      "disabledForeground": {
+        "$type": "color",
+        "$value": "{primitive.color.muted}"
+      },
+      "edgeHighlight": {
+        "$type": "color",
+        "$value": "{primitive.color.rim}"
+      }
+    },
+    "category": {
+      "id0": {
+        "$description": "现有 colorId=0 (blue)；不绑定 task/event/status/reminder 类型。",
+        "id": {
+          "$type": "number",
+          "$value": 0
+        },
+        "accent": {
+          "$type": "color",
+          "$value": "{primitive.color.blueCategory}"
+        },
+        "foreground": {
+          "$type": "color",
+          "$value": "{primitive.color.blueCategoryInk}"
+        },
+        "background": {
+          "$type": "color",
+          "$value": "{primitive.color.blueCategoryTint}"
+        },
+        "border": {
+          "$type": "color",
+          "$value": "{primitive.color.blueCategoryInk}"
+        },
+        "solid": {
+          "$type": "color",
+          "$value": "{primitive.color.blueCategoryInk}"
+        },
+        "onSolid": {
+          "$type": "color",
+          "$value": "{primitive.color.white}"
+        }
+      },
+      "id1": {
+        "$description": "现有 colorId=1 (gold)；不绑定 task/event/status/reminder 类型。",
+        "id": {
+          "$type": "number",
+          "$value": 1
+        },
+        "accent": {
+          "$type": "color",
+          "$value": "{primitive.color.goldCategory}"
+        },
+        "foreground": {
+          "$type": "color",
+          "$value": "{primitive.color.goldCategoryInk}"
+        },
+        "background": {
+          "$type": "color",
+          "$value": "{primitive.color.goldCategoryTint}"
+        },
+        "border": {
+          "$type": "color",
+          "$value": "{primitive.color.goldCategoryInk}"
+        },
+        "solid": {
+          "$type": "color",
+          "$value": "{primitive.color.goldCategoryInk}"
+        },
+        "onSolid": {
+          "$type": "color",
+          "$value": "{primitive.color.white}"
+        }
+      },
+      "id2": {
+        "$description": "现有 colorId=2 (rose)；不绑定 task/event/status/reminder 类型。",
+        "id": {
+          "$type": "number",
+          "$value": 2
+        },
+        "accent": {
+          "$type": "color",
+          "$value": "{primitive.color.roseCategory}"
+        },
+        "foreground": {
+          "$type": "color",
+          "$value": "{primitive.color.roseCategoryInk}"
+        },
+        "background": {
+          "$type": "color",
+          "$value": "{primitive.color.roseCategoryTint}"
+        },
+        "border": {
+          "$type": "color",
+          "$value": "{primitive.color.roseCategoryInk}"
+        },
+        "solid": {
+          "$type": "color",
+          "$value": "{primitive.color.roseCategoryInk}"
+        },
+        "onSolid": {
+          "$type": "color",
+          "$value": "{primitive.color.white}"
+        }
+      },
+      "id3": {
+        "$description": "现有 colorId=3 (green)；不绑定 task/event/status/reminder 类型。",
+        "id": {
+          "$type": "number",
+          "$value": 3
+        },
+        "accent": {
+          "$type": "color",
+          "$value": "{primitive.color.greenCategory}"
+        },
+        "foreground": {
+          "$type": "color",
+          "$value": "{primitive.color.greenCategoryInk}"
+        },
+        "background": {
+          "$type": "color",
+          "$value": "{primitive.color.greenCategoryTint}"
+        },
+        "border": {
+          "$type": "color",
+          "$value": "{primitive.color.greenCategoryInk}"
+        },
+        "solid": {
+          "$type": "color",
+          "$value": "{primitive.color.greenCategoryInk}"
+        },
+        "onSolid": {
+          "$type": "color",
+          "$value": "{primitive.color.white}"
+        }
+      },
+      "id4": {
+        "$description": "现有 colorId=4 (purple)；不绑定 task/event/status/reminder 类型。",
+        "id": {
+          "$type": "number",
+          "$value": 4
+        },
+        "accent": {
+          "$type": "color",
+          "$value": "{primitive.color.purpleCategory}"
+        },
+        "foreground": {
+          "$type": "color",
+          "$value": "{primitive.color.purpleCategoryInk}"
+        },
+        "background": {
+          "$type": "color",
+          "$value": "{primitive.color.purpleCategoryTint}"
+        },
+        "border": {
+          "$type": "color",
+          "$value": "{primitive.color.purpleCategoryInk}"
+        },
+        "solid": {
+          "$type": "color",
+          "$value": "{primitive.color.purpleCategoryInk}"
+        },
+        "onSolid": {
+          "$type": "color",
+          "$value": "{primitive.color.white}"
+        }
+      },
+      "id5": {
+        "$description": "现有 colorId=5 (clay)；不绑定 task/event/status/reminder 类型。",
+        "id": {
+          "$type": "number",
+          "$value": 5
+        },
+        "accent": {
+          "$type": "color",
+          "$value": "{primitive.color.clayCategory}"
+        },
+        "foreground": {
+          "$type": "color",
+          "$value": "{primitive.color.clayCategoryInk}"
+        },
+        "background": {
+          "$type": "color",
+          "$value": "{primitive.color.clayCategoryTint}"
+        },
+        "border": {
+          "$type": "color",
+          "$value": "{primitive.color.clayCategoryInk}"
+        },
+        "solid": {
+          "$type": "color",
+          "$value": "{primitive.color.clayCategoryInk}"
+        },
+        "onSolid": {
+          "$type": "color",
+          "$value": "{primitive.color.white}"
+        }
+      },
+      "id6": {
+        "$description": "现有 colorId=6 (teal)；不绑定 task/event/status/reminder 类型。",
+        "id": {
+          "$type": "number",
+          "$value": 6
+        },
+        "accent": {
+          "$type": "color",
+          "$value": "{primitive.color.tealCategory}"
+        },
+        "foreground": {
+          "$type": "color",
+          "$value": "{primitive.color.tealCategoryInk}"
+        },
+        "background": {
+          "$type": "color",
+          "$value": "{primitive.color.tealCategoryTint}"
+        },
+        "border": {
+          "$type": "color",
+          "$value": "{primitive.color.tealCategoryInk}"
+        },
+        "solid": {
+          "$type": "color",
+          "$value": "{primitive.color.tealCategoryInk}"
+        },
+        "onSolid": {
+          "$type": "color",
+          "$value": "{primitive.color.white}"
+        }
+      },
+      "id7": {
+        "$description": "现有 colorId=7 (gray)；不绑定 task/event/status/reminder 类型。",
+        "id": {
+          "$type": "number",
+          "$value": 7
+        },
+        "accent": {
+          "$type": "color",
+          "$value": "{primitive.color.grayCategory}"
+        },
+        "foreground": {
+          "$type": "color",
+          "$value": "{primitive.color.grayCategoryInk}"
+        },
+        "background": {
+          "$type": "color",
+          "$value": "{primitive.color.grayCategoryTint}"
+        },
+        "border": {
+          "$type": "color",
+          "$value": "{primitive.color.grayCategoryInk}"
+        },
+        "solid": {
+          "$type": "color",
+          "$value": "{primitive.color.grayCategoryInk}"
+        },
+        "onSolid": {
+          "$type": "color",
+          "$value": "{primitive.color.white}"
+        }
+      }
+    },
+    "spacing": {
+      "inlineTight": {
+        "$type": "dimension",
+        "$value": "{primitive.space.s4}"
+      },
+      "inline": {
+        "$type": "dimension",
+        "$value": "{primitive.space.s8}"
+      },
+      "block": {
+        "$type": "dimension",
+        "$value": "{primitive.space.s12}"
+      },
+      "section": {
+        "$type": "dimension",
+        "$value": "{primitive.space.s24}"
+      }
+    },
+    "radius": {
+      "small": {
+        "$type": "dimension",
+        "$value": "{primitive.radius.small}"
+      },
+      "control": {
+        "$type": "dimension",
+        "$value": "{primitive.radius.control}"
+      },
+      "card": {
+        "$type": "dimension",
+        "$value": "{primitive.radius.card}"
+      },
+      "dialog": {
+        "$type": "dimension",
+        "$value": "{primitive.radius.dialog}"
+      },
+      "pill": {
+        "$type": "dimension",
+        "$value": "{primitive.radius.pill}"
+      }
+    },
+    "stroke": {
+      "hairline": {
+        "$type": "dimension",
+        "$value": {
+          "value": 0.5,
+          "unit": "px"
+        }
+      },
+      "control": {
+        "$type": "dimension",
+        "$value": {
+          "value": 1,
+          "unit": "px"
+        }
+      },
+      "focus": {
+        "$type": "dimension",
+        "$value": {
+          "value": 2,
+          "unit": "px"
+        }
+      }
+    },
+    "motion": {
+      "instant": {
+        "$type": "duration",
+        "$value": {
+          "value": 0,
+          "unit": "ms"
+        }
+      },
+      "fast": {
+        "$type": "duration",
+        "$value": {
+          "value": 120,
+          "unit": "ms"
+        }
+      },
+      "standard": {
+        "$type": "duration",
+        "$value": {
+          "value": 200,
+          "unit": "ms"
+        }
+      },
+      "slow": {
+        "$type": "duration",
+        "$value": {
+          "value": 240,
+          "unit": "ms"
+        }
+      },
+      "easing": {
+        "$type": "cubicBezier",
+        "$value": [
+          0.2,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    "state": {
+      "normalOpacity": {
+        "$type": "number",
+        "$value": 1,
+        "$description": "状态用显式前景/背景色表达，避免整行透明度损害可读性。"
+      },
+      "completedOpacity": {
+        "$type": "number",
+        "$value": 1,
+        "$description": "状态用显式前景/背景色表达，避免整行透明度损害可读性。"
+      },
+      "disabledOpacity": {
+        "$type": "number",
+        "$value": 1,
+        "$description": "状态用显式前景/背景色表达，避免整行透明度损害可读性。"
+      }
+    }
+  },
+  "platform": {
+    "web": {
+      "typography": {
+        "heading": {
+          "fontFamily": {
+            "$type": "fontFamily",
+            "$value": "{primitive.font.body}"
+          },
+          "fontSize": {
+            "$type": "dimension",
+            "$value": {
+              "value": 24,
+              "unit": "px"
+            }
+          },
+          "fontWeight": {
+            "$type": "fontWeight",
+            "$value": 600
+          },
+          "lineHeight": {
+            "$type": "number",
+            "$value": 1.25
+          },
+          "letterSpacing": {
+            "$type": "dimension",
+            "$value": {
+              "value": 0,
+              "unit": "px"
+            }
+          }
+        },
+        "title": {
+          "fontFamily": {
+            "$type": "fontFamily",
+            "$value": "{primitive.font.body}"
+          },
+          "fontSize": {
+            "$type": "dimension",
+            "$value": {
+              "value": 18,
+              "unit": "px"
+            }
+          },
+          "fontWeight": {
+            "$type": "fontWeight",
+            "$value": 600
+          },
+          "lineHeight": {
+            "$type": "number",
+            "$value": 1.5
+          },
+          "letterSpacing": {
+            "$type": "dimension",
+            "$value": {
+              "value": 0,
+              "unit": "px"
+            }
+          }
+        },
+        "body": {
+          "fontFamily": {
+            "$type": "fontFamily",
+            "$value": "{primitive.font.body}"
+          },
+          "fontSize": {
+            "$type": "dimension",
+            "$value": {
+              "value": 15,
+              "unit": "px"
+            }
+          },
+          "fontWeight": {
+            "$type": "fontWeight",
+            "$value": 400
+          },
+          "lineHeight": {
+            "$type": "number",
+            "$value": 1.5
+          },
+          "letterSpacing": {
+            "$type": "dimension",
+            "$value": {
+              "value": 0,
+              "unit": "px"
+            }
+          }
+        },
+        "taskTitle": {
+          "fontFamily": {
+            "$type": "fontFamily",
+            "$value": "{primitive.font.body}"
+          },
+          "fontSize": {
+            "$type": "dimension",
+            "$value": {
+              "value": 15,
+              "unit": "px"
+            }
+          },
+          "fontWeight": {
+            "$type": "fontWeight",
+            "$value": 500
+          },
+          "lineHeight": {
+            "$type": "number",
+            "$value": 1.5
+          },
+          "letterSpacing": {
+            "$type": "dimension",
+            "$value": {
+              "value": 0,
+              "unit": "px"
+            }
+          }
+        },
+        "meta": {
+          "fontFamily": {
+            "$type": "fontFamily",
+            "$value": "{primitive.font.body}"
+          },
+          "fontSize": {
+            "$type": "dimension",
+            "$value": {
+              "value": 12,
+              "unit": "px"
+            }
+          },
+          "fontWeight": {
+            "$type": "fontWeight",
+            "$value": 400
+          },
+          "lineHeight": {
+            "$type": "number",
+            "$value": 1.5
+          },
+          "letterSpacing": {
+            "$type": "dimension",
+            "$value": {
+              "value": 0,
+              "unit": "px"
+            }
+          }
+        }
+      },
+      "geometry": {
+        "controlMinHeight": {
+          "$type": "dimension",
+          "$value": {
+            "value": 40,
+            "unit": "px"
+          }
+        },
+        "touchTargetMin": {
+          "$type": "dimension",
+          "$value": {
+            "value": 44,
+            "unit": "px"
+          }
+        },
+        "iconSize": {
+          "$type": "dimension",
+          "$value": {
+            "value": 20,
+            "unit": "px"
+          }
+        },
+        "pageInset": {
+          "$type": "dimension",
+          "$value": {
+            "value": 24,
+            "unit": "px"
+          }
+        },
+        "rowPaddingInline": {
+          "$type": "dimension",
+          "$value": {
+            "value": 12,
+            "unit": "px"
+          }
+        },
+        "rowPaddingBlock": {
+          "$type": "dimension",
+          "$value": {
+            "value": 12,
+            "unit": "px"
+          }
+        },
+        "taskRowMinHeight": {
+          "$type": "dimension",
+          "$value": {
+            "value": 44,
+            "unit": "px"
+          }
+        }
+      }
+    },
+    "desktop": {
+      "typography": {
+        "heading": {
+          "fontFamily": {
+            "$type": "fontFamily",
+            "$value": "{primitive.font.body}"
+          },
+          "fontSize": {
+            "$type": "dimension",
+            "$value": {
+              "value": 24,
+              "unit": "px"
+            }
+          },
+          "fontWeight": {
+            "$type": "fontWeight",
+            "$value": 600
+          },
+          "lineHeight": {
+            "$type": "number",
+            "$value": 1.25
+          },
+          "letterSpacing": {
+            "$type": "dimension",
+            "$value": {
+              "value": 0,
+              "unit": "px"
+            }
+          }
+        },
+        "title": {
+          "fontFamily": {
+            "$type": "fontFamily",
+            "$value": "{primitive.font.body}"
+          },
+          "fontSize": {
+            "$type": "dimension",
+            "$value": {
+              "value": 18,
+              "unit": "px"
+            }
+          },
+          "fontWeight": {
+            "$type": "fontWeight",
+            "$value": 600
+          },
+          "lineHeight": {
+            "$type": "number",
+            "$value": 1.5
+          },
+          "letterSpacing": {
+            "$type": "dimension",
+            "$value": {
+              "value": 0,
+              "unit": "px"
+            }
+          }
+        },
+        "body": {
+          "fontFamily": {
+            "$type": "fontFamily",
+            "$value": "{primitive.font.body}"
+          },
+          "fontSize": {
+            "$type": "dimension",
+            "$value": {
+              "value": 15,
+              "unit": "px"
+            }
+          },
+          "fontWeight": {
+            "$type": "fontWeight",
+            "$value": 400
+          },
+          "lineHeight": {
+            "$type": "number",
+            "$value": 1.5
+          },
+          "letterSpacing": {
+            "$type": "dimension",
+            "$value": {
+              "value": 0,
+              "unit": "px"
+            }
+          }
+        },
+        "taskTitle": {
+          "fontFamily": {
+            "$type": "fontFamily",
+            "$value": "{primitive.font.body}"
+          },
+          "fontSize": {
+            "$type": "dimension",
+            "$value": {
+              "value": 15,
+              "unit": "px"
+            }
+          },
+          "fontWeight": {
+            "$type": "fontWeight",
+            "$value": 500
+          },
+          "lineHeight": {
+            "$type": "number",
+            "$value": 1.5
+          },
+          "letterSpacing": {
+            "$type": "dimension",
+            "$value": {
+              "value": 0,
+              "unit": "px"
+            }
+          }
+        },
+        "meta": {
+          "fontFamily": {
+            "$type": "fontFamily",
+            "$value": "{primitive.font.body}"
+          },
+          "fontSize": {
+            "$type": "dimension",
+            "$value": {
+              "value": 12,
+              "unit": "px"
+            }
+          },
+          "fontWeight": {
+            "$type": "fontWeight",
+            "$value": 400
+          },
+          "lineHeight": {
+            "$type": "number",
+            "$value": 1.5
+          },
+          "letterSpacing": {
+            "$type": "dimension",
+            "$value": {
+              "value": 0,
+              "unit": "px"
+            }
+          }
+        }
+      },
+      "geometry": {
+        "controlMinHeight": {
+          "$type": "dimension",
+          "$value": {
+            "value": 36,
+            "unit": "px"
+          }
+        },
+        "touchTargetMin": {
+          "$type": "dimension",
+          "$value": {
+            "value": 44,
+            "unit": "px"
+          }
+        },
+        "iconSize": {
+          "$type": "dimension",
+          "$value": {
+            "value": 20,
+            "unit": "px"
+          }
+        },
+        "pageInset": {
+          "$type": "dimension",
+          "$value": {
+            "value": 24,
+            "unit": "px"
+          }
+        },
+        "rowPaddingInline": {
+          "$type": "dimension",
+          "$value": {
+            "value": 12,
+            "unit": "px"
+          }
+        },
+        "rowPaddingBlock": {
+          "$type": "dimension",
+          "$value": {
+            "value": 12,
+            "unit": "px"
+          }
+        },
+        "taskRowMinHeight": {
+          "$type": "dimension",
+          "$value": {
+            "value": 44,
+            "unit": "px"
+          }
+        }
+      }
+    },
+    "phone": {
+      "typography": {
+        "heading": {
+          "fontFamily": {
+            "$type": "fontFamily",
+            "$value": "{primitive.font.body}"
+          },
+          "fontSize": {
+            "$type": "dimension",
+            "$value": {
+              "value": 22,
+              "unit": "px"
+            }
+          },
+          "fontWeight": {
+            "$type": "fontWeight",
+            "$value": 600
+          },
+          "lineHeight": {
+            "$type": "number",
+            "$value": 1.25
+          },
+          "letterSpacing": {
+            "$type": "dimension",
+            "$value": {
+              "value": 0,
+              "unit": "px"
+            }
+          }
+        },
+        "title": {
+          "fontFamily": {
+            "$type": "fontFamily",
+            "$value": "{primitive.font.body}"
+          },
+          "fontSize": {
+            "$type": "dimension",
+            "$value": {
+              "value": 18,
+              "unit": "px"
+            }
+          },
+          "fontWeight": {
+            "$type": "fontWeight",
+            "$value": 600
+          },
+          "lineHeight": {
+            "$type": "number",
+            "$value": 1.5
+          },
+          "letterSpacing": {
+            "$type": "dimension",
+            "$value": {
+              "value": 0,
+              "unit": "px"
+            }
+          }
+        },
+        "body": {
+          "fontFamily": {
+            "$type": "fontFamily",
+            "$value": "{primitive.font.body}"
+          },
+          "fontSize": {
+            "$type": "dimension",
+            "$value": {
+              "value": 16,
+              "unit": "px"
+            }
+          },
+          "fontWeight": {
+            "$type": "fontWeight",
+            "$value": 400
+          },
+          "lineHeight": {
+            "$type": "number",
+            "$value": 1.5
+          },
+          "letterSpacing": {
+            "$type": "dimension",
+            "$value": {
+              "value": 0,
+              "unit": "px"
+            }
+          }
+        },
+        "taskTitle": {
+          "fontFamily": {
+            "$type": "fontFamily",
+            "$value": "{primitive.font.body}"
+          },
+          "fontSize": {
+            "$type": "dimension",
+            "$value": {
+              "value": 15,
+              "unit": "px"
+            }
+          },
+          "fontWeight": {
+            "$type": "fontWeight",
+            "$value": 500
+          },
+          "lineHeight": {
+            "$type": "number",
+            "$value": 1.5
+          },
+          "letterSpacing": {
+            "$type": "dimension",
+            "$value": {
+              "value": 0,
+              "unit": "px"
+            }
+          }
+        },
+        "meta": {
+          "fontFamily": {
+            "$type": "fontFamily",
+            "$value": "{primitive.font.body}"
+          },
+          "fontSize": {
+            "$type": "dimension",
+            "$value": {
+              "value": 13,
+              "unit": "px"
+            }
+          },
+          "fontWeight": {
+            "$type": "fontWeight",
+            "$value": 400
+          },
+          "lineHeight": {
+            "$type": "number",
+            "$value": 1.5
+          },
+          "letterSpacing": {
+            "$type": "dimension",
+            "$value": {
+              "value": 0,
+              "unit": "px"
+            }
+          }
+        }
+      },
+      "geometry": {
+        "controlMinHeight": {
+          "$type": "dimension",
+          "$value": {
+            "value": 48,
+            "unit": "px"
+          }
+        },
+        "touchTargetMin": {
+          "$type": "dimension",
+          "$value": {
+            "value": 48,
+            "unit": "px"
+          }
+        },
+        "iconSize": {
+          "$type": "dimension",
+          "$value": {
+            "value": 24,
+            "unit": "px"
+          }
+        },
+        "pageInset": {
+          "$type": "dimension",
+          "$value": {
+            "value": 16,
+            "unit": "px"
+          }
+        },
+        "rowPaddingInline": {
+          "$type": "dimension",
+          "$value": {
+            "value": 14,
+            "unit": "px"
+          }
+        },
+        "rowPaddingBlock": {
+          "$type": "dimension",
+          "$value": {
+            "value": 12,
+            "unit": "px"
+          }
+        },
+        "taskRowMinHeight": {
+          "$type": "dimension",
+          "$value": {
+            "value": 52,
+            "unit": "px"
+          }
+        }
+      }
+    },
+    "wear": {
+      "typography": {
+        "heading": {
+          "fontFamily": {
+            "$type": "fontFamily",
+            "$value": "{primitive.font.body}"
+          },
+          "fontSize": {
+            "$type": "dimension",
+            "$value": {
+              "value": 20,
+              "unit": "px"
+            }
+          },
+          "fontWeight": {
+            "$type": "fontWeight",
+            "$value": 600
+          },
+          "lineHeight": {
+            "$type": "number",
+            "$value": 1.25
+          },
+          "letterSpacing": {
+            "$type": "dimension",
+            "$value": {
+              "value": 0,
+              "unit": "px"
+            }
+          }
+        },
+        "title": {
+          "fontFamily": {
+            "$type": "fontFamily",
+            "$value": "{primitive.font.body}"
+          },
+          "fontSize": {
+            "$type": "dimension",
+            "$value": {
+              "value": 18,
+              "unit": "px"
+            }
+          },
+          "fontWeight": {
+            "$type": "fontWeight",
+            "$value": 600
+          },
+          "lineHeight": {
+            "$type": "number",
+            "$value": 1.5
+          },
+          "letterSpacing": {
+            "$type": "dimension",
+            "$value": {
+              "value": 0,
+              "unit": "px"
+            }
+          }
+        },
+        "body": {
+          "fontFamily": {
+            "$type": "fontFamily",
+            "$value": "{primitive.font.body}"
+          },
+          "fontSize": {
+            "$type": "dimension",
+            "$value": {
+              "value": 15,
+              "unit": "px"
+            }
+          },
+          "fontWeight": {
+            "$type": "fontWeight",
+            "$value": 400
+          },
+          "lineHeight": {
+            "$type": "number",
+            "$value": 1.5
+          },
+          "letterSpacing": {
+            "$type": "dimension",
+            "$value": {
+              "value": 0,
+              "unit": "px"
+            }
+          }
+        },
+        "taskTitle": {
+          "fontFamily": {
+            "$type": "fontFamily",
+            "$value": "{primitive.font.body}"
+          },
+          "fontSize": {
+            "$type": "dimension",
+            "$value": {
+              "value": 17,
+              "unit": "px"
+            }
+          },
+          "fontWeight": {
+            "$type": "fontWeight",
+            "$value": 500
+          },
+          "lineHeight": {
+            "$type": "number",
+            "$value": 1.5
+          },
+          "letterSpacing": {
+            "$type": "dimension",
+            "$value": {
+              "value": 0,
+              "unit": "px"
+            }
+          }
+        },
+        "meta": {
+          "fontFamily": {
+            "$type": "fontFamily",
+            "$value": "{primitive.font.body}"
+          },
+          "fontSize": {
+            "$type": "dimension",
+            "$value": {
+              "value": 12,
+              "unit": "px"
+            }
+          },
+          "fontWeight": {
+            "$type": "fontWeight",
+            "$value": 400
+          },
+          "lineHeight": {
+            "$type": "number",
+            "$value": 1.5
+          },
+          "letterSpacing": {
+            "$type": "dimension",
+            "$value": {
+              "value": 0,
+              "unit": "px"
+            }
+          }
+        }
+      },
+      "geometry": {
+        "controlMinHeight": {
+          "$type": "dimension",
+          "$value": {
+            "value": 48,
+            "unit": "px"
+          }
+        },
+        "touchTargetMin": {
+          "$type": "dimension",
+          "$value": {
+            "value": 48,
+            "unit": "px"
+          }
+        },
+        "iconSize": {
+          "$type": "dimension",
+          "$value": {
+            "value": 24,
+            "unit": "px"
+          }
+        },
+        "pageInset": {
+          "$type": "dimension",
+          "$value": {
+            "value": 12,
+            "unit": "px"
+          }
+        },
+        "rowPaddingInline": {
+          "$type": "dimension",
+          "$value": {
+            "value": 13,
+            "unit": "px"
+          }
+        },
+        "rowPaddingBlock": {
+          "$type": "dimension",
+          "$value": {
+            "value": 10,
+            "unit": "px"
+          }
+        },
+        "taskRowMinHeight": {
+          "$type": "dimension",
+          "$value": {
+            "value": 58,
+            "unit": "px"
+          }
+        }
+      }
+    }
+  },
+  "component": {
+    "button": {
+      "primary": {
+        "background": {
+          "$type": "color",
+          "$value": "{semantic.color.accent}"
+        },
+        "foreground": {
+          "$type": "color",
+          "$value": "{semantic.color.onAccent}"
+        },
+        "border": {
+          "$type": "color",
+          "$value": "{semantic.color.textPrimary}"
+        },
+        "hoverBackground": {
+          "$type": "color",
+          "$value": "{semantic.color.accentHover}"
+        },
+        "pressedBackground": {
+          "$type": "color",
+          "$value": "{semantic.color.accentPressed}"
+        }
+      },
+      "secondary": {
+        "background": {
+          "$type": "color",
+          "$value": "{semantic.color.surface}"
+        },
+        "foreground": {
+          "$type": "color",
+          "$value": "{semantic.color.textPrimary}"
+        },
+        "border": {
+          "$type": "color",
+          "$value": "{semantic.color.borderControl}"
+        },
+        "hoverBackground": {
+          "$type": "color",
+          "$value": "{semantic.color.hoverBackground}"
+        }
+      },
+      "disabled": {
+        "background": {
+          "$type": "color",
+          "$value": "{semantic.color.disabledBackground}"
+        },
+        "foreground": {
+          "$type": "color",
+          "$value": "{semantic.color.disabledForeground}"
+        }
+      },
+      "focus": {
+        "color": {
+          "$type": "color",
+          "$value": "{semantic.color.focus}"
+        },
+        "width": {
+          "$type": "dimension",
+          "$value": "{semantic.stroke.focus}"
+        },
+        "offset": {
+          "$type": "dimension",
+          "$value": {
+            "value": 2,
+            "unit": "px"
+          }
+        }
+      },
+      "radius": {
+        "$type": "dimension",
+        "$value": "{semantic.radius.control}"
+      }
+    },
+    "field": {
+      "background": {
+        "$type": "color",
+        "$value": "{semantic.color.input}"
+      },
+      "foreground": {
+        "$type": "color",
+        "$value": "{semantic.color.textPrimary}"
+      },
+      "placeholder": {
+        "$type": "color",
+        "$value": "{semantic.color.textMuted}"
+      },
+      "border": {
+        "$type": "color",
+        "$value": "{semantic.color.borderControl}"
+      },
+      "focusBorder": {
+        "$type": "color",
+        "$value": "{semantic.color.focus}"
+      },
+      "errorBorder": {
+        "$type": "color",
+        "$value": "{semantic.color.error}"
+      },
+      "radius": {
+        "$type": "dimension",
+        "$value": "{semantic.radius.control}"
+      }
+    },
+    "panel": {
+      "background": {
+        "$type": "color",
+        "$value": "{semantic.color.surface}"
+      },
+      "raisedBackground": {
+        "$type": "color",
+        "$value": "{semantic.color.raised}"
+      },
+      "edge": {
+        "$type": "color",
+        "$value": "{semantic.color.edgeHighlight}"
+      },
+      "edgeWidth": {
+        "$type": "dimension",
+        "$value": {
+          "value": 1,
+          "unit": "px"
+        }
+      },
+      "radius": {
+        "$type": "dimension",
+        "$value": "{semantic.radius.card}"
+      },
+      "shadowColor": {
+        "$type": "color",
+        "$value": "{primitive.color.shadow}"
+      },
+      "shadowOpacity": {
+        "$type": "number",
+        "$value": 0.08
+      },
+      "shadowX": {
+        "$type": "dimension",
+        "$value": {
+          "value": 0,
+          "unit": "px"
+        }
+      },
+      "shadowY": {
+        "$type": "dimension",
+        "$value": {
+          "value": 2,
+          "unit": "px"
+        }
+      },
+      "shadowBlur": {
+        "$type": "dimension",
+        "$value": {
+          "value": 8,
+          "unit": "px"
+        }
+      },
+      "shadowSpread": {
+        "$type": "dimension",
+        "$value": {
+          "value": 0,
+          "unit": "px"
+        }
+      }
+    },
+    "dialog": {
+      "background": {
+        "$type": "color",
+        "$value": "{semantic.color.raised}"
+      },
+      "radius": {
+        "$type": "dimension",
+        "$value": "{semantic.radius.dialog}"
+      },
+      "shadowColor": {
+        "$type": "color",
+        "$value": "{primitive.color.shadow}"
+      },
+      "shadowOpacity": {
+        "$type": "number",
+        "$value": 0.16
+      },
+      "shadowX": {
+        "$type": "dimension",
+        "$value": {
+          "value": 0,
+          "unit": "px"
+        }
+      },
+      "shadowY": {
+        "$type": "dimension",
+        "$value": {
+          "value": 8,
+          "unit": "px"
+        }
+      },
+      "shadowBlur": {
+        "$type": "dimension",
+        "$value": {
+          "value": 24,
+          "unit": "px"
+        }
+      },
+      "shadowSpread": {
+        "$type": "dimension",
+        "$value": {
+          "value": 0,
+          "unit": "px"
+        }
+      }
+    },
+    "task": {
+      "foreground": {
+        "$type": "color",
+        "$value": "{semantic.color.textPrimary}"
+      },
+      "supportingForeground": {
+        "$type": "color",
+        "$value": "{semantic.color.textSecondary}"
+      },
+      "completedForeground": {
+        "$type": "color",
+        "$value": "{semantic.color.textMuted}"
+      },
+      "normalBackground": {
+        "$type": "color",
+        "$value": "{semantic.color.surface}"
+      },
+      "currentBackground": {
+        "$type": "color",
+        "$value": "{semantic.color.currentBackground}"
+      },
+      "currentForeground": {
+        "$type": "color",
+        "$value": "{semantic.color.info}"
+      },
+      "selectedBackground": {
+        "$type": "color",
+        "$value": "{semantic.color.selectedBackground}"
+      },
+      "selectedBorder": {
+        "$type": "color",
+        "$value": "{semantic.color.focus}"
+      },
+      "completedOpacity": {
+        "$type": "number",
+        "$value": "{semantic.state.completedOpacity}"
+      }
+    },
+    "hop": {
+      "$description": "已确认表盘参数，供跨端理解视觉来源。内凹阴影仅用于表盘/表盘缩略图。业务卡片用 panel 的浅阴影。",
+      "color": {
+        "paper": {
+          "$type": "color",
+          "$value": "{primitive.color.paper}"
+        },
+        "rim": {
+          "$type": "color",
+          "$value": "{primitive.color.rim}"
+        },
+        "ink": {
+          "$type": "color",
+          "$value": "{primitive.color.ink}"
+        },
+        "task": {
+          "$type": "color",
+          "$value": "{primitive.color.secondary}"
+        },
+        "track": {
+          "$type": "color",
+          "$value": "{primitive.color.track}"
+        },
+        "time": {
+          "$type": "color",
+          "$value": "{primitive.color.orange}"
+        },
+        "recessShadow": {
+          "$type": "color",
+          "$value": "{primitive.color.shadow}"
+        },
+        "ambientBackground": {
+          "$type": "color",
+          "$value": "{primitive.color.black}"
+        },
+        "ambientInk": {
+          "$type": "color",
+          "$value": "{primitive.color.ambientInk}"
+        }
+      },
+      "geometry": {
+        "baseDiameter": {
+          "$type": "dimension",
+          "$value": {
+            "value": 200,
+            "unit": "px"
+          }
+        },
+        "orbitDiameterRatio": {
+          "$type": "number",
+          "$value": 0.8333333333333334
+        },
+        "tickDiameterRatio": {
+          "$type": "number",
+          "$value": 1
+        },
+        "taskDiameterRatio": {
+          "$type": "number",
+          "$value": 1.075
+        },
+        "rimMin": {
+          "$type": "dimension",
+          "$value": {
+            "value": 2.5,
+            "unit": "px"
+          }
+        },
+        "rimDiameterRatio": {
+          "$type": "number",
+          "$value": 0.016
+        },
+        "safeInsetMin": {
+          "$type": "dimension",
+          "$value": {
+            "value": 4,
+            "unit": "px"
+          }
+        },
+        "safeInsetDiameterRatio": {
+          "$type": "number",
+          "$value": 0.015
+        },
+        "taskStroke": {
+          "$type": "dimension",
+          "$value": {
+            "value": 0.55,
+            "unit": "px"
+          }
+        },
+        "timeStroke": {
+          "$type": "dimension",
+          "$value": {
+            "value": 1.4,
+            "unit": "px"
+          }
+        },
+        "minorTickStroke": {
+          "$type": "dimension",
+          "$value": {
+            "value": 0.65,
+            "unit": "px"
+          }
+        },
+        "majorTickStroke": {
+          "$type": "dimension",
+          "$value": {
+            "value": 1,
+            "unit": "px"
+          }
+        }
+      },
+      "typography": {
+        "hourMin": {
+          "$type": "dimension",
+          "$value": {
+            "value": 36,
+            "unit": "px"
+          }
+        },
+        "hourBase": {
+          "$type": "dimension",
+          "$value": {
+            "value": 40,
+            "unit": "px"
+          }
+        },
+        "hourMax": {
+          "$type": "dimension",
+          "$value": {
+            "value": 46,
+            "unit": "px"
+          }
+        },
+        "taskMin": {
+          "$type": "dimension",
+          "$value": {
+            "value": 11,
+            "unit": "px"
+          }
+        },
+        "taskBase": {
+          "$type": "dimension",
+          "$value": {
+            "value": 12,
+            "unit": "px"
+          }
+        },
+        "taskMax": {
+          "$type": "dimension",
+          "$value": {
+            "value": 14,
+            "unit": "px"
+          }
+        },
+        "time": {
+          "$type": "dimension",
+          "$value": {
+            "value": 9,
+            "unit": "px"
+          }
+        },
+        "hourFamily": {
+          "$type": "fontFamily",
+          "$value": "{primitive.font.hopNumeral}"
+        },
+        "hourWeight": {
+          "$type": "fontWeight",
+          "$value": 700
+        },
+        "taskTrackingMaxEm": {
+          "$type": "number",
+          "$value": 0.12
+        }
+      },
+      "recess": {
+        "offsetXDiameterRatio": {
+          "$type": "number",
+          "$value": -0.012
+        },
+        "offsetYDiameterRatio": {
+          "$type": "number",
+          "$value": 0.035
+        },
+        "radiusMultiplier": {
+          "$type": "number",
+          "$value": 1.045
+        },
+        "stop0": {
+          "$type": "number",
+          "$value": 0.78
+        },
+        "stop1": {
+          "$type": "number",
+          "$value": 0.87
+        },
+        "stop2": {
+          "$type": "number",
+          "$value": 0.96
+        },
+        "stop3": {
+          "$type": "number",
+          "$value": 1
+        },
+        "alpha0": {
+          "$type": "number",
+          "$value": 0
+        },
+        "alpha1": {
+          "$type": "number",
+          "$value": 0.03529411764705882
+        },
+        "alpha2": {
+          "$type": "number",
+          "$value": 0.17647058823529413
+        },
+        "alpha3": {
+          "$type": "number",
+          "$value": 0.4392156862745098
+        }
+      }
+    }
+  }
+}

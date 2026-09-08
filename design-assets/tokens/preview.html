@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="zh-CN" data-tp-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>TPlanner · 浅色令牌开发基线</title>
+  <link rel="stylesheet" href="./generated/tplanner-light.css" id="token-stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    html { color-scheme: light; }
+    body {
+      margin: 0;
+      background: var(--tp-semantic-color-canvas);
+      color: var(--tp-semantic-color-text-primary);
+      font-family: var(--tp-platform-web-typography-body-font-family);
+      font-size: var(--tp-platform-web-typography-body-font-size);
+      font-weight: var(--tp-platform-web-typography-body-font-weight);
+      line-height: var(--tp-platform-web-typography-body-line-height);
+      letter-spacing: var(--tp-platform-web-typography-body-letter-spacing);
+    }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, input:focus-visible, a:focus-visible {
+      outline: var(--tp-component-button-focus-width) solid var(--tp-component-button-focus-color);
+      outline-offset: var(--tp-component-button-focus-offset);
+    }
+    h1, h2, h3, p, ul, dl { margin: 0; }
+    h1 {
+      font-size: var(--tp-platform-web-typography-heading-font-size);
+      font-weight: var(--tp-platform-web-typography-heading-font-weight);
+      line-height: var(--tp-platform-web-typography-heading-line-height);
+    }
+    h2, h3 {
+      font-size: var(--tp-platform-web-typography-title-font-size);
+      font-weight: var(--tp-platform-web-typography-title-font-weight);
+      line-height: var(--tp-platform-web-typography-title-line-height);
+    }
+    .page { width: min(100% - 40px, 1120px); margin-inline: auto; padding-block: 40px 28px; }
+    .masthead { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+    .wordmark { font-weight: var(--tp-platform-web-typography-title-font-weight); }
+    .eyebrow, .meta {
+      font-size: var(--tp-platform-web-typography-meta-font-size);
+      font-weight: var(--tp-platform-web-typography-meta-font-weight);
+      line-height: var(--tp-platform-web-typography-meta-line-height);
+      color: var(--tp-semantic-color-text-secondary);
+    }
+    .intro { padding-block: 40px 28px; display: grid; gap: var(--tp-semantic-spacing-inline); }
+    .intro p, .section-heading p, .footnote { color: var(--tp-semantic-color-text-secondary); }
+    section { margin-top: 28px; }
+    .section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+    .palette { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--tp-semantic-spacing-block); }
+    .swatch, .category {
+      min-width: 0;
+      border: var(--tp-semantic-stroke-control) solid var(--tp-semantic-color-border-subtle);
+      border-radius: var(--tp-component-panel-radius);
+      background: var(--tp-component-panel-background);
+      overflow: hidden;
+    }
+    .swatch-color { height: 76px; background: var(--swatch); }
+    .swatch-copy { display: grid; gap: var(--tp-semantic-spacing-inline-tight); padding: var(--tp-semantic-spacing-block); }
+    .swatch-name { display: flex; align-items: baseline; justify-content: space-between; gap: var(--tp-semantic-spacing-inline); flex-wrap: wrap; }
+    .swatch-name strong { font-weight: var(--tp-platform-web-typography-task-title-font-weight); }
+    code, .token-value { font-family: var(--tp-primitive-font-mono); font-size: var(--tp-platform-web-typography-meta-font-size); }
+    .token-value { overflow-wrap: anywhere; }
+    .workbench {
+      border: var(--tp-component-panel-edge-width) solid var(--tp-component-panel-edge);
+      border-radius: var(--tp-component-panel-radius);
+      background: var(--tp-component-panel-background);
+      box-shadow: var(--tp-component-panel-shadow-x) var(--tp-component-panel-shadow-y)
+        var(--tp-component-panel-shadow-blur) var(--tp-component-panel-shadow-spread)
+        color-mix(in srgb, var(--tp-component-panel-shadow-color)
+          calc(var(--tp-component-panel-shadow-opacity) * 100%), transparent);
+    }
+    .workbench-top { padding: 16px 20px; border-bottom: var(--tp-semantic-stroke-control) solid var(--tp-semantic-color-border-subtle); }
+    .tabs { display: flex; flex-wrap: wrap; gap: var(--tp-semantic-spacing-inline); }
+    .tab {
+      min-height: var(--tp-platform-web-geometry-touch-target-min);
+      padding-inline: var(--tp-platform-web-geometry-row-padding-inline);
+      border: var(--tp-semantic-stroke-control) solid var(--tp-component-button-secondary-border);
+      border-radius: var(--tp-component-button-radius);
+      background: var(--tp-component-button-secondary-background);
+      color: var(--tp-component-button-secondary-foreground);
+    }
+    .tab:hover { background: var(--tp-component-button-secondary-hover-background); }
+    .tab[aria-selected="true"] {
+      color: var(--tp-semantic-color-text-primary);
+      background: var(--tp-semantic-color-selected-background);
+      border-color: var(--tp-semantic-color-focus);
+    }
+    .workbench-body { display: grid; grid-template-columns: minmax(0, 1fr) 260px; }
+    .sample-wrap { padding: 24px; min-width: 0; }
+    .profile-sample {
+      --profile-heading-font-size: var(--tp-platform-web-typography-heading-font-size);
+      --profile-heading-font-weight: var(--tp-platform-web-typography-heading-font-weight);
+      --profile-heading-line-height: var(--tp-platform-web-typography-heading-line-height);
+      --profile-body-font-family: var(--tp-platform-web-typography-body-font-family);
+      --profile-body-font-size: var(--tp-platform-web-typography-body-font-size);
+      --profile-body-font-weight: var(--tp-platform-web-typography-body-font-weight);
+      --profile-body-line-height: var(--tp-platform-web-typography-body-line-height);
+      --profile-body-letter-spacing: var(--tp-platform-web-typography-body-letter-spacing);
+      --profile-task-title-font-size: var(--tp-platform-web-typography-task-title-font-size);
+      --profile-task-title-font-weight: var(--tp-platform-web-typography-task-title-font-weight);
+      --profile-task-title-line-height: var(--tp-platform-web-typography-task-title-line-height);
+      --profile-task-title-letter-spacing: var(--tp-platform-web-typography-task-title-letter-spacing);
+      --profile-meta-font-size: var(--tp-platform-web-typography-meta-font-size);
+      --profile-meta-line-height: var(--tp-platform-web-typography-meta-line-height);
+      --profile-control-min-height: var(--tp-platform-web-geometry-control-min-height);
+      --profile-touch-target-min: var(--tp-platform-web-geometry-touch-target-min);
+      --profile-icon-size: var(--tp-platform-web-geometry-icon-size);
+      --profile-page-inset: var(--tp-platform-web-geometry-page-inset);
+      --profile-row-padding-inline: var(--tp-platform-web-geometry-row-padding-inline);
+      --profile-row-padding-block: var(--tp-platform-web-geometry-row-padding-block);
+      --profile-task-row-min-height: var(--tp-platform-web-geometry-task-row-min-height);
+      padding: var(--profile-page-inset);
+      border: var(--tp-semantic-stroke-control) solid var(--tp-semantic-color-border-subtle);
+      border-radius: var(--tp-component-panel-radius);
+      background: var(--tp-semantic-color-canvas);
+      font-family: var(--profile-body-font-family);
+      font-size: var(--profile-body-font-size);
+      font-weight: var(--profile-body-font-weight);
+      line-height: var(--profile-body-line-height);
+      letter-spacing: var(--profile-body-letter-spacing);
+    }
+    .sample-heading { margin-bottom: var(--tp-semantic-spacing-block); }
+    .sample-heading h3 {
+      font-size: var(--profile-heading-font-size);
+      font-weight: var(--profile-heading-font-weight);
+      line-height: var(--profile-heading-line-height);
+    }
+    .sample-meta { color: var(--tp-component-task-supporting-foreground); font-size: var(--profile-meta-font-size); line-height: var(--profile-meta-line-height); }
+    .task-list { padding: 0; display: grid; gap: var(--tp-semantic-spacing-inline); list-style: none; }
+    .task-row {
+      display: flex;
+      align-items: center;
+      gap: var(--tp-semantic-spacing-block);
+      min-height: var(--profile-task-row-min-height);
+      padding: var(--profile-row-padding-block) var(--profile-row-padding-inline);
+      color: var(--tp-component-task-foreground);
+      background: var(--tp-component-task-normal-background);
+      border: var(--tp-semantic-stroke-control) solid var(--tp-semantic-color-border-subtle);
+      border-radius: var(--tp-semantic-radius-control);
+    }
+    .task-copy { min-width: 0; overflow-wrap: anywhere; }
+    .task-title {
+      display: block;
+      font-size: var(--profile-task-title-font-size);
+      font-weight: var(--profile-task-title-font-weight);
+      line-height: var(--profile-task-title-line-height);
+      letter-spacing: var(--profile-task-title-letter-spacing);
+    }
+    .task-status { font-size: var(--profile-meta-font-size); line-height: var(--profile-meta-line-height); }
+    .task-marker {
+      flex: 0 0 var(--profile-icon-size);
+      width: var(--profile-icon-size);
+      height: var(--profile-icon-size);
+      display: grid;
+      place-items: center;
+      border: var(--tp-semantic-stroke-control) solid var(--tp-semantic-color-border-control);
+      border-radius: var(--tp-semantic-radius-pill);
+      font-size: var(--profile-meta-font-size);
+      line-height: 1;
+    }
+    .task-row.current { background: var(--tp-component-task-current-background); }
+    .current .task-status { color: var(--tp-component-task-current-foreground); }
+    .task-row.selected { background: var(--tp-component-task-selected-background); border-color: var(--tp-component-task-selected-border); }
+    .selected .task-status { color: var(--tp-semantic-color-accent-text); }
+    .task-row.completed { color: var(--tp-component-task-completed-foreground); opacity: var(--tp-component-task-completed-opacity); }
+    .completed .task-title { text-decoration: line-through; }
+    .field-label { display: grid; gap: var(--tp-semantic-spacing-inline); margin-top: var(--tp-semantic-spacing-section); }
+    .sample-input {
+      width: 100%;
+      min-width: 0;
+      min-height: var(--profile-control-min-height);
+      padding: var(--tp-semantic-spacing-inline-tight) var(--profile-row-padding-inline);
+      border: var(--tp-semantic-stroke-control) solid var(--tp-component-field-border);
+      border-radius: var(--tp-component-field-radius);
+      color: var(--tp-component-field-foreground);
+      background: var(--tp-component-field-background);
+    }
+    .sample-input::placeholder { color: var(--tp-component-field-placeholder); opacity: var(--tp-semantic-state-normal-opacity); }
+    .sample-input:focus { border-color: var(--tp-component-field-focus-border); }
+    .sample-actions { display: flex; flex-wrap: wrap; gap: var(--tp-semantic-spacing-inline); margin-top: var(--tp-semantic-spacing-block); }
+    .sample-button {
+      position: relative;
+      min-height: var(--profile-control-min-height);
+      padding: var(--tp-semantic-spacing-inline-tight) var(--profile-row-padding-inline);
+      border: var(--tp-semantic-stroke-control) solid var(--tp-component-button-secondary-border);
+      border-radius: var(--tp-component-button-radius);
+      color: var(--tp-component-button-secondary-foreground);
+      background: var(--tp-component-button-secondary-background);
+    }
+    .sample-button::before {
+      content: "";
+      position: absolute;
+      inset-inline: 0;
+      top: 50%;
+      height: max(100%, var(--profile-touch-target-min));
+      transform: translateY(-50%);
+    }
+    .sample-button:hover { background: var(--tp-component-button-secondary-hover-background); }
+    .sample-button.primary {
+      background: var(--tp-component-button-primary-background);
+      color: var(--tp-component-button-primary-foreground);
+      border-color: var(--tp-component-button-primary-border);
+    }
+    .sample-button.primary:hover { background: var(--tp-component-button-primary-hover-background); }
+    .sample-button.primary:active { background: var(--tp-component-button-primary-pressed-background); }
+    .sample-feedback { display: block; margin-top: var(--tp-semantic-spacing-inline); min-height: 1.5em; }
+    .profile-spec { padding: 24px 20px; border-left: var(--tp-semantic-stroke-control) solid var(--tp-semantic-color-border-subtle); }
+    .profile-spec h3 { margin-top: var(--tp-semantic-spacing-inline-tight); }
+    .spec-list { display: grid; gap: var(--tp-semantic-spacing-block); margin-top: var(--tp-semantic-spacing-section); }
+    .spec-list div { display: flex; justify-content: space-between; align-items: baseline; gap: var(--tp-semantic-spacing-inline); }
+    .spec-list dt { color: var(--tp-semantic-color-text-secondary); }
+    .spec-list dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+    .profile-note { margin-top: var(--tp-semantic-spacing-section); }
+    .categories { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--tp-semantic-spacing-block); }
+    .category-label {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: var(--tp-semantic-spacing-inline);
+      padding: var(--tp-semantic-spacing-block);
+      color: var(--category-foreground);
+      background: var(--category-background);
+      border-bottom: var(--tp-semantic-stroke-control) solid var(--category-border);
+    }
+    .category-label strong { font-weight: var(--tp-platform-web-typography-task-title-font-weight); }
+    .category-values { display: grid; gap: var(--tp-semantic-spacing-inline-tight); padding: var(--tp-semantic-spacing-block); }
+    .category-values p { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--tp-semantic-spacing-inline-tight); }
+    .footnote { margin-top: var(--tp-semantic-spacing-block); font-size: var(--tp-platform-web-typography-meta-font-size); }
+    footer { padding-top: 28px; margin-top: 28px; border-top: var(--tp-semantic-stroke-control) solid var(--tp-semantic-color-border-subtle); }
+    #load-warning { margin-top: 16px; color: var(--tp-semantic-color-error); }
+    [hidden] { display: none !important; }
+    @media (max-width: 800px) {
+      .workbench-body { grid-template-columns: minmax(0, 1fr); }
+      .profile-spec { border-left: 0; border-top: var(--tp-semantic-stroke-control) solid var(--tp-semantic-color-border-subtle); }
+      .spec-list { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; }
+    }
+    @media (max-width: 560px) {
+      .page { width: calc(100% - 32px); padding-top: 24px; }
+      .masthead, .section-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
+      .intro { padding-block: 28px 12px; }
+      .palette, .categories { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .sample-wrap, .workbench-top, .profile-spec { padding: 12px; }
+      .spec-list { grid-template-columns: minmax(0, 1fr); }
+      .swatch-color { height: 60px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <div class="masthead">
+        <span class="wordmark">TPlanner</span>
+        <span class="eyebrow">浅色令牌 · 开发基线</span>
+      </div>
+      <div class="intro">
+        <h1>一套颜色，四种平台密度。</h1>
+        <p>颜色、文字与控件尺寸的离线样例。切换平台，查看同一任务列表的实际令牌。</p>
+      </div>
+      <p id="load-warning" role="status" hidden>尚未加载生成的样式。请先生成 generated/tplanner-light.css，再重新打开此页。</p>
+      <noscript><p>启用 JavaScript 后可切换平台并查看令牌值；当前组件使用 Web 基线。</p></noscript>
+    </header>
+
+    <section aria-labelledby="palette-heading">
+      <div class="section-heading"><h2 id="palette-heading">基础色板</h2><p class="meta">来自已确认视觉的四个锚点</p></div>
+      <div class="palette">
+        <article class="swatch" style="--swatch: var(--tp-primitive-color-paper)">
+          <div class="swatch-color" aria-hidden="true"></div>
+          <div class="swatch-copy"><div class="swatch-name"><strong>Paper · 纸面</strong><code data-token="primitive.color.paper">—</code></div><p class="meta">页面画布、表盘底色</p></div>
+        </article>
+        <article class="swatch" style="--swatch: var(--tp-primitive-color-ink)">
+          <div class="swatch-color" aria-hidden="true"></div>
+          <div class="swatch-copy"><div class="swatch-name"><strong>Ink · 墨色</strong><code data-token="primitive.color.ink">—</code></div><p class="meta">主文字、数字与必要轮廓</p></div>
+        </article>
+        <article class="swatch" style="--swatch: var(--tp-primitive-color-orange)">
+          <div class="swatch-color" aria-hidden="true"></div>
+          <div class="swatch-copy"><div class="swatch-name"><strong>Orange · 橙色</strong><code data-token="primitive.color.orange">—</code></div><p class="meta">强调填充、当前时间线</p></div>
+        </article>
+        <article class="swatch" style="--swatch: var(--tp-primitive-color-rim)">
+          <div class="swatch-color" aria-hidden="true"></div>
+          <div class="swatch-copy"><div class="swatch-name"><strong>Rim · 边缘</strong><code data-token="primitive.color.rim">—</code></div><p class="meta">装饰高光、浅色边沿</p></div>
+        </article>
+      </div>
+      <p class="footnote">浅底强调文字使用 <code>accentText</code>；类别文字使用各自的前景与浅底配对。</p>
+    </section>
+
+    <section aria-labelledby="component-heading">
+      <div class="section-heading"><h2 id="component-heading">平台与组件</h2><p class="meta">切换仅影响下方样例</p></div>
+      <div class="workbench">
+        <div class="workbench-top">
+          <div class="tabs" role="tablist" aria-label="平台令牌">
+            <button class="tab" type="button" role="tab" id="tab-web" aria-selected="true" aria-controls="platform-panel" data-profile="web">Web</button>
+            <button class="tab" type="button" role="tab" id="tab-desktop" aria-selected="false" aria-controls="platform-panel" tabindex="-1" data-profile="desktop">Desktop</button>
+            <button class="tab" type="button" role="tab" id="tab-phone" aria-selected="false" aria-controls="platform-panel" tabindex="-1" data-profile="phone">手机</button>
+            <button class="tab" type="button" role="tab" id="tab-wear" aria-selected="false" aria-controls="platform-panel" tabindex="-1" data-profile="wear">Wear</button>
+          </div>
+        </div>
+        <div class="workbench-body" id="platform-panel" role="tabpanel" aria-labelledby="tab-web">
+          <div class="sample-wrap">
+            <div class="profile-sample" id="profile-sample">
+              <header class="sample-heading"><h3>今日待办</h3><p class="sample-meta">任务列表样例 · 三种状态</p></header>
+              <ul class="task-list" aria-label="任务状态样例">
+                <li class="task-row current"><span class="task-marker" aria-hidden="true">·</span><div class="task-copy"><strong class="task-title">写申论</strong><span class="task-status">进行中 · 12:00–13:00</span></div></li>
+                <li class="task-row selected"><span class="task-marker" aria-hidden="true"></span><div class="task-copy"><strong class="task-title">整理本周计划</strong><span class="task-status">已选择 · 今天 15:00</span></div></li>
+                <li class="task-row completed"><span class="task-marker" aria-hidden="true">✓</span><div class="task-copy"><strong class="task-title">复盘错题</strong><span class="task-status">已完成 · 今天 09:30</span></div></li>
+              </ul>
+              <label class="field-label" for="sample-task">任务名称<input class="sample-input" id="sample-task" type="text" placeholder="添加一项待办" autocomplete="off"></label>
+              <div class="sample-actions"><button class="sample-button primary" type="button" data-demo="主按钮">主按钮</button><button class="sample-button" type="button" data-demo="次按钮">次按钮</button></div>
+              <output class="sample-feedback sample-meta" id="sample-feedback" aria-live="polite">输入与按钮仅作本地样例。</output>
+            </div>
+          </div>
+          <aside class="profile-spec" aria-label="当前平台尺寸">
+            <p class="eyebrow">当前 PROFILE</p><h3 id="profile-name">Web</h3>
+            <dl class="spec-list" id="profile-specs"></dl>
+            <p class="profile-note meta" id="profile-note">字体使用 rem，几何使用 CSS px。</p>
+          </aside>
+        </div>
+      </div>
+      <p class="footnote">可用 Tab 访问控件；平台标签支持方向键与 Home / End。尺寸为开发基线，不模拟设备屏幕。</p>
+    </section>
+
+    <section aria-labelledby="category-heading">
+      <div class="section-heading"><h2 id="category-heading">八色类别</h2><p class="meta">保留现有 colorId</p></div>
+      <div class="categories" id="categories"></div>
+      <p class="footnote">ID 表示用户选择的颜色，不绑定任务、事件或提醒类型。</p>
+    </section>
+    <footer class="meta">样式来源：<code>generated/tplanner-light.css</code> · 离线目录 / 非生产界面</footer>
+  </main>
+
+  <script>
+    (() => {
+      'use strict';
+      const root = document.documentElement;
+      const sample = document.getElementById('profile-sample');
+      const tabs = Array.from(document.querySelectorAll('[data-profile]'));
+      const profileNames = { web: 'Web', desktop: 'Desktop', phone: '手机', wear: 'Wear' };
+      const cssName = path => '--tp-' + path.replace(/([a-z0-9])([A-Z])/g, '$1-$2').replaceAll('.', '-').toLowerCase();
+      const readToken = path => getComputedStyle(root).getPropertyValue(cssName(path)).trim();
+      const valueOrDash = path => readToken(path) || '—';
+      const typeRoles = ['heading', 'title', 'body', 'taskTitle', 'meta'];
+      const typeProperties = ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing'];
+      const geometry = ['controlMinHeight', 'touchTargetMin', 'iconSize', 'pageInset', 'rowPaddingInline', 'rowPaddingBlock', 'taskRowMinHeight'];
+      const aliasName = value => value.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+      let currentProfile = 'web';
+
+      const specRows = [
+        ['正文字号', 'typography.body.fontSize'],
+        ['任务字号', 'typography.taskTitle.fontSize'],
+        ['正文行高', 'typography.body.lineHeight'],
+        ['控件最小高', 'geometry.controlMinHeight'],
+        ['点击目标', 'geometry.touchTargetMin'],
+        ['任务行最小高', 'geometry.taskRowMinHeight'],
+        ['行内边距', 'geometry.rowPaddingInline'],
+        ['行上下边距', 'geometry.rowPaddingBlock'],
+        ['页面边距', 'geometry.pageInset'],
+      ];
+
+      function updateSpecs() {
+        const container = document.getElementById('profile-specs');
+        container.replaceChildren();
+        for (const [label, path] of specRows) {
+          const row = document.createElement('div');
+          const term = document.createElement('dt');
+          const definition = document.createElement('dd');
+          term.textContent = label;
+          definition.className = 'token-value';
+          definition.textContent = valueOrDash(`platform.${currentProfile}.${path}`);
+          row.append(term, definition);
+          container.append(row);
+        }
+      }
+
+      function selectProfile(profile, moveFocus = false) {
+        currentProfile = profile;
+        for (const role of typeRoles) {
+          for (const property of typeProperties) {
+            sample.style.setProperty(`--profile-${aliasName(role)}-${aliasName(property)}`,
+              `var(${cssName(`platform.${profile}.typography.${role}.${property}`)})`);
+          }
+        }
+        for (const property of geometry) {
+          sample.style.setProperty(`--profile-${aliasName(property)}`,
+            `var(${cssName(`platform.${profile}.geometry.${property}`)})`);
+        }
+        for (const tab of tabs) {
+          const active = tab.dataset.profile === profile;
+          tab.setAttribute('aria-selected', String(active));
+          tab.tabIndex = active ? 0 : -1;
+          if (active && moveFocus) tab.focus();
+        }
+        document.getElementById('platform-panel').setAttribute('aria-labelledby', `tab-${profile}`);
+        document.getElementById('profile-name').textContent = profileNames[profile];
+        document.getElementById('profile-note').textContent = ['phone', 'wear'].includes(profile)
+          ? '此处用 CSS 呈现。Android 中几何映射为 dp，字体与字距映射为 sp。'
+          : '字体使用 rem，几何使用 CSS px。';
+        updateSpecs();
+      }
+
+      for (const [index, tab] of tabs.entries()) {
+        tab.addEventListener('click', () => selectProfile(tab.dataset.profile));
+        tab.addEventListener('keydown', event => {
+          let next;
+          if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+          if (event.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length;
+          if (event.key === 'Home') next = 0;
+          if (event.key === 'End') next = tabs.length - 1;
+          if (next === undefined) return;
+          event.preventDefault();
+          selectProfile(tabs[next].dataset.profile, true);
+        });
+      }
+
+      const categoryNames = ['蓝 · blue', '金 · gold', '玫瑰 · rose', '绿 · green', '紫 · purple', '陶土 · clay', '青 · teal', '灰 · gray'];
+      function updateCategories() {
+        const container = document.getElementById('categories');
+        container.replaceChildren();
+        categoryNames.forEach((name, index) => {
+          const path = `semantic.category.id${index}`;
+          const card = document.createElement('article');
+          card.className = 'category';
+          for (const role of ['foreground', 'background', 'border']) {
+            card.style.setProperty(`--category-${role}`, `var(${cssName(`${path}.${role}`)})`);
+          }
+          const label = document.createElement('div');
+          label.className = 'category-label';
+          const id = document.createElement('code');
+          id.textContent = `ID ${index}`;
+          const title = document.createElement('strong');
+          title.textContent = name;
+          label.append(id, title);
+          const values = document.createElement('div');
+          values.className = 'category-values';
+          for (const [role, caption] of [['foreground', '前景'], ['background', '浅底']]) {
+            const row = document.createElement('p');
+            const key = document.createElement('span');
+            key.className = 'meta';
+            key.textContent = caption;
+            const value = document.createElement('code');
+            value.textContent = valueOrDash(`${path}.${role}`);
+            row.append(key, value);
+            values.append(row);
+          }
+          card.append(label, values);
+          container.append(card);
+        });
+      }
+
+      function refreshValues() {
+        document.getElementById('load-warning').hidden = Boolean(readToken('semantic.color.canvas'));
+        for (const element of document.querySelectorAll('[data-token]')) {
+          element.textContent = valueOrDash(element.dataset.token);
+        }
+        updateSpecs();
+        updateCategories();
+      }
+
+      for (const button of document.querySelectorAll('[data-demo]')) {
+        button.addEventListener('click', () => {
+          document.getElementById('sample-feedback').textContent = `${button.dataset.demo}已触发 · 不保存数据`;
+        });
+      }
+      document.getElementById('token-stylesheet').addEventListener('load', refreshValues);
+      document.getElementById('token-stylesheet').addEventListener('error', refreshValues);
+      selectProfile('web');
+      refreshValues();
+    })();
+  </script>
+</body>
+</html>
