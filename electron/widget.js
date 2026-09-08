@@ -1,4 +1,5 @@
 import { applyCategory, initializeWindowControls } from './widget-shared.mjs';
+import { selectNextPendingOccurrences } from './recurringTaskSelection.mjs';
 
 /* tPlanner Today Widget — vanilla renderer.
  * Receives event lists from the main process via window.widgetAPI
@@ -44,11 +45,13 @@ import { applyCategory, initializeWindowControls } from './widget-shared.mjs';
   // ── Filtering / sorting ────────────────────────────────────────────
   function eventsForToday() {
     var now = state.now;
-    return state.events.filter(function (e) {
+    const today = state.events.filter(function (e) {
       // Includes: events that start today, end today, or span over today
       return isSameDay(e.start, now) || isSameDay(e.end, now)
           || (e.start.getTime() <= now.getTime() && e.end.getTime() >= now.getTime());
     }).sort(function (a, b) { return a.start.getTime() - b.start.getTime(); });
+    // Today remains a date-scoped view; completed history keeps its own section.
+    return selectNextPendingOccurrences(today, { keepCompleted: true });
   }
 
   function statusFor(e, nowTs) {

@@ -10,6 +10,7 @@
 import { createSyncEngine } from '../syncV3/createSyncEngine';
 import { appendCommands } from '../syncV3/commandOutbox';
 import { readJsonResponse } from '../syncV3/httpResponse';
+import { createSerialTaskQueue } from './serialTaskQueue.mjs';
 import {
     diffEventsToCommands,
     diffJournalsToCommands,
@@ -22,6 +23,7 @@ const AUTH_PERSIST_KEY = 'tplanner_web_auth_persist';
 
 let authHeader = null;
 let enginePromise = null;
+const enqueueLocalSync = createSerialTaskQueue();
 const configuredServerUrl = import.meta.env?.VITE_SYNC_SERVER_URL?.trim();
 const SYNC_SERVER_URL = configuredServerUrl || '';
 
@@ -115,7 +117,13 @@ async function getEngine() {
 }
 
 /** 把本地现状 diff 成命令上传,安装最新快照,返回展示数据投影。 */
-async function syncWithLocal({ events, journals } = {}) {
+function syncWithLocal(input = {}) {
+    // Event saves, journal saves and notification refreshes share the outbox sequence
+    // allocator and display mirror. Serialize the complete cycle, including failures.
+    return enqueueLocalSync(() => syncWithLocalNow(input));
+}
+
+async function syncWithLocalNow({ events, journals } = {}) {
     const engine = await getEngine();
     const mirror = (await engine.installer.getServerMirror())
         ?? { tasks: {}, customLists: {}, journals: {}, goals: {}, insights: {} };

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { format } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import { useTranslation } from 'react-i18next';
@@ -6,25 +6,54 @@ import { categoryForId, TaskCheckbox, TaskProgress } from '../design-system';
 import { X } from 'lucide-react';
 import { getDateLocale } from '../utils/dateLocale';
 import NoteEditor from './NoteEditor';
+import { recurrenceOf } from '../domain/recurringTasks.mjs';
+import { seriesIdOf } from '../domain/recurringTaskSelection.mjs';
 
 export default function EventDetailsModal({ event, travelTimezone, onClose, onDelete, onEdit, onSave }) {
     const { t, i18n } = useTranslation();
     const locale = getDateLocale(i18n.language);
     const [confirmingDelete, setConfirmingDelete] = useState(false);
+    const [saveError, setSaveError] = useState('');
+    const [saving, setSaving] = useState(false);
+    const detailSessionRef = useRef(0);
 
-    useEffect(() => { setConfirmingDelete(false); }, [event?.id]);
+    useEffect(() => {
+        detailSessionRef.current += 1;
+        setConfirmingDelete(false);
+        setSaveError('');
+        setSaving(false);
+    }, [event?.id]);
 
     if (!event) return null;
 
     const category = categoryForId(event.colorId);
-    const toggleChecklistItem = (index, completed) => {
-        if (!onSave) return;
+    const toggleChecklistItem = async (index, completed) => {
+        if (!onSave || saving) return;
         const newChecklist = event.checklist.map((item, itemIndex) =>
             itemIndex === index ? { ...item, completed } : item);
         // Preserve automatic parent completion when every subtask is complete.
         const allDone = newChecklist.every(item => item.completed);
         const anyUndone = newChecklist.some(item => !item.completed);
-        onSave({ ...event, checklist: newChecklist, completed: allDone ? true : anyUndone ? false : event.completed });
+        const session = detailSessionRef.current;
+        try {
+            setSaving(true);
+            setSaveError('');
+            await onSave({ ...event, checklist: newChecklist, completed: allDone ? true : anyUndone ? false : event.completed }, { original: event });
+        } catch (error) {
+            if (session === detailSessionRef.current) setSaveError(error?.message || t('messages.saveError', '保存失败，请重试'));
+        } finally { if (session === detailSessionRef.current) setSaving(false); }
+    };
+    const deleteOccurrence = async () => {
+        if (saving) return;
+        const session = detailSessionRef.current;
+        setSaving(true);
+        setSaveError('');
+        try {
+            await onDelete(event.id);
+            if (session === detailSessionRef.current) onClose();
+        } catch (error) {
+            if (session === detailSessionRef.current) setSaveError(error?.message || t('messages.saveError', '保存失败，请重试'));
+        } finally { if (session === detailSessionRef.current) setSaving(false); }
     };
 
     return (
@@ -44,6 +73,7 @@ export default function EventDetailsModal({ event, travelTimezone, onClose, onDe
 
                 {/* Content */}
                 <div className="modal-content" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    {saveError && <p role="alert">{saveError}</p>}
                     {/* Time */}
                     <div>
                         <span className="modal-label">{t('event.timeLabel')}</span>
@@ -73,6 +103,18 @@ export default function EventDetailsModal({ event, travelTimezone, onClose, onDe
                         </div>
                     </div>
 
+                    {event.type === 'task' && <div>
+                        <span className="modal-label">{t('event.recurrence', '重复')}</span>
+                        <p className="modal-value">
+                            {t(`recurrence.${recurrenceOf(event)?.frequency || 'none'}`)}
+                            {recurrenceOf(event) && ` · ${recurrenceOf(event).count} ${t('recurrence.occurrences', '次')}`}
+                            {seriesIdOf(event) && ` · ${t('recurrence.member', '第 {{index}} 次', { index: (event.recurrence?.occurrenceIndex ?? 0) + 1 })}`}
+                        </p>
+                        {onEdit && <button type="button" className="btn" onClick={() => { onEdit(event); onClose(); }}>
+                            {t(seriesIdOf(event) ? 'recurrence.editSeries' : 'recurrence.setRepeat', seriesIdOf(event) ? '修改重复系列' : '设置重复')}
+                        </button>}
+                    </div>}
+
                     {/* Note */}
                     <div>
                         <span className="modal-label">{t('event.note')}</span>
@@ -95,7 +137,7 @@ export default function EventDetailsModal({ event, travelTimezone, onClose, onDe
                                     <div key={item.id || idx} className="modal-checklist-item"
                                         onClick={() => toggleChecklistItem(idx, !item.completed)}
                                     >
-                                        <TaskCheckbox completed={item.completed} disabled={!onSave} title={item.text}
+                                        <TaskCheckbox completed={item.completed} disabled={!onSave || saving} title={item.text}
                                             className="modal-checklist-checkbox" onToggle={completed => toggleChecklistItem(idx, completed)} />
                                         <span className={`modal-checklist-text${item.completed ? ' modal-checklist-text--completed' : ''}`}>
                                             {item.text}
@@ -120,9 +162,9 @@ export default function EventDetailsModal({ event, travelTimezone, onClose, onDe
                             ) : (
                                 <>
                                     <span className="modal-delete-confirmation">
-                                        {t('messages.deleteConfirmation')}
+                                        {seriesIdOf(event) ? t('recurrence.deleteOccurrence', '仅删除此次任务？') : t('messages.deleteConfirmation')}
                                     </span>
-                                    <button className="btn btn--danger" onClick={() => { onDelete(event.id); onClose(); }}>
+                                    <button className="btn btn--danger" disabled={saving} onClick={deleteOccurrence}>
                                         {t('actions.confirm')}
                                     </button>
                                     <button className="btn" onClick={() => setConfirmingDelete(false)}>

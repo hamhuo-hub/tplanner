@@ -3,7 +3,8 @@
 // 客户端不再合并:把"本地现状 vs 中央镜像"的差异转成语义命令,
 // 权威裁决完全交给中央 reducer。桌面事件用 start/end 表达排程,
 // V3 实体用 schedule { startAt, endAt },这里做形状换算。
-import { emptyState } from './localReducer';
+import { emptyState } from './localReducer.js';
+import { recoverLegacySeries } from '../domain/recurringTasks.mjs';
 
 const isDeleted = (e) => Boolean(e?.deletedAt);
 
@@ -21,7 +22,7 @@ const KNOWN_EVENT_FIELDS = new Set([
     'id', 'title', 'type', 'itemType', 'start', 'end', 'note', 'completed',
     'checklist', 'colorId', 'recurrence', 'recurrenceType', 'recurrenceCount',
     'listId', 'alarmEnabled', 'alarmOffsetMinutes', 'lat', 'lng', 'latitude',
-    'longitude', 'timezone', 'extras', 'lifecycle', 'version', 'updatedAt', 'deletedAt',
+    'longitude', 'timezone', 'extras', 'lifecycle', 'version', 'updatedAt', 'deletedAt', 'groupId',
 ]);
 
 function checklistOf(value) {
@@ -39,7 +40,16 @@ function checklistOf(value) {
 }
 
 function recurrenceOf(event) {
-    if (hasOwn(event, 'recurrence')) return { present: true, value: event.recurrence ?? null };
+    if (hasOwn(event, 'recurrence')) {
+        if (event.recurrence === null) return { present: true, value: null };
+        const recurrence = { ...event.recurrence };
+        if (hasOwn(event, 'recurrenceType')) {
+            if (!event.recurrenceType || event.recurrenceType === 'none') return { present: true, value: null };
+            recurrence.frequency = event.recurrenceType;
+        }
+        if (hasOwn(event, 'recurrenceCount')) recurrence.count = Math.max(1, Math.min(50, Number(event.recurrenceCount) || 1));
+        return { present: true, value: recurrence };
+    }
     if (!hasOwn(event, 'recurrenceType') && !hasOwn(event, 'recurrenceCount')) {
         return { present: false, value: null };
     }
@@ -205,13 +215,13 @@ function appendTaskDetails(commands, id, current, event) {
 export function diffEventsToCommands(mirror, localEvents) {
     const commands = [];
     const tasks = mirror?.tasks ?? {};
-    for (const e of Array.isArray(localEvents) ? localEvents : []) {
+    for (const e of recoverLegacySeries(Array.isArray(localEvents) ? localEvents : [])) {
         const id = e?.id;
         if (id == null || id === '') continue;
         const cur = tasks[id];
 
         if (!cur) {
-            const itemType = e.itemType ?? e.type ?? 'task';
+            const itemType = e.type ?? e.itemType ?? 'task';
             commands.push({ type: 'task.create', aggregateId: id, arguments: {
                 title: typeof e.title === 'string' ? e.title : '',
                 itemType,
@@ -235,7 +245,7 @@ export function diffEventsToCommands(mirror, localEvents) {
         const title = typeof e.title === 'string' ? e.title : '';
         if (cur.title !== title) commands.push({ type: 'task.setTitle', aggregateId: id, arguments: { title } });
 
-        const itemType = typeof (e.itemType ?? e.type) === 'string' ? (e.itemType ?? e.type) : cur.itemType;
+        const itemType = typeof (e.type ?? e.itemType) === 'string' ? (e.type ?? e.itemType) : cur.itemType;
         if (itemType && cur.itemType !== itemType) {
             commands.push({ type: 'task.changeType', aggregateId: id, arguments: { itemType } });
         }
@@ -295,7 +305,7 @@ export function diffJournalsToCommands(mirror, localJournals) {
 
 export function toUiEvents(state) {
     const tasks = state?.tasks ?? {};
-    return Object.entries(tasks).map(([id, t]) => {
+    return recoverLegacySeries(Object.entries(tasks).map(([id, t]) => {
         const recurrence = t.recurrence ?? null;
         return {
             ...(t.extras ?? {}),
@@ -323,7 +333,7 @@ export function toUiEvents(state) {
             deletedAt: t.lifecycle === 'deleted' ? new Date() : null,
             updatedAt: 0,
         };
-    });
+    }));
 }
 
 export function toUiJournals(state) {

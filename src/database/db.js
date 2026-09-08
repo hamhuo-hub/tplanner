@@ -3,6 +3,7 @@ import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
 import { RxDBUpdatePlugin } from 'rxdb/plugins/update';
 import { RxDBMigrationSchemaPlugin } from 'rxdb/plugins/migration-schema';
 import { eventSchema } from './schema';
+import { recoverLegacySeries } from '../domain/recurringTasks.mjs';
 
 addRxPlugin(RxDBUpdatePlugin);
 addRxPlugin(RxDBMigrationSchemaPlugin);
@@ -34,15 +35,29 @@ export const getDatabase = async () => {
                     1: (oldDoc) => ({ ...oldDoc, deletedAt: 0 }),
                     // v1 → v2: add version field (seed from updatedAt for legacy data)
                     2: (oldDoc) => ({ ...oldDoc, version: oldDoc.updatedAt || 0 }),
-                    // v2 → v3: recurring instances are independent; remove legacy grouping.
+                    // Preserve explicit legacy evidence until the v4 collection migration.
                     3: (oldDoc) => {
                         const migrated = { ...oldDoc };
+                        if (migrated.groupId) migrated.extras = { ...migrated.extras, groupId: migrated.groupId };
+                        delete migrated.groupId;
+                        return migrated;
+                    },
+                    4: (oldDoc) => {
+                        const migrated = { ...oldDoc };
+                        if (migrated.groupId) migrated.extras = { ...migrated.extras, groupId: migrated.groupId };
                         delete migrated.groupId;
                         return migrated;
                     },
                 },
             },
         });
+
+        // A one-time/idempotent data migration, never a side effect of rendering a list.
+        const documents = await db.events.find().exec();
+        const legacy = documents.map(doc => doc.toJSON());
+        const recovered = recoverLegacySeries(legacy);
+        const changed = recovered.filter((event, index) => event !== legacy[index]);
+        if (changed.length) await db.events.bulkUpsert(changed);
 
         // Purge stale tombstones on startup (fire-and-forget)
         purgeOldTombstones(db).catch(() => {});

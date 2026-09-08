@@ -15,6 +15,7 @@ export default function Timeline({ startDate, endDate, events, onEventClick, onA
     const prevStartDateRef = useRef(startDate);
 
     const [previousScrollHeight, setPreviousScrollHeight] = useState(0);
+    const [saveError, setSaveError] = useState('');
 
     const handleScroll = (e) => {
         const { scrollTop, scrollHeight, clientHeight } = e.target;
@@ -110,9 +111,13 @@ export default function Timeline({ startDate, endDate, events, onEventClick, onA
         }
     };
 
-    const finalizeDrop = (event, snapStart, snapEnd) => {
+    const finalizeDrop = async (event, snapStart, snapEnd) => {
         if (!snapStart || !snapEnd) return;
-        onUpdateEvent?.([{ ...event, start: snapStart, end: snapEnd }]);
+        try {
+            setSaveError('');
+            await onUpdateEvent?.([{ ...event, start: snapStart, end: snapEnd }], { original: event });
+        } catch (error) { setSaveError(error?.message || t('messages.saveError', '保存失败，请重试')); }
+        finally { setDragState(null); }
     };
 
     const handleGlobalMouseUp = () => {
@@ -137,10 +142,8 @@ export default function Timeline({ startDate, endDate, events, onEventClick, onA
     }, []);
 
     // ── Box selection (rubber-band) ─────────────────────────────────────────
-    // Surface-level patch for batch ops on recurring-task instances that
-    // aren't sync-linked yet — lets users drag a box over several events and
-    // delete them together instead of one at a time. Box is rendered in
-    // viewport (fixed) coords so it stays correct while the row list scrolls.
+    // The timeline keeps every occurrence. Box selection deletes only the
+    // explicitly selected items and stays fixed while the row list scrolls.
     const [selectionBox, setSelectionBox] = useState(null); // {x1,y1,x2,y2}
     const selectionDataRef = useRef({ active: false, startX: 0, startY: 0 });
     const SELECT_DRAG_THRESHOLD = 4;
@@ -205,6 +208,7 @@ export default function Timeline({ startDate, endDate, events, onEventClick, onA
 
     return (
         <div className="timeline-root">
+            {saveError && <p role="alert">{saveError}</p>}
             {/* Header and rows share one scroll canvas so their time coordinates cannot diverge. */}
             <div className="timeline-scroll-area" onScroll={handleScroll} ref={scrollContainerRef}>
                 <div className="timeline-canvas">

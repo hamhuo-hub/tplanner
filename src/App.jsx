@@ -17,6 +17,8 @@ import { checkForClashes } from './utils/dateUtils'
 import { TIMEZONES } from './utils/constants'
 import { Plus, Languages, Printer, Globe, Download, Upload, Power, X } from 'lucide-react'
 import { getDatabase } from './database/db'
+import { toDatabaseEvent } from './database/schema'
+import { buildRecurringEdit, expandSharedContentUpdates, recoverLegacySeries, detachFromSeries, deleteRecurringOccurrences } from './domain/recurringTasks.mjs'
 import { now as clockNow } from './utils/clock'
 import * as webApi from './utils/webDataAdapter'
 import LoginScreen from './components/LoginScreen'
@@ -81,6 +83,8 @@ function PlannerApp() {
     }, [isElectron]);
     const eventsRef = useRef(events);
     eventsRef.current = events;
+    const localEventRevisionRef = useRef(0);
+    const localJournalRevisionRef = useRef(0);
 
     // ── Database & Native Init ───────────────────────────────────────────
     // Electron: RxDB (IndexedDB) with observable subscription
@@ -161,14 +165,20 @@ function PlannerApp() {
     // ── Web-mode auto-save to server ─────────────────────────────────────
     // Debounced PUT on every events change; runs only in browser (not Electron).
     const webEventSaveTimerRef = useRef(null);
+    const explicitEventSaveRef = useRef(false);
     useEffect(() => {
         if (isElectron || !isLoaded) return;
         clearTimeout(webEventSaveTimerRef.current);
-        webEventSaveTimerRef.current = setTimeout(() => {
-            webApi.saveEvents(events).catch(err =>
+        const saveLatest = () => {
+            if (explicitEventSaveRef.current) {
+                webEventSaveTimerRef.current = setTimeout(saveLatest, 300);
+                return;
+            }
+            webApi.saveEvents(eventsRef.current).catch(err =>
                 console.error('Failed to save events to server', err)
             );
-        }, 300);
+        };
+        webEventSaveTimerRef.current = setTimeout(saveLatest, 300);
     }, [events, isLoaded, isElectron]);
 
     useEffect(() => {
@@ -281,6 +291,7 @@ function PlannerApp() {
     }, [isElectron, requestUnitSync]);
 
     const handleSaveJournal = (dateStr, text) => {
+        localJournalRevisionRef.current += 1;
         const oldVer = journalsRef.current[dateStr]?.version || 0;
         const ts = clockNow();
         const entry = text?.trim()
@@ -319,14 +330,25 @@ function PlannerApp() {
         const refresh = async () => {
             clearTimeout(webEventSaveTimerRef.current);
             clearTimeout(webJournalSaveTimerRef.current);
+            const eventRevision = localEventRevisionRef.current;
+            const journalRevision = localJournalRevisionRef.current;
             const display = await webApi.refreshAndGetDisplay(eventsRef.current, journalsRef.current);
-            setEvents(display.events);
-            const remote = normalizeJournals(display.journals);
-            setJournals(remote);
-            for (const [date, entry] of Object.entries(remote)) {
-                const key = `tplanner_journal_${date}`;
-                if (entry?.deletedAt) localStorage.removeItem(key);
-                else localStorage.setItem(key, JSON.stringify(entry));
+            if (disposed) return;
+            // A local change made while this request awaited the queue/network still
+            // owns its debounce save. An older projection must not replace that edit.
+            if (eventRevision === localEventRevisionRef.current) {
+                eventsRef.current = display.events;
+                setEvents(display.events);
+            }
+            if (journalRevision === localJournalRevisionRef.current) {
+                const remote = normalizeJournals(display.journals);
+                journalsRef.current = remote;
+                setJournals(remote);
+                for (const [date, entry] of Object.entries(remote)) {
+                    const key = `tplanner_journal_${date}`;
+                    if (entry?.deletedAt) localStorage.removeItem(key);
+                    else localStorage.setItem(key, JSON.stringify(entry));
+                }
             }
         };
 
@@ -430,9 +452,12 @@ function PlannerApp() {
         if (!db) {
             // Web mode: update state directly (autosave effect will PUT to server)
             const now = clockNow();
-            setEvents(prev => prev.map(e =>
+            localEventRevisionRef.current += 1;
+            const next = eventsRef.current.map(e =>
                 e.id === eventId ? { ...e, completed: completedStatus, version: (e.version || 0) + 1, updatedAt: now } : e
-            ));
+            );
+            eventsRef.current = next;
+            setEvents(next);
             return;
         }
         try {
@@ -447,115 +472,66 @@ function PlannerApp() {
         }
     };
 
-    const handleSaveEvent = async (eventData) => {
+    const handleSaveEvent = async (eventData, { original = null } = {}) => {
+        const current = eventsRef.current;
+        const input = Array.isArray(eventData) ? eventData : [eventData];
+        const planned = original ? buildRecurringEdit(current, original, input[0], clockNow()) : input;
+        const updates = expandSharedContentUpdates(current, planned);
+        const now = clockNow();
+        const byId = new Map(current.map(event => [event.id, event]));
+        const stamped = updates.map(update => ({
+            ...byId.get(update.id), ...update,
+            start: new Date(update.start), end: new Date(update.end),
+            version: (byId.get(update.id)?.version || update.version || 0) + 1,
+            updatedAt: now,
+        }));
         if (!db) {
-            // Web mode: update state directly (autosave effect will PUT to server)
-            const updates = Array.isArray(eventData) ? eventData : [eventData];
-            const now = clockNow();
-            setEvents(prev => {
-                const map = new Map(prev.map(e => [e.id, e]));
-                for (const u of updates) {
-                    // Keep Date objects in state — saveEvents handles serialization
-                    map.set(u.id, {
-                        ...u,
-                        start: u.start instanceof Date ? u.start : new Date(u.start),
-                        end: u.end instanceof Date ? u.end : new Date(u.end),
-                        version: (u.version || 0) + 1,
-                        updatedAt: now,
-                    });
+            // Await durable outbox/server handling before closing the editor. The form keeps
+            // its stable draft IDs on failure, so retrying cannot create another series.
+            for (const event of stamped) byId.set(event.id, event);
+            const pending = [...byId.values()];
+            clearTimeout(webEventSaveTimerRef.current);
+            explicitEventSaveRef.current = true;
+            const savedRevision = ++localEventRevisionRef.current;
+            // Refresh/SSE must see the same local changes while the explicit save awaits
+            // acknowledgement, otherwise its full-data diff can write the old title back.
+            eventsRef.current = pending;
+            setEvents(pending);
+            try {
+                const saved = await webApi.saveEvents(pending);
+                if (savedRevision === localEventRevisionRef.current) {
+                    eventsRef.current = saved;
+                    setEvents(saved);
                 }
-                return Array.from(map.values());
-            });
-            setEditingEvent(null);
-            setIsAddModalOpen(false);
-            if (!Array.isArray(eventData) && selectedEvent && selectedEvent.id === eventData.id) {
-                setSelectedEvent(eventData);
-            }
-            return;
-        }
-        const updates = Array.isArray(eventData) ? eventData : [eventData];
-        try {
-            const upserts = updates.map(update => {
-                const cleanUpdate = { ...update };
-                cleanUpdate.start = new Date(cleanUpdate.start).toISOString();
-                cleanUpdate.end = new Date(cleanUpdate.end).toISOString();
-                cleanUpdate.version = (update.version || 0) + 1;
-                cleanUpdate.updatedAt = clockNow();
-                return cleanUpdate;
-            });
-            await db.events.bulkUpsert(upserts);
+            } finally { explicitEventSaveRef.current = false; }
+        } else {
+            const result = await db.events.bulkUpsert(stamped.map(toDatabaseEvent));
+            if (result.error?.length) throw new Error(t('messages.saveError', '保存失败，请重试'));
             requestUnitSync('events');
-        } catch (err) {
-            console.error('Error saving events to RxDB', err);
         }
-        setEditingEvent(null);
-        setIsAddModalOpen(false);
-        if (!Array.isArray(eventData) && selectedEvent && selectedEvent.id === eventData.id) {
-            setSelectedEvent(eventData);
-        }
-    };
-
-    // Soft-delete: stamp deletedAt instead of physically removing,
-    // so the semantic delete command reaches the central V3 writer.
-    const softDelete = async (doc) => {
-        const v = (doc.get('version') || 0) + 1;
-        await doc.update({ $set: { deletedAt: clockNow(), version: v, updatedAt: clockNow() } });
+        setSelectedEvent(currentSelection => {
+            if (!currentSelection) return null;
+            const selected = stamped.find(event => event.id === currentSelection.id);
+            return selected ? (selected.deletedAt ? null : selected) : currentSelection;
+        });
+        // The invoking editor owns closing its session. A checkbox save must not close
+        // an editor opened later while that save was awaiting the network.
     };
 
     const handleDeleteEvent = async (id) => {
-        if (!db) {
-            // Web mode: tombstone directly in state (autosave will PUT to server)
-            const now = clockNow();
-            setEvents(prev => prev.map(e =>
-                e.id === id ? { ...e, version: (e.version || 0) + 1, deletedAt: now, updatedAt: now } : e
-            ));
-            setSelectedEvent(null);
-            return;
-        }
-        let changed = false;
-        try {
-            const doc = await db.events.findOne(id).exec();
-            if (doc) {
-                await softDelete(doc);
-                changed = true;
-            }
-        } catch (err) {
-            console.error('Error deleting event', err);
-        }
-        if (changed) requestUnitSync('events');
-        setSelectedEvent(null);
+        await handleSaveEvent(deleteRecurringOccurrences(eventsRef.current, [id], clockNow()));
+        setSelectedEvent(current => current?.id === id ? null : current);
     };
 
-    // Batch delete: tombstone every box-selected event in one write.
-    // Temporary patch — recurring instances aren't synced as a group yet,
-    // so a multi-select box lets users clear them all without one-by-one deletes.
+    // Explicit selection only; surviving series members retain the retired-ID ledger.
     const handleBatchDelete = async (ids) => {
         if (!ids?.length) return;
-        if (!db) {
-            // Web mode: tombstone directly in state
-            const now = clockNow();
-            const idSet = new Set(ids);
-            setEvents(prev => prev.map(e =>
-                idSet.has(e.id) ? { ...e, version: (e.version || 0) + 1, deletedAt: now, updatedAt: now } : e
-            ));
-            setSelectedIds(new Set());
-            return;
-        }
         try {
-            const now = clockNow();
-            const docs = await db.events.findByIds(ids).exec();
-            const upserts = Array.from(docs.values()).map(doc => {
-                const old = doc.toJSON();
-                return { ...old, version: (old.version || 0) + 1, deletedAt: now, updatedAt: now };
-            });
-            if (upserts.length) {
-                await db.events.bulkUpsert(upserts);
-                requestUnitSync('events');
-            }
-        } catch (err) {
-            console.error('Error batch deleting events', err);
+            await handleSaveEvent(deleteRecurringOccurrences(eventsRef.current, ids, clockNow()));
+            setSelectedIds(new Set());
+        } catch (error) {
+            console.error('Error batch deleting events', error);
         }
-        setSelectedIds(new Set());
     };
 
     // Copy: store in clipboard, don't save yet
@@ -568,11 +544,11 @@ function PlannerApp() {
         if (!clipboard) return;
         const duration = clipboard.end - clipboard.start;
         const copy = {
-            ...clipboard,
+            ...detachFromSeries(clipboard),
             id: crypto.randomUUID(),
             title: clipboard.title + t('event.copySuffix'),
-            start: new Date(start).toISOString(),
-            end:   new Date(start.getTime() + duration).toISOString(),
+            start: new Date(start),
+            end:   new Date(start.getTime() + duration),
             completed: false,
             version: 1,
             deletedAt: 0,
@@ -581,12 +557,15 @@ function PlannerApp() {
         };
         if (!db) {
             // Web mode: add directly to state
-            setEvents(prev => [...prev, copy]);
+            localEventRevisionRef.current += 1;
+            const next = [...eventsRef.current, copy];
+            eventsRef.current = next;
+            setEvents(next);
             setClipboard(null);
             return;
         }
         try {
-            await db.events.insert(copy);
+            await db.events.insert(toDatabaseEvent(copy));
             requestUnitSync('events');
         } catch (err) {
             console.error('Paste failed', err);
@@ -657,19 +636,18 @@ function PlannerApp() {
                 if (Array.isArray(parsed)) {
                     const allDocs = await db.events.find().exec();
                     await Promise.all(allDocs.map(d => d.remove()));
-                    const upserts = parsed.map(event => {
+                    const upserts = recoverLegacySeries(parsed).map(event => {
                         const cleanUpdate = { ...event };
                         cleanUpdate.start = new Date(cleanUpdate.start).toISOString();
                         cleanUpdate.end = new Date(cleanUpdate.end).toISOString();
                         cleanUpdate.updatedAt = clockNow();
                         if (!cleanUpdate.note) cleanUpdate.note = "";
                         if (!cleanUpdate.timezone) cleanUpdate.timezone = "";
-                        delete cleanUpdate.groupId;
                         if (cleanUpdate.completed === undefined) cleanUpdate.completed = false;
                         if (cleanUpdate.checklist === undefined) cleanUpdate.checklist = [];
                         if (!cleanUpdate.recurrenceType) cleanUpdate.recurrenceType = "none";
                         if (!cleanUpdate.recurrenceCount) cleanUpdate.recurrenceCount = 1;
-                        return cleanUpdate;
+                        return toDatabaseEvent(cleanUpdate);
                     });
                     await db.events.bulkUpsert(upserts);
                     requestUnitSync('events');
@@ -794,18 +772,7 @@ function PlannerApp() {
                                         // 持久化边界:UI projection 里的 Date 必须在写入 RxDB 前
                                         // 序列化回 schema 形状(ISO string / 时间戳),否则
                                         // IndexedDB 里会被写入 Date 对象污染投影。
-                                        const persisted = merged.map(event => ({
-                                            ...event,
-                                            start: event.start instanceof Date
-                                                ? event.start.toISOString()
-                                                : event.start,
-                                            end: event.end instanceof Date
-                                                ? event.end.toISOString()
-                                                : event.end,
-                                            deletedAt: event.deletedAt instanceof Date
-                                                ? event.deletedAt.getTime()
-                                                : event.deletedAt,
-                                        }));
+                                        const persisted = recoverLegacySeries(merged).map(toDatabaseEvent);
                                         try { await db.events.bulkUpsert(persisted); } catch (err) { console.error('LAN snapshot apply failed', err); }
                                     },
                                 },
@@ -900,7 +867,7 @@ function PlannerApp() {
                 onSave={handleSaveEvent}
                 defaultDate={modalDefaultDate}
                 initialEvent={editingEvent}
-                events={visibleEvents}
+                events={events}
             />
 
             <EventDetailsModal

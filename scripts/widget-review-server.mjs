@@ -10,7 +10,7 @@ const port = 4175;
 const assets = new Set([
   'widget.html', 'widget.js', 'widget.css', 'notes-widget.html', 'notes-widget.js',
   'notes-widget.css', 'shared-widget.css', 'widget-shared.mjs', 'marked.umd.js',
-  'tplanner-light.css', 'tplanner-light.mjs',
+  'tplanner-light.css', 'tplanner-light.mjs', 'recurringTaskSelection.mjs',
 ]);
 
 const fixture = String.raw`(() => {

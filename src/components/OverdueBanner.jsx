@@ -3,6 +3,7 @@ import { AlertCircle, Clock, ChevronDown, ChevronUp } from 'lucide-react';
 import { formatInTimeZone } from 'date-fns-tz';
 import { differenceInCalendarDays, differenceInHours, addDays, endOfDay } from 'date-fns';
 import { useTranslation } from 'react-i18next';
+import { selectNextPendingOccurrences } from '../domain/recurringTaskSelection.mjs';
 
 // deadline time: tasks use .end, reminders/events use .start
 function deadline(ev) {
@@ -25,16 +26,17 @@ export default function OverdueBanner({ events, onHighlight, travelTimezone }) {
 
     const now = new Date();
     const tz = travelTimezone || 'Asia/Shanghai';
+    const pendingEvents = selectNextPendingOccurrences(events);
 
     // Overdue: only tasks (reminders don't have a "completed" concept)
-    const overdueTasks = events
+    const overdueTasks = pendingEvents
         .filter(e => e.type === 'task' && !e.completed && e.end < now)
         .sort((a, b) => a.end - b.end);
 
     // Upcoming: tasks (not yet expired) + reminders/events (not yet started)，
     // 只看明后两天（今天剩余 + 明天），不应该把所有未来事项都列进来。
     const upcomingCutoff = endOfDay(addDays(now, 1));
-    const upcomingTasks = events
+    const upcomingTasks = pendingEvents
         .filter(e => {
             if (e.type === 'status') return false;
             const d = deadline(e);

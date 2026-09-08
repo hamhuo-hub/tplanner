@@ -24,6 +24,7 @@ function copyWidgetAssets(): Plugin {
       const src = resolve(__dirname, 'electron', f)
       copyFileSync(src, resolve(outDir, f))
     }
+    copyFileSync(resolve(__dirname, 'src/domain/recurringTaskSelection.mjs'), resolve(outDir, 'recurringTaskSelection.mjs'))
     for (const f of ['tplanner-light.css', 'tplanner-light.mjs']) {
       copyFileSync(resolve(__dirname, 'design-assets/tokens/generated', f), resolve(outDir, f))
     }
