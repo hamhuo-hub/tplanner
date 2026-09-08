@@ -13,6 +13,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -28,6 +29,7 @@ internal fun TimelineAddButton(
         modifier = modifier
             .padding(18.dp)
             .size(54.dp)
+            .clip(CircleShape)
             .background(Color(TPlannerLightTokens.Component.Button.Primary.Background), CircleShape)
             .border(1.dp, Color(TPlannerLightTokens.Component.Button.Primary.Border), CircleShape)
             .clickable(onClick = onClick),

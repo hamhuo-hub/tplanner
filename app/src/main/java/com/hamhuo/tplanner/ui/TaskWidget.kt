@@ -157,6 +157,7 @@ fun TaskWidget(
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Row(
                     modifier = Modifier
+                        .clip(RoundedCornerShape(TPlannerGeometry.RadiusPillDp.dp))
                         .background(CONTROL, RoundedCornerShape(TPlannerGeometry.RadiusPillDp.dp))
                         .border(1.dp, BORDER, RoundedCornerShape(TPlannerGeometry.RadiusPillDp.dp))
                         .clickable(onClick = onViewPickerClick)
@@ -191,6 +192,7 @@ fun TaskWidget(
                 Box(
                     modifier = Modifier
                         .size(Tokens.Platform.Phone.Geometry.TouchTargetMin.dp)
+                        .clip(CircleShape)
                         .background(CONTROL, CircleShape)
                         .border(1.dp, BORDER, CircleShape)
                         .clickable { showTypeSheet = true },

@@ -27,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import com.hamhuo.tplanner.designsystem.TPlannerLightTokens as Tokens
@@ -144,6 +145,7 @@ private fun NavigationIsland(
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = Tokens.Platform.Phone.Geometry.TouchTargetMin.dp)
+                    .clip(itemShape)
                     .background(
                         color = if (isSelected) GOLD else SURFACE,
                         shape = itemShape,

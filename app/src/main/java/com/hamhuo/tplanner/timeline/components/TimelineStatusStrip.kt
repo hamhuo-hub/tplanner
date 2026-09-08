@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -83,6 +84,7 @@ internal fun TimelineStatusStrip(
                     modifier = Modifier
                         .weight(1f)
                         .padding(end = 4.dp)
+                        .clip(shape)
                         .background(visuals.background, shape)
                         .border(1.dp, visuals.border, shape)
                         .clickable(role = Role.Button) { onEventClick(status) }
