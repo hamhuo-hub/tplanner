@@ -15,7 +15,6 @@ import com.hamhuo.tplanner.designsystem.TPlannerWatchFacePalette.Hop
 import java.time.ZonedDateTime
 import java.time.Instant
 import kotlin.math.PI
-import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.abs
@@ -32,6 +31,7 @@ internal class HopFacePainter(context: Context) {
         ResourcesCompat.getFont(context, R.font.comfortaa) ?: Typeface.DEFAULT, Typeface.BOLD,
     )
     private val taskTypeface = Typeface.create("sans-serif", Typeface.NORMAL)
+    private val timeFormatter = LocalizedDateTimeFormatter(context, R.string.task_time_pattern)
 
     /** Stages are useful for reproducing the visual baseline, never stored in user data. */
     enum class Stage { DIAL, INTERVAL, LABEL, TASKS }
@@ -64,7 +64,7 @@ internal class HopFacePainter(context: Context) {
         if (!ambient && stage != Stage.DIAL) {
             drawTasks(canvas, g, if (stage == Stage.TASKS) tasks else tasks.take(1), stage != Stage.INTERVAL)
         }
-        drawNow(canvas, g, ambient)
+        drawNow(canvas, g, time, ambient)
         canvas.restore()
         // The housing is stationary: the inner shadow overlays the moving artwork, and
         // its lower edge stays light. No blur/filter or extra frame scheduling is needed.
@@ -166,31 +166,18 @@ internal class HopFacePainter(context: Context) {
             var gapStart = end
             var gapEnd = end
             if (label != null && readableEnd > readableStart) {
-                val textHalfMs = ceil(label.widthPx / radius * HopSizeSpec.MILLIS_PER_TURN / (4 * PI)).toLong()
+                // The measured label already fits. Rounding must not make its anchor range empty.
+                val textHalfMs = (label.widthPx / radius * HopSizeSpec.MILLIS_PER_TURN / (4 * PI))
+                    .toLong().coerceAtMost((readableEnd - readableStart) / 2)
                 val minAnchor = readableStart + textHalfMs
                 val maxAnchor = readableEnd - textHalfMs
-                if (minAnchor <= maxAnchor) {
-                    val preferredAnchor = HopTimeline.labelAnchor(
-                        segment.copy(startEpochMs = start, endEpochMs = end,
-                            showStartCap = showStart, showEndCap = showEnd),
-                        minAnchor, maxAnchor,
-                    )
-                    // The full-length hand crosses every task track at NOW. Keep readable
-                    // titles to its nearest free side without cutting a gap in the hand.
-                    val handClearance = textHalfMs + padMs
-                    val anchor = if (abs(preferredAnchor - g.nowEpochMs) >= handClearance) {
-                        preferredAnchor
-                    } else {
-                        listOf(g.nowEpochMs - handClearance, g.nowEpochMs + handClearance)
-                            .filter { it in minAnchor..maxAnchor }
-                            .minByOrNull { abs(it - preferredAnchor) }
-                    }
-                    if (anchor != null) {
-                        gapStart = anchor - textHalfMs - padMs
-                        gapEnd = anchor + textHalfMs + padMs
-                        drawLabel(canvas, g, radius, anchor, label)
-                    }
-                }
+                val anchor = HopTimeline.labelAnchor(
+                    segment.copy(startEpochMs = start, endEpochMs = end),
+                    minAnchor, maxAnchor, g.nowEpochMs,
+                )
+                gapStart = anchor - textHalfMs - padMs
+                gapEnd = anchor + textHalfMs + padMs
+                drawLabel(canvas, g, radius, anchor, label)
             }
             // Short names occupy their natural width. Fine time strokes carry the rest of the
             // duration, and real endpoints alone receive caps. Long tasks never make a ring.
@@ -231,7 +218,7 @@ internal class HopFacePainter(context: Context) {
         }
     }
 
-    private fun drawNow(canvas: Canvas, g: HopDialGeometry, ambient: Boolean) {
+    private fun drawNow(canvas: Canvas, g: HopDialGeometry, time: ZonedDateTime, ambient: Boolean) {
         val m = g.metrics
         // Extend past both aperture intersections; the fixed circular clip leaves the rim clean.
         val start = g.point(
@@ -246,13 +233,14 @@ internal class HopFacePainter(context: Context) {
         stroke(if (ambient) Hop.AmbientInk else Hop.Now, m.density * if (ambient) 1f else 1.4f)
         canvas.drawLine(start.x, start.y, end.x, end.y, p)
         if (!ambient) {
+            val timeLabel = timeFormatter.format(time)
             val label = g.point(m.orbitRadiusPx - m.diameterPx * 0.235f, g.nowAngle)
             text(Hop.Now, TPlannerTypography.HopNowSp * m.scaledDensity, taskTypeface)
             val nx = -sin(g.nowAngle).toFloat()
             val ny = cos(g.nowAngle).toFloat()
-            val clearance = abs(nx) * p.measureText("NOW") / 2f +
+            val clearance = abs(nx) * p.measureText(timeLabel) / 2f +
                 abs(ny) * (p.descent() - p.ascent()) / 2f + 4f * m.density
-            canvas.drawText("NOW", label.x + nx * clearance,
+            canvas.drawText(timeLabel, label.x + nx * clearance,
                 label.y + ny * clearance - (p.ascent() + p.descent()) / 2f, p)
         }
     }

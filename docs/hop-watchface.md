@@ -52,9 +52,10 @@ the virtual center. Ambient omits both the bright lip and the shadow. This uses 
 filter, raster texture, new animation loop or image asset inside the production face.
 
 The interactive orange hand spans the entire inner aperture, clipped before the white lip
-at both ends. The NOW caption sits beside it. Task labels move to the nearest readable
-side of the hand, or disappear if neither side fits; the hand remains continuous. Ambient
-keeps its shorter, dim hand.
+at both ends. The current time (`HH:mm`, using the dial's time zone and localized digits)
+sits beside it, with clearance measured from the formatted text. Task labels render directly
+in the readable intersection, without avoiding the orange hand. The hand remains continuous
+and may cross the text. Ambient keeps its shorter, dim hand.
 
 ## Parameters
 
@@ -91,9 +92,10 @@ real endpoints inside the visible window.
 
 The geometric window comes from the intersection of the virtual track circle and the
 inner aperture circle. Each lane has its own window. The readable window is separately inset by
-font ascent/descent and edge padding. Labels keep their true temporal midpoint whenever it
-fits; both-ends-offscreen labels use the readable center. Text moves with the same virtual
-center as the ticks. Text below the dial reverses its reading path to remain upright.
+font ascent/descent and edge padding. Active titles follow the current time, clamped within
+the readable intersection; they can use the elapsed portion as the task nears its end.
+Other titles use the visible segment's midpoint. Text moves with the same virtual center
+as the ticks. Text below the dial reverses its reading path to remain upright.
 
 Titles do not fill time intervals: measured text occupies its natural length, modest CJK
 tracking stops at 0.12em, and the remaining duration is a hairline. Insufficient space

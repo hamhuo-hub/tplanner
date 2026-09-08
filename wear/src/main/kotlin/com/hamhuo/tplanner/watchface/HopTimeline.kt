@@ -84,21 +84,20 @@ object HopTimeline {
     }
 
     /**
-     * Keep the original midpoint moving with the dial, clamping only when it would be clipped.
+     * Active titles follow the current time within the readable intersection.
+     * Other titles use the visible segment's midpoint, never an offscreen task midpoint.
      * The caller insets readable bounds by half the measured label width in time units.
-     * A task continuing beyond both visible edges receives a calm, centered label.
      */
     fun labelAnchor(
         segment: HopTaskSegment,
         readableStartEpochMs: Long,
         readableEndEpochMs: Long,
+        nowEpochMs: Long,
     ): Long {
         require(readableEndEpochMs >= readableStartEpochMs)
-        if (!segment.isPoint && !segment.showStartCap && !segment.showEndCap) {
-            return midpoint(readableStartEpochMs, readableEndEpochMs)
-        }
-        return midpoint(segment.task.startEpochMs, segment.task.endEpochMs)
-            .coerceIn(readableStartEpochMs, readableEndEpochMs)
+        val active = segment.task.startEpochMs <= nowEpochMs && nowEpochMs < segment.task.endEpochMs
+        val preferred = if (active) nowEpochMs else midpoint(segment.startEpochMs, segment.endEpochMs)
+        return preferred.coerceIn(readableStartEpochMs, readableEndEpochMs)
     }
 
     private fun midpoint(start: Long, end: Long): Long =
