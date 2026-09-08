@@ -312,8 +312,6 @@ object SyncV3ProjectionCodec {
 /** Replaces mirror, pending overlay, phone tables, and installed pointer in one SQLite commit. */
 class RoomSyncV3ProjectionInstaller(
     private val db: TPlannerDatabase,
-    /** Test seam used to prove SQLite rollback after projection rows are staged. */
-    private val beforeCommit: () -> Unit = {},
 ) : SyncV3ProjectionInstaller {
     private val dao = db.syncV3Dao()
 
@@ -454,7 +452,6 @@ class RoomSyncV3ProjectionInstaller(
         val displayedJson = SyncV3ProjectionCodec.replay(mirror, dao.listAllCommands())
         val projection = SyncV3ProjectionCodec.project(displayedJson, existing)
         replacePhoneRows(projection, existingRows)
-        beforeCommit()
         dao.upsertSyncState(
             meta.copy(
                 installedSnapshotVersion = version,

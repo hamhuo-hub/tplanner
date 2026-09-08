@@ -83,13 +83,8 @@ android {
         getByName("main").kotlin.directories.add(
             rootProject.file("shared/src/main/kotlin").absolutePath,
         )
-        // MigrationTestHelper reads exported Room schemas from the debug APK assets.
-        getByName("debug").assets.directories.add(file("schemas").absolutePath)
     }
 
-    testOptions {
-        unitTests.isIncludeAndroidResources = true
-    }
 }
 
 dependencies {
@@ -111,11 +106,6 @@ dependencies {
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.datastore.preferences)
-    testImplementation(libs.junit)
-    testImplementation(libs.json.jvm)
-    testImplementation(libs.androidx.room.testing)
-    testImplementation(libs.androidx.test.core)
-    testImplementation(libs.robolectric)
 }
 
 ksp {

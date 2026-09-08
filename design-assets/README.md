@@ -47,6 +47,6 @@ Watch-face picker screenshots are derived assets. Tide is reproducibly generated
 watch-face metadata must reference those PNG resources directly—never a vector or layer-list.
 
 Hop's palette and semantic typography also live in the canonical shared tokens. Its native
-Canvas review sheets are in `design-assets/hop`; regenerate them and the direct picker PNG
-with `scripts/generate-hop-previews.ps1`. Reference limits and geometry are documented in
+Canvas review sheets are in `design-assets/hop`; update them and the direct picker PNG
+when the painter changes. Reference limits and geometry are documented in
 `docs/hop-watchface.md`. The bundled Comfortaa license lives in Wear's `assets/licenses`.

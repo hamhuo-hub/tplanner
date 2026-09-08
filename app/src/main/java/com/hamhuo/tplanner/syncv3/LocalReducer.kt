@@ -10,7 +10,6 @@ import org.json.JSONObject
  *
  * 铁律:纯函数、不读时钟(时间来自命令流的 brokerSequence)、删除是生命周期、
  * 重复同值 NOOP、内部业务拒绝返回 receipt 不抛异常。
- * 契约测试用同一份 sequence-01 fixture 验证与服务器/桌面实现产出相同状态。
  */
 object LocalReducer {
 

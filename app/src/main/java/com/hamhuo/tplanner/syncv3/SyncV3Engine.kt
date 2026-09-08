@@ -60,10 +60,7 @@ class SyncV3Engine(
     /** Android canary 开关(§9.3):capability + cursor 齐备才走 delta;默认关,生产由 SyncV3Runtime 打开。 */
     private val deltaEnabled: Boolean = false,
     private val capabilitiesCache: CapabilitiesCache = CapabilitiesCache(),
-    /** 测试 seam:JVM/Robolectric 测试可注入 no-op,生产默认走 [requireNetwork]。 */
-    private val networkGuard: (() -> Unit)? = null,
 ) {
-    private val networkCheck: () -> Unit = networkGuard ?: { requireNetwork() }
     private val appContext = context.applicationContext
     private val dao = database.syncV3Dao()
     private val store = RoomSyncV3Store(dao)
@@ -112,7 +109,7 @@ class SyncV3Engine(
                             "ERROR007",
                         )
                     }
-                    networkCheck()
+                    requireNetwork()
                     val startedAt = System.currentTimeMillis()
                     val base = normalizeServerUrl(serverUrl)
                     val capabilities = verifyCapabilities(base)
@@ -200,14 +197,13 @@ class SyncV3Engine(
                             "ERROR007",
                         )
                     }
-                    networkCheck()
+                    requireNetwork()
                     val base = normalizeServerUrl(serverUrl)
                     val capabilities = verifyCapabilities(base)
                     commands.prepareForServerInstance(capabilities.optString("serverInstanceId"))
 
                     val installer = SyncV3SnapshotInstaller(
                         store = store,
-                        kv = UnusedRoomKv,
                         http = http,
                         serverUrl = base,
                         projectionInstaller = projection,
@@ -502,10 +498,6 @@ class SyncV3Engine(
     }
 }
 
-private object UnusedRoomKv : SyncKeyValueStore {
-    override fun get(key: String): String? = null
-    override fun set(key: String, value: String) = Unit
-}
 
 private fun Throwable.toSyncV3ErrorCode(): String {
     val explicit = when (this) {

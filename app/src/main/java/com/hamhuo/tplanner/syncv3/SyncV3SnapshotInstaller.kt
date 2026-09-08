@@ -6,12 +6,6 @@ import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 import java.util.zip.GZIPInputStream
 
-/** 快照镜像与展示态的字符串 KV(手机端由 Room 表承载,测试用内存实现)。 */
-interface SyncKeyValueStore {
-    fun get(key: String): String?
-    fun set(key: String, value: String)
-}
-
 data class SnapshotManifest(
     val snapshotVersion: Long,
     val parentVersion: Long,
@@ -63,10 +57,9 @@ data class FetchedSnapshot(
  */
 class SyncV3SnapshotInstaller(
     private val store: SyncV3Store,
-    private val kv: SyncKeyValueStore,
     private val http: SyncHttpClient,
     private val serverUrl: String,
-    private val projectionInstaller: SyncV3ProjectionInstaller? = null,
+    private val projectionInstaller: SyncV3ProjectionInstaller,
     private val onDisplayedInstalled: ((DisplayedStateProjection, DisplayedStateProjection, Long, Long) -> Unit)? = null,
 ) {
 
@@ -210,21 +203,8 @@ class SyncV3SnapshotInstaller(
             serverInstanceId = serverInstanceId,
             brokerToSequence = verifiedBrokerToSequence,
         )
-        val roomResult = projectionInstaller?.installAtomically(state, resolvedManifest)
-        if (roomResult == null) {
-            // JVM/non-Room implementation retained for protocol tests.
-            kv.set("mirror", state.toString())
-            store.upsertSyncState(
-                meta.copy(
-                    installedSnapshotVersion = manifest.snapshotVersion,
-                    installedSnapshotHash = manifest.stateHash,
-                    serverInstanceId = serverInstanceId ?: meta.serverInstanceId,
-                    serverMirrorJson = state.toString(),
-                    installedBrokerToSequence = verifiedBrokerToSequence,
-                    cursor = manifest.cursor ?: meta.cursor,
-                ),
-            )
-        } else if (roomResult.installed) {
+        val roomResult = projectionInstaller.installAtomically(state, resolvedManifest)
+        if (roomResult.installed) {
             // Wear mirrors the central snapshot, never the phone's optimistic overlay.
             onDisplayedInstalled?.invoke(
                 roomResult.displayed,
@@ -245,14 +225,12 @@ class SyncV3SnapshotInstaller(
                 idempotencyKey = "",
             )
         }
-        return if (roomResult != null && !roomResult.installed) {
+        return if (!roomResult.installed) {
             InstallResult(installed = false, skipped = true, version = roomResult.version)
         } else {
             InstallResult(installed = true, skipped = false, version = manifest.snapshotVersion)
         }
     }
-
-    fun getServerMirror(): JSONObject? = kv.get("mirror")?.let { JSONObject(it) }
 
     /** 拉最新并安装;版本相同返回 skipped。 */
     fun syncToLatest(): InstallResult {

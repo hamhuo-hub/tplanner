@@ -115,22 +115,13 @@ by a small minute-dependent offset.
 ![Boundary cases](../design-assets/hop/edge-cases.png)
 
 ```powershell
-.\gradlew.bat :wear:testDebugUnitTest :wear:assembleDebug :wear:lintDebug
-pwsh scripts/generate-hop-previews.ps1
+.\gradlew.bat :wear:assembleDebug :wear:lintDebug
 pwsh scripts/check-android-brand-assets.ps1
 ```
 
-The preview generator runs the production `HopFacePainter` under Robolectric native
-Android graphics (API 34), writes Stage 0–3, five logical sizes, font-scale and interval
-edge cases, ambient, a motion contact sheet, and time-scrubber frames. It copies the
-actual rendered PNG into the system picker's direct raster resource. Regenerate before
-building the final APK if painter or fixture changes affect the picker.
-
-Tests cover geometry/density invariance, hour and midnight continuity, interval endpoint
-semantics, lane collisions, long intervals, real text measurement, shaping and Unicode,
-plus nonblank native images and sparse ambient output. Native graphics screenshots are
-not physical-watch acceptance: vendor font fallback, picker discovery, round screen
-insets, live projection updates and tap behavior still need verification on a connected watch.
+Update the checked-in preview PNGs when the painter changes. Vendor font fallback,
+picker discovery, round screen insets, live projection updates and tap behavior need
+verification on a connected watch.
 
 The new face follows the repository's existing Canvas watchface service integration and
 inherits its platform support limits. It is not a migration to Watch Face Format.

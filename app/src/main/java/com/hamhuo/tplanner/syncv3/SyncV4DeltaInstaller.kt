@@ -49,7 +49,7 @@ data class DeltaSyncResult(val installed: Boolean, val version: Long, val applie
 
 class SyncV4DeltaInstaller(
     private val store: SyncV3Store,
-    private val projectionInstaller: RoomSyncV3ProjectionInstaller? = null,
+    private val projectionInstaller: RoomSyncV3ProjectionInstaller,
     private val onDisplayedInstalled: ((
         displayed: DisplayedStateProjection,
         authoritative: DisplayedStateProjection,
@@ -174,7 +174,7 @@ class SyncV4DeltaInstaller(
         }
         val last = applicable.last()
 
-        val roomResult = projectionInstaller?.installMirrorAtomically(
+        val roomResult = projectionInstaller.installMirrorAtomically(
             mirror = mirror,
             version = last.snapshotVersion,
             stateHash = last.stateHashAfter,
@@ -182,19 +182,7 @@ class SyncV4DeltaInstaller(
             serverInstanceId = page.serverInstanceId,
             cursor = page.toCursor,
         )
-        if (roomResult == null) {
-            // JVM/non-Room 实现(协议测试):mirror + 指针 + cursor 一起落库。
-            store.upsertSyncState(
-                meta.copy(
-                    installedSnapshotVersion = last.snapshotVersion,
-                    installedSnapshotHash = last.stateHashAfter,
-                    serverInstanceId = page.serverInstanceId,
-                    serverMirrorJson = mirror.toString(),
-                    installedBrokerToSequence = last.brokerToSequence,
-                    cursor = page.toCursor,
-                ),
-            )
-        } else if (roomResult.installed) {
+        if (roomResult.installed) {
             onDisplayedInstalled?.invoke(
                 roomResult.displayed,
                 roomResult.authoritative,

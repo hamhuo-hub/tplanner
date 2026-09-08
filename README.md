@@ -5,7 +5,7 @@
 Wear 新增 Hop：当前时间位于屏幕中央，放大的虚拟表盘随时间移动；日程只画与可见窗口
 相交的细线和文字。字体按逻辑尺寸与系统字号计算，支持全天、跨日、重叠与极短事项。
 实现基线、176–240dp 对照图、原始参考限制和验证方式见 [Hop 设计说明](docs/hop-watchface.md)。
-运行 `pwsh scripts/generate-hop-previews.ps1` 可从实际 Android 绘制器重新生成预览。
+Hop 预览保存在 `design-assets/hop`，表盘资源需随绘制器变更手动更新。
 
 ## Android / Wear 8.0.0
 

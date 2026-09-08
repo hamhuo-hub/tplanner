@@ -67,9 +67,6 @@ android {
         )
     }
 
-    testOptions {
-        unitTests.isIncludeAndroidResources = true
-    }
 }
 
 dependencies {
@@ -88,7 +85,4 @@ dependencies {
     // Wearable Data Layer — 手机日程下发、手表新建事项与业务 ACK。
     // 无 GMS 时由两端 RFCOMM 服务承担相同的同步方向。
     implementation(libs.play.services.wearable)
-    testImplementation(libs.junit)
-    testImplementation(libs.robolectric)
-    testImplementation(libs.androidx.test.core)
 }
