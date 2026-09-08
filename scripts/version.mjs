@@ -17,7 +17,9 @@ const FALLBACK = '4.0.0';
 
 function git(args) {
     try {
-        return execFileSync('git', args, { encoding: 'utf8' }).trim();
+        // A missing exact tag is expected for development commits. Capture
+        // Git's diagnostic so a successful dev build does not print "fatal".
+        return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
     } catch {
         return '';
     }
