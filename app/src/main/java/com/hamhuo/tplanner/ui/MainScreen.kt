@@ -380,7 +380,7 @@ fun MainScreen(
     var phoneTab by rememberSaveable { mutableStateOf(0) } // 0=Notes, 1=Inbox, 2=Timeline
     var chromeMode by remember { mutableStateOf(ChromeMode.PrimaryNavigation) }
     var primaryNavigationGeneration by remember { mutableIntStateOf(0) }
-    var selectedViewKey by rememberSaveable { mutableStateOf(TaskView.Inbox.key) }
+    var selectedViewKey by rememberSaveable { mutableStateOf(TaskView.Today.key) }
     var userLists by remember { mutableStateOf(emptyList<UserList>()) }
     LaunchedEffect(eventStore) {
         eventStore.observeUserLists().collect { userLists = it }
