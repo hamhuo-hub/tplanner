@@ -8,18 +8,20 @@
 立即把 `capabilities.downlinkModes` 改回 `["snapshot"]`(去掉 `TPLANNER_ENABLE_DELTA=1`),
 新版客户端马上退回 snapshot;数据库 journal 保留,无需 down migration。
 
-## 0. 已完成的地基(每项都有自动化测试)
+## 0. 上线前需验证的不变量
 
-| 不变量 | 证明位置 |
-|---|---|
-| Snapshot(N) + Commit(N+1) == Snapshot(N+1) | sync-server `test/journalValidator.test.js`(shadow validator)+ `journal.test.js` reconstruction property;桌面 `deltaInstaller.test.js`;Android `SyncV4DeltaInstallerTest.kt` |
-| 每个 snapshotVersion 恰一个 journal commit(含 empty NOOP/REJECTED coverage) | `journal.test.js` / `journalValidator.test.js` |
-| journal 与 snapshot 同一 SQLite 事务 dual-write(所有 5 个 snapshot producer) | `journal.test.js` 原子性用例 |
-| 重复 commandId / (deviceId, clientSequence) 不重复执行、不重复 journal | `materializer.test.js` / `crashRecovery.test.js` / `journal.test.js` |
-| cursor 只在本地事务成功后推进 | 桌面 `deltaInstaller.test.js`(IndexedDB 失败 cursor 不动);Android `RoomSyncV3ProjectionInstallerTest`(进程死亡整体回滚) |
-| pending command 在 delta 后仍正确 overlay | 桌面 `deltaInstaller.test.js`;Android `RoomSyncV3ProjectionInstallerTest` |
-| 断链/未知 type/410 → full snapshot,绝不猜测修补 | 桌面/Android delta installer 测试 + `changes.test.js` |
-| retention 单调推进 min_snapshot_version,旧设备 410 | `changes.test.js` |
+自动化测试已移除，以下项目需在上线前重新验证。
+
+| 不变量 |
+|---|
+| Snapshot(N) + Commit(N+1) == Snapshot(N+1) |
+| 每个 snapshotVersion 恰一个 journal commit(含 empty NOOP/REJECTED coverage) |
+| journal 与 snapshot 同一 SQLite 事务 dual-write(所有 5 个 snapshot producer) |
+| 重复 commandId / (deviceId, clientSequence) 不重复执行、不重复 journal |
+| cursor 只在本地事务成功后推进 |
+| pending command 在 delta 后仍正确 overlay |
+| 断链/未知 type/410 → full snapshot,绝不猜测修补 |
+| retention 单调推进 min_snapshot_version,旧设备 410 |
 
 ## 1. Correctness gate(canary 扩大前必须全绿)
 

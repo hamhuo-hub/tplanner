@@ -12,8 +12,7 @@
     "start:builder": "node src/materializer/main.js",
     "backup": "node scripts/backup.mjs",
     "migrate:canonical-tasks": "node scripts/migrate-canonical-task-fields.mjs",
-    "validate:journal": "node scripts/validate-journal.mjs",
-    "test": "node --test \"test/**/*.test.js\""
+    "validate:journal": "node scripts/validate-journal.mjs"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",

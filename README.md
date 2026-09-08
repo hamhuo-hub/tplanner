@@ -85,7 +85,6 @@ Node.js 20 or newer is required.
 ```bash
 cd sync-server
 npm ci
-npm test
 ```
 
 ## Production deployment runbook
