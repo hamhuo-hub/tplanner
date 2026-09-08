@@ -3,6 +3,7 @@
     <string name="app_name">TPlanner</string>
     <string name="wf_tide">tPlanner Tide</string>
     <string name="wf_next">Saisis le jour · Seize the day</string>
+    <string name="wf_hop">tPlanner Hop</string>
     <string name="bt_permission_ok">Bluetooth permission is ready. The watch can receive phone schedules.</string>
     <string name="bt_permission_denied">Bluetooth permission was not granted. The watch cannot receive phone schedules.</string>
     <string name="bt_bridge_channel_name">Schedule synchronization</string>

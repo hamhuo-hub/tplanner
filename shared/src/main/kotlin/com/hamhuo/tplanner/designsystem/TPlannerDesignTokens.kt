@@ -56,6 +56,19 @@ object TPlannerColors {
  * product UI theme: a face may have its own palette, but renderers must not own raw color values.
  */
 object TPlannerWatchFacePalette {
+    object Hop {
+        // Sampled from the supplied watch photograph; coordinates/provenance in hop-watchface.md.
+        const val Paper: Int = 0xFFE5E8ED.toInt()
+        const val Rim: Int = 0xFFF6F8F2.toInt()
+        const val Ink: Int = 0xFF212021.toInt()
+        const val Task: Int = 0xFF55565A.toInt()
+        const val Track: Int = 0xFF96989C.toInt()
+        const val Now: Int = 0xFFF77128.toInt()
+        const val RecessShadow: Int = 0xFF30343A.toInt()
+        const val AmbientBackground: Int = 0xFF000000.toInt()
+        const val AmbientInk: Int = 0xFFA6A6A0.toInt()
+    }
+
     object Tide {
         const val BootHighlight: Int = 0xFFEDD890.toInt()
     }
@@ -80,6 +93,14 @@ object TPlannerWatchFacePalette {
 }
 
 object TPlannerTypography {
+    // Hop's hour numerals retain the enlarged dial's scale; task copy stays readable.
+    const val HopHourBaseSp = 40f
+    const val HopHourMinSp = 36f
+    const val HopHourMaxSp = 46f
+    const val HopTaskBaseSp = 12f
+    const val HopTaskMinSp = 11f
+    const val HopTaskMaxSp = 14f
+    const val HopNowSp = 9f
     const val PhoneHeadingSp = 22f
     const val PhoneSectionSp = 20f
     const val PhoneTitleSp = 18f

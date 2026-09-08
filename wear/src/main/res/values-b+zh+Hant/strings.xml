@@ -3,6 +3,7 @@
     <string name="app_name">TPlanner</string>
     <string name="wf_tide">tPlanner 潮汐</string>
     <string name="wf_next">Saisis le jour 把握現在</string>
+    <string name="wf_hop">tPlanner · 躍時</string>
     <string name="bt_permission_ok">藍牙權限已就緒，手錶可以接收手機日程</string>
     <string name="bt_permission_denied">未授予藍牙權限，手錶無法接收手機日程</string>
     <string name="bt_bridge_channel_name">日程同步</string>

@@ -105,6 +105,18 @@
             <meta-data android:name="androidx.wear.watchface.MULTIPLE_INSTANCES_ALLOWED" android:value="false" />
         </service>
 
+        <service android:name=".WatchFaceHopService" android:exported="true"
+            android:label="@string/wf_hop" android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService" />
+                <category android:name="com.google.android.wearable.watchface.category.WATCH_FACE" />
+            </intent-filter>
+            <meta-data android:name="android.service.wallpaper" android:resource="@xml/watch_face_hop" />
+            <meta-data android:name="com.google.android.wearable.watchface.preview" android:resource="@drawable/preview_hop" />
+            <meta-data android:name="com.google.android.wearable.watchface.preview_circular" android:resource="@drawable/preview_hop" />
+            <meta-data android:name="androidx.wear.watchface.MULTIPLE_INSTANCES_ALLOWED" android:value="false" />
+        </service>
+
         <!-- 接收手机推送的日程时间与标题，写入 WatchEventMarks -->
         <service android:name=".ScheduleReceiverService" android:exported="true">
             <intent-filter>

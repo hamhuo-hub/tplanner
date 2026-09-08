@@ -7,6 +7,7 @@ import com.hamhuo.tplanner.designsystem.TPlannerColors
 enum class FaceDesign(val interactiveDelayMs: Long) {
     TIDE(100L),
     NEXT(1_000L),
+    HOP(1_000L),
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

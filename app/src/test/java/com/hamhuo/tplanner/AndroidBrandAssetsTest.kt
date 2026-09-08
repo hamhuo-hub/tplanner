@@ -40,12 +40,15 @@ class AndroidBrandAssetsTest {
         val manifest = file("wear/src/main/AndroidManifest.xml").readText()
         assertTrue(manifest.contains("@drawable/preview_tide_static"))
         assertTrue(manifest.contains("@drawable/preview_next"))
+        assertTrue(manifest.contains("@drawable/preview_hop"))
         assertTrue(file("wear/src/main/res/xml/watch_face.xml").readText().contains("@drawable/preview_tide_static"))
         assertTrue(file("wear/src/main/res/xml/watch_face_next.xml").readText().contains("@drawable/preview_next"))
+        assertTrue(file("wear/src/main/res/xml/watch_face_hop.xml").readText().contains("@drawable/preview_hop"))
 
         val pngSignature = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
         assertEquals(pngSignature.toList(), file("wear/src/main/res/drawable-nodpi/preview_tide_static.png").readBytes().take(8))
         assertEquals(pngSignature.toList(), file("wear/src/main/res/drawable-nodpi/preview_next.png").readBytes().take(8))
+        assertEquals(pngSignature.toList(), file("wear/src/main/res/drawable-nodpi/preview_hop.png").readBytes().take(8))
     }
 
     private fun file(relative: String): File = File(repositoryRoot, relative)

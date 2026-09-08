@@ -114,9 +114,20 @@ foreach ($entry in @(
 
 $tideXml = Get-Content -LiteralPath (Join-Path $repository 'wear/src/main/res/xml/watch_face.xml') -Raw
 $nextXml = Get-Content -LiteralPath (Join-Path $repository 'wear/src/main/res/xml/watch_face_next.xml') -Raw
+$hopXml = Get-Content -LiteralPath (Join-Path $repository 'wear/src/main/res/xml/watch_face_hop.xml') -Raw
 Require ($manifest.Contains('@drawable/preview_tide_static')) 'Tide manifest preview is not the static PNG'
 Require ($manifest.Contains('@drawable/preview_next')) 'Next manifest preview is not the static PNG'
 Require ($tideXml.Contains('@drawable/preview_tide_static')) 'Tide watch-face thumbnail is not the static PNG'
 Require ($nextXml.Contains('@drawable/preview_next')) 'Next watch-face thumbnail is not the static PNG'
+Require ($manifest.Contains('@drawable/preview_hop')) 'Hop manifest preview is not the static PNG'
+Require ($hopXml.Contains('@drawable/preview_hop')) 'Hop watch-face thumbnail is not the static PNG'
+$hopPreview = Join-Path $repository 'wear/src/main/res/drawable-nodpi/preview_hop.png'
+Require (Test-Path -LiteralPath $hopPreview) 'Hop static PNG preview is missing'
+$hopPreviewBytes = [System.IO.File]::ReadAllBytes($hopPreview)
+$pngSignature = [byte[]]@(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
+Require ($hopPreviewBytes.Length -ge $pngSignature.Length) 'Hop preview is not a valid PNG'
+for ($index = 0; $index -lt $pngSignature.Length; $index++) {
+    Require ($hopPreviewBytes[$index] -eq $pngSignature[$index]) 'Hop preview is not a valid PNG'
+}
 
 Write-Host 'Android design tokens, launcher assets, and watch-face previews are consistent.'

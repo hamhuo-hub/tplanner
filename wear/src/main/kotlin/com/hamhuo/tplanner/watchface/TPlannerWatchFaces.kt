@@ -19,14 +19,14 @@ import androidx.wear.watchface.WatchState
 import androidx.wear.watchface.style.CurrentUserStyleRepository
 
 // ═══════════════════════════════════════════════════════════════════════════
-// tPlanner 潮汐（Tide）与下一项（Next）表盘。
-// 两款表盘共享同步和点击震动逻辑，仅 Renderer 负责各自的视觉表达。
+// tPlanner 潮汐（Tide）、下一项（Next）与跃时（Hop）表盘。
+// 三款表盘共享同步和点击震动逻辑，仅 Renderer 负责各自的视觉表达。
 //
 // 动画为事件驱动：入场 800ms 期间通过 invalidate() 请求连续帧；平时按各表盘的
 // interactiveDelayMs 低频重绘。息屏（ambient）下只画
 // 暗化的极简内容，无动画、无大面积亮色（防烧屏 + 省电）。
 //
-// 绘制逻辑分别位于 FaceTide 与 FaceNext。
+// 绘制逻辑分别位于 FaceTide、FaceNext 与 FaceHop。
 // ═══════════════════════════════════════════════════════════════════════════
 
 abstract class TPlannerFaceService : WatchFaceService() {
@@ -124,6 +124,19 @@ class WatchFaceNextService : TPlannerFaceService() {
         watchState: WatchState,
         currentUserStyleRepository: CurrentUserStyleRepository,
     ): FaceBase = FaceNext(
+        applicationContext,
+        surfaceHolder,
+        currentUserStyleRepository,
+        watchState,
+    )
+}
+
+class WatchFaceHopService : TPlannerFaceService() {
+    override fun createRenderer(
+        surfaceHolder: SurfaceHolder,
+        watchState: WatchState,
+        currentUserStyleRepository: CurrentUserStyleRepository,
+    ): FaceBase = FaceHop(
         applicationContext,
         surfaceHolder,
         currentUserStyleRepository,
